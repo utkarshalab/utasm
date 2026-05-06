@@ -1,352 +1,260 @@
+;
 ; ============================================
 ; File     : src/main.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
-; Description: Entry point and orchestrator for the utasm assembler.
 ; ============================================
+;
 
 %include "include/constant.s"
 %include "include/type.s"
 %include "include/macro.s"
 
-DEFAULT REL
-
 extern arena_init
 extern arena_alloc
+extern symbol_init
 extern cli_parse
-extern str_len
+extern reloc_init
 extern io_open
 extern io_file_size
 extern io_mmap
 extern lexer_init
 extern prep_init
 extern parser_parse_instruction
+extern asm_ctx_align
 extern amd64_encode_instruction
 extern aarch64_encode_instruction
 extern riscv64_encode_instruction
-extern elf64_emit
-extern binary_emit
-extern reloc_init
 extern linker_run
-extern listing_generate
-extern mapfile_generate
-extern asm_ctx_align
-extern error_report
-
-[SECTION .data]
-    ; Professional banner for the assembler
-    msg_banner:
-        db 0x1B, "[1;36m", "UTASM", 0x1B, "[0m", " - The Sovereign Assembler Kernel", 0x0A
-        db "Version 0.1.0 (Millennial Inversion)", 0x0A, 0
-    
-    msg_usage:
-        db 0x0A, 0x1B, "[1;33m", "USAGE:", 0x1B, "[0m", " utasm [options] <input.s>", 0x0A
-        db 0x0A, 0x1B, "[1;32m", "OPTIONS:", 0x1B, "[0m", 0x0A
-        db "  -o <file>    Specify output filename (default: out.bin)", 0x0A
-        db "  -f <format>  Output format: elf64, bin (default: elf64)", 0x0A
-        db "  -a <arch>    Target architecture: amd64, aarch64, riscv64", 0x0A
-        db "  -v           Enable verbose diagnostic logging", 0x0A
-        db "  --help       Show this professional assistance screen", 0x0A, 0
 
 [SECTION .bss]
     align 64
     global global_arena
-    global_arena: resb ARENA_SIZE
-    resb 1024 ; SAFETY PADDING
+    global_arena: resb 64
+    resb 1024
     global global_ctx
     global_ctx:   resb ASMCTX_SIZE
-    resb 1024 ; SAFETY PADDING
+    resb 1024
     global global_lexer
     global_lexer: resb LEXER_SIZE
-    resb 1024 ; SAFETY PADDING
+    resb 1024
     global global_prep
     global_prep:  resb PREP_SIZE
-    resb 1024 ; SAFETY PADDING
+    resb 1024
 
 [SECTION .text]
     global _start
+    global print_str
 
 _start:
-    cld                             ; Ensure string ops go forward
-    ; 1. Establish stack frame
+    cld
     push    rbp
     mov     rbp, rsp
+    and     rsp, -16               ; Align stack
 
-    ; 2. Initialize Arena Allocator (64 MiB reservation)
+    ; [rbp+8] is argc, [rbp+16] is argv[0]
+    mov     r12, [rbp + 8]          ; r12 = argc
+    lea     r13, [rbp + 16]         ; r13 = argv
+
+    ; 1. Initialize Arena
     lea     rdi, [rel global_arena]
-    mov     rsi, 0x04000000 ; UTASM_HEAP_SIZE (64MB)
+    mov     rsi, 0x04000000 ; 64MB
     call    arena_init
     test    rax, rax
     jnz     .exit_oom
 
-    ; Link arena to context
-    lea     r8, [rel global_ctx]
+    ; 2. Initialize Context
+    lea     rbx, [rel global_ctx]
     lea     rax, [rel global_arena]
-    mov     [r8 + ASMCTX_arena], rax
-    mov     byte [r8 + ASMCTX_tag], TAG_ASM_CTX
+    mov     [rbx + ASMCTX_arena], rax
+    mov     byte [rbx + ASMCTX_tag], TAG_ASM_CTX
 
-    ; 2.5 Allocate Symbol Hash Table (64k entries * 8 bytes = 512 KiB)
-    lea     rdi, [rel global_arena]
-    mov     rsi, 524288
-    call    arena_alloc
+    ; 3. Initialize Symbol Table
+    mov     rdi, rbx
+    call    symbol_init
     test    rax, rax
-    jnz     .exit_oom
-    lea     r8, [rel global_ctx]
-    mov     [r8 + ASMCTX_symhash], rdx
+    jnz     .exit_error
 
-    ; 3. Parse Command Line Arguments
-    lea     rdi, [rel global_ctx]
-    mov     rsi, [rbp + 8]   ; argc
-    lea     rdx, [rbp + 16]  ; argv
+    ; 4. Parse CLI
+    mov     rdi, rbx
+    mov     rsi, r12
+    mov     rdx, r13
     call    cli_parse
     test    rax, rax
-    jnz     .show_usage      ; If error or help, show usage
+    jnz     .show_usage
 
-    ; 4. Check if input file provided
-    lea     r8, [rel global_ctx]
-    cmp     qword [r8 + ASMCTX_input], 0
+    cmp     qword [rbx + ASMCTX_input], 0
     je      .show_usage
 
-    ; 5. Compilation Pipeline
-    
-    ; 5.1 Initialize Relocation Engine
-    lea     rdi, [rel global_ctx]
+    ; 5. Pipeline Setup
+    mov     rdi, rbx
     call    reloc_init
     test    rax, rax
     jnz     .exit_error
 
-    ; 5.2 Open and Map Input File
-    lea     r8, [rel global_ctx]
-    mov     rdi, [r8 + ASMCTX_input]
-    mov     rsi, 0 ; O_RDONLY
+    ; Open and Map
+    mov     rdi, [rbx + ASMCTX_input]
+    mov     rsi, 0
     xor     rdx, rdx
     call    io_open
     test    rax, rax
     jnz     .exit_io_error
-    mov     r12, rdx                         ; r12 = fd
-    
-    ; DEBUG: File opened
-    mov     rdi, 1
-    lea     rsi, [rel msg_debug_open]
-    call    print_str
-    
-    mov     rdi, r12
+    mov     r14, rdx                         ; fd
+
+    mov     rdi, r14
     call    io_file_size
-    mov     r13, rdx                         ; r13 = size
-    
+    mov     r15, rdx                         ; size
+
     xor     rdi, rdi
-    mov     rsi, r13
+    mov     rsi, r15
     mov     rdx, 1 ; PROT_READ
     mov     rcx, 2 ; MAP_PRIVATE
-    mov     r8, r12
+    mov     r8, r14
     xor     r9, r9
     call    io_mmap
     test    rax, rax
     jnz     .exit_io_error
-    mov     r14, rdx                         ; r14 = buffer
-    
-    ; DEBUG: File mapped
-    mov     rdi, 1
-    lea     rsi, [rel msg_debug_mapped]
-    call    print_str
-    
-    ; 5.3 Initialize Pipeline Components
+    mov     r14, rdx                         ; buffer (r14 now buffer, r15 size)
+
+    ; Initialize Lexer
     lea     rdi, [rel global_lexer]
-    mov     rsi, r14                         ; rsi = buffer pointer
-    mov     rdx, r13                         ; rdx = file size
-    lea     r8,  [rel global_ctx]
-    mov     rcx, [r8 + ASMCTX_input]         ; rcx = filename string
-    lea     r9,  [rel global_arena]
+    mov     rsi, r14
+    mov     rdx, r15
+    mov     r8,  rbx
+    mov     rcx, [rbx + ASMCTX_input]
+    mov     r9,  [rbx + ASMCTX_arena]
     call    lexer_init
     test    rax, rax
     jnz     .exit_error
-    
+
+    ; Initialize Preprocessor
     lea     rdi, [rel global_prep]
     lea     rsi, [rel global_lexer]
-    lea     rdx, [rel global_ctx]
-    lea     rcx, [rel global_arena]
+    mov     rdx, rbx
+    mov     rcx, [rbx + ASMCTX_arena]
     call    prep_init
     test    rax, rax
     jnz     .exit_error
 
-    mov     rdi, 1
-    lea     rsi, [rel msg_debug_assembly]
-    call    print_str
-    
-    lea     r8, [rel global_ctx]
-    movzx   rax, byte [r8 + ASMCTX_target]
-    add     al, '0'
-    mov     [rel msg_target_char], al
-    lea     rsi, [rel msg_target_id]
-    call    print_str
-    
-    ; 5.4 Main Assembly Loop
 .assembly_loop:
-    lea     rdi, [rel global_prep]
+    lea     rdi, [rel global_prep]           ; parser_parse_instruction takes PrepState in RDI
     call    parser_parse_instruction
     
-    push    rax
-    push    rdx
-    test    rdx, rdx
-    jz      .trace_eof
-    lea     rsi, [rel msg_debug_parsed]
-    jmp     .do_trace
-.trace_eof:
-    lea     rsi, [rel msg_debug_eof]
-.do_trace:
-    call    print_str
-    pop     rdx
-    pop     rax
-
     test    rax, rax
     jnz     .error_in_parser
     
     test    rdx, rdx
-    jz      .emission
+    jz      .finish_assembly
     
-    mov     r14, rdx                         ; r14 = INST*
-    
-    push    rax
-    lea     rsi, [rel msg_debug_dispatch]
-    call    print_str
-    pop     rax
+    mov     r12, rdx                         ; r12 = INST*
+    lea     rbx, [rel global_ctx]            ; Ensure rbx is global_ctx
+    movzx   eax, byte [rbx + ASMCTX_target]
 
-    lea     r8,  [rel global_ctx]
-    movzx   eax, byte [r8 + ASMCTX_target]
-
-    ; Target-specific alignment
-    cmp     eax, 1 ; TARGET_AARCH64
-    jne     .check_riscv
-    lea     rdi, [rel global_ctx]
+    ; Alignments
+    cmp     eax, 1 ; AARCH64
+    jne     .check_rv
+    mov     rdi, rbx
     mov     rsi, 4
     call    asm_ctx_align
     jmp     .encode
-.check_riscv:
-    cmp     eax, 3 ; TARGET_RISCV64
+.check_rv:
+    cmp     eax, 3 ; RISCV64
     jne     .encode
-    lea     rdi, [rel global_ctx]
+    mov     rdi, rbx
     mov     rsi, 2
     call    asm_ctx_align
 
 .encode:
-    lea     rdi, [rel global_ctx]
-    lea     r8, [rel global_ctx]
-    movzx   rax, byte [r8 + ASMCTX_target]
-    push    rax
-    add     al, '0'
-    mov     [rel msg_target_char], al
-    lea     rsi, [rel msg_target_id]
-    call    print_str
-    pop     rax
-
-    cmp     rax, 2 ; TARGET_AMD64
+    mov     rdi, rbx
+    mov     rsi, r12
+    movzx   rax, byte [rbx + ASMCTX_target]
+    cmp     rax, 2 ; AMD64
     je      .call_amd64
-    cmp     eax, 1 ; TARGET_AARCH64
+    cmp     rax, 1 ; AARCH64
     je      .call_aarch64
-    cmp     eax, 3 ; TARGET_RISCV64
+    cmp     rax, 3 ; RISCV64
     je      .call_riscv64
     jmp     .assembly_loop
 
 .call_amd64:
-    lea     rdi, [rel global_ctx]
-    mov     rsi, r14
     call    amd64_encode_instruction
-    jmp     .check_enc_err
+    jmp     .check_enc
 .call_aarch64:
-    lea     rdi, [rel global_ctx]
     call    aarch64_encode_instruction
-    jmp     .check_enc_err
+    jmp     .check_enc
 .call_riscv64:
     call    riscv64_encode_instruction
 
-.check_enc_err:
+.check_enc:
     test    rax, rax
     jnz     .exit_error
     jmp     .assembly_loop
 
-.error_in_parser:
-    ; Error already reported by parser, just exit
-    jmp     .exit_error
-
-.emission:
-    lea     rdi, [rel global_ctx]
+.finish_assembly:
+    mov     rdi, rbx
     call    linker_run
     test    rax, rax
     jnz     .exit_error
-
-    mov     rdi, 0              ; status = 0
-    mov     rax, 60             ; sys_exit
-    syscall
+    
+    xor     rax, rax
+    jmp     .exit
 
 .show_usage:
     mov     rdi, 1
-    lea     rsi, [msg_banner]
+    lea     rsi, [rel msg_usage]
     call    print_str
-    lea     rsi, [msg_usage]
-    call    print_str
-    mov     rax, 60
-    mov     rdi, 2
-    syscall
+    mov     rax, 1
+    jmp     .exit
 
 .exit_oom:
-    mov     rax, 60
-    mov     rdi, 125
-    syscall
-
-.exit_io_error:
-    mov     rax, 60
-    mov     rdi, 3
-    syscall
-
-.exit_error:
+    mov     rdi, 2
     lea     rsi, [rel msg_crit_init]
     call    print_str
-    mov     rdi, 1
-    mov     rax, 60
+    mov     rax, 2
+    jmp     .exit
+
+.exit_io_error:
+    mov     rax, 3
+    jmp     .exit
+
+.error_in_parser:
+    mov     rax, 4
+    jmp     .exit
+
+.exit_error:
+    mov     rax, 1
+.exit:
+    mov     rdi, rax
+    mov     rax, 60 ; SYS_EXIT
     syscall
-
-
 
 global print_str
 print_str:
-    push    rcx
-    push    r11
-    push    rax
-    push    rdx
-    push    rsi
-    push    rdi
-
-    ; 1. Calculate length
+    push    rbp
+    mov     rbp, rsp
+    push    rbx
+    push    r12
+    
+    mov     rbx, rdi
+    mov     r12, rsi
     mov     rdi, rsi
-    call    str_len
-    mov     rdx, rax               ; rdx = length
-    
-    ; 2. Restore RDI and RSI for syscall
-    mov     rax, [rsp]             ; rdi was pushed last
-    mov     rdi, rax
-    mov     rax, [rsp + 8]         ; rsi was pushed before rdi
-    mov     rsi, rax
-    
-    ; 3. Write
-    mov     rax, 1                 ; sys_write
+    xor     rdx, rdx
+.len_loop:
+    cmp     byte [rdi + rdx], 0
+    je      .len_done
+    inc     rdx
+    jmp     .len_loop
+.len_done:
+    mov     rdi, rbx
+    mov     rsi, r12
+    mov     rax, 1 ; SYS_WRITE
     syscall
-    
-    pop     rdi
-    pop     rsi
-    pop     rdx
-    pop     rax
-    pop     r11
-    pop     rcx
+    pop     r12
+    pop     rbx
+    pop     rbp
     ret
+
 [SECTION .data]
-msg_debug_open:   db "DEBUG: File opened", 10, 0
-msg_debug_mapped:   db "DEBUG: File mapped", 10, 0
-msg_debug_assembly: db "DEBUG: Starting assembly", 10, 0
-msg_crit_init:     db "CRITICAL: Initialization failed", 10, 0
-msg_debug_parsed: db "DEBUG: Instruction parsed", 10, 0
-msg_debug_eof:    db "DEBUG: EOF reached", 10, 0
-msg_target_id:   db "DEBUG: Target ID: "
-msg_target_char: db "0", 10, 0
-msg_debug_dispatch: db "DEBUG: Dispatching to encoder", 10, 0
-msg_p: db "> ", 0
+    msg_usage:     db "Usage: utasm -f <fmt> <input> -o <output>", 10, 0
+    msg_crit_init: db "CRITICAL: Initialization failed", 10, 0

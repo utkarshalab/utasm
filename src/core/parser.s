@@ -165,6 +165,10 @@ parser_parse_instruction:
     mov     rsi, [r12 + TOKEN_value]
     hash_fnv1a_64 rsi, r13
     
+    ; Reload tables as hash macro clobbers r11 (and potentially others)
+    mov     r10, [rbp - 8]
+    mov     r11, [rbp - 16]
+
     mov     rdi, r13
     mov     rsi, r11                ; Current Arch Mnemonic Table
     call    parser_lookup_mnemonic
@@ -247,6 +251,9 @@ parser_parse_instruction:
 ; ;
 parser_parse_operand:
     prologue
+    push    rbx
+    push    r12
+    push    r13
     
     mov     rdi, [rbx + PREP_arena]
     mov     rsi, OPERAND_SIZE
@@ -280,6 +287,9 @@ parser_parse_operand:
 
         .success:
             mov     rax, OK
+            pop     r13
+            pop     r12
+            pop     rbx
             epilogue
 
         .error:
@@ -389,6 +399,7 @@ parser_evaluate_expression:
     prologue
     push    rbx
     push    r12
+    push    r13
     
     mov     rbx, rdi               ; RBX = PrepState
     mov     rdi, [rbx + PREP_ctx]  ; RDI = AsmCtx (for depth check)
@@ -438,6 +449,7 @@ parser_evaluate_expression:
 .done:
     mov     r10, [rbx + PREP_ctx]
     dec     dword [r10 + ASMCTX_expr_depth]
+    pop     r13
     pop     r12
     pop     rbx
     epilogue
@@ -449,6 +461,7 @@ parser_evaluate_expression:
 .done_err:
     mov     r10, [rbx + PREP_ctx]
     dec     dword [r10 + ASMCTX_expr_depth]
+    pop     r13
     pop     r12
     pop     rbx
     epilogue
@@ -568,6 +581,8 @@ parser_evaluate_term:
 parser_evaluate_factor:
     prologue
     push    rbx
+    push    r12
+    push    r13
     mov     rbx, rdi               ; RBX = PrepState
     
     mov     rdi, rbx
@@ -582,15 +597,14 @@ parser_evaluate_factor:
         check_err
         neg     rdx
         xor     rax, rax
-        epilogue
+        jmp     .done
     ELSEIF al, e, TOK_TILDE
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
         not     rdx
         xor     rax, rax
-        pop     rbx
-        epilogue
+        jmp     .done
         ENDIF
 
     IF al, e, TOK_NUMBER
@@ -598,8 +612,7 @@ parser_evaluate_factor:
         call    str_to_int
         mov     rdx, rax
         xor     rax, rax
-        pop     rbx
-        epilogue
+        jmp     .done
     ELSEIF al, e, TOK_DOLLAR
         ; Current location counter ($)
         mov     rax, [rbx + PREP_ctx]
@@ -607,13 +620,11 @@ parser_evaluate_factor:
         IF rax, e, 0
             ; If no section, return 0 (or error?)
             xor rax, rax
-            pop rbx
-            epilogue
+            jmp     .done
             ENDIF
         mov     rdx, [rax + SECTION_size]
         xor     rax, rax
-        pop     rbx
-        epilogue
+        jmp     .done
     ELSEIF al, e, TOK_IDENT
         ; Symbol lookup
         mov     rdi, [rbx + PREP_ctx]
@@ -631,8 +642,7 @@ parser_evaluate_factor:
             mov     rcx, [r12 + TOKEN_value] ; return symbol name in RCX
             xor     rax, rax
             ENDIF
-        pop     rbx
-        epilogue
+        jmp     .done
     ELSEIF al, e, TOK_LPAREN
         mov     rdi, rbx
         call    parser_evaluate_expression
@@ -642,28 +652,27 @@ parser_evaluate_factor:
         call    preprocessor_next_token
         IF byte [rdx + TOKEN_kind], ne, TOK_RPAREN
             mov rax, EXIT_UNEXPECTED_TOKEN
-            pop rbx
-            epilogue
+            jmp     .done
             ENDIF
         mov     rdx, r13
         xor     rax, rax
-        pop     rbx
-        epilogue
+        jmp     .done
     ELSEIF al, e, TOK_COLON
         call    parser_handle_reloc_modifier
         check_err_to .error
         IF rax, ne, OK
             jmp .error
         ENDIF
-        pop     rbx
-        epilogue
+        jmp     .done
         ENDIF
     
     mov     rax, EXIT_INVALID_EXPR
-    pop     rbx
-    epilogue
+    jmp     .error
 
 .error:
+.done:
+    pop     r13
+    pop     r12
     pop     rbx
     epilogue
 

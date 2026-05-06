@@ -54,7 +54,7 @@ DEFAULT REL
 ;
 global arena_init
 arena_init:
-    ; save arena pointer and requested size
+    prologue
     push    rbx
     push    r12
     mov     rbx, rdi                ; rbx = arena struct pointer
@@ -103,6 +103,7 @@ arena_init:
     mov     rdx, rbx               ; rdx = arena pointer
     pop     r12
     pop     rbx
+    epilogue
     ret
 
 .mmap_failed:
@@ -110,6 +111,7 @@ arena_init:
     xor     rdx, rdx               ; rdx = NULL
     pop     r12
     pop     rbx
+    epilogue
     ret
 
 ; ---- arena_alloc -------------------------

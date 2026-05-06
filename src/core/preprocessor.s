@@ -66,10 +66,15 @@ prep_init:
 
 global preprocessor_next_token
 preprocessor_next_token:
+    prologue
     push    rbx
     push    r12
+    push    r13
+    push    r14
+    push    r15
+    push    rax                    ; Alignment padding
     mov     rbx, rdi               ; rbx = PrepState
-    
+
     ; 1. Handle peek slot
     cmp     byte [rbx + PREP_has_peek], TRUE
     jne     .no_peek
@@ -78,10 +83,8 @@ preprocessor_next_token:
     mov     byte [rbx + PREP_has_peek], FALSE
     lea     rdx, [rbx + PREP_peek]
     xor     rax, rax
-    pop     r12
-    pop     rbx
-    ret
-
+    jmp     .done
+    
 .no_peek:
     ; 2. Allocate token in arena for the result
     mov     rdi, [rbx + PREP_arena]
@@ -98,15 +101,20 @@ preprocessor_next_token:
     jnz     .error
     
     mov     rdx, r12
+.done:
+    pop     rcx                    ; Alignment padding
+    pop     r15
+    pop     r14
+    pop     r13
     pop     r12
     pop     rbx
+    epilogue
     ret
 
 .error:
     xor     rdx, rdx
-    pop     r12
-    pop     rbx
-    ret
+    jmp     .done
+
 
 global preprocessor_putback_token
 preprocessor_putback_token:
@@ -131,32 +139,63 @@ preprocessor_putback_token:
 ; ---- preprocessor_peek_token ------------
 global preprocessor_peek_token
 preprocessor_peek_token:
+    prologue
     push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    push    rax                    ; Alignment padding
     mov     rbx, rdi
     
     cmp     byte [rbx + PREP_has_peek], TRUE
     je      .done
     
-    lea     rsi, [rbx + PREP_peek]
+    ; Allocate token in arena
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, TOKEN_SIZE
+    call    arena_alloc
+    test    rax, rax
+    jnz     .error
+    mov     r12, rdx
+    
+    mov     rdi, rbx
+    mov     rsi, r12
     call    prep_internal_next
     test    rax, rax
-    jnz     .fail
-    
-    mov     byte [rbx + PREP_has_peek], TRUE
+    jnz     .error
 
+    
+    ; Success - token in r12
+    mov     byte [rbx + PREP_has_peek], TRUE
+    ; copy r12 to peek slot
+    mov     rdi, r12
+    lea     rsi, [rbx + PREP_peek]
+    mov     rcx, TOKEN_SIZE
+    rep movsb
+    
 .done:
     lea     rdx, [rbx + PREP_peek]
     xor     rax, rax
+.exit:
+    pop     rcx                    ; Alignment padding
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
     pop     rbx
+    epilogue
     ret
 
-.fail:
+.error:
     xor     rdx, rdx
-    pop     rbx
-    ret
+    jmp     .exit
+
+
 
 ; ---- prep_internal_next -----------------
 prep_internal_next:
+    prologue
     push    rbx
     push    r12
     mov     rbx, rdi               ; rbx = PrepState
@@ -269,6 +308,7 @@ prep_internal_next:
 .done:
     pop     r12
     pop     rbx
+    epilogue
     ret
 
 ; ---- prep_expand_start ------------------
@@ -280,11 +320,13 @@ prep_internal_next:
 ; Output   : rax = EXIT_OK or error code
 ;
 prep_expand_start:
+    prologue
     push    rbx
     push    r12
     push    r13
     push    r14
     push    r15
+    push    rax                    ; Alignment padding
     mov     rbx, rdi               ; rbx = PrepState
     mov     r12, rsi               ; r12 = MACRO struct
 
@@ -404,22 +446,28 @@ prep_expand_start:
     ; Guard: check if we hit newline/EOF unexpectedly
     mov     al, [rdx + TOKEN_kind]
     cmp     al, TOK_NEWLINE
-    je      .error_too_few_args
+    je      .check_min_params
     cmp     al, TOK_EOF
-    je      .error_too_few_args
-
+    je      .check_min_params
+    
     inc     r15
     jmp     .param_loop
+
+.check_min_params:
+    movzx   rax, byte [r12 + MACRO_min_params]
+    cmp     r15b, al
+    jl      .error_too_few_args
+    jmp     .done_params
 
 .check_trailing:
     ; Check for too many arguments (is there a comma next?)
     mov     rdi, [rbx + PREP_lexer]
     extern  lexer_peek
-    sub     rsp, TOKEN_SIZE
+    sub     rsp, 16                ; 16-byte alignment (TOKEN_SIZE is handled separately)
     mov     rsi, rsp
     call    lexer_peek
     mov     al, [rsp + TOKEN_kind]
-    add     rsp, TOKEN_SIZE
+    add     rsp, 16
     cmp     al, TOK_COMMA
     je      .error_too_many_args
     jmp     .done_params
@@ -453,16 +501,18 @@ prep_expand_start:
     mov     rax, EXIT_INVALID_OPERAND
     jmp     .done
 
-.error:
-    mov     rax, EXIT_MACRO_EXP
-
 .done:
+    pop     rcx                    ; Alignment padding
     pop     r15
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
+    epilogue
     ret
+
+.error:
+    jmp     .done
 
 ; ---- prep_expand_next -------------------
 ;
@@ -474,9 +524,11 @@ prep_expand_start:
 ; Output   : rax = 0 (produced token) or non-zero (finished)
 ;
 prep_expand_next:
+    prologue
     push    rbx
     push    r12
     push    r13
+    push    rax                    ; Alignment padding
     mov     rbx, rdi               ; rbx = PrepState
     mov     r12, rsi               ; r12 = Token dest
 
@@ -784,22 +836,36 @@ prep_expand_next:
     mov     rax, 1
 
 .done:
+    pop     rcx                    ; Alignment padding
     pop     r13
     pop     r12
     pop     rbx
+    epilogue
     ret
 
-; ---- prep_expand_pop --------------------
+global prep_expand_pop
 prep_expand_pop:
-    mov     r8, [rdi + PREP_ctx]
+    prologue
+    push    rbx
+    push    r12                    ; Alignment padding
+    mov     rbx, rdi
+    
+    mov     r8, [rbx + PREP_ctx]
     mov     r9, [r8 + ASMCTX_mac_exp]
     test    r9, r9
     jz      .done
     
-    mov     r10, [r9 + MACROEXP_parent]
-    dec     byte [rdi + PREP_mac_depth] ; A83: Correctly pop depth
-    mov     [r8 + ASMCTX_mac_exp], r10
+    ; Decrease depth
+    dec     byte [rbx + PREP_mac_depth]
+    
+    ; Pop from expansion stack
+    mov     rax, [r9 + MACROEXP_parent]
+    mov     [r8 + ASMCTX_mac_exp], rax
+    
 .done:
+    pop     r12
+    pop     rbx
+    epilogue
     ret
 
 ; ---- prep_handle_directive --------------
@@ -812,9 +878,12 @@ prep_expand_pop:
 ; Clobbers : ...
 ;
 prep_handle_directive:
+    prologue
     push    rbx
     push    r12
     push    r13
+    push    r14                    ; r14 = stack cleanup flag
+    mov     r14, 0                 ; initialize flag early
     mov     rbx, rdi               ; rbx = PrepState
     mov     r13, rsi               ; r13 = the token triggering the directive (% or %name)
     
@@ -825,6 +894,7 @@ prep_handle_directive:
     ; next token should be the directive identifier
     mov     rdi, [rbx + PREP_lexer]
     sub     rsp, TOKEN_SIZE        ; space for temp token
+    mov     r14, 1                 ; stack cleanup flag: YES
     mov     r12, rsp               ; r12 = temp token dest
     mov     rsi, r12
     call    lexer_next
@@ -833,18 +903,14 @@ prep_handle_directive:
 
     cmp     byte [r12 + TOKEN_kind], TOK_IDENT
     jne     .expected_ident_pop_rsp
+    
     jmp     .start_match
 
 .have_ident:
     mov     r12, r13               ; use the directive token as the ident token
-    push    0                      ; flag: NO stack cleanup needed
-    jmp     .start_match_real
+    mov     r14, 0                 ; stack cleanup flag: NO
 
 .start_match:
-    push    1                      ; flag: stack cleanup needed
-
-.start_match_real:
-
     ; check which directive it is
     mov     rdi, [r12 + TOKEN_value] ; directive name
     lea     rsi, [dir_inc]
@@ -913,91 +979,87 @@ prep_handle_directive:
     jz      .do_endrep
 
     xor     rax, rax
-    jmp     .done
+    jmp     .done_cleanup
 
 .do_struc:
     ; TODO: implement %struc
     ; call prep_handle_struc
-    jmp     .done
+    jmp     .done_cleanup
 
 .do_inc:
+    cmp     byte [rbx + PREP_skip_depth], 0
+    jne     .done_cleanup
     mov     rdi, rbx
     call    prep_handle_inc
-    jmp     .done
+    jmp     .done_cleanup
 
 .do_def:
     cmp     byte [rbx + PREP_skip_depth], 0
-    jne     .done                  ; don't execute when skipping
+    jne     .done_cleanup                  ; don't execute when skipping
     mov     rdi, rbx
     call    prep_handle_def
-    jmp     .done
+    jmp     .done_cleanup
 
 .do_if:
     mov     rdi, rbx
     call    prep_handle_if
-    jmp     .done
+    jmp     .done_cleanup
 
 .do_ifdef:
     mov     rdi, rbx
     call    prep_handle_ifdef
-    jmp     .done
+    jmp     .done_cleanup
 
 .do_ifndef:
     mov     rdi, rbx
     call    prep_handle_ifndef
-    jmp     .done
+    jmp     .done_cleanup
 
 .do_else:
     mov     rdi, rbx
     call    prep_handle_else
-    jmp     .done
+    jmp     .done_cleanup
 
 .do_endif:
     mov     rdi, rbx
     call    prep_handle_endif
-    jmp     .done
+    jmp     .done_cleanup
 
 .do_macro:
+    cmp     byte [rbx + PREP_skip_depth], 0
+    jne     .done_cleanup
     mov     rdi, rbx
     call    macro_handle_def
-    jmp     .done
+    jmp     .done_cleanup
 
 .do_rep:
     mov     rdi, rbx
     call    prep_handle_rep
-    jmp     .done
+    jmp     .done_cleanup
 
 .do_endrep:
-    ; %endrep is handled by the capture loop in prep_handle_rep
-    ; if we hit it here, it's an orphan %endrep
     mov     rax, EXIT_ERROR
-    jmp     .done
+    jmp     .done_cleanup
 
 .error_pop_rsp:
-    push    1                      ; flag for .done
-    jmp     .done
+    mov     rax, EXIT_ERROR
+    jmp     .done_cleanup
 
 .expected_ident_pop_rsp:
     mov     rax, EXIT_ERROR
-    push    1
-    jmp     .done
+    jmp     .done_cleanup
 
-.error:
-    jmp     .done                  ; flag already on stack or handled
-
-.expected_ident:
-    mov     rax, EXIT_ERROR
-    jmp     .done
+.done_cleanup:
+    test    r14, r14
+    jz      .done
+    add     rsp, TOKEN_SIZE
 
 .done:
-    pop     rcx                    ; flag: 1 if we did sub rsp, TOKEN_SIZE
-    test    rcx, rcx
-    jz      .no_rsp_cleanup
-    add     rsp, TOKEN_SIZE
-.no_rsp_cleanup:
+    pop     r14
     pop     r13
     pop     r12
     pop     rbx
+    epilogue
     ret
 
 ; ---- prep_handle_inc --------------------
@@ -1008,17 +1070,24 @@ prep_handle_directive:
 ; Output   : rax = EXIT_OK or error code
 ;
 prep_handle_inc:
+    prologue
     push    rbx
     push    r12
     push    r13
     push    r14
     push    r15
+    push    rax                    ; Alignment padding
     mov     rbx, rdi
 
+    ; Allocate stack space for:
+    ; [rsp + 0]  : temporary TOKEN (32 bytes)
+    ; [rsp + 32] : new_lexer pointer (8 bytes)
+    ; [rsp + 40] : saved depth (8 bytes)
+    sub     rsp, 64                ; 32 (token) + 8 (IncludeCtx) + 8 (new_lexer) + 8 (depth) + 8 (padding) = 64
+    
     ; 1. Get filename token
     mov     rdi, [rbx + PREP_lexer]
-    sub     rsp, TOKEN_SIZE
-    mov     r12, rsp               ; r12 = temporary token buffer
+    lea     r12, [rsp]             ; r12 = temporary token buffer
     mov     rsi, r12
     call    lexer_next
     test    rax, rax
@@ -1028,33 +1097,36 @@ prep_handle_inc:
     jne     .error_expected_string
     
     mov     r12, [r12 + TOKEN_value] ; r12 = filename string
-    add     rsp, TOKEN_SIZE
 
     ; 2. Check include depth
     mov     r8, [rbx + PREP_ctx]
     mov     r9, [r8 + ASMCTX_inc_ctx]
-    xor     eax, eax
+    xor     r14, r14               ; r14 = depth
     test    r9, r9
     jz      .depth_ok
-    movzx   eax, byte [r9 + INCLUDECTX_depth]
-    inc     eax
-    cmp     eax, MAX_INCLUDES
+    movzx   r14, byte [r9 + INCLUDECTX_depth]
+    inc     r14
+    cmp     r14, MAX_INCLUDES
     jge     .error_too_deep
 .depth_ok:
-    push    rax                    ; [STACK: new depth]
+    mov     [rsp + 56], r14         ; save depth at [rsp+56]
 
     ; 3. Open file
+
     mov     rdi, r12
+    xor     rsi, rsi               ; rsi = O_RDONLY (0)
     call    io_open
+
+
     test    rax, rax
-    jnz     .error_open_pop
+    jnz     .error_open
     mov     r13, rdx               ; r13 = fd
 
     ; 4. Get file size
     mov     rdi, r13
     call    io_file_size
     test    rax, rax
-    jnz     .error_size_pop
+    jnz     .error_size
     mov     r14, rdx               ; r14 = size
 
     ; 5. Map file into memory
@@ -1066,7 +1138,7 @@ prep_handle_inc:
     xor     r9, r9                 ; offset = 0
     call    io_mmap
     test    rax, rax
-    jnz     .error_mmap_pop
+    jnz     .error_mmap
     mov     r15, rdx               ; r15 = buffer
 
     ; 6. Create new LexerState
@@ -1074,26 +1146,33 @@ prep_handle_inc:
     mov     rsi, LEXER_SIZE
     call    arena_alloc
     test    rax, rax
-    jnz     .error_oom_pop
-    mov     r8, rdx                ; r8 = new lexer
+    jnz     .error_oom
+    mov     rcx, rdx                ; rcx = new lexer (using rcx temp)
 
     ; initialize new lexer
-    mov     rdi, r8
-    push    r8                     ; [STACK: new_lexer]
+    ; We need to save new_lexer somewhere safe while calling lexer_init
+    ; Let's use the 16-byte aligned stack space we already have
+    mov     [rsp + 48], rcx         ; save new_lexer at [rsp+48]
+    
+    mov     rdi, rcx
     mov     rsi, r15               ; buf
     mov     rdx, r14               ; size
-    mov     rcx, r12               ; filename string
+    mov     r11, r12               ; filename string (save to r11)
+    mov     rcx, r11
     mov     r8, [rbx + PREP_ctx]   ; r8 = AsmCtx
     mov     r9, [rbx + PREP_arena] ; r9 = Arena
     call    lexer_init
+    test    rax, rax
+    jnz     .error_open            ; check for init failure
 
     ; 7. Save state in IncludeCtx
     mov     rdi, [rbx + PREP_arena]
     mov     rsi, INCLUDECTX_SIZE
     call    arena_alloc
     test    rax, rax
-    jnz     .error_oom_pop_lexer
+    jnz     .error_oom
     mov     r9, rdx                ; r9 = new IncludeCtx
+    mov     [rsp + 40], r9         ; save IncludeCtx ptr at [rsp+40]
 
     mov     byte [r9 + INCLUDECTX_tag], TAG_INCLUDE_CTX
     
@@ -1105,13 +1184,14 @@ prep_handle_inc:
     mov     [r9 + INCLUDECTX_buf], r15
     mov     [r9 + INCLUDECTX_size], r14
     
-    mov     r11, [rbx + PREP_lexer]
-    mov     [r9 + INCLUDECTX_lexer], r11
+    mov     r9, [rsp + 40]         ; restore IncludeCtx ptr
     
-    pop     r8                     ; restore new_lexer pointer (pushed second)
-    pop     rax                    ; restore depth (pushed first)
-    
+    mov     rax, [rbx + PREP_lexer]
+    mov     [r9 + INCLUDECTX_lexer], rax
+    movzx   rax, byte [rsp + 56]   ; depth
     mov     byte [r9 + INCLUDECTX_depth], al
+    
+    mov     r8, [rsp + 48]         ; restore new_lexer
     mov     [rbx + PREP_lexer], r8 ; Switch to new lexer
 
     ; 8. Close the fd
@@ -1121,25 +1201,9 @@ prep_handle_inc:
     xor     rax, rax
     jmp     .done
 
-.error_oom_pop_lexer:
-    pop     rax                    ; clean up lexer pointer from stack
-.error_oom_pop:
-    pop     rax                    ; clean up depth from stack
 .error_oom:
     mov     rax, EXIT_OOM
     jmp     .done
-
-.error_mmap_pop:
-    pop     rax
-    jmp     .error_mmap
-
-.error_size_pop:
-    pop     rax
-    jmp     .error_size
-
-.error_open_pop:
-    pop     rax
-    jmp     .error_open
 
 .error_expected_string:
     mov     rax, EXIT_ERROR
@@ -1162,15 +1226,21 @@ prep_handle_inc:
     jmp     .done
 
 .error:
+    mov     rax, EXIT_ERROR
     jmp     .done
 
 .done:
+    add     rsp, 64                ; Clean up our stack frame
+    pop     rcx                    ; Alignment padding
     pop     r15
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
+    epilogue
     ret
+    ret
+
 
 [SECTION .rodata]
 dir_inc:    db "include", 0
@@ -1220,15 +1290,19 @@ msg_newline:                db 10, 0
 ; Output   : rax = EXIT_OK or error code
 ;
 prep_handle_def:
+    prologue
     push    rbx
     push    r12
     push    r13
+    push    r14
     mov     rbx, rdi               ; rbx = PrepState
-
+    
+    ; 112 is a multiple of 16. Perfect.
+    sub     rsp, (TOKEN_SIZE * 2) + SYMBOL_SIZE
+    
     ; 1. Lex the identifier (the constant name)
     mov     rdi, [rbx + PREP_lexer]
-    sub     rsp, TOKEN_SIZE
-    mov     r12, rsp               ; r12 = name token
+    lea     r12, [rsp]             ; r12 = name token buffer
     mov     rsi, r12
     call    lexer_next
     test    rax, rax
@@ -1242,16 +1316,14 @@ prep_handle_def:
 
     ; 2. Lex the value
     mov     rdi, [rbx + PREP_lexer]
-    sub     rsp, TOKEN_SIZE
-    mov     r12, rsp               ; r12 = value token
+    lea     r12, [rsp + TOKEN_SIZE] ; r12 = value token buffer
     mov     rsi, r12
     call    lexer_next
     test    rax, rax
     jnz     .error
 
     ; 3. Create a symbol entry
-    sub     rsp, SYMBOL_SIZE
-    mov     rdi, rsp               ; rdi = temp Symbol dest
+    lea     rdi, [rsp + (TOKEN_SIZE * 2)] ; rdi = temp Symbol dest
     
     ; zero out the struct
     mov     rcx, 6                 ; 48 / 8 = 6
@@ -1264,35 +1336,41 @@ prep_handle_def:
     mov     byte [rdi + SYMBOL_kind], SYM_CONSTANT
     mov     [rdi + SYMBOL_name], r13
     
+    mov     r14, rdi               ; save symbol ptr
     ; handle value
     cmp     byte [r12 + TOKEN_kind], TOK_NUMBER
     jne     .finish_def            ; for now, ignore non-numeric %def
 
-    push    rdi
     mov     rdi, [r12 + TOKEN_value]
     call    str_to_int             ; from string.s
-    pop     rdi
+    mov     rdi, r14
     mov     [rdi + SYMBOL_value], rdx
 
 .finish_def:
     mov     rdi, [rbx + PREP_ctx]  ; rdi = AsmCtx
-    mov     rsi, rsp               ; rsi = pointer to temp Symbol on stack
+    mov     rsi, rdi               ; (wait, rsi should be symbol ptr)
+    mov     rsi, r14               ; rsi = pointer to temp Symbol on stack
     call    symbol_add
     test    rax, rax
     jnz     .error
 
     xor     rax, rax
+    jmp     .done
 
 .error:
+    mov     rax, EXIT_ERROR
+.done:
     add     rsp, (TOKEN_SIZE * 2) + SYMBOL_SIZE
+    pop     r14
     pop     r13
     pop     r12
     pop     rbx
+    epilogue
     ret
 
 .expected_ident:
     mov     rax, EXIT_ERROR
-    jmp     .error
+    jmp     .done
 
 ;*
 ; * [prep_capture_greedy]
@@ -1303,8 +1381,11 @@ prep_capture_greedy:
     push    r12
     push    r13
     push    r14
+    push    r15
+    push    rax                    ; Alignment
     
     mov     rbx, rdi               ; rbx = PrepState
+    mov     r15, rsi               ; r15 = param index
     mov     r12, [rbx + PREP_lexer]
     
     ; 1. Find the end of the line in the current lexer buffer
@@ -1329,7 +1410,8 @@ prep_capture_greedy:
     mov     rsi, rdx
     inc     rsi                    ; +1 for null
     call    arena_alloc
-    check_err
+    test    rax, rax
+    jnz     .error
     mov     r10, rdx               ; r10 = dst
     
     mov     rdi, r10
@@ -1347,6 +1429,8 @@ prep_capture_greedy:
     mov     rdi, [rbx + PREP_arena]
     mov     rsi, TOKEN_SIZE
     call    arena_alloc
+    test    rax, rax
+    jnz     .error
     mov     byte [rdx + TOKEN_kind], TOK_STRING
     mov     [rdx + TOKEN_value], r10
     
@@ -1359,18 +1443,21 @@ prep_capture_greedy:
     mov     rcx, [rax + MACROEXP_params]
     mov     [rcx + r15 * 8], rdx
     
+    xor     rax, rax
     jmp     .done
 
 .error:
     mov     rax, EXIT_ERROR
     
 .done:
+    pop     rcx
+    pop     r15
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
-    xor     rax, rax
     epilogue
+    ret
 
 
 ; ---- prep_handle_if ---------------------
@@ -1428,6 +1515,7 @@ prep_handle_if:
 ; Handles the %ifdef directive.
 ;
 prep_handle_ifdef:
+    prologue
     push    rbx
     push    r12
     mov     rbx, rdi
@@ -1435,9 +1523,12 @@ prep_handle_ifdef:
     ; increment total depth
     inc     byte [rbx + PREP_depth]
 
-    ; if already skipping, just return
+    ; if already skipping, just increment skip depth and return
     cmp     byte [rbx + PREP_skip_depth], 0
-    jne     .done_no_pop
+    jz      .ifdef_not_skipping
+    inc     byte [rbx + PREP_skip_depth]
+    jmp     .done_no_pop
+.ifdef_not_skipping:
 
     ; next token must be an identifier
     mov     rdi, [rbx + PREP_lexer]
@@ -1456,7 +1547,7 @@ prep_handle_ifdef:
     mov     rsi, [r12 + TOKEN_value]
     call    symbol_find
     test    rax, rax
-    jz      .done                  ; found -> condition true -> don't skip
+    jz      .done                  ; found (0) -> condition true -> don't skip
     
     ; not found -> start skipping
     inc     byte [rbx + PREP_skip_depth]
@@ -1464,9 +1555,10 @@ prep_handle_ifdef:
 .done:
     add     rsp, TOKEN_SIZE
 .done_no_pop:
+    xor     rax, rax
     pop     r12
     pop     rbx
-    ret
+    epilogue
 
 .error:
 .expected_ident:
@@ -1475,26 +1567,25 @@ prep_handle_ifdef:
 
 ; ---- prep_handle_ifndef -----------------
 prep_handle_ifndef:
+    prologue
     push    rbx
     push    r12
     mov     rbx, rdi
 
     inc     byte [rbx + PREP_depth]
+
+    ; if already skipping, just increment skip depth and return
     cmp     byte [rbx + PREP_skip_depth], 0
-    jne     .done_no_pop
+    jz      .ifndef_not_skipping
+    inc     byte [rbx + PREP_skip_depth]
+    jmp     .done_no_pop
+.ifndef_not_skipping:
 
     mov     rdi, [rbx + PREP_lexer]
     sub     rsp, TOKEN_SIZE
     mov     r12, rsp
     mov     rsi, r12
     call    lexer_next
-    
-    push    rax
-    push    rdx
-    push    rsi
-    push    rdi
-    call    lexer_next
-
     test    rax, rax
     jnz     .error
 
@@ -1505,7 +1596,7 @@ prep_handle_ifndef:
     mov     rsi, [r12 + TOKEN_value]
     call    symbol_find
     test    rax, rax
-    jnz     .done                  ; not found -> condition true -> don't skip
+    jnz     .done                  ; not found (non-zero) -> condition true -> don't skip
 
     ; found -> start skipping (since it's ifndef)
     inc     byte [rbx + PREP_skip_depth]
@@ -1513,9 +1604,10 @@ prep_handle_ifndef:
 .done:
     add     rsp, TOKEN_SIZE
 .done_no_pop:
+    xor     rax, rax
     pop     r12
     pop     rbx
-    ret
+    epilogue
 
 .error:
 .expected_ident:
@@ -1524,6 +1616,7 @@ prep_handle_ifndef:
 
 ; ---- prep_handle_else -------------------
 prep_handle_else:
+    prologue
     push    rbx
     mov     rbx, rdi
 
@@ -1553,15 +1646,16 @@ prep_handle_else:
 .done:
     xor     rax, rax
     pop     rbx
-    ret
+    epilogue
 
 .error:
     mov     rax, EXIT_ERROR
     pop     rbx
-    ret
+    epilogue
 
 ; ---- prep_handle_endif ------------------
 prep_handle_endif:
+    prologue
     push    rbx
     mov     rbx, rdi
 
@@ -1575,12 +1669,12 @@ prep_handle_endif:
     dec     byte [rbx + PREP_depth]
     xor     rax, rax
     pop     rbx
-    ret
+    epilogue
 
 .error_no_if:
     mov     rax, EXIT_ERROR
     pop     rbx
-    ret
+    epilogue
 ; ---- macro_handle_def -------------------
 ;
 ; macro_handle_def
@@ -1589,16 +1683,21 @@ prep_handle_endif:
 ; Output   : rax = EXIT_OK or error code
 ;
 macro_handle_def:
+    prologue
     push    rbx
     push    r12
     push    r13
     push    r14
+    push    r15
+    push    rax                    ; Alignment padding
     mov     rbx, rdi               ; rbx = PrepState
 
+    ; Allocate: 3 Tokens = 96 bytes (Multiple of 16)
+    sub     rsp, 96
+    
     ; 1. Lex the macro name
     mov     rdi, [rbx + PREP_lexer]
-    sub     rsp, TOKEN_SIZE
-    mov     r12, rsp               ; r12 = name token
+    lea     r12, [rsp]             ; r12 = name token
     mov     rsi, r12
     call    lexer_next
     test    rax, rax
@@ -1609,8 +1708,7 @@ macro_handle_def:
 
     ; 2. Lex the parameter count
     mov     rdi, [rbx + PREP_lexer]
-    sub     rsp, TOKEN_SIZE
-    mov     r13, rsp               ; r13 = param count token
+    lea     r13, [rsp + 32]        ; r13 = param count token
     mov     rsi, r13
     call    lexer_next
     test    rax, rax
@@ -1618,7 +1716,7 @@ macro_handle_def:
 
     ; Param count can be N, N-M, or N-*
     xor     r14, r14               ; min_params
-    mov     r15, r14               ; max_params
+    xor     r15, r15               ; max_params
     
     cmp     byte [r13 + TOKEN_kind], TOK_NUMBER
     jne     .body_start            ; No params specified
@@ -1631,44 +1729,52 @@ macro_handle_def:
     
     ; Peek for hyphen '-'
     mov     rdi, [rbx + PREP_lexer]
-    sub     rsp, TOKEN_SIZE
-    mov     rsi, rsp
+    lea     rsi, [rsp + 64]
     call    lexer_peek
-    IF byte [rsp + TOKEN_kind], e, TOK_MINUS
-        ; Consume hyphen
-        mov     rdi, [rbx + PREP_lexer]
-        mov     rsi, rsp
-        call    lexer_next
-        
-        ; Lex next for max
-        mov     rdi, [rbx + PREP_lexer]
-        mov     rsi, rsp
-        call    lexer_next
-        
-        IF byte [rsp + TOKEN_kind], e, TOK_NUMBER
-            mov     rdi, [rsp + TOKEN_value]
-            call    str_to_int
-            mov     r15, rax
-        ELSEIF byte [rsp + TOKEN_kind], e, TOK_STAR
-            mov     r15, 0xFF      ; Variadic
-            ENDIF
-            ENDIF
-    add     rsp, TOKEN_SIZE
+    cmp     byte [rsp + 64 + TOKEN_kind], TOK_MINUS
+    jne     .no_hyphen
+    
+    ; Consume hyphen
+    mov     rdi, [rbx + PREP_lexer]
+    lea     rsi, [rsp + 64]
+    call    lexer_next
+    
+    ; Lex next for max
+    mov     rdi, [rbx + PREP_lexer]
+    lea     rsi, [rsp + 64]
+    call    lexer_next
+    
+    cmp     byte [rsp + 64 + TOKEN_kind], TOK_NUMBER
+    jne     .check_star
+    mov     rdi, [rsp + 64 + TOKEN_value]
+    call    str_to_int
+    mov     r15, rax
+    jmp     .no_hyphen
 
+.check_star:
+    cmp     byte [rsp + 64 + TOKEN_kind], TOK_STAR
+    jne     .no_hyphen
+    mov     r15, 0xFF              ; Variadic
+
+.no_hyphen:
     ; VALIDATION: Enforce max 32 parameters
-    IF r14, g, 32
-        mov     rax, EXIT_MACRO_DEF
-        jmp     .error
-        ENDIF
-    IF r15, ne, 0xFF
-        IF r15, g, 32
-            mov     rax, EXIT_MACRO_DEF
-            jmp     .error
-            ENDIF
-            ENDIF
+    cmp     r14, 32
+    jg      .error_macro_def
+    
+    cmp     r15, 0xFF
+    je      .body_start
+    cmp     r15, 32
+    jg      .error_macro_def
 
 .body_start:
     ; 3. Allocate MACRO struct in arena
+    ; We need to save r14 (min) and r15 (max) while we use r15 for the struct pointer
+    ; Let's use the stack or other registers.
+    ; [rsp + 64] = min_params (8 bytes)
+    ; [rsp + 72] = max_params (8 bytes)
+    mov     [rsp + 64], r14
+    mov     [rsp + 72], r15
+
     mov     rdi, [rbx + PREP_arena]
     mov     rsi, MACRO_SIZE
     call    arena_alloc
@@ -1679,11 +1785,13 @@ macro_handle_def:
     mov     byte [r15 + MACRO_tag], TAG_MACRO
     mov     rax, [r12 + TOKEN_value]
     mov     [r15 + MACRO_name], rax
-    mov     [r15 + MACRO_min_params], r14b
-    mov     [r15 + MACRO_max_params], r15b
+    
+    mov     rax, [rsp + 64]
+    mov     [r15 + MACRO_min_params], al
+    mov     rax, [rsp + 72]
+    mov     [r15 + MACRO_max_params], al
 
-
-    ; 4. Capture tokens until %endmacro (A100.1: Nesting-Aware Capture)
+    ; 4. Capture tokens until %endmacro
     mov     rdi, [rbx + PREP_arena]
     mov     rax, [rdi + ARENA_ptr]
     mov     [r15 + MACRO_tokens], rax
@@ -1712,6 +1820,7 @@ macro_handle_def:
     jne     .store_token
 
     ; It's a %. Peek next to check for nesting.
+    ; (Allocating another token for peeking)
     mov     rdi, [rbx + PREP_arena]
     mov     rsi, TOKEN_SIZE
     call    arena_alloc
@@ -1769,8 +1878,17 @@ macro_handle_def:
     mov     [r15 + MACRO_ntokens], r14d
 
     ; 5. Register in symbol table
+    ; Use stack for temp symbol
     sub     rsp, SYMBOL_SIZE
     mov     rdi, rsp
+    
+    ; zero out
+    mov     rcx, 6
+    xor     rax, rax
+    mov     r10, rdi
+    rep stosq
+    mov     rdi, r10
+
     mov     byte [rdi + SYMBOL_tag], TAG_SYMBOL
     mov     byte [rdi + SYMBOL_kind], SYM_MACRO
     mov     rax, [r15 + MACRO_name]
@@ -1780,33 +1898,40 @@ macro_handle_def:
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, rsp
     call    symbol_add
-    add     rsp, SYMBOL_SIZE
+    test    rax, rax
+    jnz     .error_add_sym
     
+    add     rsp, SYMBOL_SIZE
     xor     rax, rax
     jmp     .done
 
+.error_add_sym:
+    add     rsp, SYMBOL_SIZE
 .error:
-    add     rsp, TOKEN_SIZE * 2
-    pop     r14
-    pop     r13
-    pop     r12
-    pop     rbx
-    ret
+    mov     rax, EXIT_ERROR
+    jmp     .done
+
+.error_macro_def:
+    mov     rax, EXIT_MACRO_DEF
+    jmp     .done
 
 .error_expected_ident:
     mov     rax, EXIT_ERROR
-    jmp     .error
+    jmp     .done
 
 .error_eof:
     mov     rax, EXIT_ERROR
-    jmp     .error
+    jmp     .done
 
 .done:
+    add     rsp, 96                ; token buffers
+    pop     rcx                    ; Alignment
     pop     r15
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
+    epilogue
     ret
 
 ;*
@@ -1814,68 +1939,81 @@ macro_handle_def:
 ; * Input: RDI = PrepState
 ; ;
 prep_handle_rep:
+    prologue
     push    rbx
     push    r12
     push    r13
     push    r14
     push    r15
-    mov     rbx, rdi
+    push    rax                    ; Alignment padding
+    sub     rsp, 16                ; [rbp - 56]: total token count, [rbp - 64]: temp slot
+    
+    mov     rbx, rdi               ; rbx = PREP state
 
     ; 1. Get repeat count
     mov     rdi, [rbx + PREP_lexer]
     sub     rsp, TOKEN_SIZE
     mov     rsi, rsp
     call    lexer_next
-    IF byte [rsp + TOKEN_kind], ne, TOK_NUMBER
-        mov     rax, EXIT_ERROR
-        jmp     .error
-        ENDIF
+    test    rax, rax
+    jnz     .error
+    
+    cmp     byte [rsp + TOKEN_kind], TOK_NUMBER
+    jne     .error
+    
     mov     rdi, [rsp + TOKEN_value]
+    mov     rsi, [rsp + TOKEN_len]
     call    str_to_int
     mov     r14, rax               ; r14 = count
-    add     rsp, TOKEN_SIZE
-
-    IF r14, g, MAX_REP_COUNT
-        mov     rax, EXIT_ERROR
-        jmp     .error
-        ENDIF
+    add     rsp, TOKEN_SIZE        ; Clean up temp token
 
     ; 2. Allocate anonymous MACRO struct
     mov     rdi, [rbx + PREP_arena]
     mov     rsi, MACRO_SIZE
     call    arena_alloc
-    check_err
-    mov     r15, rdx
+    test    rax, rax
+    jnz     .error
+    mov     r15, rdx               ; r15 = Macro struct
     mov     byte [r15 + MACRO_tag], TAG_MACRO
     mov     qword [r15 + MACRO_name], 0
     mov     byte [r15 + MACRO_min_params], 0
-    mov     byte [r15 + MACRO_max_params], 0
+    
+    ; 3. Capture tokens until %endrep
+    mov     qword [rbp - 56], 0    ; Total token count = 0
+    xor     r13, r13               ; Nesting depth = 0
 
-    ; 3. Capture tokens until %endrep (A100.1: Nesting-Aware Capture)
+    ; Record where the body starts
     mov     rdi, [rbx + PREP_arena]
-    mov     rax, [rdi + ARENA_ptr]
-    mov     [r15 + MACRO_tokens], rax
-    push    0                      ; [rsp] = token count (preserve r14)
-    mov     r13, 1                 ; r13 = nesting depth
+    mov     rsi, 0                 ; zero-size alloc to get current pointer
+    call    arena_alloc
+    mov     [r15 + MACRO_tokens], rdx
 
 .capture:
+    ; Check for EOF
+    mov     rdi, [rbx + PREP_lexer]
+    sub     rsp, 16                ; Alignment for peek
+    mov     rsi, rsp
+    call    lexer_peek
+    mov     al, [rsp + TOKEN_kind]
+    add     rsp, 16
+    cmp     al, TOK_EOF
+    je      .error_eof
+
+    ; Allocate slot for token
     mov     rdi, [rbx + PREP_arena]
     mov     rsi, TOKEN_SIZE
     call    arena_alloc
     test    rax, rax
-    jnz     .error_pop
+    jnz     .error
     mov     r12, rdx               ; r12 = current token slot
     
     mov     rdi, [rbx + PREP_lexer]
     mov     rsi, r12
     call    lexer_next
     test    rax, rax
-    jnz     .error_pop
+    jnz     .error
 
-    cmp     byte [r12 + TOKEN_kind], TOK_EOF
-    je      .error_eof_pop
-
-    ; Check for % directive
+    ; Is it a %?
     cmp     byte [r12 + TOKEN_kind], TOK_PERCENT
     jne     .store_token
 
@@ -1884,88 +2022,81 @@ prep_handle_rep:
     mov     rsi, TOKEN_SIZE
     call    arena_alloc
     test    rax, rax
-    jnz     .error_pop
-    mov     r8, rdx                ; r8 = next token slot
+    jnz     .error
+    mov     [rbp - 64], rdx        ; Safe offset
 
     mov     rdi, [rbx + PREP_lexer]
-    mov     rsi, r8
+    mov     rsi, [rbp - 64]
     call    lexer_next
     test    rax, rax
-    jnz     .error_pop
+    jnz     .error
+
+    mov     rdx, [rbp - 64]        ; rdx = peeked token
 
     ; Check for "rep" or "endrep"
-    cmp     byte [r8 + TOKEN_kind], TOK_IDENT
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
     jne     .store_percent_and_next
 
-    mov     rdi, [r8 + TOKEN_value]
+    mov     rdi, [rdx + TOKEN_value]
     lea     rsi, [dir_rep]
     call    str_cmp
     test    rax, rax
     jz      .nest_in
 
-    mov     rdi, [r8 + TOKEN_value]
+    mov     rdi, [rdx + TOKEN_value]
     lea     rsi, [dir_endrep]
     call    str_cmp
     test    rax, rax
     jz      .nest_out
 
 .store_percent_and_next:
-    add     qword [rsp], 2         ; counted % and next token
+    add     qword [rbp - 56], 2     ; counted % and next token
     jmp     .capture
 
 .nest_in:
-    inc     r13                    ; found nested %rep
-    add     qword [rsp], 2
+    inc     r13                    ; nesting++
+    add     qword [rbp - 56], 2
     jmp     .capture
 
 .nest_out:
-    dec     r13
     test    r13, r13
-    jz      .captured              ; Outermost %endrep found!
+    jz      .captured              ; outermost %endrep found!
     
-    add     qword [rsp], 2
+    dec     r13                    ; nesting--
+    add     qword [rbp - 56], 2
     jmp     .capture
 
 .store_token:
-    inc     qword [rsp]
+    inc     qword [rbp - 56]
     jmp     .capture
 
 .captured:
-    pop     rax                    ; rax = total token count
+    mov     rax, [rbp - 56]
     mov     [r15 + MACRO_ntokens], eax
     
     ; 4. Start expansion
     mov     rdi, rbx
     mov     rsi, r15
     call    prep_expand_start
-    check_err
-    mov     [rdx + MACROEXP_rep_count], r14 ; set the actual count (preserved!)
+    test    rax, rax
+    jnz     .error
+    mov     [rdx + MACROEXP_rep_count], r14 ; set repetition count
     
-    xor     rax, rax
+    xor     rax, rax               ; success
     jmp     .done
 
-.error_pop:
-    add     rsp, 8
-    jmp     .error
-
-.error_eof_pop:
-    add     rsp, 8
 .error_eof:
-    mov     rax, EXIT_ERROR
-    jmp     .error
-
 .error:
-    ; rbx, r12, etc will be popped in .done
+    mov     rax, 1                 ; error
     jmp     .done
-
-.error_expected_ident:
-    mov     rax, EXIT_ERROR
-    jmp     .error
 
 .done:
+    add     rsp, 16                ; Clean up reserved space
+    pop     rax
     pop     r15
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
+    epilogue
     ret

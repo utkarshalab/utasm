@@ -135,8 +135,10 @@ lexer_next:
     push    r14
     push    r15
 
-
     mov     rbx, rdi               ; save LexerState
+    test    rbx, rbx
+    jz      .bad_lexer
+
     mov     r12, rsi               ; save Token output pointer
 
     ; validate tag
@@ -1561,6 +1563,3 @@ lexer_char_props:
     %assign i i+1
     %endrep
 
-[SECTION .data]
-msg_lexer_init_start: db "DEBUG: Lexer init start", 10, 0
-msg_dot: db ".", 0
