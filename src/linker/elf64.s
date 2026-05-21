@@ -1283,7 +1283,10 @@ elf64_write_rela:
 ;
 ; Writes the section header table (8 entries for a minimal object).
 ; Sections: [0] NULL, [1] .text, [2] .data, [3] .bss,
-;            [4] .symtab, [5] .strtab, [6] .shstrtab, [7] elf64_write_shdrs:
+;            [4] .symtab, [5] .strtab, [6] .shstrtab, [7] .rela.text
+;
+global elf64_write_shdrs
+elf64_write_shdrs:
     prologue
     push    rbx
     push    r12
