@@ -244,6 +244,7 @@ prep_internal_next:
     jmp     .next                  ; get first token of expansion
 
 .not_macro_call:
+    xor     rax, rax
     ; handle EOF
     cmp     byte [r12 + TOKEN_kind], TOK_EOF
     je      .handle_eof
@@ -1338,12 +1339,31 @@ prep_handle_def:
     mov     r14, rdi               ; save symbol ptr
     ; handle value
     cmp     byte [r12 + TOKEN_kind], TOK_NUMBER
-    jne     .finish_def            ; for now, ignore non-numeric %def
+    jne     .discard_rest          ; for now, ignore non-numeric %def
 
     mov     rdi, [r12 + TOKEN_value]
     call    str_to_int             ; from string.s
     mov     rdi, r14
     mov     [rdi + SYMBOL_value], rdx
+
+.discard_rest:
+    cmp     byte [r12 + TOKEN_kind], TOK_NEWLINE
+    je      .finish_def
+    cmp     byte [r12 + TOKEN_kind], TOK_EOF
+    je      .finish_def
+
+.discard_loop:
+    mov     rdi, [rbx + PREP_lexer]
+    mov     rsi, r12               ; reuse value token slot
+    call    lexer_next
+    test    rax, rax
+    jnz     .error
+    
+    cmp     byte [r12 + TOKEN_kind], TOK_NEWLINE
+    je      .finish_def
+    cmp     byte [r12 + TOKEN_kind], TOK_EOF
+    je      .finish_def
+    jmp     .discard_loop
 
 .finish_def:
     mov     rdi, [rbx + PREP_ctx]  ; rdi = AsmCtx

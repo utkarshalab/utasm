@@ -49,12 +49,14 @@ extern parser_concat_local_name
 ; ;
 global parser_parse_instruction
 parser_parse_instruction:
+    push    rbp
+    mov     rbp, rsp
     push    rbx
     push    r12
     push    r13
     push    r14
     push    r15
-    prologue
+    and     rsp, -16
     mov     rbx, rdi               ; RBX = PrepState
 
     mov     rdi, [rbx + PREP_arena]
@@ -72,14 +74,14 @@ parser_parse_instruction:
     
     ; Reserve space for tables on stack
     sub     rsp, 16
-    mov     [rbp - 8], r10
-    mov     [rbp - 16], r11
+    mov     [rsp], r10
+    mov     [rsp + 8], r11
     
     ; 2. Get mnemonic token
 .get_mnemonic:
     ; Reload tables from stack
-    mov     r10, [rbp - 8]
-    mov     r11, [rbp - 16]
+    mov     r10, [rsp]
+    mov     r11, [rsp + 8]
 
     mov     rdi, rbx
     call    preprocessor_next_token
@@ -106,9 +108,6 @@ parser_parse_instruction:
         jmp     .get_mnemonic
         ENDIF
 
-    .error_no_global:
-        mov     rax, EXIT_UNDEF_SYMBOL
-        jmp     .error
 
 
     IF al, e, TOK_LOCAL_LABEL
@@ -129,6 +128,39 @@ parser_parse_instruction:
     IF al, ne, TOK_IDENT
         mov     rax, EXIT_UNEXPECTED_TOKEN
         jmp     .error
+        ENDIF
+
+    ; Peek at the next token to see if it is "equ"
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    check_err
+    ; RDX = peeked TOKEN*
+    IF byte [rdx + TOKEN_kind], e, TOK_IDENT
+        mov     rsi, [rdx + TOKEN_value]
+        lea     rdi, [rel str_equ]
+        extern  str_cmp
+        call    str_cmp
+        IF rax, e, OK
+            ; Yes! The next token is "equ".
+            ; 1. Define the current identifier (in r12) as a label/symbol.
+            mov     rsi, [r12 + TOKEN_value]
+            mov     rdi, [rbx + PREP_ctx]
+            call    parser_define_label
+            check_err
+            
+            ; 2. Consume the "equ" token
+            mov     rdi, rbx
+            call    preprocessor_next_token
+            check_err
+            
+            ; 3. Handle the equ (evaluates expression and overrides symbol)
+            mov     rdi, rbx
+            call    parser_handle_equ
+            check_err
+            
+            ; 4. Done with this instruction line!
+            jmp     .get_mnemonic
+            ENDIF
         ENDIF
     
     ; 3. Sync DWARF line info
@@ -166,8 +198,8 @@ parser_parse_instruction:
     hash_fnv1a_64 rsi, r13
     
     ; Reload tables as hash macro clobbers r11 (and potentially others)
-    mov     r10, [rbp - 8]
-    mov     r11, [rbp - 16]
+    mov     r10, [rsp]
+    mov     r11, [rsp + 8]
 
     mov     rdi, r13
     mov     rsi, r11                ; Current Arch Mnemonic Table
@@ -186,9 +218,9 @@ parser_parse_instruction:
     call    parser_handle_pseudo_op
     test    rax, rax
     jz      .unknown_mnemonic
-    
-    ; Pseudo-op handled internally, move to next instruction
-    jmp     .get_mnemonic
+    cmp     rax, 1
+    je      .get_mnemonic
+    jmp     .error
 
     ; 4. Operand Parsing Loop
 .operand_loop:
@@ -230,6 +262,10 @@ parser_parse_instruction:
     xor     rdx, rdx                ; RDX=0 signals EOF to main loop
     jmp     .done
 
+.error_no_global:
+    mov     rax, EXIT_UNDEF_SYMBOL
+    jmp     .error
+
 .unknown_mnemonic:
     mov     rax, EXIT_UNKNOWN_INSTR
     jmp     .done
@@ -238,11 +274,11 @@ parser_parse_instruction:
     ; RAX already has error code
     
 .done:
-    pop     r15
-    pop     r14
-    pop     r13
-    pop     r12
-    pop     rbx
+    mov     r15, [rbp - 40]
+    mov     r14, [rbp - 32]
+    mov     r13, [rbp - 24]
+    mov     r12, [rbp - 16]
+    mov     rbx, [rbp - 8]
     epilogue
 
 ;*
@@ -1316,23 +1352,19 @@ parser_handle_pseudo_op:
     IF ax, e, 'db'
         mov     rdi, rbx
         call    parser_emit_data_8
-        mov     rax, OK
-        jmp     .done
+        jmp     .check_handler_result
     ELSEIF ax, e, 'dw'
         mov     rdi, rbx
         call    parser_emit_data_16
-        mov     rax, OK
-        jmp     .done
+        jmp     .check_handler_result
     ELSEIF ax, e, 'dd'
         mov     rdi, rbx
         call    parser_emit_data_32
-        mov     rax, OK
-        jmp     .done
+        jmp     .check_handler_result
     ELSEIF ax, e, 'dq'
         mov     rdi, rbx
         call    parser_emit_data_64
-        mov     rax, OK
-        jmp     .done
+        jmp     .check_handler_result
         ENDIF
 
     ; 2. Section Directive
@@ -1343,8 +1375,7 @@ parser_handle_pseudo_op:
     IF rax, e, 0
         mov     rdi, rbx
         call    parser_handle_section_directive
-        mov     rax, OK
-        jmp     .done
+        jmp     .check_handler_result
         ENDIF
 
     ; 2.5 Comm Directive
@@ -1354,8 +1385,7 @@ parser_handle_pseudo_op:
     IF rax, e, 0
         mov     rdi, rbx
         call    parser_handle_comm
-        mov     rax, OK
-        jmp     .done
+        jmp     .check_handler_result
         ENDIF
 
     ; 3. Align Directives
@@ -1366,8 +1396,7 @@ parser_handle_pseudo_op:
         mov     rdi, rbx
         xor     rsi, rsi           ; type = 0 (byte)
         call    parser_handle_align
-        mov     rax, OK
-        jmp     .done
+        jmp     .check_handler_result
         ENDIF
 
     mov     rdi, r12
@@ -1377,8 +1406,7 @@ parser_handle_pseudo_op:
         mov     rdi, rbx
         mov     rsi, 1             ; type = 1 (p2)
         call    parser_handle_align
-        mov     rax, OK
-        jmp     .done
+        jmp     .check_handler_result
         ENDIF
 
     ; 4. Visibility Directives (global, weak, local)
@@ -1389,8 +1417,7 @@ parser_handle_pseudo_op:
         mov     rdi, rbx
         mov     rsi, VIS_GLOBAL
         call    parser_handle_visibility
-        mov     rax, OK
-        jmp     .done
+        jmp     .check_handler_result
         ENDIF
 
     mov     rdi, r12
@@ -1400,8 +1427,7 @@ parser_handle_pseudo_op:
         mov     rdi, rbx
         mov     rsi, VIS_WEAK
         call    parser_handle_visibility
-        mov     rax, OK
-        jmp     .done
+        jmp     .check_handler_result
         ENDIF
 
     mov     rdi, r12
@@ -1411,8 +1437,7 @@ parser_handle_pseudo_op:
         mov     rdi, rbx
         mov     rsi, VIS_LOCAL
         call    parser_handle_visibility
-        mov     rax, OK
-        jmp     .done
+        jmp     .check_handler_result
         ENDIF
 
     mov     rdi, r12
@@ -1421,8 +1446,7 @@ parser_handle_pseudo_op:
     IF rax, e, 0
         mov     rdi, rbx
         call    parser_handle_org
-        mov     rax, OK
-        jmp     .done
+        jmp     .check_handler_result
         ENDIF
     
     mov     rdi, r12
@@ -1431,8 +1455,7 @@ parser_handle_pseudo_op:
     IF rax, e, 0
         mov     rdi, rbx
         call    parser_handle_extern
-        mov     rax, OK
-        jmp     .done
+        jmp     .check_handler_result
         ENDIF
 
     mov     rdi, r12
@@ -1441,8 +1464,7 @@ parser_handle_pseudo_op:
     IF rax, e, 0
         mov     rdi, rbx
         call    parser_handle_default
-        mov     rax, OK
-        jmp     .done
+        jmp     .check_handler_result
         ENDIF
 
     mov     rdi, r12
@@ -1451,8 +1473,7 @@ parser_handle_pseudo_op:
     IF rax, e, 0
         mov     rdi, rbx
         call    parser_handle_equ
-        mov     rax, OK
-        jmp     .done
+        jmp     .check_handler_result
         ENDIF
 
     mov     rdi, r12
@@ -1461,11 +1482,16 @@ parser_handle_pseudo_op:
     IF rax, e, 0
         mov     rdi, rbx
         call    parser_handle_default   ; reuse same skip logic
-        mov     rax, OK
-        jmp     .done
+        jmp     .check_handler_result
         ENDIF
 
     xor     rax, rax               ; Not a pseudo-op
+    jmp     .done
+
+.check_handler_result:
+    test    rax, rax
+    jnz     .done
+    mov     rax, 1
 
 .done:
     pop     r13

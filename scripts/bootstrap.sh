@@ -26,7 +26,7 @@ for src_file in $src_files; do
     # Preserve directory structure in build/gen0
     obj_file="build/gen0/${src_file%.s}.o"
     mkdir -p "$(dirname "$obj_file")"
-    nasm -I./ -f elf64 "$src_file" -o "$obj_file"
+    nasm -g -F dwarf -I./ -f elf64 "$src_file" -o "$obj_file"
     obj_files="$obj_files $obj_file"
 done
 

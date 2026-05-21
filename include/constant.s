@@ -611,8 +611,6 @@
 %define R_AARCH64_LDST8_ABS_LO12_NC  278
 
 %define R_RISCV_64             2
-%define R_RISCV_HI20           26
-%define R_RISCV_LO12_I         27
 %define R_RISCV_CALL           18
 %define R_RISCV_RELAX          51
 
