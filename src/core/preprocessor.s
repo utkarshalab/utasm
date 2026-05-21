@@ -168,9 +168,8 @@ preprocessor_peek_token:
     
     ; Success - token in r12
     mov     byte [rbx + PREP_has_peek], TRUE
-    ; copy r12 to peek slot
-    mov     rdi, r12
-    lea     rsi, [rbx + PREP_peek]
+    lea     rdi, [rbx + PREP_peek]
+    mov     rsi, r12
     mov     rcx, TOKEN_SIZE
     rep movsb
     
@@ -463,11 +462,11 @@ prep_expand_start:
     ; Check for too many arguments (is there a comma next?)
     mov     rdi, [rbx + PREP_lexer]
     extern  lexer_peek
-    sub     rsp, 16                ; 16-byte alignment (TOKEN_SIZE is handled separately)
+    sub     rsp, TOKEN_SIZE
     mov     rsi, rsp
     call    lexer_peek
     mov     al, [rsp + TOKEN_kind]
-    add     rsp, 16
+    add     rsp, TOKEN_SIZE
     cmp     al, TOK_COMMA
     je      .error_too_many_args
     jmp     .done_params
@@ -1991,11 +1990,11 @@ prep_handle_rep:
 .capture:
     ; Check for EOF
     mov     rdi, [rbx + PREP_lexer]
-    sub     rsp, 16                ; Alignment for peek
+    sub     rsp, TOKEN_SIZE
     mov     rsi, rsp
     call    lexer_peek
     mov     al, [rsp + TOKEN_kind]
-    add     rsp, 16
+    add     rsp, TOKEN_SIZE
     cmp     al, TOK_EOF
     je      .error_eof
 

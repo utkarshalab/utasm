@@ -45,6 +45,7 @@ obj_files_gen1=""
 for src_file in $src_files; do
     obj_file="build/gen1/${src_file%.s}.o"
     mkdir -p "$(dirname "$obj_file")"
+    echo "Compiling $src_file..."
     # Use the Gen0 binary to compile the source
     ./build/gen0/utasm -f elf64 "$src_file" -o "$obj_file"
     obj_files_gen1="$obj_files_gen1 $obj_file"
