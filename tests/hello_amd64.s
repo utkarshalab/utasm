@@ -15,5 +15,5 @@ _start:
     syscall
 
 [SECTION .data]
-msg: db "UtkarshaLab Sovereign AMD64 Ascent Successful.", 10
+msg: db "UtkarshaLab AMD64 Ascent Successful.", 10
 msg_len: equ $ - msg

@@ -15,5 +15,5 @@ _start:
     ecall
 
 [SECTION .data]
-msg: db "UtkarshaLab Sovereign RISC-V Ascent Successful.", 10
+msg: db "UtkarshaLab RISC-V Ascent Successful.", 10
 msg_len: equ $ - msg

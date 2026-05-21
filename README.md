@@ -102,7 +102,7 @@ utasm/
 │
 ├── scripts/
 │   ├── bootstrap.sh      # Gen0 (NASM) → Gen1 (utasm) bootstrap pipeline
-│   └── test.sh           # Sovereign test harness orchestrator
+│   └── test.sh           # Test harness orchestrator
 │
 ├── utasm.toml            # Project manifest (sources, build targets, test runner)
 ├── utasm.ld              # Linker script for self-hosted builds
@@ -186,7 +186,7 @@ utasm -f elf64 src/main.s -o build/main.o
 
 ## Running Tests
 
-The sovereign test harness requires the Gen1 binary to be built first:
+The test harness requires the Gen1 binary to be built first:
 
 ```sh
 bash scripts/bootstrap.sh
@@ -196,12 +196,12 @@ bash scripts/test.sh
 Expected output:
 
 ```
-[+] Initiating UtkarshaLab Sovereign Test Harness...
+[+] Initiating UtkarshaLab Test Harness...
     [*] Assembling amd64_suite... OK
     [*] Assembling aarch64_suite... OK
     [*] Assembling riscv64_suite... OK
 ============================================================
-    SOVEREIGN TEST RESULTS: 3 Passed | 0 Failed
+    TEST RESULTS: 3 Passed | 0 Failed
 ============================================================
 [+] VALIDATION SUCCESSFUL: Absolute architectural parity achieved.
 ```

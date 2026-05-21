@@ -192,8 +192,7 @@ asm_ctx_create_section:
     
     mov     rax, EXIT_OK
     mov     rdx, r14
-.done:
-    pop     r14
+    jmp     .done
 
 .error:
     ; A97: Unmap the buffer to prevent memory leak on overflow
@@ -203,6 +202,7 @@ asm_ctx_create_section:
     call    io_munmap
     mov     rax, EXIT_SECTION_OVERLAP
     
+.done:
     pop     r14
     pop     r13
     pop     r12

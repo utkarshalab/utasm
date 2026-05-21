@@ -2,7 +2,7 @@
 # ============================================================================
 # File        : scripts/test.sh
 # Project     : utasm
-# Description : Sovereign Test Harness for instruction suite validation.
+# Description : Test Harness for instruction suite validation.
 #               Executes the utasm compiler against all payloads in tests/.
 # ============================================================================
 
@@ -14,7 +14,7 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 BOLD='\033[1m'
 
-echo -e "${BOLD}[+] Initiating UtkarshaLab Sovereign Test Harness...${NC}"
+echo -e "${BOLD}[+] Initiating UtkarshaLab Test Harness...${NC}"
 
 UTASM_BIN="build/gen1/utasm"
 
@@ -127,7 +127,7 @@ for test_file in $test_files; do
 done
 
 echo "============================================================================"
-echo -e "    ${BOLD}SOVEREIGN TEST RESULTS: ${GREEN}$PASSED Passed${NC} | ${RED}$FAILED Failed${NC} | ${BOLD}Total: $TOTAL${NC}"
+echo -e "    ${BOLD}TEST RESULTS: ${GREEN}$PASSED Passed${NC} | ${RED}$FAILED Failed${NC} | ${BOLD}Total: $TOTAL${NC}"
 echo "============================================================================"
 
 if [ $FAILED -ne 0 ]; then

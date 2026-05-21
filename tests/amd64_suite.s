@@ -1,5 +1,5 @@
 // ============================================================================
-// UtkarshaLab Sovereign Test Suite
+// UtkarshaLab Test Suite
 // Architecture: AMD64 (x86_64)
 // Description: Comprehensive coverage for the utasm AMD64 encoder.
 // ============================================================================

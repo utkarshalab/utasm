@@ -1,5 +1,5 @@
 // ============================================================================
-// UtkarshaLab Sovereign Test Suite
+// UtkarshaLab Test Suite
 // Architecture: AArch64 (ARM64)
 // Description: Comprehensive coverage for the utasm AArch64 encoder.
 // ============================================================================

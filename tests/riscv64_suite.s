@@ -1,5 +1,5 @@
 // ============================================================================
-// UtkarshaLab Sovereign Test Suite
+// UtkarshaLab Test Suite
 // Architecture: RISC-V 64 (RV64GC)
 // Description: Comprehensive coverage for the utasm RISC-V encoder.
 // ============================================================================

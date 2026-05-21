@@ -8,7 +8,7 @@
 
 set -e
 
-echo "[+] Initiating UtkarshaLab Sovereign Bootstrap Sequence..."
+echo "[+] Initiating UtkarshaLab Bootstrap Sequence..."
 
 mkdir -p build/gen0
 mkdir -p build/gen1
@@ -57,9 +57,9 @@ echo "[+] Gen1 Compilation Successful."
 ls -l build/gen1/utasm
 
 # ----------------------------------------------------------------------------
-# PHASE 3: BINARY SOVEREIGNTY VERIFICATION (GEN0 vs GEN1)
+# PHASE 3: BINARY PARITY VERIFICATION (GEN0 vs GEN1)
 # ----------------------------------------------------------------------------
-echo "[+] PHASE 3: Verifying Binary Sovereignty (Gen0 vs Gen1)..."
+echo "[+] PHASE 3: Verifying Binary Parity (Gen0 vs Gen1)..."
 
 if cmp -s build/gen0/utasm build/gen1/utasm; then
     echo "[!] Gen0 and Gen1 are identical."
@@ -95,7 +95,7 @@ echo "[+] PHASE 5: Verifying strict parity between Gen1 and Gen2..."
 
 if cmp -s build/gen1/utasm build/gen2/utasm; then
     echo "[!] MILLENNIAL INVERSION COMPLETE: Gen1 and Gen2 are 100% byte-for-byte identical!"
-    echo "[!] Absolute Binary Sovereignty and Self-Hosting Achieved."
+    echo "[!] Absolute Binary Parity and Self-Hosting Achieved."
 else
     echo "[-] ERROR: Gen1 and Gen2 binaries differ! Self-hosting failed."
     exit 1

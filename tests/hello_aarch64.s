@@ -15,5 +15,5 @@ _start:
     svc     0
 
 [SECTION .data]
-msg: db "UtkarshaLab Sovereign AArch64 Ascent Successful.", 10
+msg: db "UtkarshaLab AArch64 Ascent Successful.", 10
 msg_len: equ $ - msg
