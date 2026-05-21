@@ -3592,53 +3592,58 @@ amd64_encode_rm_r:
 ; ;
 amd64_emit_reloc:
     prologue
-    push    rax
-    push    rsi
-    push    rdx
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+
+    movzx   r12d, al           ; r12 = type
+    mov     r13, rsi           ; r13 = symbol
+    mov     r14d, edx          ; r14 = pc_adjust
+
+    ; 1. Check capacity
+    mov     eax, [rbx + ASMCTX_nrelocs]
+    cmp     eax, MAX_RELOC
+    jge     .error
+
+    ; 2. Get slot pointer: relocs + nrelocs * RELOC_SIZE
+    mov     rcx, rax
+    imul    rcx, RELOC_SIZE
+    mov     rdx, [rbx + ASMCTX_relocs]
+    add     rdx, rcx           ; rdx = RELOC*
+
+    ; 3. Get current active section
+    mov     r15, [rbx + ASMCTX_curr_sec]
+    test    r15, r15
+    jz      .error
+
+    ; 4. Populate slot fields
+    mov     qword [rdx], 0     ; zero tag/type/pad0 first
+    mov     byte [rdx + RELOC_tag], TAG_RELOC
+    mov     [rdx + RELOC_type], r12d
     
-    ; Allocate RELOC struct
-    mov     rdi, [rbx + ASMCTX_arena]
-    mov     rsi, RELOC_SIZE
-    call    arena_alloc
-    check_err
-    jmp     .ok
-.error:
-    pop     rdx
-    pop     rsi
-    pop     rax
-    epilogue
-.ok:
-    mov     r13, rdx
-    
-    pop     rdx                    ; rdx = pc_adjust
-    pop     rsi                    ; rsi = symbol
-    pop     rax                    ; al = type
-    
-    mov     byte [r13 + RELOC_tag], TAG_RELOC
-    mov     byte [r13 + RELOC_type], al
-    mov     dword [r13 + RELOC_pc_adjust], edx
-    mov     [r13 + RELOC_sym], rsi
-    
-    ; Get current offset in buffer
-    ; Assuming current section is always [rbx + ASMCTX_sections] for now
-    mov     r14, [rbx + ASMCTX_sections]
-    mov     rdx, [r14 + SECTION_size]
-    mov     [r13 + RELOC_offset], edx
-    
-    ; Link to AsmCtx reloc list (simple linked list or array?)
-    ; For now, let's assume it's an array and we just increment count
-    ; In a real implementation, we'd need more complex list management
-    mov     rax, [rbx + ASMCTX_relocs]
-    mov     ecx, [rbx + ASMCTX_nrelocs]
-    mov     r15, rcx
-    shl     r15, 5             ; RELOC_SIZE is 32? (1+1+2+4+8+8 = 24?)
-    ; Need to check RELOC_SIZE
-    
-    ; To keep it simple for now, we just print a debug message or similar
-    ; Actually, let's just store it in the relocs array
-    mov     [rax + r15], r13   ; This is wrong if it's an array of structs
-    
+    mov     rax, [r15 + SECTION_size]
+    mov     [rdx + RELOC_offset], rax
+    mov     qword [rdx + RELOC_addend], 0
+    mov     [rdx + RELOC_sym], r13
+    mov     [rdx + RELOC_section], r15
+    mov     [rdx + RELOC_pc_adjust], r14d
+    mov     dword [rdx + RELOC_pad1], 0
+
+    ; 5. Increment relocation count
     inc     dword [rbx + ASMCTX_nrelocs]
+    xor     rax, rax
+    jmp     .done
+
+.error:
+    mov     rax, EXIT_RELOC_ERROR
+.done:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
     epilogue
 
 ;*

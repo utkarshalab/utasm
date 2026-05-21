@@ -40,9 +40,11 @@ utasm/
 │   │   ├── amd64.s       # x86-64 register encodings and opcode maps
 │   │   ├── aarch64.s     # AArch64 register encodings and opcode maps
 │   │   └── riscv64.s     # RISC-V 64 register encodings and opcode maps
+│   ├── archive.s         # Static archive (.a) reader definitions
 │   ├── constant.s        # Global constants (exit codes, flags, limits)
 │   ├── elf.s             # Full ELF64 struct offsets and constants
 │   ├── macro.s           # Prologue/epilogue and utility macros
+│   ├── macro1.s          # Extended preprocessor macros
 │   ├── register.s        # Register aliases across all three architectures
 │   ├── syscall.s         # Linux syscall numbers (AMD64, AArch64, RISC-V)
 │   ├── type.s            # Internal type tags and struct field offsets
@@ -52,6 +54,7 @@ utasm/
 │   ├── main.s            # Entry point, CLI dispatch, version string
 │   ├── cli.s             # Command-line argument parser
 │   ├── core/
+│   │   ├── archive.s     # Static archive (.a) format reader
 │   │   ├── lexer.s       # Token scanner
 │   │   ├── parser.s      # Recursive descent expression parser
 │   │   ├── preprocessor.s# Macro engine (%define, %macro, %if, %rep)
@@ -86,6 +89,10 @@ utasm/
 │       └── uring.s       # io_uring ring initialization and async submission
 │
 ├── tests/
+│   ├── amd64/            # Sub-test specifications for x86-64 validation
+│   ├── aarch64/          # Sub-test specifications for AArch64 validation
+│   ├── riscv64/          # Sub-test specifications for RISC-V validation
+│   ├── common/           # Common test structures and helper suites
 │   ├── hello_amd64.s     # Standalone AMD64 smoke test (raw syscall)
 │   ├── hello_aarch64.s   # Standalone AArch64 smoke test
 │   ├── hello_riscv64.s   # Standalone RISC-V 64 smoke test
@@ -111,19 +118,35 @@ utasm/
 
 **Stage 1 — Build Gen0 compiler using NASM:**
 
+To build manually by assembling all source files and linking them together:
+
 ```sh
-nasm -f elf64 src/main.s -o build/gen0/utasm.o
-ld -o build/gen0/utasm build/gen0/utasm.o
+# Assemble all source files under src/ into build/gen0
+for src_file in $(find src -name "*.s"); do
+    obj_file="build/gen0/${src_file%.s}.o"
+    mkdir -p "$(dirname "$obj_file")"
+    nasm -I./ -f elf64 "$src_file" -o "$obj_file"
+done
+
+# Link all object files into the Gen0 binary
+ld -o build/gen0/utasm $(find build/gen0 -name "*.o")
 ```
 
 **Stage 2 — Self-host: compile Gen1 using Gen0:**
 
 ```sh
-./build/gen0/utasm -f elf64 src/main.s -o build/gen1/utasm.o
-ld -o build/gen1/utasm build/gen1/utasm.o
+# Compile all source files using the newly built Gen0 binary
+for src_file in $(find src -name "*.s"); do
+    obj_file="build/gen1/${src_file%.s}.o"
+    mkdir -p "$(dirname "$obj_file")"
+    ./build/gen0/utasm -f elf64 "$src_file" -o "$obj_file"
+done
+
+# Link all Gen1 object files
+ld -o build/gen1/utasm $(find build/gen1 -name "*.o")
 ```
 
-Or run the full pipeline in one command:
+Or run the full bootstrap pipeline (which compiles Stage 1, Stage 2, Stage 3 self-hosting, and executes strict parity checks) in one command:
 
 ```sh
 bash scripts/bootstrap.sh

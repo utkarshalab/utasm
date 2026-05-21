@@ -183,6 +183,9 @@ asm_ctx_create_section:
         jmp     .error
     ENDIF
     
+    lea     eax, [ecx + 1]
+    mov     [r14 + SECTION_index], eax
+    
     mov     rax, [rbx + ASMCTX_sections]
     mov     [rax + rcx*8], r14
     inc     word [rbx + ASMCTX_seccount]

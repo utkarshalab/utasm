@@ -57,17 +57,48 @@ echo "[+] Gen1 Compilation Successful."
 ls -l build/gen1/utasm
 
 # ----------------------------------------------------------------------------
-# PHASE 3: BINARY SOVEREIGNTY VERIFICATION
+# PHASE 3: BINARY SOVEREIGNTY VERIFICATION (GEN0 vs GEN1)
 # ----------------------------------------------------------------------------
-echo "[+] PHASE 3: Verifying Binary Sovereignty..."
+echo "[+] PHASE 3: Verifying Binary Sovereignty (Gen0 vs Gen1)..."
 
 if cmp -s build/gen0/utasm build/gen1/utasm; then
-    echo "[!] MILLENNIAL INVERSION COMPLETE: Gen0 and Gen1 are identical."
-    echo "[!] Absolute Binary Sovereignty Achieved."
+    echo "[!] Gen0 and Gen1 are identical."
 else
-    echo "[-] WARNING: Gen0 and Gen1 differ. Bootstrapping instability detected."
-    # We do not fail the script yet, as minor ELF layout differences might exist 
-    # between NASM's output and utasm's output initially.
+    echo "[-] WARNING: Gen0 and Gen1 differ. (This is expected as Gen0 is assembled by NASM)."
+fi
+
+# ----------------------------------------------------------------------------
+# PHASE 4: GEN2 SELF-HOSTING (Gen1 -> Gen2)
+# ----------------------------------------------------------------------------
+echo "[+] PHASE 4: Initiating Stage 2 Self-Hosting Ascent (Gen2)..."
+
+mkdir -p build/gen2
+obj_files_gen2=""
+for src_file in $src_files; do
+    obj_file="build/gen2/${src_file%.s}.o"
+    mkdir -p "$(dirname "$obj_file")"
+    # Use the Gen1 binary to compile the source
+    ./build/gen1/utasm -f elf64 "$src_file" -o "$obj_file"
+    obj_files_gen2="$obj_files_gen2 $obj_file"
+done
+
+# Link the Gen2 object files
+ld -o build/gen2/utasm $obj_files_gen2
+
+echo "[+] Gen2 Compilation Successful."
+ls -l build/gen2/utasm
+
+# ----------------------------------------------------------------------------
+# PHASE 5: GEN1 vs GEN2 STRICT PARITY VERIFICATION
+# ----------------------------------------------------------------------------
+echo "[+] PHASE 5: Verifying strict parity between Gen1 and Gen2..."
+
+if cmp -s build/gen1/utasm build/gen2/utasm; then
+    echo "[!] MILLENNIAL INVERSION COMPLETE: Gen1 and Gen2 are 100% byte-for-byte identical!"
+    echo "[!] Absolute Binary Sovereignty and Self-Hosting Achieved."
+else
+    echo "[-] ERROR: Gen1 and Gen2 binaries differ! Self-hosting failed."
+    exit 1
 fi
 
 echo "[+] Sequence Terminated Successfully."
