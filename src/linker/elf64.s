@@ -1377,7 +1377,6 @@ elf64_write_rela:
     
 .sec_done:
     ; 2.5 Iterate Groups (A57)
-    push    r11                    ; Save dummy
     movzx   eax, word [rbx + ASMCTX_seccount]
     shl     rax, 3
     sub     rsp, rax
@@ -1385,8 +1384,7 @@ elf64_write_rela:
     mov     rdi, r14
     mov     rsi, rax
     call    mem_zero
-    xor     r15, r15               ; n_processed = 0
-    pop     r11                    ; dummy
+    xor     r13, r13               ; n_processed = 0
     
     xor     rcx, rcx               ; i = 0
 .group_loop:
@@ -1404,7 +1402,7 @@ elf64_write_rela:
     ; De-duplicate
     xor     rdx, rdx
 .sig_check_shdr:
-    cmp     rdx, r15
+    cmp     rdx, r13
     jge     .new_group_shdr
     cmp     [r14 + rdx * 8], r8
     je      .next_group_header
@@ -1412,8 +1410,8 @@ elf64_write_rela:
     jmp     .sig_check_shdr
     
 .new_group_shdr:
-    mov     [r14 + r15 * 8], r8
-    inc     r15
+    mov     [r14 + r13 * 8], r8
+    inc     r13
     
     mov     rdi, rsp
     mov     rsi, ELF64_SHDR_SIZE
@@ -1461,13 +1459,12 @@ elf64_write_rela:
 .next_group_header:
     inc     rcx
     jmp     .group_loop
-
+ 
 .groups_done:
     movzx   eax, word [rbx + ASMCTX_seccount]
     shl     rax, 3
     add     rsp, rax               ; Clean up processed_sigs
 
-    mov     r15, [rbp - 40]        ; Reload section_info table from stack frame
 
     ; 3. .symtab
     mov     rdi, rsp
