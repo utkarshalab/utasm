@@ -1,4 +1,4 @@
-b prep_internal_next
+b *0x404ea3
 commands 1
   silent
   finish
@@ -13,7 +13,7 @@ commands 1
   continue
 end
 
-b prep_handle_directive
+b *0x40549a
 commands 2
   silent
   set $pr = $rdi
