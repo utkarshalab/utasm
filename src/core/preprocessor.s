@@ -294,7 +294,9 @@ prep_internal_next:
     extern  io_munmap
     call    io_munmap
     
-    ; 2. Restore previous lexer
+    ; 2. Restore previous lexer (reloading volatile r8 and r9 from callee-saved rbx)
+    mov     r8, [rbx + PREP_ctx]
+    mov     r9, [r8 + ASMCTX_inc_ctx]
     mov     r10, [r9 + INCLUDECTX_lexer]
     mov     [rbx + PREP_lexer], r10
     
