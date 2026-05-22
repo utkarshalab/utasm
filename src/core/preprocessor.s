@@ -65,6 +65,8 @@ prep_init:
     ret
 
 global preprocessor_next_token
+global prep_internal_next
+global prep_handle_directive
 preprocessor_next_token:
     prologue
     push    rbx
