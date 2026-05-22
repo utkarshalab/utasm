@@ -474,6 +474,7 @@ parser_evaluate_additive:
     xor     rax, rax
 
 .done:
+.error:
     pop     r13
     pop     r12
     pop     rbx
@@ -482,11 +483,7 @@ parser_evaluate_additive:
 
 .overflow:
     mov     rax, EXIT_IMM_RANGE
-    pop     r13
-    pop     r12
-    pop     rbx
-    epilogue
-    ret
+    jmp     .error
 
 ;*
 ; * [parser_evaluate_expression]
