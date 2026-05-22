@@ -189,6 +189,8 @@
 %define TOK_DOLLAR             0x24
 %define TOK_EQUAL              0x25
 %define TOK_NEQUAL             0x26
+%define TOK_LT                 0x27
+%define TOK_GT                 0x28
 ; 
 %define OP_FLAG_REL            0x01
 ; 

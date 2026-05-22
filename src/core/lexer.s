@@ -444,15 +444,17 @@ lexer_next:
 ; ---- << and >> --------------------------
 .lex_lshift:
     call    .token_begin
-    ; check next char â€” must have at least 2 bytes remaining (pos + 1 < end)
+    ; check next char — must have at least 2 bytes remaining (pos + 1 < end)
     mov     r13, [rbx + LEXER_pos]
     mov     r10, [rbx + LEXER_end]
     dec     r10                    ; r10 = end - 1
     cmp     r13, r10
-    jge     .single_lt_not_supported
+    jge     .emit_single_lt
     movzx   rcx, byte [r13 + 1]
     cmp     rcx, '<'
-    jne     .single_lt_not_supported
+    jne     .emit_single_lt
+    
+    ; It is <<
     mov     byte [r12 + TOKEN_kind], TOK_LSHIFT
     add     qword [rbx + LEXER_pos], 2
     add     word  [rbx + LEXER_col],  2
@@ -461,8 +463,9 @@ lexer_next:
     mov     rdx, r12
     jmp     .done
 
-.single_lt_not_supported:
-    jmp     .unknown_char
+.emit_single_lt:
+    mov     byte [r12 + TOKEN_kind], TOK_LT
+    jmp     .advance_single
 
 .lex_rshift:
     call    .token_begin
@@ -470,10 +473,12 @@ lexer_next:
     mov     r10, [rbx + LEXER_end]
     dec     r10                    ; r10 = end - 1
     cmp     r13, r10
-    jge     .single_gt_not_supported
+    jge     .emit_single_gt
     movzx   rcx, byte [r13 + 1]
     cmp     rcx, '>'
-    jne     .single_gt_not_supported
+    jne     .emit_single_gt
+    
+    ; It is >>
     mov     byte [r12 + TOKEN_kind], TOK_RSHIFT
     add     qword [rbx + LEXER_pos], 2
     add     word  [rbx + LEXER_col],  2
@@ -482,8 +487,9 @@ lexer_next:
     mov     rdx, r12
     jmp     .done
 
-.single_gt_not_supported:
-    jmp     .unknown_char
+.emit_single_gt:
+    mov     byte [r12 + TOKEN_kind], TOK_GT
+    jmp     .advance_single
 
 ; ---- = / == and != -----------------------
 .lex_equal:
