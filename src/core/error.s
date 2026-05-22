@@ -108,32 +108,13 @@ error_emit:
     mov     r14, rcx               ; save column
     mov     r15, r8                ; save message
     
-    ; HARD ABORT DIAGNOSTIC: Print raw message and exit immediately
-    push    rax
-    push    rdi
-    push    rsi
-    push    rdx
+    ; HARD ABORT DIAGNOSTIC: Print beautiful error message and exit immediately
+    call    error_print_location
+    call    error_print_severity_error
+    call    error_print_message
+    call    error_print_caret_diagnostics
     
-    ; 1. Print message
-    mov     rdi, r15
-    call    str_len
-    mov     rdx, rax
-    mov     rsi, r15
-    mov     rdi, 1                 ; STDOUT
-    mov     rax, 1                 ; sys_write
-    syscall
-    
-    ; 2. Print newline
-    mov     rax, 1
-    mov     rdi, 1
-    sub     rsp, 8
-    mov     byte [rsp], 10
-    mov     rsi, rsp
-    mov     rdx, 1
-    syscall
-    add     rsp, 8
-    
-    ; 3. EXIT IMMEDIATELY
+    ; EXIT IMMEDIATELY
     mov     rdi, 1                 ; status = 1
     mov     rax, 60                ; sys_exit
     syscall
