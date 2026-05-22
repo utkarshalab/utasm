@@ -1514,7 +1514,7 @@ prep_handle_if:
     jne     .already_skipping
 
     ; 2. Evaluate expression
-    mov     rdi, [rbx + PREP_ctx]
+    mov     rdi, rbx
     extern  parser_evaluate_expression
     call    parser_evaluate_expression
     test    rax, rax

@@ -349,6 +349,7 @@ parser_parse_operand:
                 mov     rdi, rbx
                 call    preprocessor_next_token
                 ENDIF
+            mov     rdi, rbx
             call    parser_evaluate_expression
             check_err
             mov     [r12 + OPERAND_shift_imm], dl
@@ -380,7 +381,7 @@ parser_parse_operand:
         ENDIF
 
     ; 3. Expressions (Numbers, Symbols, Math)
-    mov     rdi, [rbx + PREP_ctx]
+    mov     rdi, rbx
     call    parser_evaluate_expression
     test    rax, rax
     IF z
