@@ -978,8 +978,7 @@ prep_handle_directive:
     test    rax, rax
     jz      .do_endrep
 
-    xor     rax, rax
-    jmp     .done_cleanup
+    jmp     .discard_unknown
 
 .do_struc:
     ; TODO: implement %struc
@@ -1047,6 +1046,24 @@ prep_handle_directive:
 
 .expected_ident_pop_rsp:
     mov     rax, EXIT_ERROR
+    jmp     .done_cleanup
+
+.discard_unknown:
+    sub     rsp, TOKEN_SIZE
+.discard_unknown_loop:
+    mov     rdi, [rbx + PREP_lexer]
+    mov     rsi, rsp
+    call    lexer_next
+    test    rax, rax
+    jnz     .discard_unknown_done
+    cmp     byte [rsp + TOKEN_kind], TOK_NEWLINE
+    je      .discard_unknown_done
+    cmp     byte [rsp + TOKEN_kind], TOK_EOF
+    je      .discard_unknown_done
+    jmp     .discard_unknown_loop
+.discard_unknown_done:
+    add     rsp, TOKEN_SIZE
+    xor     rax, rax
     jmp     .done_cleanup
 
 .done_cleanup:
@@ -1743,8 +1760,8 @@ macro_handle_def:
     ; Parse minimum
     mov     rdi, [r13 + TOKEN_value]
     call    str_to_int
-    mov     r14, rax
-    mov     r15, rax               ; Default max = min
+    mov     r14, rdx
+    mov     r15, rdx               ; Default max = min
     
     ; Peek for hyphen '-'
     mov     rdi, [rbx + PREP_lexer]
@@ -1767,7 +1784,7 @@ macro_handle_def:
     jne     .check_star
     mov     rdi, [rsp + 64 + TOKEN_value]
     call    str_to_int
-    mov     r15, rax
+    mov     r15, rdx
     jmp     .no_hyphen
 
 .check_star:

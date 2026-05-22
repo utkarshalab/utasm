@@ -251,8 +251,12 @@ lexer_next:
     je      .lex_rshift
     cmp     rcx, '$'
     je      .emit_single_dollar
+    cmp     rcx, '='
+    je      .lex_equal
+    cmp     rcx, '!'
+    je      .lex_excl
 
-    ; unknown character â€” emit error and skip
+    ; unknown character — emit error and skip
     jmp     .unknown_char
 
 ; ---- UTF-8 Handling ---------------------
@@ -480,6 +484,53 @@ lexer_next:
 
 .single_gt_not_supported:
     jmp     .unknown_char
+
+; ---- = / == and != -----------------------
+.lex_equal:
+    call    .token_begin
+    ; Check if next char is '='
+    mov     r13, [rbx + LEXER_pos]
+    mov     r10, [rbx + LEXER_end]
+    dec     r10
+    cmp     r13, r10
+    jge     .emit_single_equal
+    movzx   rcx, byte [r13 + 1]
+    cmp     rcx, '='
+    jne     .emit_single_equal
+    
+    ; It is ==
+    mov     byte [r12 + TOKEN_kind], TOK_EQUAL
+    add     qword [rbx + LEXER_pos], 2
+    add     word  [rbx + LEXER_col], 2
+    mov     word  [r12 + TOKEN_len], 2
+    xor     rax, rax
+    mov     rdx, r12
+    jmp     .done
+
+.emit_single_equal:
+    mov     byte [r12 + TOKEN_kind], TOK_EQUAL
+    jmp     .advance_single
+
+.lex_excl:
+    call    .token_begin
+    ; Check if next char is '='
+    mov     r13, [rbx + LEXER_pos]
+    mov     r10, [rbx + LEXER_end]
+    dec     r10
+    cmp     r13, r10
+    jge     .unknown_char
+    movzx   rcx, byte [r13 + 1]
+    cmp     rcx, '='
+    jne     .unknown_char
+    
+    ; It is !=
+    mov     byte [r12 + TOKEN_kind], TOK_NEQUAL
+    add     qword [rbx + LEXER_pos], 2
+    add     word  [rbx + LEXER_col], 2
+    mov     word  [r12 + TOKEN_len], 2
+    xor     rax, rax
+    mov     rdx, r12
+    jmp     .done
 
 ; ---- identifier / label -----------------
 ;

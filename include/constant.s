@@ -187,6 +187,8 @@
 %define TOK_FLOAT              0x22
 %define TOK_MACRO_LOCAL        0x23
 %define TOK_DOLLAR             0x24
+%define TOK_EQUAL              0x25
+%define TOK_NEQUAL             0x26
 ; 
 %define OP_FLAG_REL            0x01
 ; 

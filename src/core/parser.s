@@ -35,7 +35,6 @@ extern parser_is_register
 extern parser_lookup_mnemonic
 extern parser_check_prefix
 extern parser_define_label
-extern parser_evaluate_expression
 extern parser_parse_mem_operand
 extern parser_concat_local_name
 
@@ -48,6 +47,7 @@ extern parser_concat_local_name
 ; *   RBX: [in] Pointer to PrepState
 ; ;
 global parser_parse_instruction
+global parser_evaluate_expression
 parser_parse_instruction:
     push    rbp
     mov     rbp, rsp
@@ -428,29 +428,20 @@ parser_parse_reg_info:
     epilogue
 
 ;*
-; * [parser_evaluate_expression]
-; * Purpose: Entry point for expression evaluation (Additive level: + -)
+; * [parser_evaluate_additive]
+; * Purpose: Additive level (+ -)
 ; ;
-parser_evaluate_expression:
+parser_evaluate_additive:
     prologue
     push    rbx
     push    r12
     push    r13
     
     mov     rbx, rdi               ; RBX = PrepState
-    mov     rdi, [rbx + PREP_ctx]  ; RDI = AsmCtx (for depth check)
-    
-    ; 1. Check Recursion Depth
-    mov     r10, [rbx + PREP_ctx]
-    inc     dword [r10 + ASMCTX_expr_depth]
-    IF dword [r10 + ASMCTX_expr_depth], g, 64
-        mov rax, EXIT_EXPR_TOO_DEEP
-        jmp .done_err
-        ENDIF
     
     mov     rdi, rbx
     call    parser_evaluate_term
-    check_err_to .done_err
+    check_err
     mov     r13, rdx               ; R13 = current running total
     
 .loop:
@@ -464,7 +455,7 @@ parser_evaluate_expression:
         call    preprocessor_next_token
         mov     rdi, rbx
         call    parser_evaluate_term
-        check_err_to .done_err
+        check_err
         add     r13, rdx
         jo      .overflow
         jmp     .loop
@@ -473,7 +464,7 @@ parser_evaluate_expression:
         call    preprocessor_next_token
         mov     rdi, rbx
         call    parser_evaluate_term
-        check_err_to .done_err
+        check_err
         sub     r13, rdx
         jo      .overflow
         jmp     .loop
@@ -483,24 +474,106 @@ parser_evaluate_expression:
     xor     rax, rax
 
 .done:
-    mov     r10, [rbx + PREP_ctx]
-    dec     dword [r10 + ASMCTX_expr_depth]
     pop     r13
     pop     r12
     pop     rbx
     epilogue
+    ret
 
 .overflow:
     mov     rax, EXIT_IMM_RANGE
-    jmp     .done_err
+    pop     r13
+    pop     r12
+    pop     rbx
+    epilogue
+    ret
+
+;*
+; * [parser_evaluate_expression]
+; * Purpose: Entry point for expression evaluation (Relational level: == !=)
+; ;
+global parser_evaluate_expression
+parser_evaluate_expression:
+    prologue
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    
+    mov     rbx, rdi               ; RBX = PrepState
+    mov     r10, [rbx + PREP_ctx]  ; R10 = AsmCtx
+    
+    ; Check Recursion Depth
+    inc     dword [r10 + ASMCTX_expr_depth]
+    IF dword [r10 + ASMCTX_expr_depth], g, 64
+        mov     rax, EXIT_EXPR_TOO_DEEP
+        jmp     .done_err
+        ENDIF
+        
+    mov     rdi, rbx
+    call    parser_evaluate_additive
+    check_err_to .done_err
+    mov     r13, rdx               ; R13 = left operand value
+    mov     r14, rcx               ; R14 = left operand symbol (optional)
+    
+.loop:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    mov     r12, rdx
+    mov     al, [r12 + TOKEN_kind]
+    
+    IF al, e, TOK_EQUAL
+        mov     rdi, rbx
+        call    preprocessor_next_token
+        mov     rdi, rbx
+        call    parser_evaluate_additive
+        check_err_to .done_err
+        
+        ; Evaluate: left == right
+        cmp     r13, rdx
+        sete    cl
+        movzx   r13, cl
+        xor     r14, r14           ; comparisons produce raw integers
+        jmp     .loop
+        
+    ELSEIF al, e, TOK_NEQUAL
+        mov     rdi, rbx
+        call    preprocessor_next_token
+        mov     rdi, rbx
+        call    parser_evaluate_additive
+        check_err_to .done_err
+        
+        ; Evaluate: left != right
+        cmp     r13, rdx
+        setne   cl
+        movzx   r13, cl
+        xor     r14, r14           ; comparisons produce raw integers
+        jmp     .loop
+        ENDIF
+        
+    mov     rdx, r13
+    mov     rcx, r14
+    xor     rax, rax
+
+.done:
+    mov     r10, [rbx + PREP_ctx]
+    dec     dword [r10 + ASMCTX_expr_depth]
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    epilogue
+    ret
 
 .done_err:
     mov     r10, [rbx + PREP_ctx]
     dec     dword [r10 + ASMCTX_expr_depth]
+    pop     r14
     pop     r13
     pop     r12
     pop     rbx
     epilogue
+    ret
 
 ;*
 ; * [parser_evaluate_term]
@@ -955,6 +1028,8 @@ parser_parse_mem_operand:
 [SECTION .rodata]
 str_rel: db "rel", 0
 
+[SECTION .text]
+
 ;*
 ; * [parser_is_register]
 ; * Input: RSI = String, RDI = Table Pointer
@@ -1048,6 +1123,8 @@ str_rep:    db "rep", 0
 str_repe:   db "repe", 0
 str_repne:  db "repne", 0
 str_lock:   db "lock", 0
+
+[SECTION .text]
 
 ; ============================================================================
 ; PARSER EXTENSION: SAFE STRUCT REGISTRATION
@@ -1673,6 +1750,8 @@ parser_handle_equ:
 
 [SECTION .rodata]
 str_equ:    db "equ", 0
+
+[SECTION .text]
 
 parser_emit_data_8:
     prologue
