@@ -15,6 +15,8 @@ extern binary_emit
 extern elf64_emit
 extern reloc_resolve_all
 extern error_emit
+extern io_open
+extern io_close
 
 [SECTION .text]
 
@@ -30,6 +32,8 @@ global linker_run
 linker_run:
     prologue
     push    rbx
+    push    r12
+    push    r13
     mov     rbx, rdi               ; RBX = AsmCtx
 
     ; 1. Resolve all relocations
@@ -41,6 +45,17 @@ linker_run:
     mov     rdi, rbx
     call    linker_check_overlaps
     check_err
+
+    ; 1.6 Open Output File
+    mov     rdi, [rbx + ASMCTX_output]
+    test    rdi, rdi
+    jz      .error_no_output
+
+    mov     rsi, AMD64_O_WRONLY | AMD64_O_CREAT | AMD64_O_TRUNC
+    mov     rdx, 0o644
+    call    io_open
+    check_err
+    mov     r12, rdx               ; r12 = FD
 
     ; 2. Determine Output Format
     mov     rax, [rbx + ASMCTX_flags]
@@ -55,16 +70,33 @@ linker_run:
 
 .emit_binary:
     mov     rdi, rbx
+    mov     rsi, r12
+    xor     rdx, rdx
     call    binary_emit
-    jmp     .done
+    mov     r13, rax
+    jmp     .close_and_done
 
 .emit_elf:
     mov     rdi, rbx
+    mov     rsi, r12
     call    elf64_emit
+    mov     r13, rax
+    jmp     .close_and_done
+
+.close_and_done:
+    mov     rdi, r12
+    call    io_close
+    mov     rax, r13
+    check_err
     jmp     .done
+
+.error_no_output:
+    mov     rax, EXIT_FILE_WRITE
 
 .error:
 .done:
+    pop     r13
+    pop     r12
     pop     rbx
     epilogue
 

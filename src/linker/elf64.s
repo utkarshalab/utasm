@@ -1692,9 +1692,11 @@ elf64_align_file:
 .error:
     mov     rax, EXIT_FILE_WRITE
 .done:
+    add     rsp, 512
+    pop     r15
+    pop     r14
     pop     r13
     pop     r12
-    pop     rbx
     epilogue
 
 ; ============================================================================
