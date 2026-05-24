@@ -802,81 +802,81 @@ riscv64_register_table:
     %assign i 0
     %rep 32
         compile_time_hash "x%[i]", H_X%[i]
-        dq H_X%[i], (8 << 8), %[i]
+        dq H_X%[i], (8 << 8) | %[i]
     %assign i i+1
     %endrep
 
     ; ---- ABI Names ----
     compile_time_hash "zero", H_ZERO
-    dq H_ZERO, (8 << 8), 0
+    dq H_ZERO, (8 << 8) | 0
     compile_time_hash "ra", H_RA
-    dq H_RA, (8 << 8), 1
+    dq H_RA, (8 << 8) | 1
     compile_time_hash "sp", H_SP
-    dq H_SP, (8 << 8), 2
+    dq H_SP, (8 << 8) | 2
     compile_time_hash "gp", H_GP
-    dq H_GP, (8 << 8), 3
+    dq H_GP, (8 << 8) | 3
     compile_time_hash "tp", H_TP
-    dq H_TP, (8 << 8), 4
+    dq H_TP, (8 << 8) | 4
     compile_time_hash "t0", H_T0
-    dq H_T0, (8 << 8), 5
+    dq H_T0, (8 << 8) | 5
     compile_time_hash "t1", H_T1
-    dq H_T1, (8 << 8), 6
+    dq H_T1, (8 << 8) | 6
     compile_time_hash "t2", H_T2
-    dq H_T2, (8 << 8), 7
+    dq H_T2, (8 << 8) | 7
     compile_time_hash "s0", H_S0
-    dq H_S0, (8 << 8), 8
+    dq H_S0, (8 << 8) | 8
     compile_time_hash "s1", H_S1
-    dq H_S1, (8 << 8), 9
+    dq H_S1, (8 << 8) | 9
     compile_time_hash "a0", H_A0
-    dq H_A0, (8 << 8), 10
+    dq H_A0, (8 << 8) | 10
     compile_time_hash "a1", H_A1
-    dq H_A1, (8 << 8), 11
+    dq H_A1, (8 << 8) | 11
     compile_time_hash "a2", H_A2
-    dq H_A2, (8 << 8), 12
+    dq H_A2, (8 << 8) | 12
     compile_time_hash "a3", H_A3
-    dq H_A3, (8 << 8), 13
+    dq H_A3, (8 << 8) | 13
     compile_time_hash "a4", H_A4
-    dq H_A4, (8 << 8), 14
+    dq H_A4, (8 << 8) | 14
     compile_time_hash "a5", H_A5
-    dq H_A5, (8 << 8), 15
+    dq H_A5, (8 << 8) | 15
     compile_time_hash "a6", H_A6
-    dq H_A6, (8 << 8), 16
+    dq H_A6, (8 << 8) | 16
     compile_time_hash "a7", H_A7
-    dq H_A7, (8 << 8), 17
+    dq H_A7, (8 << 8) | 17
     compile_time_hash "s2", H_S2
-    dq H_S2, (8 << 8), 18
+    dq H_S2, (8 << 8) | 18
     compile_time_hash "s3", H_S3
-    dq H_S3, (8 << 8), 19
+    dq H_S3, (8 << 8) | 19
     compile_time_hash "s4", H_S4
-    dq H_S4, (8 << 8), 20
+    dq H_S4, (8 << 8) | 20
     compile_time_hash "s5", H_S5
-    dq H_S5, (8 << 8), 21
+    dq H_S5, (8 << 8) | 21
     compile_time_hash "s6", H_S6
-    dq H_S6, (8 << 8), 22
+    dq H_S6, (8 << 8) | 22
     compile_time_hash "s7", H_S7
-    dq H_S7, (8 << 8), 23
+    dq H_S7, (8 << 8) | 23
     compile_time_hash "s8", H_S8
-    dq H_S8, (8 << 8), 24
+    dq H_S8, (8 << 8) | 24
     compile_time_hash "s9", H_S9
-    dq H_S9, (8 << 8), 25
+    dq H_S9, (8 << 8) | 25
     compile_time_hash "s10", H_S10
-    dq H_S10, (8 << 8), 26
+    dq H_S10, (8 << 8) | 26
     compile_time_hash "s11", H_S11
-    dq H_S11, (8 << 8), 27
+    dq H_S11, (8 << 8) | 27
     compile_time_hash "t3", H_T3
-    dq H_T3, (8 << 8), 28
+    dq H_T3, (8 << 8) | 28
     compile_time_hash "t4", H_T4
-    dq H_T4, (8 << 8), 29
+    dq H_T4, (8 << 8) | 29
     compile_time_hash "t5", H_T5
-    dq H_T5, (8 << 8), 30
+    dq H_T5, (8 << 8) | 30
     compile_time_hash "t6", H_T6
-    dq H_T6, (8 << 8), 31
+    dq H_T6, (8 << 8) | 31
 
     ; ---- Floating Point Registers (f0-f31) ----
     %assign i 0
     %rep 32
         compile_time_hash "f%[i]", H_F%[i]
-        dq H_F%[i], (8 << 8), %[i]
+        dq H_F%[i], (8 << 8) | %[i]
     %assign i i+1
     %endrep
 
@@ -884,13 +884,13 @@ riscv64_register_table:
     %assign i 0
     %rep 8
         compile_time_hash "ft%[i]", H_FT%[i]
-        dq H_FT%[i], (8 << 8), %[i]
+        dq H_FT%[i], (8 << 8) | %[i]
     %assign i i+1
     %endrep
     %assign i 0
     %rep 8
         compile_time_hash "fa%[i]", H_FA%[i]
-        dq H_FA%[i], (8 << 8), (10 + %[i])
+        dq H_FA%[i], (8 << 8) | (10 + %[i])
     %assign i i+1
     %endrep
 
@@ -898,7 +898,7 @@ riscv64_register_table:
     %assign i 0
     %rep 32
         compile_time_hash "v%[i]", H_V%[i]
-        dq H_V%[i], (16 << 8), %[i]
+        dq H_V%[i], (16 << 8) | %[i]
     %assign i i+1
     %endrep
 

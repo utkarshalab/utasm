@@ -26,7 +26,6 @@
 %macro prologue 0
     push    rbp
     mov     rbp, rsp
-    and     rsp, -16               ; 16-byte alignment
 %endmacro
 
 %macro epilogue 0

@@ -31,7 +31,6 @@
 %macro prologue 0
     push    rbp
     mov     rbp, rsp
-    and     rsp, -16               ; 16-byte alignment
 %endmacro
 
 %macro epilogue 0
@@ -570,6 +569,8 @@
 ; * [struc] / [field] / [endstruc]
 ; * Purpose: Automatic calculation of structure offsets and total size.
 ; ;
+; Emulation struc macros for NASM
+%ifdef __NASM__
 %macro struc 1
     %push   struc
     %define %$struc_name %1
@@ -587,6 +588,7 @@
     %%sname equ %$offset
     %pop    struc
 %endmacro
+%endif
 
 ;*
 ; * [vtable_begin] / [vmethod] / [vtable_end]

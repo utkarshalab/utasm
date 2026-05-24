@@ -27,6 +27,8 @@ extern io_close
 extern str_cmp
 extern str_to_int
 extern symbol_find
+extern print_str
+extern print_num
 
 ; ============================================================================
 ; PREPROCESSOR
@@ -68,26 +70,40 @@ global preprocessor_next_token
 global prep_internal_next
 global prep_handle_directive
 preprocessor_next_token:
-    prologue
+    push    rbp
+    mov     rbp, rsp
     push    rbx
     push    r12
     push    r13
     push    r14
     push    r15
-    push    rax                    ; Alignment padding
+    and     rsp, -16               ; 16-byte alignment
     mov     rbx, rdi               ; rbx = PrepState
 
     ; 1. Handle peek slot
     cmp     byte [rbx + PREP_has_peek], TRUE
     jne     .no_peek
     
-    ; Return peek token
+    ; Stable allocation for the peeked token
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, TOKEN_SIZE
+    call    arena_alloc
+    test    rax, rax
+    jnz     .error
+    mov     r12, rdx
+    
     mov     byte [rbx + PREP_has_peek], FALSE
-    lea     rdx, [rbx + PREP_peek]
+    
+    mov     rdi, r12
+    lea     rsi, [rbx + PREP_peek]
+    mov     rcx, TOKEN_SIZE
+    rep movsb
+    
+    mov     rdx, r12
     xor     rax, rax
     jmp     .done
     
-.no_peek:
+ .no_peek:
     ; 2. Allocate token in arena for the result
     mov     rdi, [rbx + PREP_arena]
     mov     rsi, TOKEN_SIZE
@@ -104,13 +120,13 @@ preprocessor_next_token:
     
     mov     rdx, r12
 .done:
-    pop     rcx                    ; Alignment padding
-    pop     r15
-    pop     r14
-    pop     r13
-    pop     r12
-    pop     rbx
-    epilogue
+    mov     r15, [rbp - 40]
+    mov     r14, [rbp - 32]
+    mov     r13, [rbp - 24]
+    mov     r12, [rbp - 16]
+    mov     rbx, [rbp - 8]
+    mov     rsp, rbp
+    pop     rbp
     ret
 
 .error:
@@ -141,13 +157,14 @@ preprocessor_putback_token:
 ; ---- preprocessor_peek_token ------------
 global preprocessor_peek_token
 preprocessor_peek_token:
-    prologue
+    push    rbp
+    mov     rbp, rsp
     push    rbx
     push    r12
     push    r13
     push    r14
     push    r15
-    push    rax                    ; Alignment padding
+    and     rsp, -16               ; 16-byte alignment
     mov     rbx, rdi
     
     cmp     byte [rbx + PREP_has_peek], TRUE
@@ -179,13 +196,13 @@ preprocessor_peek_token:
     lea     rdx, [rbx + PREP_peek]
     xor     rax, rax
 .exit:
-    pop     rcx                    ; Alignment padding
-    pop     r15
-    pop     r14
-    pop     r13
-    pop     r12
-    pop     rbx
-    epilogue
+    mov     r15, [rbp - 40]
+    mov     r14, [rbp - 32]
+    mov     r13, [rbp - 24]
+    mov     r12, [rbp - 16]
+    mov     rbx, [rbp - 8]
+    mov     rsp, rbp
+    pop     rbp
     ret
 
 .error:
@@ -210,6 +227,8 @@ prep_internal_next:
     jz      .from_lexer
 
     ; Get token from expansion body
+    mov     rdi, rbx
+    mov     rsi, r12
     call    prep_expand_next
     test    rax, rax
     jz      .done                  ; expansion produced a token
@@ -223,6 +242,28 @@ prep_internal_next:
     test    rax, rax
     jnz     .done                  ; lexer error
 
+    ; handle EOF
+    cmp     byte [r12 + TOKEN_kind], TOK_EOF
+    je      .handle_eof
+
+    ; check if skipping
+    cmp     byte [rbx + PREP_skip_depth], 0
+    je      .not_skipping
+
+    ; we are skipping. only care about % directives
+    cmp     byte [r12 + TOKEN_kind], TOK_DIRECTIVE
+    je      .skip_is_directive
+    cmp     byte [r12 + TOKEN_kind], TOK_PERCENT
+    jne     .next                  ; consume everything else
+.skip_is_directive:
+
+    ; handle directive even when skipping
+    mov     rdi, rbx
+    mov     rsi, r12
+    call    prep_handle_directive
+    jmp     .next
+
+.not_skipping:
     ; check if it's a macro call
     cmp     byte [r12 + TOKEN_kind], TOK_IDENT
     jne     .not_macro_call
@@ -247,25 +288,6 @@ prep_internal_next:
 
 .not_macro_call:
     xor     rax, rax
-    ; handle EOF
-    cmp     byte [r12 + TOKEN_kind], TOK_EOF
-    je      .handle_eof
-
-    ; check if skipping
-    cmp     byte [rbx + PREP_skip_depth], 0
-    je      .not_skipping
-
-    ; we are skipping. only care about % directives
-    cmp     byte [r12 + TOKEN_kind], TOK_PERCENT
-    jne     .next                  ; consume everything else
-
-    ; handle directive even when skipping
-    mov     rdi, rbx
-    mov     rsi, r12
-    call    prep_handle_directive
-    jmp     .next
-
-.not_skipping:
     cmp     byte [r12 + TOKEN_kind], TOK_PERCENT
     je      .is_directive
     cmp     byte [r12 + TOKEN_kind], TOK_DIRECTIVE
@@ -324,13 +346,14 @@ prep_internal_next:
 ; Output   : rax = EXIT_OK or error code
 ;
 prep_expand_start:
-    prologue
+    push    rbp
+    mov     rbp, rsp
     push    rbx
     push    r12
     push    r13
     push    r14
     push    r15
-    push    rax                    ; Alignment padding
+    and     rsp, -16               ; 16-byte alignment
     mov     rbx, rdi               ; rbx = PrepState
     mov     r12, rsi               ; r12 = MACRO struct
 
@@ -357,7 +380,7 @@ prep_expand_start:
 
     mov     byte [r13 + MACROEXP_tag], TAG_MACRO_EXP
     mov     [r13 + MACROEXP_macro], r12
-    mov     qword [r13 + MACROEXP_rep_count], 1 ; Default: expand once
+    mov     dword [r13 + MACROEXP_rep_count], 1 ; Default: expand once
     ; Check arity
     movzx   rax, byte [r12 + MACRO_min_params]
     movzx   rdx, byte [r12 + MACRO_max_params]
@@ -426,7 +449,9 @@ prep_expand_start:
         movzx   rcx, byte [r12 + MACRO_min_params]
         dec     rcx
         IF r15, e, rcx
+            mov     rdx, r13
             call    prep_capture_greedy
+            check_err
             jmp     .done_params
             ENDIF
             ENDIF
@@ -482,9 +507,7 @@ prep_expand_start:
     jmp     .error
 
 .done_params:
-    mov     rax, [rbx + PREP_ctx]
-    mov     rax, [rax + ASMCTX_mac_exp]
-    mov     [rax + MACROEXP_nparams], r15b
+    mov     [r13 + MACROEXP_nparams], r15b
     
     ; 3. Link to previous
     mov     r8, [rbx + PREP_ctx]
@@ -506,13 +529,13 @@ prep_expand_start:
     jmp     .done
 
 .done:
-    pop     rcx                    ; Alignment padding
-    pop     r15
-    pop     r14
-    pop     r13
-    pop     r12
-    pop     rbx
-    epilogue
+    mov     r15, [rbp - 40]
+    mov     r14, [rbp - 32]
+    mov     r13, [rbp - 24]
+    mov     r12, [rbp - 16]
+    mov     rbx, [rbp - 8]
+    mov     rsp, rbp
+    pop     rbp
     ret
 
 .error:
@@ -830,6 +853,7 @@ prep_expand_next:
     jmp     .done
 
 .do_pop:
+    mov     rdi, rbx
     call    prep_expand_pop
     ; we finished this expansion, but there might be a parent
     ; we return non-zero to tell caller to try again (which will check mac_exp again)
@@ -890,6 +914,63 @@ prep_handle_directive:
     mov     r14, 0                 ; initialize flag early
     mov     rbx, rdi               ; rbx = PrepState
     mov     r13, rsi               ; r13 = the token triggering the directive (% or %name)
+    
+    ; Debug print at entry of prep_handle_directive
+    push    rdi
+    push    rsi
+    push    rdx
+    push    rcx
+    push    r8
+    push    r9
+    push    rax
+    
+    ; Print "prep_handle_directive: kind="
+    mov     rdi, 2
+    lea     rsi, [rel dbg_msg1]
+    call    print_str
+    
+    ; Print the token kind
+    movzx   rsi, byte [r13 + TOKEN_kind]
+    mov     rdi, 2
+    call    print_num
+    
+    ; If kind == TOK_DIRECTIVE (0x20), print value
+    cmp     byte [r13 + TOKEN_kind], 0x20
+    jne     .dbg_not_dir
+    
+    mov     rdi, 2
+    lea     rsi, [rel dbg_msg2]
+    call    print_str
+    
+    mov     rsi, [r13 + TOKEN_value]
+    test    rsi, rsi
+    jz      .dbg_no_val
+    mov     rdi, 2
+    call    print_str
+    jmp     .dbg_done
+.dbg_no_val:
+    mov     rdi, 2
+    lea     rsi, [rel dbg_msg_null]
+    call    print_str
+    jmp     .dbg_done
+    
+.dbg_not_dir:
+    mov     rdi, 2
+    lea     rsi, [rel dbg_msg3]
+    call    print_str
+    
+.dbg_done:
+    mov     rdi, 2
+    lea     rsi, [rel dbg_newline]
+    call    print_str
+    
+    pop     rax
+    pop     r9
+    pop     r8
+    pop     rcx
+    pop     rdx
+    pop     rsi
+    pop     rdi
     
     ; check if we already have the identifier
     cmp     byte [r13 + TOKEN_kind], TOK_DIRECTIVE
@@ -1030,12 +1111,22 @@ prep_handle_directive:
 
 .do_macro:
     cmp     byte [rbx + PREP_skip_depth], 0
-    jne     .done_cleanup
+    je      .do_macro_normal
+    mov     rdi, rbx
+    call    prep_skip_macro_block
+    jmp     .done_cleanup
+.do_macro_normal:
     mov     rdi, rbx
     call    macro_handle_def
     jmp     .done_cleanup
 
 .do_rep:
+    cmp     byte [rbx + PREP_skip_depth], 0
+    je      .do_rep_normal
+    mov     rdi, rbx
+    call    prep_skip_rep_block
+    jmp     .done_cleanup
+.do_rep_normal:
     mov     rdi, rbx
     call    prep_handle_rep
     jmp     .done_cleanup
@@ -1223,31 +1314,35 @@ prep_handle_inc:
     jmp     .done
 
 .error_oom:
-    mov     rax, EXIT_OOM
+    mov     rax, 101
     jmp     .done
 
 .error_expected_string:
-    mov     rax, EXIT_ERROR
+    mov     rax, 102
     jmp     .done
 
 .error_too_deep:
-    mov     rax, EXIT_ERROR
+    mov     rax, 103
     jmp     .done
 
 .error_open:
-    mov     rax, EXIT_ERROR
+    ; Keep rax if non-zero, otherwise set 104
+    test    rax, rax
+    jnz     .error_open_done
+    mov     rax, 104
+.error_open_done:
     jmp     .done
 
 .error_size:
-    mov     rax, EXIT_ERROR
+    mov     rax, 105
     jmp     .done
 
 .error_mmap:
-    mov     rax, EXIT_ERROR
+    mov     rax, 106
     jmp     .done
 
 .error:
-    mov     rax, EXIT_ERROR
+    mov     rax, 107
     jmp     .done
 
 .done:
@@ -1280,6 +1375,12 @@ dir_endstruc: db "endstruc", 0
 
 msg_preprocessor_dir_trace: db "[+] PREP: Directive: ", 0
 msg_newline:                db 10, 0
+
+dbg_msg1:     db "prep_handle_directive: kind=", 0
+dbg_msg2:     db " value=", 0
+dbg_msg3:     db " (not directive)", 0
+dbg_msg_null: db "<null>", 0
+dbg_newline:  db 10, 0
 [SECTION .data]
 
 ; ---- prep_handle_struc ------------------
@@ -1335,6 +1436,56 @@ prep_handle_def:
     ; Save the name pointer
     mov     r13, [r12 + TOKEN_value]
 
+    ; Check if constant already exists
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, r13
+    call    symbol_find
+    test    rax, rax
+    jnz     .not_found
+
+    ; Exist! rdx points to the existing SYMBOL struct. Save it in r14.
+    mov     r14, rdx
+
+    ; Lex the value
+    mov     rdi, [rbx + PREP_lexer]
+    lea     r12, [rsp + TOKEN_SIZE] ; r12 = value token buffer
+    mov     rsi, r12
+    call    lexer_next
+    test    rax, rax
+    jnz     .error
+
+    ; Parse value (if numeric)
+    cmp     byte [r12 + TOKEN_kind], TOK_NUMBER
+    jne     .redef_discard_rest
+
+    mov     rdi, [r12 + TOKEN_value]
+    call    str_to_int
+    mov     [r14 + SYMBOL_value], rdx
+
+.redef_discard_rest:
+    cmp     byte [r12 + TOKEN_kind], TOK_NEWLINE
+    je      .finish_redef
+    cmp     byte [r12 + TOKEN_kind], TOK_EOF
+    je      .finish_redef
+
+.redef_discard_loop:
+    mov     rdi, [rbx + PREP_lexer]
+    mov     rsi, r12
+    call    lexer_next
+    test    rax, rax
+    jnz     .error
+
+    cmp     byte [r12 + TOKEN_kind], TOK_NEWLINE
+    je      .finish_redef
+    cmp     byte [r12 + TOKEN_kind], TOK_EOF
+    je      .finish_redef
+    jmp     .redef_discard_loop
+
+.finish_redef:
+    xor     rax, rax
+    jmp     .done
+
+.not_found:
     ; 2. Lex the value
     mov     rdi, [rbx + PREP_lexer]
     lea     r12, [rsp + TOKEN_SIZE] ; r12 = value token buffer
@@ -1388,7 +1539,6 @@ prep_handle_def:
 
 .finish_def:
     mov     rdi, [rbx + PREP_ctx]  ; rdi = AsmCtx
-    mov     rsi, rdi               ; (wait, rsi should be symbol ptr)
     mov     rsi, r14               ; rsi = pointer to temp Symbol on stack
     call    symbol_add
     test    rax, rax
@@ -1426,28 +1576,32 @@ prep_capture_greedy:
     
     mov     rbx, rdi               ; rbx = PrepState
     mov     r15, rsi               ; r15 = param index
+    mov     r13, rdx               ; r13 = MACROEXP struct
     mov     r12, [rbx + PREP_lexer]
     
     ; 1. Find the end of the line in the current lexer buffer
-    mov     r13, [r12 + LEXER_pos] ; start
-    mov     r14, r13               ; current
+    mov     r8, [r12 + LEXER_pos]  ; start
+    mov     r9, r8                 ; current
 .find_eol:
-    cmp     r14, [r12 + LEXER_end]
+    cmp     r9, [r12 + LEXER_end]
     jge     .found_eol
-    movzx   rax, byte [r14]
+    movzx   rax, byte [r9]
     cmp     al, 10                 ; LF
     je      .found_eol
-    inc     r14
+    inc     r9
     jmp     .find_eol
 
 .found_eol:
-    ; length = r14 - r13
-    mov     rdx, r14
-    sub     rdx, r13               ; rdx = length
+    ; length = r9 - r8
+    mov     rdx, r9
+    sub     rdx, r8                ; rdx = length
+    
+    push    r8                     ; [rsp + 8] = start
+    push    rdx                    ; [rsp] = length
     
     ; 2. Allocate and copy
     mov     rdi, [rbx + PREP_arena]
-    mov     rsi, rdx
+    mov     rsi, [rsp]             ; length
     inc     rsi                    ; +1 for null
     call    arena_alloc
     test    rax, rax
@@ -1455,15 +1609,16 @@ prep_capture_greedy:
     mov     r10, rdx               ; r10 = dst
     
     mov     rdi, r10
-    mov     rsi, r13
-    mov     rdx, r14
-    sub     rdx, r13               ; length
+    mov     rsi, [rsp + 8]         ; start
+    mov     rdx, [rsp]             ; length
     mov     rcx, rdx
     rep     movsb
     mov     byte [rdi], 0          ; null terminate
     
     ; 3. Update lexer position (consume the text, but not the newline)
-    mov     [r12 + LEXER_pos], r14
+    mov     rax, [rsp + 8]         ; start
+    add     rax, [rsp]             ; + length = current
+    mov     [r12 + LEXER_pos], rax
     
     ; 4. Create string token
     mov     rdi, [rbx + PREP_arena]
@@ -1475,12 +1630,7 @@ prep_capture_greedy:
     mov     [rdx + TOKEN_value], r10
     
     ; 5. Store in macro params
-    mov     rax, [rbx + PREP_ctx]
-    mov     rax, [rax + ASMCTX_mac_exp]
-    test    rax, rax
-    jz      .error
-    
-    mov     rcx, [rax + MACROEXP_params]
+    mov     rcx, [r13 + MACROEXP_params]
     mov     [rcx + r15 * 8], rdx
     
     xor     rax, rax
@@ -1490,6 +1640,7 @@ prep_capture_greedy:
     mov     rax, EXIT_ERROR
     
 .done:
+    add     rsp, 16                ; clean up start/length on stack
     pop     rcx
     pop     r15
     pop     r14
@@ -1705,8 +1856,12 @@ prep_handle_endif:
     dec     byte [rbx + PREP_skip_depth]
 
 .not_skipping:
-    ; 2. Always decrement total depth
+    ; 2. Decrement total depth (guard against underflow)
+    cmp     byte [rbx + PREP_depth], 0
+    je      .done
     dec     byte [rbx + PREP_depth]
+
+.done:
     xor     rax, rax
     pop     rbx
     epilogue
@@ -1715,6 +1870,130 @@ prep_handle_endif:
     mov     rax, EXIT_ERROR
     pop     rbx
     epilogue
+
+; ---- prep_skip_macro_block & prep_skip_rep_block ----
+global prep_skip_macro_block
+prep_skip_macro_block:
+    prologue
+    push    rbx
+    push    r12
+    push    r13
+    push    rax                    ; Alignment padding
+    
+    mov     rbx, rdi               ; rbx = PrepState
+    mov     r12, 1                 ; r12 = nesting depth (we already saw the opening %macro)
+    
+    sub     rsp, TOKEN_SIZE
+    mov     r13, rsp               ; r13 = temp token buffer
+
+.loop:
+    mov     rdi, [rbx + PREP_lexer]
+    mov     rsi, r13
+    call    lexer_next
+    test    rax, rax
+    jnz     .done                  ; stop on lexer error
+    
+    cmp     byte [r13 + TOKEN_kind], TOK_EOF
+    je      .done                  ; stop on EOF
+    
+    cmp     byte [r13 + TOKEN_kind], TOK_DIRECTIVE
+    jne     .loop
+    
+    ; Compare with "macro"
+    mov     rdi, [r13 + TOKEN_value]
+    lea     rsi, [dir_macro]
+    call    str_cmp
+    test    rax, rax
+    jz      .nest_in
+    
+    ; Compare with "endmacro"
+    mov     rdi, [r13 + TOKEN_value]
+    lea     rsi, [dir_endm]
+    call    str_cmp
+    test    rax, rax
+    jz      .nest_out
+    
+    jmp     .loop
+
+.nest_in:
+    inc     r12
+    jmp     .loop
+
+.nest_out:
+    dec     r12
+    test    r12, r12
+    jnz     .loop
+
+.done:
+    add     rsp, TOKEN_SIZE
+    pop     rcx                    ; Alignment padding
+    pop     r13
+    pop     r12
+    pop     rbx
+    epilogue
+    ret
+
+global prep_skip_rep_block
+prep_skip_rep_block:
+    prologue
+    push    rbx
+    push    r12
+    push    r13
+    push    rax                    ; Alignment padding
+    
+    mov     rbx, rdi               ; rbx = PrepState
+    mov     r12, 1                 ; r12 = nesting depth (we already saw the opening %rep)
+    
+    sub     rsp, TOKEN_SIZE
+    mov     r13, rsp               ; r13 = temp token buffer
+
+.loop:
+    mov     rdi, [rbx + PREP_lexer]
+    mov     rsi, r13
+    call    lexer_next
+    test    rax, rax
+    jnz     .done                  ; stop on lexer error
+    
+    cmp     byte [r13 + TOKEN_kind], TOK_EOF
+    je      .done                  ; stop on EOF
+    
+    cmp     byte [r13 + TOKEN_kind], TOK_DIRECTIVE
+    jne     .loop
+    
+    ; Compare with "rep"
+    mov     rdi, [r13 + TOKEN_value]
+    lea     rsi, [dir_rep]
+    call    str_cmp
+    test    rax, rax
+    jz      .nest_in
+    
+    ; Compare with "endrep"
+    mov     rdi, [r13 + TOKEN_value]
+    lea     rsi, [dir_endrep]
+    call    str_cmp
+    test    rax, rax
+    jz      .nest_out
+    
+    jmp     .loop
+
+.nest_in:
+    inc     r12
+    jmp     .loop
+
+.nest_out:
+    dec     r12
+    test    r12, r12
+    jnz     .loop
+
+.done:
+    add     rsp, TOKEN_SIZE
+    pop     rcx                    ; Alignment padding
+    pop     r13
+    pop     r12
+    pop     rbx
+    epilogue
+    ret
+
 ; ---- macro_handle_def -------------------
 ;
 ; macro_handle_def
@@ -1856,48 +2135,26 @@ macro_handle_def:
     je      .error_eof
 
     ; Check for % directive
-    cmp     byte [r12 + TOKEN_kind], TOK_PERCENT
+    cmp     byte [r12 + TOKEN_kind], TOK_DIRECTIVE
     jne     .store_token
 
-    ; It's a %. Peek next to check for nesting.
-    ; (Allocating another token for peeking)
-    mov     rdi, [rbx + PREP_arena]
-    mov     rsi, TOKEN_SIZE
-    call    arena_alloc
-    test    rax, rax
-    jnz     .error
-    mov     r8, rdx                ; r8 = next token slot
-
-    mov     rdi, [rbx + PREP_lexer]
-    mov     rsi, r8
-    call    lexer_next
-    test    rax, rax
-    jnz     .error
-
-    cmp     byte [r8 + TOKEN_kind], TOK_IDENT
-    jne     .store_percent_and_next
-
-    ; Check for "macro" or "endmacro"
-    mov     rdi, [r8 + TOKEN_value]
+    ; It's a TOK_DIRECTIVE. Check for "macro" or "endmacro"
+    mov     rdi, [r12 + TOKEN_value]
     lea     rsi, [dir_macro]
     call    str_cmp
     test    rax, rax
     jz      .nest_in
 
-    mov     rdi, [r8 + TOKEN_value]
+    mov     rdi, [r12 + TOKEN_value]
     lea     rsi, [dir_endm]
     call    str_cmp
     test    rax, rax
     jz      .nest_out
 
-.store_percent_and_next:
-    inc     r14                    ; counted %
-    inc     r14                    ; counted next token
-    jmp     .capture_loop
+    jmp     .store_token
 
 .nest_in:
     inc     r13                    ; found nested %macro
-    inc     r14
     inc     r14
     jmp     .capture_loop
 
@@ -1906,7 +2163,6 @@ macro_handle_def:
     test    r13, r13
     jz      .found_endmacro        ; Outermost %endmacro found!
     
-    inc     r14
     inc     r14
     jmp     .capture_loop
 
@@ -1979,13 +2235,14 @@ macro_handle_def:
 ; * Input: RDI = PrepState
 ; ;
 prep_handle_rep:
-    prologue
+    push    rbp
+    mov     rbp, rsp
     push    rbx
     push    r12
     push    r13
     push    r14
     push    r15
-    push    rax                    ; Alignment padding
+    and     rsp, -16               ; 16-byte alignment
     sub     rsp, 16                ; [rbp - 56]: total token count, [rbp - 64]: temp slot
     
     mov     rbx, rdi               ; rbx = PREP state
@@ -2004,7 +2261,7 @@ prep_handle_rep:
     mov     rdi, [rsp + TOKEN_value]
     mov     rsi, [rsp + TOKEN_len]
     call    str_to_int
-    mov     r14, rax               ; r14 = count
+    mov     r14, rdx               ; r14 = count
     add     rsp, TOKEN_SIZE        ; Clean up temp token
 
     ; 2. Allocate anonymous MACRO struct
@@ -2017,6 +2274,7 @@ prep_handle_rep:
     mov     byte [r15 + MACRO_tag], TAG_MACRO
     mov     qword [r15 + MACRO_name], 0
     mov     byte [r15 + MACRO_min_params], 0
+    mov     byte [r15 + MACRO_max_params], 0
     
     ; 3. Capture tokens until %endrep
     mov     qword [rbp - 56], 0    ; Total token count = 0
@@ -2053,57 +2311,36 @@ prep_handle_rep:
     test    rax, rax
     jnz     .error
 
-    ; Is it a %?
-    cmp     byte [r12 + TOKEN_kind], TOK_PERCENT
+    ; Check for % directive
+    cmp     byte [r12 + TOKEN_kind], TOK_DIRECTIVE
     jne     .store_token
 
-    ; It's a %. Peek next to check for nesting.
-    mov     rdi, [rbx + PREP_arena]
-    mov     rsi, TOKEN_SIZE
-    call    arena_alloc
-    test    rax, rax
-    jnz     .error
-    mov     [rbp - 64], rdx        ; Safe offset
-
-    mov     rdi, [rbx + PREP_lexer]
-    mov     rsi, [rbp - 64]
-    call    lexer_next
-    test    rax, rax
-    jnz     .error
-
-    mov     rdx, [rbp - 64]        ; rdx = peeked token
-
-    ; Check for "rep" or "endrep"
-    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
-    jne     .store_percent_and_next
-
-    mov     rdi, [rdx + TOKEN_value]
+    ; It's a TOK_DIRECTIVE. Check for "rep" or "endrep"
+    mov     rdi, [r12 + TOKEN_value]
     lea     rsi, [dir_rep]
     call    str_cmp
     test    rax, rax
     jz      .nest_in
 
-    mov     rdi, [rdx + TOKEN_value]
+    mov     rdi, [r12 + TOKEN_value]
     lea     rsi, [dir_endrep]
     call    str_cmp
     test    rax, rax
     jz      .nest_out
 
-.store_percent_and_next:
-    add     qword [rbp - 56], 2     ; counted % and next token
-    jmp     .capture
+    jmp     .store_token
 
 .nest_in:
-    inc     r13                    ; nesting++
-    add     qword [rbp - 56], 2
+    inc     r13                    ; found nested %rep
+    inc     qword [rbp - 56]
     jmp     .capture
 
 .nest_out:
     test    r13, r13
     jz      .captured              ; outermost %endrep found!
     
-    dec     r13                    ; nesting--
-    add     qword [rbp - 56], 2
+    dec     r13
+    inc     qword [rbp - 56]
     jmp     .capture
 
 .store_token:
@@ -2120,7 +2357,7 @@ prep_handle_rep:
     call    prep_expand_start
     test    rax, rax
     jnz     .error
-    mov     [rdx + MACROEXP_rep_count], r14 ; set repetition count
+    mov     dword [rdx + MACROEXP_rep_count], r14d ; set repetition count
     
     xor     rax, rax               ; success
     jmp     .done
@@ -2131,12 +2368,11 @@ prep_handle_rep:
     jmp     .done
 
 .done:
-    add     rsp, 16                ; Clean up reserved space
-    pop     rax
-    pop     r15
-    pop     r14
-    pop     r13
-    pop     r12
-    pop     rbx
-    epilogue
+    mov     r15, [rbp - 40]
+    mov     r14, [rbp - 32]
+    mov     r13, [rbp - 24]
+    mov     r12, [rbp - 16]
+    mov     rbx, [rbp - 8]
+    mov     rsp, rbp
+    pop     rbp
     ret

@@ -37,6 +37,8 @@ extern parser_check_prefix
 extern parser_define_label
 extern parser_parse_mem_operand
 extern parser_concat_local_name
+extern print_str
+extern print_num
 
 [SECTION .text]
 
@@ -72,16 +74,29 @@ parser_parse_instruction:
     mov     r11, rax                ; R11 = Mnemonic Table
     mov     r10, rdx                ; R10 = Register Table
     
-    ; Reserve space for tables on stack
-    sub     rsp, 16
+    ; Reserve space for tables and metadata on stack
+    sub     rsp, 32
     mov     [rsp], r10
     mov     [rsp + 8], r11
+    mov     qword [rsp + 16], 0     ; is_bracketed = 0
     
     ; 2. Get mnemonic token
 .get_mnemonic:
     ; Reload tables from stack
     mov     r10, [rsp]
     mov     r11, [rsp + 8]
+
+    ; Check if bracketed directive/statement starts
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    check_err
+    IF byte [rdx + TOKEN_kind], e, TOK_LBRACKET
+        ; Consume the LBRACKET
+        mov     rdi, rbx
+        call    preprocessor_next_token
+        check_err
+        mov     qword [rsp + 16], 1 ; is_bracketed = 1
+        ENDIF
 
     mov     rdi, rbx
     call    preprocessor_next_token
@@ -209,7 +224,7 @@ parser_parse_instruction:
     jz      .try_pseudo_op
     
     mov     [r15 + INST_op_id], ax
-    jmp     .operand_loop
+    jmp     .parse_operands
 
 .try_pseudo_op:
     ; Check for db, dw, dd, dq, resb, etc.
@@ -219,18 +234,52 @@ parser_parse_instruction:
     test    rax, rax
     jz      .unknown_mnemonic
     cmp     rax, 1
-    je      .get_mnemonic
+    je      .pseudo_op_ok
     jmp     .error
 
-    ; 4. Operand Parsing Loop
-.operand_loop:
+.pseudo_op_ok:
+    ; If it was bracketed, we must consume the closing RBRACKET
+    cmp     qword [rsp + 16], 1
+    je      .consume_rbracket
+    jmp     .get_mnemonic
+
+.consume_rbracket:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    check_err
+    IF byte [rdx + TOKEN_kind], ne, TOK_RBRACKET
+        mov     rax, EXIT_UNEXPECTED_TOKEN
+        jmp     .error
+        ENDIF
+    mov     qword [rsp + 16], 0     ; clear bracketed flag
+    jmp     .get_mnemonic
+
+.parse_operands:
     xor     r14, r14
+    
+    ; Check for 0-operand instruction
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    check_err
+    mov     al, [rdx + TOKEN_kind]
+    IF al, e, TOK_NEWLINE
+        jmp     .instruction_ok
+    ELSEIF al, e, TOK_EOF
+        jmp     .instruction_ok
+    ELSEIF al, e, TOK_COMMENT
+        jmp     .instruction_ok
+    ELSEIF al, e, TOK_RBRACKET
+        cmp     qword [rsp + 16], 1
+        je      .instruction_consume_rbracket
+        ENDIF
+
+.operand_loop:
     call    parser_parse_operand
     test    rax, rax
     jnz     .error
     
     IF r14, ge, 4
-        mov     rax, EXIT_INVALID_OPERAND
+        mov     rax, 210
         jmp     .error
         ENDIF
     
@@ -253,9 +302,25 @@ parser_parse_instruction:
         jmp     .operand_loop
         ENDIF
     
+    ; If bracketed instruction/directive, consume closing RBRACKET
+    cmp     qword [rsp + 16], 1
+    je      .instruction_consume_rbracket
+    
+.instruction_ok:
     mov     rax, OK
     mov     rdx, r15
     jmp     .done
+
+.instruction_consume_rbracket:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    check_err
+    IF byte [rdx + TOKEN_kind], ne, TOK_RBRACKET
+        mov     rax, EXIT_UNEXPECTED_TOKEN
+        jmp     .error
+        ENDIF
+    mov     qword [rsp + 16], 0
+    jmp     .instruction_ok
 
 .eof:
     xor     rax, rax
@@ -311,25 +376,53 @@ parser_parse_operand:
         jmp     .success
         ENDIF
 
-    ; 2. Registers (handled via ident lookup)
+    ; 2. Registers or Size Specifiers (handled via ident lookup)
     IF al, e, TOK_IDENT
+        mov     rdi, [r13 + TOKEN_value]
+        call    parser_parse_size_specifier_string
+        test    rax, rax
+        jz      .try_register
+        
+        ; Size specifier logic
+        mov     [r12 + OPERAND_size], al
+        
+        ; Peek next token. If "ptr", consume
+        mov     rdi, rbx
+        call    preprocessor_peek_token
+        mov     rcx, rdx
+        IF byte [rcx + TOKEN_kind], e, TOK_IDENT
+            mov     rdi, [rcx + TOKEN_value]
+            lea     rsi, [rel str_ptr]
+            call    str_cmp
+            test    rax, rax
+            jnz     .no_ptr
+            mov     rdi, rbx
+            call    preprocessor_next_token ; consume "ptr"
+.no_ptr:
+            ENDIF
+            
+        ; Next token MUST be '['
+        mov     rdi, rbx
+        call    preprocessor_next_token
+        mov     r13, rdx
+        IF byte [r13 + TOKEN_kind], ne, TOK_LBRACKET
+            mov     rax, 211 ; ERR
+            jmp     .error
+            ENDIF
+            
+        call    parser_parse_mem_operand
+        check_err
+        jmp     .success
+        
+.try_register:
+        call    parser_get_arch_tables
+        mov     rdi, rdx                ; RDI = Register Table Pointer
         mov     rsi, [r13 + TOKEN_value]
-        mov     rdi, r10
         call    parser_parse_reg_info
         IF rax, ne, ERR
             mov     byte [r12 + OPERAND_kind], OP_REG
             jmp     .success
             ENDIF
-
-        .success:
-            mov     rax, OK
-            pop     r13
-            pop     r12
-            pop     rbx
-            epilogue
-
-        .error:
-            epilogue
 
         ; Not a register, fall through to expression (it's a symbol)
         ; BUT FIRST: check for AArch64 shift keywords
@@ -376,11 +469,13 @@ parser_parse_operand:
                 ENDIF
 
 .not_shift:
-        mov     rdi, rbx
-        call    preprocessor_putback_token ; put back the ident
         ENDIF
 
     ; 3. Expressions (Numbers, Symbols, Math)
+    mov     rdi, rbx
+    mov     rsi, r13
+    call    preprocessor_putback_token
+    
     mov     rdi, rbx
     call    parser_evaluate_expression
     test    rax, rax
@@ -395,8 +490,63 @@ parser_parse_operand:
         jmp     .success
         ENDIF
 
-    mov     rax, EXIT_INVALID_OPERAND
+    ; Debug print inside fallback
+    push    rax
+    push    rdi
+    push    rsi
+    
+    ; Print: "Fallback error at token kind: "
+    mov     rdi, 2
+    lea     rsi, [rel msg_fallback_error]
+    call    print_str
+    
+    ; Print token kind
+    movzx   rsi, byte [r13 + TOKEN_kind]
+    mov     rdi, 2
+    call    print_num
+    
+    mov     rdi, 2
+    lea     rsi, [rel msg_newline]
+    call    print_str
+    
+    ; If TOK_IDENT/TOK_STRING/TOK_CHAR, print value
+    mov     al, [r13 + TOKEN_kind]
+    IF al, e, TOK_IDENT
+        mov     rdi, 2
+        mov     rsi, [r13 + TOKEN_value]
+        call    print_str
+        mov     rdi, 2
+        lea     rsi, [rel msg_newline]
+        call    print_str
+    ELSEIF al, e, TOK_STRING
+        mov     rdi, 2
+        mov     rsi, [r13 + TOKEN_value]
+        call    print_str
+        mov     rdi, 2
+        lea     rsi, [rel msg_newline]
+        call    print_str
+        ENDIF
+
+    pop     rsi
+    pop     rdi
+    pop     rax
+    
+    mov     rax, 211
     jmp     .error
+
+.success:
+    mov     rdx, r12
+    mov     rax, OK
+    pop     r13
+    pop     r12
+    pop     rbx
+    epilogue
+
+.error:
+    pop     r13
+    pop     r12
+    pop     rbx
+    epilogue
 
 ;*
 ; * [parser_parse_reg_info]
@@ -580,106 +730,120 @@ parser_evaluate_expression:
 parser_evaluate_term:
     prologue
     push    rbx
+    push    r12
+    push    r13
+    push    r14
     mov     rbx, rdi               ; RBX = PrepState
     
     mov     rdi, rbx
     call    parser_evaluate_factor
     check_err
-    mov     rbx, rdx
+    mov     r12, rdx               ; R12 = running total
     
 .loop:
     mov     rdi, rbx
     call    preprocessor_peek_token
-    mov     r12, rdx
-    mov     al, [r12 + TOKEN_kind]
+    check_err
+    mov     r13, rdx               ; R13 = peeked token pointer
+    mov     al, [r13 + TOKEN_kind]
     
     IF al, e, TOK_STAR
         mov     rdi, rbx
         call    preprocessor_next_token
+        check_err
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
-        imul    rbx, rdx
+        imul    r12, rdx
         jo      .overflow
         jmp     .loop
     ELSEIF al, e, TOK_SLASH
         mov     rdi, rbx
         call    preprocessor_next_token
+        check_err
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
         test    rdx, rdx
         jz      .div_zero
-        mov     r13, rdx           ; R13 = divisor
-        mov     rax, rbx           ; RAX = dividend
+        mov     r14, rdx           ; R14 = divisor
+        mov     rax, r12           ; RAX = dividend
         cqo                        ; Sign-extend RAX into RDX (A64)
-        idiv    r13
-        mov     rbx, rax
+        idiv    r14
+        mov     r12, rax
         jmp     .loop
     ELSEIF al, e, TOK_LSHIFT
         mov     rdi, rbx
         call    preprocessor_next_token
+        check_err
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
         mov     rcx, rdx
         and     cl, 0x3F           ; Safety Mask: shift count 0-63
-        shl     rbx, cl
+        shl     r12, cl
         jmp     .loop
     ELSEIF al, e, TOK_RSHIFT
         mov     rdi, rbx
         call    preprocessor_next_token
+        check_err
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
         mov     rcx, rdx
         and     cl, 0x3F           ; Safety Mask: shift count 0-63
-        shr     rbx, cl
+        shr     r12, cl
         jmp     .loop
     ELSEIF al, e, TOK_AMPERSAND
         mov     rdi, rbx
         call    preprocessor_next_token
+        check_err
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
-        and     rbx, rdx
+        and     r12, rdx
         jmp     .loop
     ELSEIF al, e, TOK_PIPE
         mov     rdi, rbx
         call    preprocessor_next_token
+        check_err
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
-        or      rbx, rdx
+        or      r12, rdx
         jmp     .loop
     ELSEIF al, e, TOK_CARET
         mov     rdi, rbx
         call    preprocessor_next_token
+        check_err
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
-        xor     rbx, rdx
+        xor     r12, rdx
         jmp     .loop
         ENDIF
     
-    mov     rdx, rbx
+    mov     rdx, r12
     xor     rax, rax
-    pop     rbx
-    epilogue
+    jmp     .done
 
 .error:
+    ; RAX already has the error code from check_err
+.done:
+    pop     r14
+    pop     r13
+    pop     r12
     pop     rbx
     epilogue
+    ret
 
 .overflow:
     mov     rax, EXIT_IMM_RANGE
-    pop     rbx
-    epilogue
+    jmp     .done
 
 .div_zero:
     mov     rax, EXIT_INVALID_IMM
-    pop     rbx
-    epilogue
+    jmp     .done
 
 ;*
 ; * [parser_evaluate_factor]
@@ -715,9 +879,13 @@ parser_evaluate_factor:
         ENDIF
 
     IF al, e, TOK_NUMBER
-        mov     rsi, [r12 + TOKEN_value]
+        mov     rdi, [r12 + TOKEN_value]
         call    str_to_int
-        mov     rdx, rax
+        check_err
+        xor     rax, rax
+        jmp     .done
+    ELSEIF al, e, TOK_CHAR
+        mov     rdx, [r12 + TOKEN_value]
         xor     rax, rax
         jmp     .done
     ELSEIF al, e, TOK_DOLLAR
@@ -790,6 +958,7 @@ parser_handle_reloc_modifier:
     prologue
     push    rbx
     push    r12
+    push    r14
     
     call    preprocessor_next_token
     check_err_to .error
@@ -826,10 +995,12 @@ parser_handle_reloc_modifier:
     jmp     .done
 
 .error:
+    pop     r14
     pop     r12
     pop     rbx
     epilogue
 .done:
+    pop     r14
     pop     r12
     pop     rbx
     epilogue
@@ -837,6 +1008,9 @@ parser_handle_reloc_modifier:
 .success:
     mov     rax, OK
     mov     rdx, r12
+    pop     r14
+    pop     r12
+    pop     rbx
     epilogue
 
 ;*
@@ -901,6 +1075,7 @@ parser_parse_mem_operand:
             ENDIF
 
 .loop:
+    mov     rdi, rbx
     call    preprocessor_next_token
     check_err_to .error
     mov     r13, rdx
@@ -916,6 +1091,8 @@ parser_parse_mem_operand:
 
     IF al, e, TOK_MINUS
         ; handle negative disp? usually handled by expression engine
+        mov     rdi, rbx
+        mov     rsi, r13
         call    preprocessor_putback_token
         jmp     .parse_item
         ENDIF
@@ -923,8 +1100,9 @@ parser_parse_mem_operand:
 .parse_item:
     IF al, e, TOK_IDENT
         ; Could be a register OR a symbol
+        call    parser_get_arch_tables
+        mov     rdi, rdx               ; RDI = Register Table Pointer
         mov     rsi, [r13 + TOKEN_value]
-        mov     rdi, r10               ; Register table
         call    parser_parse_reg_info
         IF rax, ne, ERR
             ; It's a register. Is it base or index?
@@ -960,7 +1138,7 @@ parser_parse_mem_operand:
                     jmp .scale_ok
                 ENDIF 
                 
-                mov     rax, EXIT_INVALID_OPERAND
+                mov     rax, 212
                 jmp     .error
             .scale_ok:
                 mov     [r12 + OPERAND_scale], al
@@ -968,6 +1146,8 @@ parser_parse_mem_operand:
             jmp     .loop
             ENDIF
         ; Not a register, must be a symbol/expression
+        mov     rdi, rbx
+        mov     rsi, r13
         call    preprocessor_putback_token
         ENDIF
 
@@ -997,19 +1177,18 @@ parser_parse_mem_operand:
     jne     .bounds_ok
     
     ; Field declared size (bytes) is in SYMBOL_size
-    mov     r14, [r13 + SYMBOL_size]       ; r14 = field byte width
+    mov     rsi, [r13 + SYMBOL_size]       ; rsi = field byte width
     
     ; Instruction access size (bits) is in OPERAND_size -> convert to bytes
     movzx   rcx, byte [r12 + OPERAND_size]
     shr     cl, 3                           ; bits -> bytes
     
-    cmp     rcx, r14
+    cmp     rcx, rsi
     jle     .bounds_ok                     ; write size <= field size -> OK
     
     ; FATAL: write exceeds field width
     extern error_struct_bounds
     mov     rdi, [r13 + SYMBOL_name]       ; field name for error message
-    mov     rsi, r14                       ; declared field size
     mov     rdx, rcx                       ; attempted access size
     call    error_struct_bounds
     mov     rax, EXIT_STRUCT_BOUNDS
@@ -1034,12 +1213,12 @@ str_rel: db "rel", 0
 ; ;
 parser_is_register:
     prologue
-    hash_fnv1a_64 rsi, r13
+    hash_fnv1a_64 rsi, r8
 .loop:
     mov     rax, [rdi]
     test    rax, rax
     jz      .not_found
-    cmp     rax, r13
+    cmp     rax, r8
     je      .found
     add     rdi, 16
     jmp     .loop
@@ -1068,7 +1247,7 @@ parser_lookup_mnemonic:
     jmp     .loop
 
 .found:
-    movzx   rax, word [rsi + 8]
+    movzx   rax, word [rsi + 9]
     epilogue
 
 .not_found:
@@ -1148,12 +1327,14 @@ str_lock:   db "lock", 0
 global parser_parse_struc
 parser_parse_struc:
     prologue
+    push    rbx
     push    r12
     push    r13
     push    r14
     push    r15
     
-    mov     r15, rdi               ; r15 = struct name Token
+    mov     rbx, rdi               ; rbx = PrepState
+    mov     r15, rsi               ; r15 = struct name Token
     xor     r14, r14               ; r14 = running byte offset
     
     ; Build struct-name string ("StructName", null-terminated from token)
@@ -1161,6 +1342,7 @@ parser_parse_struc:
     
 .field_loop:
     ; Read next meaningful token (skip newlines)
+    mov     rdi, rbx
     call    preprocessor_next_token
     check_err_to .error
     mov     r12, rdx
@@ -1201,6 +1383,7 @@ parser_parse_struc:
     
     ; Parse: field <name>, <size>
     ; 1. Field name
+    mov     rdi, rbx
     call    preprocessor_next_token
     check_err_to .error
     IF byte [rdx + TOKEN_kind], ne, TOK_IDENT
@@ -1210,6 +1393,7 @@ parser_parse_struc:
     mov     r12, [rdx + TOKEN_value]   ; r12 = field name ptr
     
     ; Consume comma
+    mov     rdi, rbx
     call    preprocessor_next_token
     check_err_to .error
     IF byte [rdx + TOKEN_kind], ne, TOK_COMMA
@@ -1217,26 +1401,23 @@ parser_parse_struc:
         jmp     .error
         ENDIF
     
-    ; 2. Field byte size (integer literal)
-    call    preprocessor_next_token
+    ; 2. Field byte size (expression)
+    mov     rdi, rbx
+    call    parser_evaluate_expression
     check_err_to .error
-    IF byte [rdx + TOKEN_kind], ne, TOK_NUMBER
-        mov     rax, EXIT_UNEXPECTED_TOKEN
-        jmp     .error
-        ENDIF
-    mov     rsi, [rdx + TOKEN_value]
-    call    str_to_int                 ; rax = field byte size
-    mov     r11, rax                   ; r11 = field size
+    mov     r11, rdx                   ; r11 = field size
     
     ; 3. Optional: Alignment (A77)
     mov     r10, 1                     ; default alignment
+    mov     rdi, rbx
     call    preprocessor_peek_token
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
-        call    preprocessor_next_token
-        call    preprocessor_next_token
-        mov     rsi, [rdx + TOKEN_value]
-        call    str_to_int
-        mov     r10, rax
+        mov     rdi, rbx
+        call    preprocessor_next_token ; consume TOK_COMMA
+        mov     rdi, rbx
+        call    parser_evaluate_expression
+        check_err_to .error
+        mov     r10, rdx
         
         ; VALIDATION: Power of 2 (Industrial Safety)
         mov     rax, r10
@@ -1292,6 +1473,53 @@ parser_parse_struc:
     mov     [rsi + SYMBOL_size],  r14     ; total byte size
     call    symbol_add
     add     rsp, SYMBOL_SIZE
+
+    ; Register the struct size constant: "[StructName]_SIZE"
+    ; 1. Calculate struct name length
+    mov     rdi, r13
+    extern  str_len
+    call    str_len
+    mov     r12, rax                   ; r12 = length of struct name
+    
+    ; 2. Allocate buffer from arena for "[StructName]_SIZE" (len + 5 for "_SIZE" + 1 for null = len + 6)
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, r12
+    add     rsi, 6
+    extern  arena_alloc
+    call    arena_alloc
+    check_err_to .error
+    mov     r15, rdx                   ; r15 = allocated buffer ptr
+    
+    ; 3. Copy struct name to r15
+    mov     rdi, r15
+    mov     rsi, r13
+    mov     rcx, r12
+    rep movsb
+    
+    ; 4. Append "_SIZE" and null terminate
+    mov     byte [r15 + r12],     '_'
+    mov     byte [r15 + r12 + 1], 'S'
+    mov     byte [r15 + r12 + 2], 'I'
+    mov     byte [r15 + r12 + 3], 'Z'
+    mov     byte [r15 + r12 + 4], 'E'
+    mov     byte [r15 + r12 + 5], 0
+    
+    ; 5. Register the struct size constant: kind=SYM_CONSTANT, value=total
+    sub     rsp, SYMBOL_SIZE
+    mov     rdi, rsp
+    xor     rax, rax
+    mov     rcx, 6
+    rep stosq
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, rsp
+    mov     byte [rsi + SYMBOL_tag],  TAG_SYMBOL
+    mov     byte [rsi + SYMBOL_kind], SYM_CONSTANT
+    mov     byte [rsi + SYMBOL_vis],  VIS_LOCAL
+    mov     [rsi + SYMBOL_name],  r15     ; "[StructName]_SIZE"
+    mov     [rsi + SYMBOL_value], r14     ; total byte size as value!
+    mov     qword [rsi + SYMBOL_size], 8  ; size of QWORD constant
+    call    symbol_add
+    add     rsp, SYMBOL_SIZE
     
     xor     rax, rax
     jmp     .done
@@ -1306,13 +1534,12 @@ parser_parse_struc:
 
 .error:
 .done:
-    mov     rsp, rbp
-    pop     rbp
     pop     r15
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
+    epilogue
     ret
 
 
@@ -1326,23 +1553,44 @@ parser_define_label:
     push    rsi
     mov     rbx, [rbx + PREP_ctx]
     
+    ; 1. Check if the symbol already exists
+    mov     rdi, rbx
+    mov     rsi, [rsp]                         ; Retrieve original name from stack
+    extern  symbol_find
+    call    symbol_find
+    IF rax, e, OK
+        ; Symbol already exists! Check if it is currently undefined
+        cmp     byte [rdx + SYMBOL_kind], SYM_UNKNOWN
+        je      .define_existing
+        cmp     word [rdx + SYMBOL_section], 0
+        je      .define_existing
+        
+        ; Otherwise, it's defined already! Duplicate symbol!
+        mov     rax, EXIT_DUP_SYMBOL
+        jmp     .error_no_stack
+        ENDIF
+        
     ; Create Symbol struct
     sub     rsp, SYMBOL_SIZE
     mov     rdi, rsp
     xor     rax, rax
-    mov     rcx, 6
+    mov     rcx, (SYMBOL_SIZE / 8)
     rep stosq
-    mov     byte [rdi + SYMBOL_tag], TAG_SYMBOL
-    mov     byte [rdi + SYMBOL_kind], SYM_LABEL
-    mov     [rdi + SYMBOL_name], rsi
+    
+    ; Setup symbol fields using stable rsi = rsp
+    mov     rsi, rsp
+    mov     byte [rsi + SYMBOL_tag], TAG_SYMBOL
+    mov     byte [rsi + SYMBOL_kind], SYM_LABEL
+    mov     rax, [rsp + SYMBOL_SIZE]            ; Retrieve original label name from stack
+    mov     [rsi + SYMBOL_name], rax
     
     ; Set value to current section location
     mov     rax, [rbx + ASMCTX_curr_sec]
     IF rax, ne, 0
         mov     rcx, [rax + SECTION_size]
-        mov     [rdi + SYMBOL_value], rcx
+        mov     [rsi + SYMBOL_value], rcx
         movzx   ecx, word [rax + SECTION_index]
-        mov     [rdi + SYMBOL_section], cx
+        mov     [rsi + SYMBOL_section], cx
         ENDIF
 
     mov     rdi, rbx
@@ -1357,8 +1605,29 @@ parser_define_label:
     pop     rbx
     epilogue
 
+.define_existing:
+    mov     byte [rdx + SYMBOL_kind], SYM_LABEL
+    mov     byte [rdx + SYMBOL_tag], TAG_SYMBOL
+    
+    ; Set value to current section location
+    mov     rax, [rbx + ASMCTX_curr_sec]
+    IF rax, ne, 0
+        mov     rcx, [rax + SECTION_size]
+        mov     [rdx + SYMBOL_value], rcx
+        movzx   ecx, word [rax + SECTION_index]
+        mov     [rdx + SYMBOL_section], cx
+        ENDIF
+        
+    mov     [rbx + ASMCTX_last_symbol], rdx    ; Store for potential equ override
+    
+    xor     rax, rax
+    pop     rsi
+    pop     rbx
+    epilogue
+
 .error:
     add     rsp, SYMBOL_SIZE
+.error_no_stack:
     pop     rsi
     pop     rbx
     epilogue
@@ -1451,6 +1720,15 @@ parser_handle_pseudo_op:
         mov     rdi, rbx
         call    parser_handle_section_directive
         jmp     .check_handler_result
+    ELSE
+        mov     rdi, r12
+        lea     rsi, [rel str_section_upper]
+        call    str_cmp
+        IF rax, e, 0
+            mov     rdi, rbx
+            call    parser_handle_section_directive
+            jmp     .check_handler_result
+            ENDIF
         ENDIF
 
     ; 2.5 Comm Directive
@@ -1540,6 +1818,15 @@ parser_handle_pseudo_op:
         mov     rdi, rbx
         call    parser_handle_default
         jmp     .check_handler_result
+    ELSE
+        mov     rdi, r12
+        lea     rsi, [rel str_default_upper]
+        call    str_cmp
+        IF rax, e, 0
+            mov     rdi, rbx
+            call    parser_handle_default
+            jmp     .check_handler_result
+            ENDIF
         ENDIF
 
     mov     rdi, r12
@@ -1557,6 +1844,20 @@ parser_handle_pseudo_op:
     IF rax, e, 0
         mov     rdi, rbx
         call    parser_handle_default   ; reuse same skip logic
+        jmp     .check_handler_result
+        ENDIF
+
+    mov     rdi, r12
+    lea     rsi, [rel str_struc]
+    call    str_cmp
+    IF rax, e, 0
+        mov     rdi, rbx
+        call    preprocessor_next_token
+        test    rax, rax
+        jnz     .done
+        mov     rsi, rdx
+        mov     rdi, rbx
+        call    parser_parse_struc
         jmp     .check_handler_result
         ENDIF
 
@@ -1754,6 +2055,7 @@ str_equ:    db "equ", 0
 parser_emit_data_8:
     prologue
 .loop:
+    mov     rdi, rbx
     call    preprocessor_next_token
     check_err
     mov     r12, rdx
@@ -1765,7 +2067,10 @@ parser_emit_data_8:
         extern  asmctx_emit_string
         call    asmctx_emit_string
         ELSE
+        mov     rdi, rbx
+        mov     rsi, r12
         call    preprocessor_putback_token
+        mov     rdi, rbx
         call    parser_evaluate_expression
         check_err
         mov     rdi, [rbx + PREP_ctx]
@@ -1774,8 +2079,10 @@ parser_emit_data_8:
         call    asmctx_emit_byte
         ENDIF
     
+    mov     rdi, rbx
     call    preprocessor_peek_token
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
+        mov     rdi, rbx
         call    preprocessor_next_token
         jmp     .loop
         ENDIF
@@ -1787,14 +2094,17 @@ parser_emit_data_8:
 parser_emit_data_16:
     prologue
 .loop:
+    mov     rdi, rbx
     call    parser_evaluate_expression
     check_err
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, rdx
     extern  asmctx_emit_word
     call    asmctx_emit_word
+    mov     rdi, rbx
     call    preprocessor_peek_token
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
+        mov     rdi, rbx
         call    preprocessor_next_token
         jmp     .loop
         ENDIF
@@ -1806,14 +2116,17 @@ parser_emit_data_16:
 parser_emit_data_32:
     prologue
 .loop:
+    mov     rdi, rbx
     call    parser_evaluate_expression
     check_err
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, rdx
     extern  asmctx_emit_dword
     call    asmctx_emit_dword
+    mov     rdi, rbx
     call    preprocessor_peek_token
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
+        mov     rdi, rbx
         call    preprocessor_next_token
         jmp     .loop
         ENDIF
@@ -1825,14 +2138,17 @@ parser_emit_data_32:
 parser_emit_data_64:
     prologue
 .loop:
+    mov     rdi, rbx
     call    parser_evaluate_expression
     check_err
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, rdx
     extern  asmctx_emit_qword
     call    asmctx_emit_qword
+    mov     rdi, rbx
     call    preprocessor_peek_token
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
+        mov     rdi, rbx
         call    preprocessor_next_token
         jmp     .loop
         ENDIF
@@ -1849,8 +2165,9 @@ parser_handle_extern:
     prologue
     push    rbx
     push    r12
-    mov     rbx, rdi               ; rdi = PrepState
+    mov     rbx, rdi               ; rbx = PrepState
 .loop:
+    mov     rdi, rbx
     call    preprocessor_next_token
     check_err_to .done
     mov     r12, rdx               ; r12 = token (name)
@@ -1882,8 +2199,10 @@ parser_handle_extern:
     check_err
     
     ; Check for comma (extern name1, name2)
+    mov     rdi, rbx
     call    preprocessor_peek_token
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
+        mov     rdi, rbx
         call    preprocessor_next_token
         jmp     .loop
         ENDIF
@@ -1902,8 +2221,11 @@ parser_handle_extern:
 ; ;
 parser_handle_default:
     prologue
+    push    rbx
+    mov     rbx, rdi               ; rbx = PrepState
     ; Just consume until end of line for now
 .loop:
+    mov     rdi, rbx
     call    preprocessor_peek_token
     IF byte [rdx + TOKEN_kind], e, TOK_NEWLINE
         jmp .done
@@ -1911,9 +2233,11 @@ parser_handle_default:
     IF byte [rdx + TOKEN_kind], e, TOK_EOF
         jmp .done
         ENDIF
+    mov     rdi, rbx
     call    preprocessor_next_token
     jmp     .loop
 .done:
+    pop     rbx
     epilogue
 
 ;*
@@ -1924,6 +2248,8 @@ parser_handle_section_directive:
     prologue
     push    rbx
     push    r12
+    push    r13
+    push    r14
     
     ; Get section name token
     call    preprocessor_next_token
@@ -1983,14 +2309,16 @@ parser_handle_section_directive:
                         ENDIF
                         ENDIF
 
-    ; 3. Reset last_global on section change
-    mov     rdi, [rbx + PREP_ctx]
-    mov     qword [rdi + ASMCTX_last_global], 0
+    ; 3. Reset last_global on section change (Removed to support local labels after section directives)
+    
     
     ; 3. Check for attributes (comma + string)
+    mov     rdi, rbx
     call    preprocessor_peek_token
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
+        mov     rdi, rbx
         call    preprocessor_next_token
+        mov     rdi, rbx
         call    preprocessor_next_token
         check_err
         mov     r14, rdx               ; r14 = attribute token
@@ -2137,11 +2465,15 @@ parser_handle_section_directive:
             ENDIF
     
 .done:
+    pop     r14
+    pop     r13
     pop     r12
     pop     rbx
     epilogue
 
 .error:
+    pop     r14
+    pop     r13
     pop     r12
     pop     rbx
     epilogue
@@ -2154,18 +2486,19 @@ parser_handle_visibility:
     prologue
     push    rbx
     push    r12
+    push    r13
     mov     r12, rsi               ; r12 = visibility
     
     call    preprocessor_next_token
     check_err
-    mov     r11, rdx
-    IF byte [r11 + TOKEN_kind], ne, TOK_IDENT
+    mov     r13, rdx               ; r13 = token
+    IF byte [r13 + TOKEN_kind], ne, TOK_IDENT
         mov     rax, EXIT_UNEXPECTED_TOKEN
         jmp     .done
         ENDIF
     
     mov     rdi, [rbx + PREP_ctx]
-    mov     rsi, [r11 + TOKEN_value]
+    mov     rsi, [r13 + TOKEN_value]
     extern  symbol_find
     call    symbol_find
     
@@ -2194,7 +2527,7 @@ parser_handle_visibility:
         mov     rdi, [rbx + PREP_ctx]
         mov     rsi, rsp
         mov     byte [rsi + SYMBOL_tag], TAG_SYMBOL
-        mov     rax, [r11 + TOKEN_value]
+        mov     rax, [r13 + TOKEN_value]
         mov     [rsi + SYMBOL_name], rax
         mov     byte [rsi + SYMBOL_vis], r12b
         call    symbol_add
@@ -2203,11 +2536,13 @@ parser_handle_visibility:
     
     mov     rax, OK
 .done:
+    pop     r13
     pop     r12
     pop     rbx
     epilogue
 
 .error:
+    pop     r13
     pop     r12
     pop     rbx
     epilogue
@@ -2345,6 +2680,8 @@ str_local:     db "local", 0
 str_align:     db "align", 0
 str_p2align:   db "p2align", 0
 str_section:   db "section", 0
+str_section_upper: db "SECTION", 0
+str_struc:     db "struc", 0
 str_endstruc:  db "endstruc", 0
 str_field:     db "field", 0
     ; str_rel (Defined at line 759)
@@ -2361,6 +2698,7 @@ str_bss:       db ".bss", 0
 str_rodata:    db ".rodata", 0
 str_extern:    db "extern", 0
 str_default:   db "default", 0
+str_default_upper: db "DEFAULT", 0
 str_bits:      db "bits", 0
 msg_debug_pseudo: db "DEBUG: Pseudo-op: ", 0
 msg_newline:      db 10, 0
@@ -2368,3 +2706,112 @@ msg_debug_token:   db "DEBUG: Token: ", 0
 msg_parser_entry: db "DEBUG: Parser entry", 10, 0
 msg_debug_lookup: db "DEBUG: Mnemonic lookup finished", 10, 0
 msg_debug_null:   db "(null)", 0
+
+str_byte:  db "byte", 0
+str_word:  db "word", 0
+str_dword: db "dword", 0
+str_qword: db "qword", 0
+str_tword: db "tword", 0
+str_oword: db "oword", 0
+str_yword: db "yword", 0
+str_zword: db "zword", 0
+str_ptr:   db "ptr", 0
+msg_debug_token_kind: db "Debug token kind: ", 0
+msg_fallback_error: db "Fallback error at token kind: ", 0
+msg_size_spec_bracket: db "Size specifier expected '[' but got kind: ", 0
+
+[SECTION .text]
+global parser_parse_size_specifier_string
+parser_parse_size_specifier_string:
+    prologue
+    push    rbx                     ; Preserve rbx
+    mov     rbx, rdi                ; rbx = input string
+
+    ; 1. Check "byte" -> 8
+    mov     rdi, rbx
+    lea     rsi, [rel str_byte]
+    call    str_cmp
+    test    rax, rax
+    jz      .is_byte
+
+    ; 2. Check "word" -> 16
+    mov     rdi, rbx
+    lea     rsi, [rel str_word]
+    call    str_cmp
+    test    rax, rax
+    jz      .is_word
+
+    ; 3. Check "dword" -> 32
+    mov     rdi, rbx
+    lea     rsi, [rel str_dword]
+    call    str_cmp
+    test    rax, rax
+    jz      .is_dword
+
+    ; 4. Check "qword" -> 64
+    mov     rdi, rbx
+    lea     rsi, [rel str_qword]
+    call    str_cmp
+    test    rax, rax
+    jz      .is_qword
+
+    ; 5. Check "tword" -> 80
+    mov     rdi, rbx
+    lea     rsi, [rel str_tword]
+    call    str_cmp
+    test    rax, rax
+    jz      .is_tword
+
+    ; 6. Check "oword" -> 128
+    mov     rdi, rbx
+    lea     rsi, [rel str_oword]
+    call    str_cmp
+    test    rax, rax
+    jz      .is_oword
+
+    ; 7. Check "yword" -> 256
+    mov     rdi, rbx
+    lea     rsi, [rel str_yword]
+    call    str_cmp
+    test    rax, rax
+    jz      .is_yword
+
+    ; 8. Check "zword" -> 512
+    mov     rdi, rbx
+    lea     rsi, [rel str_zword]
+    call    str_cmp
+    test    rax, rax
+    jz      .is_zword
+
+    ; Not a size specifier
+    xor     rax, rax
+    jmp     .done
+
+.is_byte:
+    mov     rax, 8
+    jmp     .done
+.is_word:
+    mov     rax, 16
+    jmp     .done
+.is_dword:
+    mov     rax, 32
+    jmp     .done
+.is_qword:
+    mov     rax, 64
+    jmp     .done
+.is_tword:
+    mov     rax, 80
+    jmp     .done
+.is_oword:
+    mov     rax, 128
+    jmp     .done
+.is_yword:
+    mov     rax, 256
+    jmp     .done
+.is_zword:
+    mov     rax, 512
+    jmp     .done
+
+.done:
+    pop     rbx
+    epilogue

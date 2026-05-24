@@ -252,19 +252,19 @@ cli_parse:
     ret
 
 [SECTION .rodata]
-    .flag_help    db "--help", 0
-    .flag_output  db "-o", 0
-    .flag_format  db "-f", 0
-    .flag_arch    db "-a", 0
-    .flag_arch_long db "--arch", 0
-    .flag_standalone db "--standalone", 0
-    .flag_verbose db "-v", 0
-    .val_elf64    db "elf64", 0
-    .val_bin      db "bin", 0
-    .val_amd64    db "amd64", 0
-    .val_aarch64  db "aarch64", 0
-    .val_riscv64  db "riscv64", 0
+    .flag_help:    db "--help", 0
+    .flag_output:  db "-o", 0
+    .flag_format:  db "-f", 0
+    .flag_arch:    db "-a", 0
+    .flag_arch_long: db "--arch", 0
+    .flag_standalone: db "--standalone", 0
+    .flag_verbose: db "-v", 0
+    .val_elf64:    db "elf64", 0
+    .val_bin:      db "bin", 0
+    .val_amd64:    db "amd64", 0
+    .val_aarch64:  db "aarch64", 0
+    .val_riscv64:  db "riscv64", 0
 
-    .flag_color   db "--color", 0
-    .flag_werror  db "-Werror", 0
-    .flag_listing db "--listing", 0
+    .flag_color:   db "--color", 0
+    .flag_werror:  db "-Werror", 0
+    .flag_listing: db "--listing", 0

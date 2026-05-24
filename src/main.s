@@ -69,6 +69,14 @@ _start:
     lea     rax, [rel global_arena]
     mov     [rbx + ASMCTX_arena], rax
     mov     byte [rbx + ASMCTX_tag], TAG_ASM_CTX
+    
+    ; Allocate sections array (64 * 8 = 512 bytes)
+    mov     rdi, rax               ; rdi = &global_arena
+    mov     rsi, 512
+    call    arena_alloc
+    test    rax, rax
+    jnz     .exit_oom
+    mov     [rbx + ASMCTX_sections], rdx
 
     ; 3. Initialize Symbol Table
     mov     rdi, rbx
@@ -219,6 +227,65 @@ _start:
     jmp     .exit
 
 .error_in_parser:
+    mov     r15, rax                         ; Preserve error code in r15
+    
+    ; Print: "Parser error: "
+    mov     rdi, 2
+    lea     rsi, [rel msg_parser_err]
+    call    print_str
+    
+    ; Print the error code
+    mov     rdi, 2
+    mov     rsi, r15
+    call    print_num
+    
+    ; Print " at "
+    mov     rdi, 2
+    lea     rsi, [rel msg_at]
+    call    print_str
+    
+    ; Get current LexerState
+    lea     rbx, [rel global_prep]           ; rbx = PrepState
+    mov     rbx, [rbx + PREP_lexer]          ; rbx = active LexerState
+    
+    ; Print filename if not NULL
+    mov     rsi, [rbx + LEXER_file]
+    test    rsi, rsi
+    jz      .no_file
+    mov     rdi, 2
+    call    print_str
+    jmp     .print_line_col
+.no_file:
+    mov     rdi, 2
+    lea     rsi, [rel msg_unknown_file]
+    call    print_str
+
+.print_line_col:
+    ; Print ":"
+    mov     rdi, 2
+    lea     rsi, [rel msg_colon]
+    call    print_str
+    
+    ; Print line number
+    mov     esi, dword [rbx + LEXER_line]
+    mov     rdi, 2
+    call    print_num
+    
+    ; Print ":"
+    mov     rdi, 2
+    lea     rsi, [rel msg_colon]
+    call    print_str
+    
+    ; Print column number
+    movzx   rsi, word [rbx + LEXER_col]
+    mov     rdi, 2
+    call    print_num
+    
+    ; Print newline
+    mov     rdi, 2
+    lea     rsi, [rel msg_newline]
+    call    print_str
+
     mov     rax, 4
     jmp     .exit
 
@@ -255,6 +322,46 @@ print_str:
     pop     rbp
     ret
 
+global print_num
+print_num:
+    push    rbp
+    mov     rbp, rsp
+    push    rbx                     ; Preserve rbx
+    push    r12                     ; Preserve r12
+    sub     rsp, 32                 ; 32 bytes buffer
+    
+    mov     r12, rdi                ; r12 = fd
+    mov     rax, rsi                ; rax = number
+    lea     rcx, [rbp - 17]         ; pointer to end of buffer
+    mov     byte [rcx], 0           ; null terminator
+    
+    mov     rsi, 10                 ; divisor
+.loop:
+    xor     rdx, rdx
+    div     rsi                     ; rax = quotient, rdx = remainder
+    add     dl, '0'
+    dec     rcx
+    mov     [rcx], dl
+    test    rax, rax
+    jnz     .loop
+    
+    ; Now rcx points to the start of the string
+    mov     rdi, r12                ; fd
+    mov     rsi, rcx                ; string pointer
+    call    print_str
+    
+    add     rsp, 32
+    pop     r12
+    pop     rbx
+    pop     rbp
+    ret
+
 [SECTION .data]
     msg_usage:     db "Usage: utasm -f <fmt> <input> -o <output>", 10, 0
     msg_crit_init: db "CRITICAL: Initialization failed", 10, 0
+    msg_parser_err:   db "Parser error: ", 0
+    msg_at:           db " at ", 0
+    msg_unknown_file: db "<unknown>", 0
+    msg_colon:        db ":", 0
+    msg_newline:      db 10, 0
+
