@@ -1,415 +1,542 @@
 # utasm
 
-> A high-performance, self-hosting, multi-architecture assembler and linker — written entirely in x86-64 assembly.
+> A high-performance, self-hosting, self-patching, multi-architecture assembler and linker — written entirely in x86-64 assembly.
 
-`utasm` is the universal assembler engine of the UtkarshaLab toolchain. It targets three architectures from a single unified codebase, produces correct ELF64 binaries, and is designed to assemble itself.
+`utasm` is the universal assembler engine of the UtkarshaLab toolchain. It targets three architectures from a single unified codebase, produces correct ELF64/PE32+ binaries, assembles itself, and patches itself at runtime based on profiling data.
 
 ---
 
 ## Features
 
 - **Multi-Architecture** — Native instruction encoding for x86-64, AArch64, and RISC-V 64 (RV64GC)
-- **Integrated Linker** — ELF64 emission with section layout, program headers, symbol tables, and RELA relocation resolution
-- **Recursive Preprocessor** — `%define`, `%macro`, `%if`, `%rep` with full compile-time expression evaluation and token pasting
-- **O(1) Symbol Table** — FNV-1a hash with quadratic probing, 50% load-factor cap, forward-reference resolution
-- **Self-Patching Engine** — Runtime binary modification driven by RDTSC profiler data; hot paths rewritten without restart
-- **CPU Profile Validation** — Target CPU feature flags validated at encode time (`cpu/<profile>.s`)
-- **SIMD Coverage** — AVX/AVX2 (VEX-3/EVEX), AArch64 NEON/SVE, RISC-V V extension foundations
-- **DWARF v5** — Full debug symbol emission (`.debug_info`, `.debug_abbrev`, `.debug_line`)
-- **io_uring I/O** — Asynchronous file operations for ultra-fast multi-megabyte builds
-- **Self-Hosting** — Bootstrap pipeline (`scripts/bootstrap.sh`) that builds Gen0 via NASM and Gen1 via itself
-- **ELF Section Groups** — SHT_GROUP + COMDAT support
-- **BSS / Common Symbols** — SHT_NOBITS with zero disk footprint; SHN_COMMON handling
-- **Static Archive I/O** — `.a` reader and generator
-- **Struct Support** — STRUC/ENDSTRUC with field alignment
+- **Self-Hosting** — Bootstrap pipeline that compiles Gen0 via NASM and Gen1+ via itself
+- **Self-Patching** — Runtime binary self-modification engine that rewrites hot paths based on profiler data
+- **Integrated Linker** — ELF64/PE32+ emission with section layout, relocation resolution, and dead code elimination
+- **Industrial Error Engine** — Rich errors with file:line:col, source context, `^^^` underlines, macro expansion chains, and actionable hints (E1xx–E30xx, W1xx–W20xx)
+- **Recursive Preprocessor** — `%define`, `%macro`, `%if`, `%rep`, `%rotate`, token pasting, stringification, macro libraries
+- **O(1) Symbol Table** — Hash-based lookup with quadratic probing and ELF index tracking
+- **Full x86-64 Encoding** — REX, VEX-3, EVEX, AVX-512 (F/BW/DQ/VL/VNNI/BF16), AMX, AES-NI
+- **CPU Profiles** — Named CPU targets with per-instruction feature validation
+- **DWARF v5** — Full debug symbol emission (`.debug_info`, `.debug_abbrev`, `.debug_line`, `.debug_frame`)
+- **io\_uring I/O** — Asynchronous file I/O for ultra-fast multi-megabyte builds
+- **Multiple Output Formats** — ELF64, PE32+ (UEFI), flat binary, `.upk` (UtkarshaLab package format)
+- **Built-in Tools** — Disassembler, object inspector, symbol dumper — no external tools required
+- **Zero Dependencies** — No libc, no runtime, raw syscalls only
 
 ---
 
 ## Supported Architectures
 
-| Architecture | Base ISA | Extensions                     |
-| ------------ | -------- | ------------------------------ |
-| x86-64       | AMD64    | REX, VEX-3, EVEX, AVX/AVX-512 |
-| AArch64      | ARMv8-A  | NEON Advanced SIMD, SVE        |
-| RISC-V 64    | RV64GC   | M, A, F, D, V extensions       |
+| Architecture | Base ISA | Extensions |
+|---|---|---|
+| x86-64 | AMD64 | REX, VEX-3, EVEX, AVX/AVX2/AVX-512, AMX, AES-NI, SHA |
+| AArch64 | ARMv8-A | NEON Advanced SIMD, SVE, SVE2 |
+| RISC-V 64 | RV64GC | M, A, F, D, V extensions |
 
 ---
 
 ## Project Structure
 
-> This is the target architecture. The repo converges toward this layout incrementally.
-
 ```
 utasm/
 │
-├── utasm.asm                    ; entry point, argument parsing, main loop
+├── utasm.s                      ; entry point, main loop
+├── cli.s                        ; CLI argument parser + dispatch
+├── utasm.ld                     ; linker script for self-hosted builds
+├── utasm.toml                   ; project manifest
+├── VERSION                      ; current release version
+├── LICENSE                      ; Apache-2.0
+├── README.md                    ; this file
+├── TESTS.md                     ; full test architecture documentation
+│
+├── build/                       ; build output (generated, not committed)
+│   ├── gen0/                    ; Stage 1: NASM-compiled binary
+│   ├── gen1/                    ; Stage 2: Gen0-compiled binary
+│   └── gen2/                    ; Stage 3: Gen1-compiled binary (parity check)
+│
+├── docs/
+│   ├── errors.md                ; full error code reference E1xx–E30xx
+│   ├── warnings.md              ; full warning code reference W1xx–W20xx
+│   ├── hints.md                 ; full hint code reference H1xx–H5xx
+│   └── cpu_profiles.md          ; CPU profile documentation
+│
+├── include/                     ; architecture-agnostic headers
+│   ├── arch/
+│   │   ├── amd64.inc            ; x86-64 register encodings, opcode maps
+│   │   ├── aarch64.inc          ; AArch64 register encodings, opcode maps
+│   │   └── riscv64.inc          ; RISC-V 64 register encodings, opcode maps
+│   ├── utasm.inc                ; utasm standard definitions
+│   ├── x86_64.inc               ; register names, common macros
+│   ├── elf.inc                  ; ELF64 struct offsets and constants
+│   ├── pe.inc                   ; PE32+ constants
+│   ├── syscall.inc              ; syscall numbers
+│   ├── simd.inc                 ; SIMD helper macros
+│   ├── debug.inc                ; debug helper macros
+│   ├── upk.inc                  ; .upk package format constants
+│   ├── constant.inc             ; global constants (exit codes, flags, limits)
+│   ├── macro.inc                ; prologue/epilogue and utility macros
+│   ├── macro1.inc               ; extended preprocessor macros
+│   ├── register.inc             ; register aliases across all architectures
+│   ├── type.inc                 ; internal type tags and struct field offsets
+│   └── uring.inc                ; io_uring SQE/CQE struct definitions
 │
 ├── core/
 │   ├── config.inc               ; global constants, CPU targets, version
 │   ├── types.inc                ; all struc definitions used everywhere
-│   ├── globals.asm              ; global variables, state
-│   └── memory.asm               ; internal allocator (bump + slab)
+│   ├── globals.s                ; global variables, assembler state
+│   ├── asmctx.s                 ; assembler context and section state
+│   └── memory.s                 ; internal allocator (bump + slab)
 │
 ├── frontend/
 │   │
 │   ├── lexer/
-│   │   ├── lexer.asm            ; main lexer entry point
-│   │   ├── lexer_chars.asm      ; character classification tables
-│   │   ├── lexer_ident.asm      ; identifier + keyword scanning
-│   │   ├── lexer_number.asm     ; integer + float literal parsing
-│   │   │   ├── lexer_num_bin.asm   ; binary literal (0b...)
-│   │   │   ├── lexer_num_oct.asm   ; octal literal (0o...)
-│   │   │   ├── lexer_num_hex.asm   ; hex literal (0x...)
-│   │   │   └── lexer_num_dec.asm   ; decimal literal
-│   │   ├── lexer_string.asm     ; string + char literal scanning
-│   │   ├── lexer_comment.asm    ; line + block comment handling
-│   │   ├── lexer_token.asm      ; token creation, source map attachment
-│   │   ├── lexer_buffer.asm     ; token buffer management
-│   │   └── lexer_utf8.asm       ; UTF-8 validation
+│   │   ├── lexer.s              ; main entry point
+│   │   ├── chars.s              ; character classification tables
+│   │   ├── ident.s              ; identifier + keyword scanning
+│   │   ├── number/
+│   │   │   ├── number.s         ; literal parsing coordinator
+│   │   │   ├── bin.s            ; binary literals (0b...)
+│   │   │   ├── oct.s            ; octal literals (0o...)
+│   │   │   ├── hex.s            ; hex literals (0x...)
+│   │   │   └── dec.s            ; decimal literals
+│   │   ├── string.s             ; string + char literal scanning
+│   │   ├── comment.s            ; line + block comment handling
+│   │   ├── token.s              ; token creation, source map attachment
+│   │   ├── buffer.s             ; token buffer management
+│   │   └── utf8.s               ; UTF-8 validation
 │   │
 │   ├── parser/
-│   │   ├── parser.asm           ; main parser entry point
-│   │   ├── parser_instr.asm     ; instruction statement parsing
-│   │   ├── parser_operand.asm   ; operand parsing (reg/mem/imm)
-│   │   │   ├── parser_reg.asm      ; register operand parsing
-│   │   │   ├── parser_mem.asm      ; memory operand parsing
-│   │   │   ├── parser_imm.asm      ; immediate operand parsing
-│   │   │   └── parser_addr.asm     ; addressing mode resolution
-│   │   ├── parser_directive.asm ; directive statement parsing
-│   │   ├── parser_label.asm     ; label definition parsing
-│   │   ├── parser_expr.asm      ; expression parsing (Pratt parser)
-│   │   ├── parser_section.asm   ; section directive parsing
-│   │   ├── parser_data.asm      ; DB/DW/DD/DQ/DT/DO/DY/DZ parsing
-│   │   ├── parser_struct.asm    ; STRUC/ENDSTRUC parsing
-│   │   ├── parser_proc.asm      ; PROC/ENDPROC parsing
-│   │   ├── parser_ast.asm       ; AST node allocation + construction
-│   │   └── parser_recover.asm   ; parser error recovery logic
+│   │   ├── parser.s             ; main entry point
+│   │   ├── instr.s              ; instruction statement parsing
+│   │   ├── operand/
+│   │   │   ├── operand.s        ; operand parsing coordinator
+│   │   │   ├── reg.s            ; register operand parsing
+│   │   │   ├── mem.s            ; memory operand parsing
+│   │   │   ├── imm.s            ; immediate operand parsing
+│   │   │   └── addr.s           ; addressing mode resolution
+│   │   ├── directive.s          ; directive statement parsing
+│   │   ├── label.s              ; label definition parsing
+│   │   ├── expr.s               ; expression parsing (Pratt parser)
+│   │   ├── section.s            ; section directive parsing
+│   │   ├── data.s               ; DB/DW/DD/DQ/DT/DO/DY/DZ parsing
+│   │   ├── struct.s             ; STRUC/ENDSTRUC parsing
+│   │   ├── proc.s               ; PROC/ENDPROC parsing
+│   │   ├── ast.s                ; AST node allocation + construction
+│   │   └── recover.s            ; error recovery logic
 │   │
 │   └── macro/
-│       ├── macro.asm            ; macro engine entry point
-│       ├── macro_define.asm     ; %define, %macro, %imacro handling
-│       ├── macro_expand.asm     ; macro expansion engine
-│       ├── macro_args.asm       ; argument parsing + substitution
-│       ├── macro_local.asm      ; local label generation inside macros
-│       ├── macro_cond.asm       ; %if/%elif/%else/%endif handling
-│       │   ├── macro_cond_def.asm  ; %ifdef/%ifndef
-│       │   ├── macro_cond_expr.asm ; %if expression evaluation
-│       │   └── macro_cond_str.asm  ; %ifidn/%ifidni string compare
-│       ├── macro_rep.asm        ; %rep/%endrep handling
-│       ├── macro_rotate.asm     ; %rotate handling
-│       ├── macro_stringify.asm  ; %str() stringification
-│       ├── macro_paste.asm      ; token pasting (##)
-│       ├── macro_include.asm    ; %include file handling
-│       ├── macro_library.asm    ; macro library (.inc) management
-│       ├── macro_table.asm      ; macro definition hash table
-│       ├── macro_chain.asm      ; expansion chain tracking (for errors)
-│       └── macro_purge.asm      ; %undef/%purge handling
+│       ├── macro.s              ; main entry point
+│       ├── define.s             ; %define, %macro, %imacro
+│       ├── expand.s             ; expansion engine
+│       ├── args.s               ; argument parsing + substitution
+│       ├── local.s              ; local label generation
+│       ├── cond/
+│       │   ├── cond.s           ; %if/%elif/%else/%endif coordinator
+│       │   ├── def.s            ; %ifdef/%ifndef
+│       │   ├── expr.s           ; %if expression evaluation
+│       │   └── str.s            ; %ifidn/%ifidni string compare
+│       ├── rep.s                ; %rep/%endrep
+│       ├── rotate.s             ; %rotate
+│       ├── stringify.s          ; %str() stringification
+│       ├── paste.s              ; token pasting
+│       ├── include.s            ; %include file handling
+│       ├── library.s            ; macro library (.inc) management
+│       ├── table.s              ; macro definition hash table
+│       ├── chain.s              ; expansion chain tracking (for errors)
+│       └── purge.s              ; %undef/%purge
 │
 ├── middle/
 │   │
 │   ├── semantic/
-│   │   ├── semantic.asm         ; semantic analysis entry point
-│   │   ├── semantic_instr.asm   ; instruction validation
-│   │   ├── semantic_operand.asm ; operand type checking
-│   │   ├── semantic_size.asm    ; operand size resolution
-│   │   ├── semantic_type.asm    ; type checking + coercion
-│   │   ├── semantic_scope.asm   ; scope rules enforcement
-│   │   ├── semantic_proc.asm    ; PROC boundary validation
-│   │   └── semantic_data.asm    ; data definition validation
+│   │   ├── semantic.s           ; main entry point
+│   │   ├── instr.s              ; instruction validation
+│   │   ├── operand.s            ; operand type checking
+│   │   ├── size.s               ; operand size resolution
+│   │   ├── type.s               ; type checking + coercion
+│   │   ├── scope.s              ; scope rules enforcement
+│   │   ├── proc.s               ; PROC boundary validation
+│   │   └── data.s               ; data definition validation
 │   │
 │   ├── symtable/
-│   │   ├── symtable.asm         ; symbol table entry point
-│   │   ├── symtable_hash.asm    ; hash table implementation
-│   │   ├── symtable_insert.asm  ; symbol insertion
-│   │   ├── symtable_lookup.asm  ; symbol lookup
-│   │   ├── symtable_resolve.asm ; forward reference resolution
-│   │   ├── symtable_scope.asm   ; scope management
-│   │   ├── symtable_global.asm  ; global/extern declaration
-│   │   ├── symtable_local.asm   ; local label management
-│   │   ├── symtable_common.asm  ; COMMON symbol handling
-│   │   ├── symtable_weak.asm    ; weak symbol handling
-│   │   └── symtable_dump.asm    ; debug: dump symbol table
+│   │   ├── symtable.s           ; main entry point
+│   │   ├── hash.s               ; hash table (quadratic probing)
+│   │   ├── insert.s             ; symbol insertion
+│   │   ├── lookup.s             ; O(1) symbol lookup
+│   │   ├── resolve.s            ; forward reference resolution
+│   │   ├── scope.s              ; scope management
+│   │   ├── global.s             ; global/extern declaration
+│   │   ├── local.s              ; local label management
+│   │   ├── common.s             ; COMMON symbol handling
+│   │   ├── weak.s               ; weak symbol handling
+│   │   └── dump.s               ; debug: symbol table dump
 │   │
 │   └── expr/
-│       ├── expr.asm             ; expression evaluator entry point
-│       ├── expr_arith.asm       ; arithmetic operations
-│       ├── expr_bitwise.asm     ; bitwise operations
-│       ├── expr_compare.asm     ; comparison operations
-│       ├── expr_logical.asm     ; logical operations
-│       ├── expr_unary.asm       ; unary operators
-│       ├── expr_const.asm       ; constant folding
-│       ├── expr_reloc.asm       ; relocatable expression handling
-│       └── expr_overflow.asm    ; overflow detection
+│       ├── expr.s               ; main entry point
+│       ├── arith.s              ; arithmetic operations
+│       ├── bitwise.s            ; bitwise operations
+│       ├── compare.s            ; comparison operations
+│       ├── logical.s            ; logical operations
+│       ├── unary.s              ; unary operators
+│       ├── const.s              ; constant folding
+│       ├── reloc.s              ; relocatable expression handling
+│       └── overflow.s           ; overflow detection
 │
 ├── backend/
 │   │
 │   ├── encoder/
-│   │   ├── encoder.asm          ; encoder entry point
-│   │   ├── encoder_dispatch.asm ; instruction → handler dispatch table
+│   │   ├── encoder.s            ; main entry point
+│   │   ├── dispatch.s           ; instruction → handler dispatch table
 │   │   │
-│   │   ├── x86/                 ; x86_64 instruction encoding
-│   │   │   ├── enc_mov.asm
-│   │   │   ├── enc_arith.asm    ; ADD/SUB/MUL/DIV/ADC/SBB
-│   │   │   ├── enc_logic.asm    ; AND/OR/XOR/NOT
-│   │   │   ├── enc_shift.asm    ; SHL/SHR/SAR/ROL/ROR/RCL/RCR
-│   │   │   ├── enc_jump.asm     ; JMP/Jcc/LOOP
-│   │   │   ├── enc_call.asm     ; CALL/RET
-│   │   │   ├── enc_stack.asm    ; PUSH/POP
-│   │   │   ├── enc_string.asm   ; MOVS/STOS/LODS/SCAS/CMPS + REP
-│   │   │   ├── enc_bit.asm      ; BT/BTS/BTR/BTC/BSF/BSR/TZCNT/LZCNT
-│   │   │   ├── enc_cmov.asm     ; CMOVcc
-│   │   │   ├── enc_setcc.asm    ; SETcc
-│   │   │   ├── enc_flag.asm     ; CLC/STC/CMC/CLD/STD/CLI/STI
-│   │   │   ├── enc_io.asm       ; IN/OUT
-│   │   │   ├── enc_system.asm   ; SYSCALL/SYSRET/HLT/NOP/CPUID/RDTSC
-│   │   │   ├── enc_priv.asm     ; privileged: LGDT/LIDT/LTR...
-│   │   │   ├── enc_misc.asm     ; LEA/XCHG/CMPXCHG/BSWAP/MOVBE
-│   │   │   └── enc_crypto.asm   ; AES-NI/SHA/PCLMULQDQ
+│   │   ├── x86/
+│   │   │   ├── mov.s
+│   │   │   ├── arith.s          ; ADD/SUB/MUL/DIV/ADC/SBB
+│   │   │   ├── logic.s          ; AND/OR/XOR/NOT
+│   │   │   ├── shift.s          ; SHL/SHR/SAR/ROL/ROR
+│   │   │   ├── jump.s           ; JMP/Jcc/LOOP
+│   │   │   ├── call.s           ; CALL/RET
+│   │   │   ├── stack.s          ; PUSH/POP
+│   │   │   ├── string.s         ; MOVS/STOS/LODS/SCAS + REP
+│   │   │   ├── bit.s            ; BT/BSF/BSR/TZCNT/LZCNT
+│   │   │   ├── cmov.s           ; CMOVcc
+│   │   │   ├── setcc.s          ; SETcc
+│   │   │   ├── flag.s           ; CLC/STC/CMC/CLD/STD/CLI/STI
+│   │   │   ├── io.s             ; IN/OUT
+│   │   │   ├── system.s         ; SYSCALL/SYSRET/HLT/CPUID/RDTSC
+│   │   │   ├── priv.s           ; LGDT/LIDT/LTR and privileged ops
+│   │   │   ├── misc.s           ; LEA/XCHG/CMPXCHG/BSWAP/MOVBE
+│   │   │   └── crypto.s         ; AES-NI/SHA/PCLMULQDQ
 │   │   │
-│   │   ├── simd/                ; SIMD instruction encoding
-│   │   │   ├── enc_mmx.asm
-│   │   │   ├── enc_sse.asm
-│   │   │   ├── enc_sse2.asm
-│   │   │   ├── enc_sse3.asm     ; SSE3/SSSE3
-│   │   │   ├── enc_sse4.asm     ; SSE4.1/SSE4.2
-│   │   │   ├── enc_avx.asm      ; VEX encoded
-│   │   │   ├── enc_avx2.asm
-│   │   │   ├── enc_avx512.asm   ; EVEX foundation
-│   │   │   │   ├── enc_avx512bw.asm
-│   │   │   │   ├── enc_avx512dq.asm
-│   │   │   │   ├── enc_avx512vl.asm
-│   │   │   │   ├── enc_avx512vnni.asm
-│   │   │   │   └── enc_avx512bf16.asm
-│   │   │   ├── enc_amx.asm      ; AMX tile instructions
-│   │   │   └── enc_fpu.asm      ; x87 FPU
+│   │   ├── simd/
+│   │   │   ├── mmx.s
+│   │   │   ├── sse.s
+│   │   │   ├── sse2.s
+│   │   │   ├── sse3.s           ; SSE3 + SSSE3
+│   │   │   ├── sse4.s           ; SSE4.1 + SSE4.2
+│   │   │   ├── avx.s            ; VEX encoded
+│   │   │   ├── avx2.s
+│   │   │   ├── avx512/
+│   │   │   │   ├── avx512.s     ; EVEX foundation
+│   │   │   │   ├── bw.s         ; byte/word ops
+│   │   │   │   ├── dq.s         ; dword/qword ops
+│   │   │   │   ├── vl.s         ; 128/256-bit variants
+│   │   │   │   ├── vnni.s       ; neural network instructions
+│   │   │   │   └── bf16.s       ; bfloat16 instructions
+│   │   │   ├── amx.s            ; AMX tile instructions
+│   │   │   └── fpu.s            ; x87 FPU
 │   │   │
-│   │   ├── prefix/              ; prefix encoding
-│   │   │   ├── enc_rex.asm
-│   │   │   ├── enc_vex.asm
-│   │   │   ├── enc_evex.asm
-│   │   │   ├── enc_lock.asm
-│   │   │   └── enc_rep.asm
+│   │   ├── aarch64/
+│   │   │   ├── base.s           ; AArch64 fixed-width encoder
+│   │   │   ├── neon.s           ; NEON Advanced SIMD
+│   │   │   └── sve.s            ; SVE/SVE2
 │   │   │
-│   │   └── tables/              ; encoding tables
-│   │       ├── opcode_table.asm
-│   │       ├── modrm_table.asm
-│   │       ├── sib_table.asm
-│   │       ├── reg_table.asm
-│   │       └── cpu_features.asm
+│   │   ├── riscv64/
+│   │   │   ├── base.s           ; RV64GC base encoder
+│   │   │   ├── m.s              ; M extension (multiply)
+│   │   │   ├── a.s              ; A extension (atomics)
+│   │   │   ├── fd.s             ; F/D extensions (float)
+│   │   │   ├── v.s              ; V extension (vector)
+│   │   │   └── relax.s          ; relaxation support
+│   │   │
+│   │   ├── prefix/
+│   │   │   ├── rex.s            ; REX prefix generation
+│   │   │   ├── vex.s            ; VEX prefix generation
+│   │   │   ├── evex.s           ; EVEX prefix generation
+│   │   │   ├── lock.s           ; LOCK prefix
+│   │   │   └── rep.s            ; REP/REPNE prefix
+│   │   │
+│   │   └── tables/
+│   │       ├── opcode.s         ; master opcode table
+│   │       ├── modrm.s          ; ModRM encoding helpers
+│   │       ├── sib.s            ; SIB byte encoding helpers
+│   │       ├── reg.s            ; register encoding table
+│   │       └── features.s       ; CPU feature flag table
+│   │
+│   ├── isa/
+│   │   ├── amd64.s              ; AMD64 instruction table
+│   │   ├── aarch64.s            ; AArch64 instruction table
+│   │   └── riscv64.s            ; RISC-V 64 instruction table
 │   │
 │   ├── linker/
-│   │   ├── linker.asm
-│   │   ├── linker_section.asm
-│   │   ├── linker_symbol.asm
-│   │   ├── linker_reloc.asm
-│   │   │   ├── reloc_abs.asm
-│   │   │   ├── reloc_rel.asm
-│   │   │   ├── reloc_got.asm
-│   │   │   ├── reloc_plt.asm
-│   │   │   └── reloc_tls.asm
-│   │   ├── linker_layout.asm
-│   │   ├── linker_merge.asm
-│   │   ├── linker_dead.asm      ; dead code elimination
-│   │   ├── linker_map.asm
-│   │   └── linker_script.asm
+│   │   ├── linker.s             ; coordinator
+│   │   ├── section.s            ; section management
+│   │   ├── symbol.s             ; symbol resolution
+│   │   ├── reloc/
+│   │   │   ├── reloc.s          ; relocation coordinator
+│   │   │   ├── abs.s            ; absolute relocations
+│   │   │   ├── rel.s            ; relative relocations
+│   │   │   ├── got.s            ; GOT relocations
+│   │   │   ├── plt.s            ; PLT relocations
+│   │   │   └── tls.s            ; TLS relocations
+│   │   ├── layout.s             ; memory layout calculation
+│   │   ├── merge.s              ; section merging
+│   │   ├── dead.s               ; dead code elimination
+│   │   ├── map.s                ; map file generation
+│   │   ├── script.s             ; linker script parser
+│   │   └── archive.s            ; static archive (.a) reader
 │   │
 │   └── output/
-│       ├── output.asm           ; format dispatcher
+│       ├── output.s             ; format dispatcher
 │       │
 │       ├── elf/
-│       │   ├── elf_out.asm
-│       │   ├── elf_header.asm
-│       │   ├── elf_phdr.asm
-│       │   ├── elf_shdr.asm
-│       │   ├── elf_symtab.asm
-│       │   ├── elf_rela.asm
-│       │   ├── elf_strtab.asm
-│       │   ├── elf_dynamic.asm
-│       │   └── elf_note.asm
+│       │   ├── out.s            ; ELF64 entry point
+│       │   ├── header.s         ; EHDR generation
+│       │   ├── phdr.s           ; program header
+│       │   ├── shdr.s           ; section header
+│       │   ├── symtab.s         ; symbol table output
+│       │   ├── rela.s           ; RELA relocation output
+│       │   ├── strtab.s         ; string table output
+│       │   ├── dynamic.s        ; dynamic section
+│       │   └── note.s           ; note sections
 │       │
 │       ├── pe/
-│       │   ├── pe_out.asm
-│       │   ├── pe_dos.asm
-│       │   ├── pe_header.asm
-│       │   ├── pe_optional.asm
-│       │   ├── pe_section.asm
-│       │   ├── pe_reloc.asm
-│       │   ├── pe_export.asm
-│       │   ├── pe_import.asm
-│       │   └── pe_cert.asm      ; Secure Boot signing
+│       │   ├── out.s            ; PE32+ entry point
+│       │   ├── dos.s            ; DOS stub
+│       │   ├── header.s         ; PE header
+│       │   ├── optional.s       ; optional header
+│       │   ├── section.s        ; section table
+│       │   ├── reloc.s          ; relocation table
+│       │   ├── export.s         ; export directory
+│       │   ├── import.s         ; import directory
+│       │   └── cert.s           ; certificate table (Secure Boot)
 │       │
 │       ├── flat/
-│       │   ├── flat_out.asm
-│       │   ├── flat_boot.asm
-│       │   └── flat_map.asm
+│       │   ├── out.s            ; flat binary output
+│       │   ├── boot.s           ; boot sector specifics
+│       │   └── map.s            ; flat binary map
 │       │
-│       └── upk/
-│           ├── upk_out.asm
-│           ├── upk_header.asm
-│           ├── upk_meta.asm
-│           ├── upk_deps.asm
-│           ├── upk_sign.asm
-│           └── upk_compress.asm
+│       ├── upk/
+│       │   ├── out.s            ; .upk package output
+│       │   ├── header.s         ; package header
+│       │   ├── meta.s           ; metadata section
+│       │   ├── deps.s           ; dependency declarations
+│       │   ├── sign.s           ; package signing
+│       │   └── compress.s       ; optional compression
+│       │
+│       └── listing/
+│           ├── listing.s        ; assembly listing generator
+│           ├── mapfile.s        ; symbol map generator
+│           └── symdump.s        ; symbol table dump
 │
-├── error/
-│   ├── error.asm
-│   ├── error_table.asm          ; all error codes + messages
-│   ├── error_record.asm
-│   ├── error_report.asm
-│   ├── error_format.asm         ; pretty printer
-│   │   ├── fmt_header.asm          ; "error[E501]:" line
-│   │   ├── fmt_location.asm        ; "  --> file:line:col"
-│   │   ├── fmt_source.asm          ; source line display
-│   │   ├── fmt_underline.asm       ; ^^^ marker
-│   │   ├── fmt_note.asm            ; "= note:" lines
-│   │   └── fmt_hint.asm            ; "= hint:" lines
-│   ├── error_chain.asm          ; macro expansion chain display
-│   ├── error_recover.asm
-│   │   ├── recover_lexer.asm
-│   │   ├── recover_parser.asm
-│   │   ├── recover_macro.asm
-│   │   └── recover_encoder.asm
-│   ├── error_filter.asm         ; warning suppression, -W flags
-│   ├── error_flush.asm          ; sorted final output
-│   ├── error_dedup.asm
-│   ├── error_count.asm
-│   ├── hint_table.asm
-│   ├── hint_suggest.asm
-│   ├── note_table.asm
-│   └── note_attach.asm
+├── error/                       ; error engine — zero dependencies, built first
+│   ├── error.s                  ; entry point
+│   ├── table.s                  ; all error codes E1xx–E30xx + messages
+│   ├── record.s                 ; error record allocation + storage
+│   ├── report.s                 ; main error reporting function
+│   ├── format/
+│   │   ├── format.s             ; pretty printer coordinator
+│   │   ├── header.s             ; "error[E501]:" line
+│   │   ├── location.s           ; "  --> file:line:col"
+│   │   ├── source.s             ; source line display
+│   │   ├── underline.s          ; ^^^ marker generation
+│   │   ├── note.s               ; "= note:" lines
+│   │   └── hint.s               ; "= hint:" lines
+│   ├── chain.s                  ; macro expansion chain display
+│   ├── recover/
+│   │   ├── recover.s            ; recovery coordinator
+│   │   ├── lexer.s              ; lexer stage recovery
+│   │   ├── parser.s             ; parser stage recovery
+│   │   ├── macro.s              ; macro stage recovery
+│   │   └── encoder.s            ; encoder stage recovery
+│   ├── filter.s                 ; warning suppression, -W flags
+│   ├── flush.s                  ; final sorted output
+│   ├── dedup.s                  ; duplicate error removal
+│   ├── count.s                  ; error/warning counters
+│   ├── hints.s                  ; all hint codes H1xx–H5xx
+│   ├── suggest.s                ; hint attachment logic
+│   ├── notes.s                  ; all note codes N1xx–N5xx
+│   ├── attach.s                 ; note attachment logic
+│   └── warnings.s               ; all warning codes W1xx–W20xx
 │
-├── debug/
-│   ├── dwarf.asm
-│   ├── dwarf_cu.asm             ; compilation unit
-│   ├── dwarf_die.asm            ; debug info entries
-│   ├── dwarf_line.asm           ; line number program
-│   ├── dwarf_abbrev.asm
-│   ├── dwarf_aranges.asm
-│   ├── dwarf_frame.asm          ; call frame information
-│   ├── dwarf_str.asm
-│   ├── srcmap.asm               ; source map management
-│   ├── srcmap_file.asm
-│   ├── srcmap_line.asm
-│   └── srcmap_macro.asm
+├── cpu/                         ; CPU target management
+│   ├── cpu.s                    ; entry point
+│   ├── profiles/
+│   │   ├── profiles.s           ; named CPU profile coordinator
+│   │   ├── generic.s            ; generic x86-64
+│   │   ├── server.s             ; server-grade profile
+│   │   ├── zen4.s               ; AMD Zen 4
+│   │   ├── spr.s                ; Intel Sapphire Rapids
+│   │   └── custom.s             ; user-defined profiles
+│   ├── features.s               ; feature flag management
+│   ├── validate.s               ; instruction vs feature validation
+│   ├── errata.s                 ; known CPU errata database
+│   └── perf.s                   ; performance hint database
 │
-├── cpu/
-│   ├── cpu.asm
-│   ├── cpu_profiles.asm
-│   │   ├── profile_generic.asm
-│   │   ├── profile_server.asm   ; TATTVA_SERVER
-│   │   ├── profile_zen4.asm
-│   │   ├── profile_spr.asm      ; Intel Sapphire Rapids
-│   │   └── profile_custom.asm
-│   ├── cpu_features.asm
-│   ├── cpu_validate.asm
-│   ├── cpu_errata.asm
-│   └── cpu_perf.asm
+├── debug/                       ; debug info generation
+│   ├── dwarf.s                  ; DWARF v5 entry point
+│   ├── cu.s                     ; compilation unit
+│   ├── die.s                    ; debug info entries
+│   ├── line.s                   ; line number program
+│   ├── abbrev.s                 ; abbreviation table
+│   ├── aranges.s                ; address range table
+│   ├── frame.s                  ; call frame information
+│   ├── str.s                    ; string table
+│   ├── srcmap.s                 ; source map management
+│   ├── file.s                   ; file registry
+│   ├── linemap.s                ; line tracking
+│   └── macromap.s               ; macro expansion tracking
 │
-├── optimizer/
-│   ├── optimizer.asm
-│   ├── opt_jump.asm             ; jump shortening
-│   ├── opt_nop.asm
-│   ├── opt_align.asm
-│   ├── opt_peephole.asm
-│   ├── opt_prefix.asm           ; redundant prefix removal
-│   └── opt_size.asm
+├── optimizer/                   ; output optimization passes
+│   ├── optimizer.s              ; entry point
+│   ├── jump.s                   ; jump shortening
+│   ├── nop.s                    ; NOP padding + removal
+│   ├── align.s                  ; alignment optimization
+│   ├── peephole.s               ; peephole optimizer
+│   ├── prefix.s                 ; redundant prefix removal
+│   └── size.s                   ; size reduction passes
 │
-├── selfpatch/
-│   ├── selfpatch.asm
-│   ├── selfpatch_map.asm        ; patch point registry
-│   ├── selfpatch_validate.asm
-│   ├── selfpatch_apply.asm
-│   ├── selfpatch_rollback.asm
-│   └── selfpatch_log.asm
+├── selfpatch/                   ; self-patching engine
+│   ├── selfpatch.s              ; entry point
+│   ├── patchmap.s               ; internal patch point registry
+│   ├── validate.s               ; patch safety validation
+│   ├── apply.s                  ; patch application
+│   ├── rollback.s               ; rollback on failed patch
+│   └── log.s                    ; patch history log
 │
-├── profiler/
-│   ├── profiler.asm
-│   ├── profiler_rdtsc.asm
-│   ├── profiler_hotpath.asm
-│   ├── profiler_report.asm
-│   └── profiler_trigger.asm     ; triggers selfpatch from profile data
+├── profiler/                    ; internal execution profiler
+│   ├── profiler.s               ; entry point
+│   ├── rdtsc.s                  ; TSC-based timing
+│   ├── hotpath.s                ; hot path detection
+│   ├── report.s                 ; profile report output
+│   └── trigger.s                ; triggers selfpatch from profile data
 │
-├── tools/
+├── tools/                       ; built-in tooling
 │   ├── disasm/
-│   │   ├── disasm.asm
-│   │   ├── disasm_decode.asm
-│   │   ├── disasm_print.asm
-│   │   └── disasm_simd.asm
+│   │   ├── disasm.s             ; entry point
+│   │   ├── decode.s             ; instruction decoding
+│   │   ├── print.s              ; instruction printing
+│   │   └── simd.s               ; SIMD instruction decoding
+│   │
 │   ├── inspector/
-│   │   ├── inspector.asm
-│   │   ├── inspect_elf.asm
-│   │   ├── inspect_pe.asm
-│   │   └── inspect_upk.asm
+│   │   ├── inspector.s          ; entry point
+│   │   ├── elf.s                ; ELF inspection
+│   │   ├── pe.s                 ; PE32+ inspection
+│   │   └── upk.s                ; .upk package inspection
+│   │
 │   └── symdump/
-│       ├── symdump.asm
-│       └── symdump_fmt.asm
+│       ├── symdump.s            ; entry point
+│       └── fmt.s                ; symbol output formatting
 │
-├── io/
-│   ├── io.asm
-│   ├── io_file.asm
-│   ├── io_buf.asm
-│   ├── io_stderr.asm
-│   ├── io_stdout.asm
-│   └── io_mmap.asm
+├── io/                          ; I/O abstraction
+│   ├── io.s                     ; entry point
+│   ├── file.s                   ; file read/write
+│   ├── buf.s                    ; buffered I/O
+│   ├── stderr.s                 ; error output (direct write syscall)
+│   ├── stdout.s                 ; normal output
+│   ├── mmap.s                   ; memory-mapped file input
+│   ├── mem.s                    ; mmap/munmap memory management
+│   ├── qemu.s                   ; QEMU virtual machine interface
+│   └── uring.s                  ; io_uring ring init + async submission
 │
-├── lib/
-│   ├── string.asm
-│   ├── string_fmt.asm
-│   ├── hash.asm                 ; FNV-1a, xxHash
-│   ├── sort.asm
-│   ├── arena.asm
-│   ├── list.asm
-│   ├── vec.asm                  ; dynamic array
-│   └── math.asm
+├── lib/                         ; internal utility library
+│   ├── string.s                 ; string operations
+│   ├── fmt.s                    ; string formatting
+│   ├── hash.s                   ; hash functions (FNV-1a, xxHash)
+│   ├── sort.s                   ; sorting
+│   ├── arena.s                  ; arena allocator
+│   ├── list.s                   ; linked list
+│   ├── vec.s                    ; dynamic array
+│   └── math.s                   ; integer math utilities
 │
-├── tests/                       ; full test suite — see TESTS.md
-│
-├── include/                     ; standard macro library (.inc files)
-│   ├── utasm.inc
-│   ├── x86_64.inc
-│   ├── elf.inc
-│   ├── pe.inc
-│   ├── syscall.inc              ; syscall numbers (Tattva OS)
-│   ├── simd.inc
-│   ├── debug.inc
-│   └── upk.inc
+├── host/                        ; host syscall interface
+│   └── syscall.s                ; raw syscall ABI
 │
 ├── scripts/
-│   ├── bootstrap.sh             ; Gen0 → Gen1 → parity check
-│   └── test.sh                  ; test harness orchestrator
+│   ├── bootstrap.sh             ; Gen0 → Gen1 → Gen2 bootstrap pipeline
+│   ├── test.sh                  ; test harness orchestrator
+│   └── ci.sh                    ; CI pipeline runner
 │
-├── docs/
-│   ├── dev_guide.md
-│   └── error_reference.md
-│
-├── Makefile
-├── utasm.toml
-├── utasm.ld
-├── VERSION
-└── LICENSE
+└── tests/                       ; test suite root
+    └── (see TESTS.md)           ; full test architecture documented separately
 ```
+
+---
+
+## Error System
+
+utasm uses a structured error system with four output levels:
+
+| Prefix | Range | Meaning |
+|---|---|---|
+| `E` | E1xx–E30xx | Fatal errors — assembly stops |
+| `W` | W1xx–W20xx | Warnings — configurable severity |
+| `N` | N1xx–N5xx | Notes — informational context |
+| `H` | H1xx–H5xx | Hints — actionable fix suggestions |
+
+**Example output:**
+
+```
+error[E501]: operand size mismatch
+  --> kernel/scheduler.s:247:14
+   |
+245|     mov rax, [rbx]
+246|     add rax, rcx
+247|     mov al, rax
+   |     ^^  ^^^
+   |     8-bit register receiving 64-bit value
+   |
+   = note: al is the low byte of rax (bits 7:0)
+   = hint[H201]: did you mean 'movzx rax, al'?
+   |
+   → expanded from macro 'LOAD_VAL' at include/utils.inc:17
+```
+
+See [Error Reference](docs/errors.md) for the full error code table.
+
+---
+
+## CPU Profiles
+
+```asm
+CPU GENERIC        ; baseline x86-64 only
+CPU SERVER         ; server-grade feature set
+CPU ZEN4           ; AMD Zen 4 specific
+CPU SPR            ; Intel Sapphire Rapids specific
+CPU CUSTOM         ; user defined
+```
+
+utasm validates every instruction against the active CPU profile and fires `E7xx` errors for unavailable features.
 
 ---
 
 ## Building
 
-`utasm` requires a Linux host (or WSL2) with NASM and GNU `ld`.
+utasm requires NASM and GNU `ld` for the initial bootstrap only. After Gen1 is built, utasm is fully self-sufficient.
 
-```sh
-# Full bootstrap: Gen0 (NASM) → Gen1 (utasm) → parity check
-make gen1
-
-# Or step by step:
-make gen0          # Build Gen0 using NASM
-make gen1          # Build Gen1 using Gen0, verify binary parity
-make test          # Run full test suite against Gen1
-make clean         # Remove all build artifacts
-```
-
-**Manual bootstrap:**
+**Bootstrap (one command):**
 
 ```sh
 bash scripts/bootstrap.sh
+```
+
+This runs three stages:
+
+```
+Stage 1: NASM assembles utasm  →  build/gen0/utasm
+Stage 2: Gen0 assembles utasm  →  build/gen1/utasm
+Stage 3: Gen1 assembles utasm  →  build/gen2/utasm
+Parity:  gen1 and gen2 must be bit-identical
+```
+
+**Manual Stage 1:**
+
+```sh
+for src in $(find src -name "*.s"); do
+    obj="build/gen0/${src%.s}.o"
+    mkdir -p "$(dirname "$obj")"
+    nasm -I./ -f elf64 "$src" -o "$obj"
+done
+ld -o build/gen0/utasm $(find build/gen0 -name "*.o")
+```
+
+**Manual Stage 2:**
+
+```sh
+for src in $(find src -name "*.s"); do
+    obj="build/gen1/${src%.s}.o"
+    mkdir -p "$(dirname "$obj")"
+    ./build/gen0/utasm -arch amd64 -f elf64 "$src" -o "$obj"
+done
+ld -o build/gen1/utasm $(find build/gen1 -name "*.o")
 ```
 
 ---
@@ -420,36 +547,47 @@ bash scripts/bootstrap.sh
 utasm [options] <source.s>
 
 Options:
-  -f <format>     Output format: elf64, pe32plus, bin, upk  (default: elf64)
-  -o <file>       Output file                               (default: a.out)
-  -arch <arch>    Target architecture: amd64, aarch64, riscv64
-  -cpu <profile>  CPU profile for feature-flag validation
-  --standalone    Produce a standalone executable (resolves _start)
-  --list          Generate assembly listing file
-  --map           Generate symbol map file
-  --dwarf         Emit DWARF v5 debug information
-  -h, --help      Show this help message
-  -v, --version   Print version and exit
+  -f <format>       Output format: elf64, pe32plus, bin, upk  (default: elf64)
+  -o <file>         Output file                               (default: a.out)
+  -arch <arch>      Target: amd64, aarch64, riscv64           (default: amd64)
+  -cpu <profile>    CPU profile: GENERIC, SERVER, ZEN4, SPR   (default: GENERIC)
+  --standalone      Produce standalone executable (_start resolved)
+  --list            Generate assembly listing file
+  --map             Generate symbol map file
+  --dwarf           Emit DWARF v5 debug info
+  --no-dead-strip   Disable dead code elimination
+  -W <warning>      Enable specific warning
+  -Wno-<warning>    Suppress specific warning
+  -Werror           Treat all warnings as errors
+  --selfpatch       Enable runtime self-patching engine
+  --profile         Enable internal profiler output
+  -h, --help        Show this help
+  -v, --version     Show version
 ```
 
-**Assemble a standalone AMD64 executable:**
+**Examples:**
 
 ```sh
-utasm -f elf64 --standalone tests/integration/hello/hello_amd64.s -o hello
-chmod +x hello && ./hello
-```
+# Standalone AMD64 executable
+utasm -arch amd64 -f elf64 --standalone main.s -o hello
 
-**Assemble a relocatable object:**
+# UEFI bootloader
+utasm -arch amd64 -f pe32plus --standalone bootloader.s -o BOOTX64.EFI
 
-```sh
-utasm -f elf64 frontend/lexer/lexer.s -o build/lexer.o
-```
+# Relocatable object file
+utasm -arch amd64 -f elf64 src/scheduler.s -o build/scheduler.o
 
-**Cross-assemble for AArch64:**
+# AArch64 cross-compile
+utasm -arch aarch64 -f elf64 --standalone main.s -o hello_arm
 
-```sh
-utasm -arch aarch64 -f elf64 tests/integration/hello/hello_aarch64.s -o hello_arm
-qemu-aarch64 hello_arm
+# RISC-V 64 cross-compile
+utasm -arch riscv64 -f elf64 --standalone main.s -o hello_rv64
+
+# Build .upk package
+utasm -arch amd64 -f upk --standalone driver.s -o driver.upk
+
+# With full debug info
+utasm -arch amd64 -f elf64 --dwarf --list --map main.s -o main
 ```
 
 ---
@@ -457,55 +595,38 @@ qemu-aarch64 hello_arm
 ## Running Tests
 
 ```sh
-make test
+bash scripts/bootstrap.sh   # build Gen1 first
+bash scripts/test.sh        # run full test suite
 ```
 
-Or with the harness directly:
-
-```sh
-bash scripts/bootstrap.sh   # ensure Gen1 is built
-bash scripts/test.sh        # run all test categories
-```
-
-Expected output:
-
-```
-[+] Initiating UtkarshaLab Test Harness...
-    [*] unit/encoder/amd64...       OK
-    [*] unit/encoder/aarch64...     OK
-    [*] unit/encoder/riscv64...     OK
-    [*] integration/hello/amd64...  OK (native)
-    [*] integration/hello/aarch64.. OK (qemu-aarch64)
-    [*] integration/hello/riscv64.. OK (qemu-riscv64)
-============================================================
-    TEST RESULTS: N Passed | 0 Failed
-============================================================
-[+] VALIDATION SUCCESSFUL: Absolute architectural parity achieved.
-```
+See [TESTS.md](TESTS.md) for the complete test architecture.
 
 ---
 
 ## Requirements
 
-| Dependency   | Purpose                         | Required |
-| ------------ | ------------------------------- | -------- |
-| Linux / WSL2 | Raw syscall ABI, ELF loader     | Yes      |
-| NASM         | Gen0 bootstrap compilation      | Yes      |
-| GNU ld       | Linking Gen0 and Gen1           | Yes      |
-| QEMU         | Cross-arch smoke test execution | Optional |
+| Dependency | Purpose | Required |
+|---|---|---|
+| NASM | Gen0 bootstrap compilation | Yes (once) |
+| GNU ld | Linking Gen0 and Gen1 | Yes (once) |
+| QEMU | Cross-arch smoke test execution | Optional |
+
+> After bootstrap, utasm has zero external dependencies. It assembles and links itself entirely.
 
 ---
 
-## Documentation
+## Self-Patching
 
-| Document                                  | What it covers                                      |
-| ----------------------------------------- | --------------------------------------------------- |
-| [ARCHITECTURE.md](ARCHITECTURE.md)        | Design rationale — why every major decision was made |
-| [CONTRIBUTING.md](CONTRIBUTING.md)        | Code style, naming conventions, how to add features |
-| [TESTS.md](TESTS.md)                      | Full test architecture and naming conventions       |
-| [CHANGELOG.md](CHANGELOG.md)             | Release history                                     |
-| [docs/dev_guide.md](docs/dev_guide.md)   | Step-by-step: add instruction, error, CPU profile   |
-| [docs/error_reference.md](docs/error_reference.md) | Full error code table (E101–E9xx)         |
+When `--selfpatch` is enabled:
+
+```
+1. Profiler measures hot paths via RDTSC
+2. Hot path detector identifies slow encoding routines
+3. Self-patch engine validates safety of proposed patch
+4. Patch applied directly to running binary in memory
+5. Rollback triggered automatically if patch degrades performance
+6. Patch log written to utasm.patch.log
+```
 
 ---
 

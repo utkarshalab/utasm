@@ -20,13 +20,12 @@ Write a test.
 It never breaks that way again.
 ```
 
-**Naming rule:** folder provides context, filename carries the `test_` prefix + module + behaviour. Consistent, greppable, unambiguous.
+**Naming rule:** folder provides context, filename describes only the behaviour. Nothing repeated.
 
 ```
-tests/unit/lexer/test_lex_ident.asm
-tests/unit/encoder/x86/test_enc_mov_rr.asm
-tests/error/lexer_errors/test_err_E101.asm
-tests/regression/reg_001.asm
+tests/unit/lexer/ident.s          ← not lex_ident.s
+tests/unit/encoder/x86/mov_rr.s  ← not enc_mov_rr.s
+tests/error/E1xx/E101.s           ← not test_err_E101.s
 ```
 
 ---
@@ -36,13 +35,12 @@ tests/regression/reg_001.asm
 ```
 tests/
 │
-├── README.asm               ; test suite documentation
-├── runner.asm               ; test runner entry point
-├── runner_report.asm        ; test result reporting
-├── runner_diff.asm          ; binary diff for output comparison
-├── runner_expect.asm        ; expected output comparison engine
-├── runner_timeout.asm       ; hung test detection
-├── runner_parallel.asm      ; parallel test execution
+├── runner.s                 ; test runner entry point
+├── report.s                 ; result reporting + summary
+├── diff.s                   ; binary diff engine
+├── expect.s                 ; expected output comparison
+├── timeout.s                ; hung test detection
+├── parallel.s               ; parallel test execution
 │
 ├── unit/                    ; one module, one behaviour
 ├── error/                   ; verify every error code fires correctly
@@ -63,198 +61,315 @@ tests/
 tests/unit/
 │
 ├── lexer/
-│   ├── test_lex_ident.asm
-│   ├── test_lex_keywords.asm
-│   ├── test_lex_num_dec.asm
-│   ├── test_lex_num_hex.asm
-│   ├── test_lex_num_bin.asm
-│   ├── test_lex_num_oct.asm
-│   ├── test_lex_num_overflow.asm
-│   ├── test_lex_string.asm
-│   ├── test_lex_string_esc.asm
-│   ├── test_lex_char.asm
-│   ├── test_lex_comment_line.asm
-│   ├── test_lex_comment_block.asm
-│   ├── test_lex_whitespace.asm
-│   ├── test_lex_newline.asm
-│   ├── test_lex_utf8.asm
-│   ├── test_lex_sourcemap.asm
-│   └── test_lex_empty.asm
+│   ├── ident.s
+│   ├── keywords.s
+│   ├── num_dec.s
+│   ├── num_hex.s
+│   ├── num_bin.s
+│   ├── num_oct.s
+│   ├── num_overflow.s
+│   ├── string.s
+│   ├── string_esc.s
+│   ├── char.s
+│   ├── comment_line.s
+│   ├── comment_block.s
+│   ├── whitespace.s
+│   ├── newline.s
+│   ├── utf8.s
+│   ├── sourcemap.s
+│   └── empty.s
 │
 ├── parser/
-│   ├── test_parse_instr.asm
-│   ├── test_parse_operand.asm
-│   ├── test_parse_reg.asm
-│   ├── test_parse_mem.asm
-│   ├── test_parse_mem_sib.asm
-│   ├── test_parse_mem_disp.asm
-│   ├── test_parse_imm.asm
-│   ├── test_parse_label.asm
-│   ├── test_parse_local.asm
-│   ├── test_parse_section.asm
-│   ├── test_parse_global.asm
-│   ├── test_parse_extern.asm
-│   ├── test_parse_data.asm
-│   ├── test_parse_data_str.asm
-│   ├── test_parse_struct.asm
-│   ├── test_parse_proc.asm
-│   ├── test_parse_align.asm
-│   ├── test_parse_times.asm
-│   ├── test_parse_equ.asm
-│   ├── test_parse_expr.asm
-│   └── test_parse_multiline.asm
+│   ├── instr.s
+│   ├── operand.s
+│   ├── reg.s
+│   ├── reg_8bit.s
+│   ├── reg_16bit.s
+│   ├── reg_32bit.s
+│   ├── reg_64bit.s
+│   ├── reg_simd.s
+│   ├── mem.s
+│   ├── mem_sib.s
+│   ├── mem_disp8.s
+│   ├── mem_disp32.s
+│   ├── mem_riprel.s
+│   ├── imm.s
+│   ├── label.s
+│   ├── local_label.s
+│   ├── section.s
+│   ├── global.s
+│   ├── extern.s
+│   ├── common.s
+│   ├── data_db.s
+│   ├── data_dw.s
+│   ├── data_dd.s
+│   ├── data_dq.s
+│   ├── data_str.s
+│   ├── data_dup.s
+│   ├── struct.s
+│   ├── proc.s
+│   ├── align.s
+│   ├── times.s
+│   ├── equ.s
+│   ├── expr_add.s
+│   ├── expr_sub.s
+│   ├── expr_mul.s
+│   ├── expr_div.s
+│   ├── expr_paren.s
+│   ├── expr_prec.s
+│   ├── expr_shift.s
+│   ├── expr_bitwise.s
+│   └── multiline.s
 │
 ├── macro/
-│   ├── test_macro_define.asm
-│   ├── test_macro_redefine.asm
-│   ├── test_macro_undef.asm
-│   ├── test_macro_args.asm
-│   ├── test_macro_args_default.asm
-│   ├── test_macro_args_greedy.asm
-│   ├── test_macro_local.asm
-│   ├── test_macro_nested.asm
-│   ├── test_macro_recursive.asm
-│   ├── test_macro_stringify.asm
-│   ├── test_macro_paste.asm
-│   ├── test_macro_cond.asm
-│   ├── test_macro_ifdef.asm
-│   ├── test_macro_ifidn.asm
-│   ├── test_macro_rep.asm
-│   ├── test_macro_rotate.asm
-│   ├── test_macro_include.asm
-│   ├── test_macro_include_depth.asm
-│   ├── test_macro_include_circular.asm
-│   └── test_macro_library.asm
+│   ├── define_simple.s
+│   ├── define_param.s
+│   ├── redefine.s
+│   ├── undef.s
+│   ├── purge.s
+│   ├── args_basic.s
+│   ├── args_default.s
+│   ├── args_greedy.s
+│   ├── args_count.s
+│   ├── local.s
+│   ├── nested.s
+│   ├── recursive.s
+│   ├── stringify.s
+│   ├── paste.s
+│   ├── cond_if.s
+│   ├── cond_ifdef.s
+│   ├── cond_ifidn.s
+│   ├── cond_else.s
+│   ├── cond_nested.s
+│   ├── rep.s
+│   ├── rep_count.s
+│   ├── rotate.s
+│   ├── include.s
+│   ├── include_depth.s
+│   ├── include_once.s
+│   ├── library.s
+│   └── expansion_loc.s
 │
 ├── symtable/
-│   ├── test_sym_insert.asm
-│   ├── test_sym_lookup.asm
-│   ├── test_sym_redef.asm
-│   ├── test_sym_forward.asm
-│   ├── test_sym_forward_unresolved.asm
-│   ├── test_sym_local.asm
-│   ├── test_sym_global.asm
-│   ├── test_sym_extern.asm
-│   ├── test_sym_common.asm
-│   ├── test_sym_weak.asm
-│   ├── test_sym_scope.asm
-│   └── test_sym_collision.asm
+│   ├── insert.s
+│   ├── lookup.s
+│   ├── lookup_miss.s
+│   ├── redef.s
+│   ├── forward.s
+│   ├── forward_multi.s
+│   ├── forward_unresolved.s
+│   ├── local_scope.s
+│   ├── local_reuse.s
+│   ├── global.s
+│   ├── extern.s
+│   ├── common.s
+│   ├── weak.s
+│   ├── collision.s
+│   └── 1m_symbols.s
 │
 ├── expr/
-│   ├── test_expr_add.asm
-│   ├── test_expr_sub.asm
-│   ├── test_expr_mul.asm
-│   ├── test_expr_div.asm
-│   ├── test_expr_mod.asm
-│   ├── test_expr_neg.asm
-│   ├── test_expr_and.asm
-│   ├── test_expr_or.asm
-│   ├── test_expr_xor.asm
-│   ├── test_expr_not.asm
-│   ├── test_expr_shl.asm
-│   ├── test_expr_shr.asm
-│   ├── test_expr_prec.asm
-│   ├── test_expr_paren.asm
-│   ├── test_expr_divzero.asm
-│   ├── test_expr_overflow.asm
-│   ├── test_expr_symref.asm
-│   ├── test_expr_reloc.asm
-│   └── test_expr_const_fold.asm
+│   ├── add.s
+│   ├── sub.s
+│   ├── mul.s
+│   ├── div.s
+│   ├── mod.s
+│   ├── neg.s
+│   ├── and.s
+│   ├── or.s
+│   ├── xor.s
+│   ├── not.s
+│   ├── shl.s
+│   ├── shr.s
+│   ├── prec.s
+│   ├── paren.s
+│   ├── divzero.s
+│   ├── overflow.s
+│   ├── symref.s
+│   ├── reloc.s
+│   └── const_fold.s
 │
 ├── encoder/
 │   │
 │   ├── x86/
-│   │   ├── test_enc_mov_rr.asm
-│   │   ├── test_enc_mov_rm.asm
-│   │   ├── test_enc_mov_mr.asm
-│   │   ├── test_enc_mov_ri.asm
-│   │   ├── test_enc_mov_mi.asm
-│   │   ├── test_enc_mov_seg.asm
-│   │   ├── test_enc_add.asm
-│   │   ├── test_enc_sub.asm
-│   │   ├── test_enc_mul.asm
-│   │   ├── test_enc_div.asm
-│   │   ├── test_enc_and.asm
-│   │   ├── test_enc_or.asm
-│   │   ├── test_enc_xor.asm
-│   │   ├── test_enc_not.asm
-│   │   ├── test_enc_neg.asm
-│   │   ├── test_enc_shift.asm
-│   │   ├── test_enc_jmp.asm
-│   │   ├── test_enc_jcc.asm
-│   │   ├── test_enc_call.asm
-│   │   ├── test_enc_ret.asm
-│   │   ├── test_enc_push.asm
-│   │   ├── test_enc_pop.asm
-│   │   ├── test_enc_lea.asm
-│   │   ├── test_enc_xchg.asm
-│   │   ├── test_enc_cmpxchg.asm
-│   │   ├── test_enc_string.asm
-│   │   ├── test_enc_bit.asm
-│   │   ├── test_enc_cmov.asm
-│   │   ├── test_enc_setcc.asm
-│   │   ├── test_enc_system.asm
-│   │   ├── test_enc_priv.asm
-│   │   ├── test_enc_rex.asm
-│   │   ├── test_enc_lock.asm
-│   │   ├── test_enc_rep.asm
-│   │   ├── test_enc_addr32.asm
-│   │   ├── test_enc_addr_modes.asm
-│   │   ├── test_enc_sib.asm
-│   │   ├── test_enc_disp8.asm
-│   │   ├── test_enc_disp32.asm
-│   │   ├── test_enc_riprel.asm
-│   │   └── test_enc_aesni.asm
+│   │   ├── mov_rr.s
+│   │   ├── mov_rm.s
+│   │   ├── mov_mr.s
+│   │   ├── mov_ri.s
+│   │   ├── mov_mi.s
+│   │   ├── mov_seg.s
+│   │   ├── movzx.s
+│   │   ├── movsx.s
+│   │   ├── movsxd.s
+│   │   ├── add.s
+│   │   ├── sub.s
+│   │   ├── mul.s
+│   │   ├── imul.s
+│   │   ├── div.s
+│   │   ├── idiv.s
+│   │   ├── adc.s
+│   │   ├── sbb.s
+│   │   ├── inc.s
+│   │   ├── dec.s
+│   │   ├── and.s
+│   │   ├── or.s
+│   │   ├── xor.s
+│   │   ├── not.s
+│   │   ├── neg.s
+│   │   ├── shl.s
+│   │   ├── shr.s
+│   │   ├── sar.s
+│   │   ├── rol.s
+│   │   ├── ror.s
+│   │   ├── rcl.s
+│   │   ├── rcr.s
+│   │   ├── shld.s
+│   │   ├── shrd.s
+│   │   ├── jmp_short.s
+│   │   ├── jmp_near.s
+│   │   ├── jmp_ind.s
+│   │   ├── jcc.s
+│   │   ├── loop.s
+│   │   ├── call_near.s
+│   │   ├── call_ind.s
+│   │   ├── ret.s
+│   │   ├── retf.s
+│   │   ├── push_reg.s
+│   │   ├── push_imm.s
+│   │   ├── push_mem.s
+│   │   ├── pop.s
+│   │   ├── pushf.s
+│   │   ├── lea.s
+│   │   ├── xchg.s
+│   │   ├── cmpxchg.s
+│   │   ├── cmpxchg16b.s
+│   │   ├── bswap.s
+│   │   ├── movbe.s
+│   │   ├── string.s
+│   │   ├── rep.s
+│   │   ├── bt.s
+│   │   ├── bsf.s
+│   │   ├── tzcnt.s
+│   │   ├── cmov.s
+│   │   ├── setcc.s
+│   │   ├── cmp.s
+│   │   ├── nop.s
+│   │   ├── hlt.s
+│   │   ├── cpuid.s
+│   │   ├── rdtsc.s
+│   │   ├── rdrand.s
+│   │   ├── syscall.s
+│   │   ├── priv.s
+│   │   ├── lock.s
+│   │   ├── rex_w.s
+│   │   ├── rex_r.s
+│   │   ├── rex_x.s
+│   │   ├── rex_b.s
+│   │   ├── rex_high.s
+│   │   ├── addr_modes.s
+│   │   ├── sib_base.s
+│   │   ├── sib_index.s
+│   │   ├── sib_scale.s
+│   │   ├── sib_nobase.s
+│   │   ├── riprel.s
+│   │   ├── disp8.s
+│   │   ├── disp32.s
+│   │   ├── aesni.s
+│   │   ├── sha.s
+│   │   └── pclmul.s
 │   │
-│   └── simd/
-│       ├── test_enc_mmx.asm
-│       ├── test_enc_sse.asm
-│       ├── test_enc_sse2.asm
-│       ├── test_enc_sse3.asm
-│       ├── test_enc_sse4.asm
-│       ├── test_enc_avx.asm
-│       ├── test_enc_avx2.asm
-│       ├── test_enc_avx512f.asm
-│       ├── test_enc_avx512bw.asm
-│       ├── test_enc_avx512dq.asm
-│       ├── test_enc_avx512vl.asm
-│       ├── test_enc_avx512vnni.asm
-│       ├── test_enc_avx512bf16.asm
-│       ├── test_enc_amx.asm
-│       ├── test_enc_mask.asm
-│       ├── test_enc_broadcast.asm
-│       ├── test_enc_rounding.asm
-│       ├── test_enc_evex_vl.asm
-│       └── test_enc_fpu.asm
+│   ├── simd/
+│   │   ├── mmx.s
+│   │   ├── sse_ps.s
+│   │   ├── sse_ss.s
+│   │   ├── sse2_pd.s
+│   │   ├── sse2_sd.s
+│   │   ├── sse2_int.s
+│   │   ├── ssse3.s
+│   │   ├── sse41.s
+│   │   ├── sse42.s
+│   │   ├── avx_vex2.s
+│   │   ├── avx_vex3.s
+│   │   ├── avx_128.s
+│   │   ├── avx_256.s
+│   │   ├── avx2_int.s
+│   │   ├── avx2_gather.s
+│   │   ├── avx512f.s
+│   │   ├── avx512_evex.s
+│   │   ├── avx512_mask.s
+│   │   ├── avx512_zero.s
+│   │   ├── avx512_bcast.s
+│   │   ├── avx512_round.s
+│   │   ├── avx512bw.s
+│   │   ├── avx512dq.s
+│   │   ├── avx512vl.s
+│   │   ├── avx512vnni.s
+│   │   ├── avx512bf16.s
+│   │   ├── amx_tile.s
+│   │   ├── amx_tmul.s
+│   │   └── fpu.s
+│   │
+│   ├── aarch64/
+│   │   ├── mov.s
+│   │   ├── arith.s
+│   │   ├── logic.s
+│   │   ├── branch.s
+│   │   ├── load.s
+│   │   ├── store.s
+│   │   ├── pair.s
+│   │   ├── system.s
+│   │   ├── neon_int.s
+│   │   ├── neon_fp.s
+│   │   └── sve.s
+│   │
+│   └── riscv64/
+│       ├── base.s
+│       ├── m.s
+│       ├── a.s
+│       ├── f.s
+│       ├── d.s
+│       ├── c.s
+│       └── v.s
 │
 ├── linker/
-│   ├── test_link_symbol.asm
-│   ├── test_link_forward.asm
-│   ├── test_link_extern.asm
-│   ├── test_link_reloc.asm
-│   ├── test_link_reloc_abs.asm
-│   ├── test_link_reloc_rel.asm
-│   ├── test_link_sections.asm
-│   ├── test_link_layout.asm
-│   ├── test_link_align.asm
-│   ├── test_link_dead.asm
-│   ├── test_link_multi.asm
-│   ├── test_link_circular.asm
-│   └── test_link_common.asm
+│   ├── basic.s
+│   ├── forward.s
+│   ├── extern.s
+│   ├── reloc_abs.s
+│   ├── reloc_rel.s
+│   ├── reloc_got.s
+│   ├── reloc_plt.s
+│   ├── reloc_tls.s
+│   ├── sections.s
+│   ├── layout.s
+│   ├── align.s
+│   ├── bss.s
+│   ├── dead.s
+│   ├── multi.s
+│   ├── archive.s
+│   ├── circular.s
+│   ├── common.s
+│   ├── weak.s
+│   └── script.s
 │
 └── output/
-    ├── test_out_elf_exec.asm
-    ├── test_out_elf_obj.asm
-    ├── test_out_elf_so.asm
-    ├── test_out_elf_hdr.asm
-    ├── test_out_elf_sym.asm
-    ├── test_out_elf_rela.asm
-    ├── test_out_pe_exec.asm
-    ├── test_out_pe_hdr.asm
-    ├── test_out_flat.asm
-    ├── test_out_flat_boot.asm
-    ├── test_out_upk.asm
-    └── test_out_upk_sign.asm
+    ├── elf_exec.s
+    ├── elf_obj.s
+    ├── elf_so.s
+    ├── elf_hdr.s
+    ├── elf_sym.s
+    ├── elf_rela.s
+    ├── elf_phdr.s
+    ├── elf_note.s
+    ├── pe_exec.s
+    ├── pe_hdr.s
+    ├── flat.s
+    ├── flat_boot.s
+    ├── upk.s
+    ├── upk_sign.s
+    ├── dwarf_info.s
+    ├── dwarf_line.s
+    ├── listing.s
+    └── mapfile.s
 ```
 
 ---
@@ -271,86 +386,122 @@ Every error code must have a test that:
 ```
 tests/error/
 │
-├── lexer_errors/
-│   ├── test_err_E101.asm        ; invalid character
-│   ├── test_err_E102.asm        ; unterminated string
-│   ├── test_err_E103.asm        ; unterminated char
-│   ├── test_err_E104.asm        ; invalid escape
-│   ├── test_err_E105.asm        ; malformed binary
-│   ├── test_err_E106.asm        ; malformed octal
-│   ├── test_err_E107.asm        ; malformed hex
-│   ├── test_err_E108.asm        ; malformed decimal
-│   ├── test_err_E109.asm        ; integer overflow
-│   ├── test_err_E110.asm        ; float overflow
-│   ├── test_err_E111.asm        ; invalid identifier char
-│   ├── test_err_E112.asm        ; identifier too long
-│   ├── test_err_E113.asm        ; EOF in comment
-│   ├── test_err_E114.asm        ; nested comment depth
-│   └── test_err_E115.asm        ; invalid UTF-8
+├── E1xx/
+│   ├── E101.s
+│   ├── E102.s
+│   ├── E103.s
+│   ├── E104.s
+│   ├── E105.s
+│   ├── E106.s
+│   ├── E107.s
+│   ├── E108.s
+│   ├── E109.s
+│   ├── E110.s
+│   ├── E111.s
+│   ├── E112.s
+│   ├── E113.s
+│   ├── E114.s
+│   └── E115.s
 │
-├── parser_errors/
-│   ├── test_err_E201.asm        ; unexpected token
-│   ├── test_err_E202.asm        ; missing operand
-│   ├── test_err_E203_E205.asm   ; wrong operand type
-│   ├── test_err_E208_E209.asm   ; bracket mismatch
-│   ├── test_err_E210_E211.asm   ; operand count
-│   ├── test_err_E212.asm        ; invalid addressing
-│   ├── test_err_E213.asm        ; base reg not 64-bit
-│   ├── test_err_E214.asm        ; RSP as index
-│   ├── test_err_E215.asm        ; invalid scale
-│   ├── test_err_E221.asm        ; division by zero
-│   ├── test_err_E226.asm        ; ambiguous size
-│   └── test_err_E227.asm        ; size override conflict
+├── E2xx/
+│   ├── E201.s
+│   ├── E202.s
+│   ├── E203.s
+│   ├── E204.s
+│   ├── E205.s
+│   ├── E208.s
+│   ├── E209.s
+│   ├── E210.s
+│   ├── E211.s
+│   ├── E212.s
+│   ├── E213.s
+│   ├── E214.s
+│   ├── E215.s
+│   ├── E221.s
+│   ├── E226.s
+│   └── E227.s
 │
-├── macro_errors/
-│   ├── test_err_E301.asm        ; undefined macro
-│   ├── test_err_E302.asm        ; macro redefinition
-│   ├── test_err_E303_E304.asm   ; wrong arg count
-│   ├── test_err_E306.asm        ; expansion depth
-│   ├── test_err_E307.asm        ; recursive macro
-│   ├── test_err_E311.asm        ; unterminated macro
-│   ├── test_err_E312.asm        ; endmacro without macro
-│   ├── test_err_E319.asm        ; library not found
-│   └── test_err_E320.asm        ; circular include
+├── E3xx/
+│   ├── E301.s
+│   ├── E302.s
+│   ├── E303.s
+│   ├── E304.s
+│   ├── E305.s
+│   ├── E306.s
+│   ├── E307.s
+│   ├── E311.s
+│   ├── E312.s
+│   ├── E319.s
+│   └── E320.s
 │
-├── semantic_errors/
-│   ├── test_err_E401.asm        ; undefined symbol
-│   ├── test_err_E402.asm        ; symbol redefinition
-│   ├── test_err_E405.asm        ; forward ref in EQU
-│   ├── test_err_E406.asm        ; circular EQU
-│   ├── test_err_E410_E411.asm   ; entry point issues
-│   ├── test_err_E412.asm        ; extern + local conflict
-│   ├── test_err_E419_E420.asm   ; TIMES issues
-│   └── test_err_E421.asm        ; EQU not constant
+├── E4xx/
+│   ├── E401.s
+│   ├── E402.s
+│   ├── E403.s
+│   ├── E405.s
+│   ├── E406.s
+│   ├── E410.s
+│   ├── E411.s
+│   ├── E412.s
+│   ├── E419.s
+│   ├── E420.s
+│   └── E421.s
 │
-├── encoder_errors/
-│   ├── test_err_E501.asm        ; size mismatch
-│   ├── test_err_E502_E504.asm   ; immediate range
-│   ├── test_err_E505.asm        ; displacement range
-│   ├── test_err_E506_E507.asm   ; jump range
-│   ├── test_err_E508_E509.asm   ; register issues
-│   ├── test_err_E513.asm        ; two memory operands
-│   ├── test_err_E514_E515.asm   ; REX issues
-│   ├── test_err_E516_E518.asm   ; VEX/EVEX issues
-│   ├── test_err_E519_E520.asm   ; mask register issues
-│   ├── test_err_E526_E528.asm   ; prefix issues
-│   ├── test_err_E529_E531.asm   ; invalid prefixes
-│   └── test_err_E533_E534.asm   ; mode issues
+├── E5xx/
+│   ├── E501.s
+│   ├── E502.s
+│   ├── E503.s
+│   ├── E504.s
+│   ├── E505.s
+│   ├── E506.s
+│   ├── E507.s
+│   ├── E508.s
+│   ├── E509.s
+│   ├── E513.s
+│   ├── E514.s
+│   ├── E515.s
+│   ├── E516.s
+│   ├── E519.s
+│   ├── E520.s
+│   ├── E526.s
+│   ├── E527.s
+│   ├── E529.s
+│   ├── E530.s
+│   ├── E533.s
+│   └── E534.s
 │
-├── linker_errors/
-│   ├── test_err_E601.asm        ; undefined external
-│   ├── test_err_E602.asm        ; multiple definition
-│   ├── test_err_E603.asm        ; section overlap
-│   ├── test_err_E604.asm        ; relocation overflow
-│   └── test_err_E608.asm        ; circular dependency
+├── E6xx/
+│   ├── E601.s
+│   ├── E602.s
+│   ├── E603.s
+│   ├── E604.s
+│   └── E608.s
 │
-└── cpu_errors/
-    ├── test_err_E701_E710.asm   ; missing SSE/AVX
-    ├── test_err_E711_E716.asm   ; missing AVX-512
-    ├── test_err_E717_E724.asm   ; missing extensions
-    ├── test_err_E725_E726.asm   ; mode restrictions
-    ├── test_err_E727_E728.asm   ; privilege violations
-    └── test_err_E729_E730.asm   ; deprecated instructions
+├── E7xx/
+│   ├── E701.s
+│   ├── E702.s
+│   ├── E708.s
+│   ├── E709.s
+│   ├── E710.s
+│   ├── E714.s
+│   ├── E716.s
+│   ├── E717.s
+│   ├── E720.s
+│   ├── E725.s
+│   ├── E727.s
+│   └── E729.s
+│
+├── E9xx/
+│   ├── E901.s
+│   ├── E902.s
+│   └── E903.s
+│
+└── multi/
+    ├── recover_lexer.s      ; lexer finds 5 errors not just 1
+    ├── recover_parser.s     ; parser finds 5 errors not just 1
+    ├── recover_encoder.s    ; encoder finds 5 errors not just 1
+    ├── chain.s              ; error + macro expansion chain displayed
+    └── dedup.s              ; same error twice → shown once
 ```
 
 ---
@@ -364,60 +515,80 @@ Every warning code must have:
 
 ```
 tests/warning/
-├── test_warn_W201.asm
-├── test_warn_W202.asm
-├── test_warn_W301.asm
-├── test_warn_W501.asm
-├── test_warn_W503.asm
-├── test_warn_W505.asm
-├── test_warn_W601.asm
-├── test_warn_W702.asm
-├── test_warn_suppress.asm
-└── test_warn_werror.asm
+├── W201.s
+├── W202.s
+├── W301.s
+├── W302.s
+├── W501.s
+├── W503.s
+├── W505.s
+├── W601.s
+├── W702.s
+├── W703.s
+├── suppress_Wno.s
+├── suppress_file.s
+└── promote_Werror.s
 ```
 
 ---
 
 ## Integration Tests
 
+Full pipeline — source to binary to execution.
+
 ```
 tests/integration/
 │
 ├── hello/
-│   ├── hello.asm              ; simplest possible program
-│   └── hello.expect           ; expected output
+│   ├── amd64.s
+│   ├── aarch64.s
+│   ├── riscv64.s
+│   └── *.expect
 │
 ├── selfhost/
-│   ├── test_selfhost.asm      ; utasm assembles itself
-│   └── test_selfhost_cmp.asm  ; output matches reference
+│   ├── selfhost.sh          ; utasm assembles itself
+│   └── parity.sh            ; gen1 == gen2 bit-identical check
 │
 ├── elf/
-│   ├── test_elf_exec.asm      ; ELF executable runs correctly
-│   ├── test_elf_shared.asm    ; shared library linking
-│   ├── test_elf_static.asm    ; static linking
-│   └── test_elf_debug.asm     ; DWARF info readable
+│   ├── exec.s
+│   ├── shared.s
+│   ├── static.s
+│   ├── bss.s
+│   └── debug.s
 │
 ├── pe/
-│   ├── test_pe_uefi.asm       ; UEFI application valid
-│   └── test_pe_sign.asm       ; signed PE validates
+│   ├── uefi.s
+│   └── signed.s
 │
 ├── boot/
-│   ├── test_boot_mbr.asm      ; MBR boots in emulator
-│   └── test_boot_uefi.asm     ; UEFI boots in emulator
+│   ├── mbr.s                ; boots in QEMU
+│   └── uefi.s               ; UEFI boots in QEMU
 │
 ├── upk/
-│   ├── test_upk_build.asm     ; package builds correctly
-│   └── test_upk_sign.asm      ; package signature valid
+│   ├── build.s
+│   └── verify.s
 │
 ├── simd/
-│   ├── test_simd_avx512.asm   ; AVX-512 executes correctly
-│   ├── test_simd_vnni.asm     ; VNNI dot product correct
-│   └── test_simd_result.asm   ; verify computed values
+│   ├── sse2_add.s
+│   ├── avx2_add.s
+│   ├── avx512_vnni.s
+│   ├── aesni.s
+│   └── verify.s
 │
-└── multifile/
-    ├── test_multi_a.asm
-    ├── test_multi_b.asm
-    └── test_multi_main.asm
+├── multifile/
+│   ├── a.s
+│   ├── b.s
+│   ├── main.s
+│   └── run.sh
+│
+├── crossarch/
+│   ├── aarch64.sh
+│   └── riscv64.sh
+│
+└── selfpatch/
+    ├── basic.s
+    ├── rollback.s
+    └── perf.s
 ```
 
 ---
@@ -425,6 +596,14 @@ tests/integration/
 ## Regression Tests
 
 **Rule: every bug fixed gets a regression test. No exceptions.**
+
+```
+tests/regression/
+├── reg_001.s
+├── reg_002.s
+├── reg_003.s
+└── reg_NNN.s      ; grows for the lifetime of utasm
+```
 
 Header format for every regression file:
 
@@ -438,11 +617,7 @@ Header format for every regression file:
 ; Error:      E5xx (if applicable)
 ```
 
-```
-tests/regression/
-├── reg_001.asm
-└── reg_NNN.asm    ; grows for the lifetime of utasm
-```
+This folder is permanent memory. Every entry is an hour transformed into permanent protection.
 
 ---
 
@@ -450,30 +625,57 @@ tests/regression/
 
 Random inputs. utasm must never crash, hang, or produce undefined behaviour.
 
-**Invariants that must hold regardless of input:**
-- Never segfaults
-- Never hangs (enforced by runner_timeout.asm)
-- Always exits 0 (success) or 1 (error)
-- Error messages always contain valid line/col numbers
-
 ```
 tests/fuzz/
-├── fuzz_runner.asm
-├── fuzz_lexer.asm
-├── fuzz_parser.asm
-├── fuzz_macro.asm
-├── fuzz_encoder.asm
-├── fuzz_expr.asm
+├── runner.s
+├── lexer.s
+├── parser.s
+├── macro.s
+├── encoder.s
+├── expr.s
+├── elf.s
+│
 ├── seeds/
-│   ├── seed_001.asm    ; edge cases for lexer
-│   ├── seed_002.asm    ; edge cases for parser
-│   └── ...
-└── corpus/             ; accumulated fuzz findings (grows as fuzzer runs)
+│   ├── empty.s
+│   ├── nullbytes.s
+│   ├── allff.s
+│   ├── deep_macro.s
+│   ├── long_line.s
+│   ├── unicode.s
+│   └── max_symbols.s
+│
+└── corpus/              ; grows as fuzzer runs
+    └── ...
 ```
+
+**Invariants that must hold regardless of input:**
+- Never segfaults
+- Never hangs (enforced by timeout.s)
+- Always exits 0 (success) or 1 (error)
+- Error messages always contain valid line/col numbers
 
 ---
 
 ## Performance Benchmarks
+
+```
+tests/perf/
+├── runner.s
+├── lexer.s
+├── parser.s
+├── macro.s
+├── encoder.s
+├── linker.s
+├── output.s
+├── large.s              ; 100,000 line file end-to-end
+├── selfhost.s           ; time to assemble utasm itself
+│
+└── results/
+    ├── baseline.tsv
+    └── YYYY-MM-DD.tsv
+```
+
+**Targets:**
 
 | Metric | Target |
 |---|---|
@@ -482,32 +684,19 @@ tests/fuzz/
 | Self-host time | < 2 seconds |
 | 100k line file | < 1 second |
 
-```
-tests/perf/
-├── bench_runner.asm
-├── bench_lexer.asm
-├── bench_parser.asm
-├── bench_macro.asm
-├── bench_encoder.asm
-├── bench_linker.asm
-├── bench_large.asm          ; 100k line file benchmark
-├── bench_selfhost.asm       ; time to assemble utasm itself
-└── bench_results/           ; historical benchmark data (tsv)
-```
-
 ---
 
 ## Stress Tests
 
 ```
 tests/stress/
-├── stress_deep_macro.asm     ; maximum macro nesting
-├── stress_long_expr.asm      ; maximum expression depth
-├── stress_many_symbols.asm   ; 1M symbol table
-├── stress_many_sections.asm  ; maximum sections
-├── stress_large_binary.asm   ; maximum output size
-├── stress_many_errors.asm    ; maximum error recovery
-└── stress_parallel.asm       ; parallel assembly stress
+├── deep_macro.s
+├── long_expr.s
+├── many_symbols.s
+├── many_sections.s
+├── large_binary.s
+├── many_errors.s
+└── parallel.s
 ```
 
 ---
@@ -516,14 +705,18 @@ tests/stress/
 
 ```
 tests/fixtures/
+│
 ├── inc/
-│   ├── fixture_basic.inc
-│   ├── fixture_simd.inc
-│   └── fixture_cpu.inc
+│   ├── basic.inc
+│   ├── simd.inc
+│   ├── cpu.inc
+│   └── assert.inc
+│
 ├── obj/
-│   └── prebuilt_*.obj        ; prebuilt objects for link tests
+│   └── prebuilt_*.o
+│
 └── expect/
-    └── *.bin                 ; expected binary outputs
+    └── *.bin
 ```
 
 ---
@@ -541,9 +734,39 @@ bash scripts/test.sh regression    # regression only
 bash scripts/test.sh perf          # benchmarks only
 bash scripts/test.sh fuzz          # fuzz tests only
 
-bash scripts/test.sh unit/lexer/ident   # single test
-bash scripts/test.sh --verbose          # verbose output
-bash scripts/test.sh --timeout 30       # timeout override (default 5s)
+bash scripts/test.sh unit/lexer/ident   ; single test
+bash scripts/test.sh --verbose          ; verbose output
+bash scripts/test.sh --timeout 30       ; timeout override (default 5s)
+```
+
+**Expected output:**
+
+```
+[+] utasm Test Harness
+    UtkarshaLab Test Suite
+
+    [unit/lexer]         17 passed   0 failed
+    [unit/parser]        35 passed   0 failed
+    [unit/macro]         27 passed   0 failed
+    [unit/symtable]      15 passed   0 failed
+    [unit/expr]          19 passed   0 failed
+    [unit/encoder/x86]   78 passed   0 failed
+    [unit/encoder/simd]  27 passed   0 failed
+    [unit/encoder/a64]   11 passed   0 failed
+    [unit/encoder/rv64]   7 passed   0 failed
+    [unit/linker]        19 passed   0 failed
+    [unit/output]        18 passed   0 failed
+    [error]             112 passed   0 failed
+    [warning]            13 passed   0 failed
+    [integration]        22 passed   0 failed
+    [regression]        NNN passed   0 failed
+    [stress]              7 passed   0 failed
+    [perf]                9 passed   0 failed
+
+══════════════════════════════════════
+    TOTAL: NNN Passed | 0 Failed
+══════════════════════════════════════
+[+] VALIDATION SUCCESSFUL
 ```
 
 ---
@@ -551,18 +774,18 @@ bash scripts/test.sh --timeout 30       # timeout override (default 5s)
 ## Adding a Test
 
 1. Pick the right category folder
-2. Name: `test_<module>_<behaviour>.asm`
+2. Name by behaviour only — no folder name prefix
 3. Add a header:
 
 ```asm
-; TEST: test_lex_ident
+; TEST: ident
 ; Category: unit/lexer
 ; Tests:    identifier scanning — alphanumeric, underscore, leading underscore
 ; Expects:  token stream matches fixtures/expect/lex_ident.bin
 ```
 
 4. Add to runner manifest in `utasm.toml`
-5. Run `bash scripts/test.sh unit/lexer/test_lex_ident` and verify it passes
+5. Run `bash scripts/test.sh unit/lexer/ident` and verify it passes
 
 ---
 
@@ -577,6 +800,8 @@ bash scripts/test.sh --timeout 30       # timeout override (default 5s)
 ; Fix:        MOVSX applied before CMP in range validation
 ; Error:      E505 now fires correctly instead of crashing
 ```
+
+Add it. Run it. It passes. The bug is gone forever.
 
 ---
 
