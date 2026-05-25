@@ -6,9 +6,9 @@
 ; ============================================================================
 ;
 
-%include "include/macro.s"
-%include "include/constant.s"
-%include "include/arch/aarch64.s"
+%include "include/macro.inc"
+%include "include/constant.inc"
+%include "include/arch/aarch64.inc"
 
 section .data
 global mnc_tb_arm64

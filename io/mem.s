@@ -9,11 +9,11 @@
 ; ============================================================================
 ;
 
-%include "include/constant.s"
-%include "include/type.s"
-%include "include/macro.s"
-%include "include/syscall.s"
-%include "include/register.s"
+%include "include/constant.inc"
+%include "include/type.inc"
+%include "include/macro.inc"
+%include "include/syscall.inc"
+%include "include/register.inc"
 
 [SECTION .text]
 

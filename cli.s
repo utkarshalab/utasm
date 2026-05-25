@@ -8,9 +8,9 @@
 ; ============================================
 ;
 
-%include "include/constant.s"
-%include "include/type.s"
-%include "include/macro.s"
+%include "include/constant.inc"
+%include "include/type.inc"
+%include "include/macro.inc"
 
 DEFAULT REL
 

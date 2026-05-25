@@ -6,11 +6,11 @@
 ; ============================================================================
 ;
 
-%include "include/constant.s"
-%include "include/type.s"
-%include "include/macro.s"
-%include "include/arch/amd64.s"
-%include "include/elf.s"
+%include "include/constant.inc"
+%include "include/type.inc"
+%include "include/macro.inc"
+%include "include/arch/amd64.inc"
+%include "include/elf.inc"
 
 extern  reloc_record
 extern  arena_alloc

@@ -7,7 +7,7 @@
 
 // Assume there is a file to include or we use a relative path
 // For testing purposes, we assume include/constant.s exists
-%inc "include/constant.s"
+%inc "include/constant.inc"
 
 [SECTION .text]
     // Use a constant defined in the included file

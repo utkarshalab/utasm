@@ -7,10 +7,10 @@
 ; ============================================================================
 ;
 
-%include "include/constant.s"
-%include "include/type.s"
-%include "include/macro.s"
-%include "include/uring.s"
+%include "include/constant.inc"
+%include "include/type.inc"
+%include "include/macro.inc"
+%include "include/uring.inc"
 
 extern io_mmap
 extern error_new_from_errno

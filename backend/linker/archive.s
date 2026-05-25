@@ -6,10 +6,10 @@
 ; ============================================================================
 ;
 
-%include "include/constant.s"
-%include "include/type.s"
-%include "include/archive.s"
-%include "include/macro.s"
+%include "include/constant.inc"
+%include "include/type.inc"
+%include "include/archive.inc"
+%include "include/macro.inc"
 
 [SECTION .text]
 

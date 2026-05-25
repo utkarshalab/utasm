@@ -6,9 +6,9 @@
 ; ============================================================================
 ;
 
-%include "include/macro.s"
-%include "include/constant.s"
-%include "include/arch/amd64.s"
+%include "include/macro.inc"
+%include "include/constant.inc"
+%include "include/arch/amd64.inc"
 
 [SECTION .rodata]
 align 8

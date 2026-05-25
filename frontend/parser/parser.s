@@ -6,13 +6,13 @@
 ; ============================================================================
 ;
 
-%include "include/constant.s"
-%include "include/macro.s"
-%include "include/type.s"
+%include "include/constant.inc"
+%include "include/macro.inc"
+%include "include/type.inc"
 
 DEFAULT REL
-%include "include/elf.s"
-%include "include/arch/aarch64.s"
+%include "include/elf.inc"
+%include "include/arch/aarch64.inc"
 
 extern arena_alloc
 extern preprocessor_next_token

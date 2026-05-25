@@ -7,9 +7,9 @@
 ; ============================================================================
 ;
 
-%include "include/constant.s"
-%include "include/type.s"
-%include "include/macro.s"
+%include "include/constant.inc"
+%include "include/type.inc"
+%include "include/macro.inc"
 
 extern binary_emit
 extern elf64_emit

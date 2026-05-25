@@ -8,10 +8,10 @@
 ; ============================================================================
 ;
 
-%include "include/constant.s"
-%include "include/type.s"
-%include "include/macro.s"
-%include "include/elf.s"
+%include "include/constant.inc"
+%include "include/type.inc"
+%include "include/macro.inc"
+%include "include/elf.inc"
 
 ; --- External Symbols ---
 extern  mem_zero
