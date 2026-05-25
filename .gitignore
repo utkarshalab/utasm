@@ -27,9 +27,15 @@ Thumbs.db
 # Logs
 *.log
 
-#scratch codes for generation
+# Scratch / debug artifacts (never commit these)
 scratch/
 task.md
+gdb_trace*.txt
+tmp_test*.s
+test_*.s
+*.patch
+err.txt
+out.txt
 
 # Claude Code local config
 CLAUDE.md
