@@ -1,44 +1,115 @@
 [project]
-name = "utasm"
-version = "0.1.0"
+name        = "utasm"
+version     = "0.1.0"
 description = "Utkarsha Assembler — unified multi-architecture assembler and linker"
-author = "Utkarsha Lab"
-license = "Apache-2.0"
+author      = "Utkarsha Lab"
+license     = "Apache-2.0"
 
 [build]
-sources = [
-    "src/main.s",
-    "src/cli.s",
-    "src/core/lexer.s",
-    "src/core/parser.s",
-    "src/core/preprocessor.s",
-    "src/core/symbol.s",
-    "src/core/error.s",
-    "src/encoder/aarch64.s",
-    "src/encoder/amd64.s",
-    "src/encoder/riscv64.s",
-    "src/linker/linker.s",
-    "src/linker/elf64.s",
-    "src/linker/binary.s",
-    "src/linker/script.s",
-    "src/linker/reloc.s",
-    "src/output/listing.s",
-    "src/output/mapfile.s",
-    "src/output/symdump.s",
-    "src/host/io.s",
-    "src/host/mem.s",
-    "src/host/qemu.s",
-]
-include = ["include/"]
-linker_script = "utasm.ld"
+entry  = "utasm.s"
 output = "build/utasm"
 target = "amd64"
+include = ["include/"]
+linker_script = "utasm.ld"
+
+sources = [
+    # Entry & CLI
+    "utasm.s",
+
+    # Frontend — source text → parse tree
+    "frontend/lexer/lexer.s",
+    "frontend/parser/parser.s",
+    "frontend/macro/preprocessor.s",
+
+    # Middle — parse tree → resolved IR
+    "middle/symtable/symbol.s",
+    "middle/expr/expr.s",
+    "middle/semantic/semantic.s",
+
+    # Backend — IR → binary
+    "backend/isa/amd64.s",
+    "backend/isa/aarch64.s",
+    "backend/isa/riscv64.s",
+    "backend/encoder/amd64/encoder.s",
+    "backend/encoder/aarch64/encoder.s",
+    "backend/encoder/riscv64/encoder.s",
+    "backend/linker/linker.s",
+    "backend/linker/elf64.s",
+    "backend/linker/reloc.s",
+    "backend/linker/script.s",
+    "backend/output/elf64/out.s",
+    "backend/output/pe32plus/out.s",
+    "backend/output/flat/out.s",
+    "backend/output/upk/out.s",
+
+    # Core — shared runtime primitives
+    "core/arena.s",
+    "core/asmctx.s",
+    "core/string.s",
+
+    # Error engine — zero dependencies
+    "error/error.s",
+    "error/table.s",
+
+    # CPU profile validation
+    "cpu/features.s",
+
+    # Debug output
+    "debug/dwarf.s",
+
+    # Optimizer
+    "optimizer/optimizer.s",
+
+    # Self-patching engine
+    "selfpatch/selfpatch.s",
+
+    # Profiler
+    "profiler/profiler.s",
+
+    # I/O
+    "io/io.s",
+    "io/uring.s",
+
+    # Shared library
+    "lib/archive.s",
+
+    # Host platform
+    "host/mem.s",
+    "host/qemu.s",
+
+    # Developer tools
+    "tools/listing.s",
+    "tools/mapfile.s",
+    "tools/symdump.s",
+]
+
+[build.gen0]
+assembler = "nasm"
+flags     = ["-f", "elf64", "-I./"]
+output    = "build/gen0/utasm"
+
+[build.gen1]
+assembler = "./build/gen0/utasm"
+flags     = ["-f", "elf64"]
+output    = "build/gen1/utasm"
 
 [run]
-qemu = "qemu-system-x86_64"
+qemu    = "qemu-system-x86_64"
 machine = "virt"
-memory = "256M"
+memory  = "256M"
 
 [test]
 runner = "scripts/test.sh"
-dirs = ["tests/aarch64", "tests/amd64", "tests/riscv64", "tests/common"]
+dirs   = [
+    "tests/unit",
+    "tests/error",
+    "tests/warning",
+    "tests/integration",
+    "tests/regression",
+]
+
+[cpu.profiles]
+generic   = "cpu/profiles/generic.s"
+x86_64_v3 = "cpu/profiles/x86_64_v3.s"
+skylake   = "cpu/profiles/skylake.s"
+znver3    = "cpu/profiles/znver3.s"
