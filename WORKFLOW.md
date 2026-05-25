@@ -163,39 +163,40 @@ Goal: a single 3-argument call `error_report(code, token, hint)` produces a comp
 
 ---
 
-### Step 1.1 — Define all structs in core/types.inc
+### Step 1.1 — Define all structs in include/type.inc
 
-This is the single most important file. Everything depends on it.
+This is the single most important file. Everything depends on it. All structures must satisfy AMD64 System V ABI natural alignment.
 
-**Token struc — source map fields are mandatory:**
+**Token struc — source map fields are mandatory and aligned:**
 ```asm
-struc Token
-    .type     dw 0    ; token type enum
-    .flags    dw 0    ; token flags
-    .value    dq 0    ; numeric value or string ptr
-    .file_id  dw 0    ; index into file registry
-    .line     dd 0    ; 1-based line number
-    .col_start dw 0   ; 1-based column start
-    .col_end  dw 0    ; 1-based column end
-    .macro_id dw 0    ; 0 = not from macro, else macro chain id
-    .length   dw 0    ; token text length
-    .text_ptr dq 0    ; pointer to token text in source buffer
+struc TOKEN
+    field tag,      1       ; always TAG_TOKEN
+    field kind,     1       ; TOK_* value
+    field flags,    1       ; reserved
+    field pad0,     5       ; alignment padding to align value to 8-byte boundary
+    field value,    8       ; pointer or integer
+    field line,     4       ; source line number (1-based)
+    field col,      2       ; source column number (1-based)
+    field len,      2       ; token text length in bytes
+    field file,     8       ; filename pointer
 endstruc
 ```
 
-**Error record struc:**
+**Error record struc — naturally aligned:**
 ```asm
-struc ErrorRecord
-    .code     dw 0    ; E101–E999 / W101–W999
-    .severity db 0    ; 0=error 1=warning 2=note 3=hint
-    .file_id  dw 0    ; source file
-    .line     dd 0    ; line number
-    .col_start dw 0   ; column start
-    .col_end  dw 0    ; column end
-    .msg_idx  dw 0    ; index into message table
-    .note_idx dw 0    ; 0 = no note
-    .hint_idx dw 0    ; 0 = no hint
-    .chain_id dw 0    ; macro expansion chain id, 0 = none
+struc ERRORREC
+    field code,      2    ; dw  error/warning code number (E1xx etc)
+    field severity,  1    ; db  SEV_* constant (ERROR, WARNING, NOTE, HINT)
+    field pad0,      1    ; db  alignment padding
+    field file_id,   2    ; dw  index into file registry
+    field pad1,      2    ; dw  alignment padding to align line to 8-byte boundary
+    field line,      4    ; dd  source line number (1-based)
+    field col_start, 2    ; dw  column start (inclusive)
+    field col_end,   2    ; dw  column end (inclusive)
+    field msg_idx,   2    ; dw  message table index
+    field note_idx,  2    ; dw  note table index (0 = none)
+    field hint_idx,  2    ; dw  hint table index (0 = none)
+    field chain_id,  2    ; dw  macro expansion chain id (0 = none)
 endstruc
 ```
 

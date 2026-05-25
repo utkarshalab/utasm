@@ -5,7 +5,7 @@ GEN0      := build/gen0/utasm
 GEN1      := build/gen1/utasm
 
 SRC_DIRS  := frontend middle backend core error cpu debug optimizer selfpatch profiler io lib host tools
-SOURCES   := $(shell find $(SRC_DIRS) -name '*.s' 2>/dev/null) utasm.s
+SOURCES   := $(shell find $(SRC_DIRS) -name '*.s' 2>/dev/null) utasm.s cli.s
 
 GEN0_OBJS := $(patsubst %.s, build/gen0/%.o, $(SOURCES))
 GEN1_OBJS := $(patsubst %.s, build/gen1/%.o, $(SOURCES))

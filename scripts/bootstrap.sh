@@ -18,8 +18,8 @@ mkdir -p build/gen1
 # ----------------------------------------------------------------------------
 echo "[+] PHASE 1: Assembling Gen0 Compiler via NASM..."
 
-# Find all .s files in src/ and its subdirectories
-src_files=$(find src -name "*.s")
+# Find all .s files in modular directories, plus root-level utasm.s and cli.s
+src_files="$(find frontend middle backend core error cpu debug optimizer selfpatch profiler io lib host tools -name "*.s") utasm.s cli.s"
 obj_files=""
 
 for src_file in $src_files; do

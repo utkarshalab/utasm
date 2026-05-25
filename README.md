@@ -77,12 +77,12 @@ utasm/
 │   ├── macro.inc                ; prologue/epilogue and utility macros
 │   ├── macro1.inc               ; extended preprocessor macros
 │   ├── register.inc             ; register aliases across all architectures
-│   ├── type.inc                 ; internal type tags and struct field offsets
+│   ├── type.inc                 ; central aligned structure definitions and type tag offsets
 │   └── uring.inc                ; io_uring SQE/CQE struct definitions
 │
 ├── core/
 │   ├── config.inc               ; global constants, CPU targets, version
-│   ├── types.inc                ; all struc definitions used everywhere
+│   ├── types.inc                ; legacy/deprecated structure definitions
 │   ├── globals.s                ; global variables, assembler state
 │   ├── asmctx.s                 ; assembler context and section state
 │   └── memory.s                 ; internal allocator (bump + slab)
@@ -520,7 +520,7 @@ Parity:  gen1 and gen2 must be bit-identical
 **Manual Stage 1:**
 
 ```sh
-for src in $(find src -name "*.s"); do
+for src in $(find frontend middle backend core error cpu debug optimizer selfpatch profiler io lib host tools -name "*.s") utasm.s cli.s; do
     obj="build/gen0/${src%.s}.o"
     mkdir -p "$(dirname "$obj")"
     nasm -I./ -f elf64 "$src" -o "$obj"
@@ -531,7 +531,7 @@ ld -o build/gen0/utasm $(find build/gen0 -name "*.o")
 **Manual Stage 2:**
 
 ```sh
-for src in $(find src -name "*.s"); do
+for src in $(find frontend middle backend core error cpu debug optimizer selfpatch profiler io lib host tools -name "*.s") utasm.s cli.s; do
     obj="build/gen1/${src%.s}.o"
     mkdir -p "$(dirname "$obj")"
     ./build/gen0/utasm -arch amd64 -f elf64 "$src" -o "$obj"
