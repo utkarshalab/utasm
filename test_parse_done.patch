@@ -1,0 +1,15 @@
+--- src/core/compiler.s
++++ src/core/compiler.s
+@@ -102,6 +102,15 @@
+     call    parser_parse
+     test    rax, rax
+     jnz     .error
++    
++    ; debug print
++    mov rax, 1
++    mov rdi, 1
++    lea rsi, [msg_parse_done]
++    mov rdx, 16
++    syscall
++    jmp .skip_msg
++msg_parse_done: db " PARSE FINISHED!,

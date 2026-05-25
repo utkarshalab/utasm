@@ -30,3 +30,8 @@ Thumbs.db
 #scratch codes for generation
 scratch/
 task.md
+
+# Claude Code local config
+CLAUDE.md
+.claude/skills/
+.claude/settings.local.json
