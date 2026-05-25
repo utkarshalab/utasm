@@ -127,46 +127,49 @@ elf64_emit:
     mov     rdi, r12
     mov     rsi, SEC_DATA
     call    asmctx_get_section
-    movzx   ebx, word [rdx + SECTION_index] ; ebx = index
-    
-    mov     rsi, [rdx + SECTION_align]
-    IF rsi, e, 0
-        mov rsi, 8
-    ENDIF ; Default 8-byte
-    mov     edi, r13d
-    call    elf64_align_file
-    check_err
-    
-    ; Record start
-    mov     edi, r13d
-    xor     rsi, rsi
-    mov     rdx, 1
-    call    io_lseek
-    mov     rax, rbx
-    shl     rax, 4
-    mov     [rsp + rax], rdx
-    
-    call    elf64_write_data_section
-    check_err
-    
-    ; Record end/size
-    mov     edi, r13d
-    xor     rsi, rsi
-    mov     rdx, 1
-    call    io_lseek
-    mov     rax, rbx
-    shl     rax, 4
-    mov     r11, [rsp + rax]
-    sub     rdx, r11
-    mov     [rsp + rax + 8], rdx
+    IF rax, e, 0
+        movzx   ebx, word [rdx + SECTION_index] ; ebx = index
+        
+        mov     rsi, [rdx + SECTION_align]
+        IF rsi, e, 0
+            mov rsi, 8
+        ENDIF ; Default 8-byte
+        mov     edi, r13d
+        call    elf64_align_file
+        check_err
+        
+        ; Record start
+        mov     edi, r13d
+        xor     rsi, rsi
+        mov     rdx, 1
+        call    io_lseek
+        mov     rax, rbx
+        shl     rax, 4
+        mov     [rsp + rax], rdx
+        
+        call    elf64_write_data_section
+        check_err
+        
+        ; Record end/size
+        mov     edi, r13d
+        xor     rsi, rsi
+        mov     rdx, 1
+        call    io_lseek
+        mov     rax, rbx
+        shl     rax, 4
+        mov     r11, [rsp + rax]
+        sub     rdx, r11
+        mov     [rsp + rax + 8], rdx
+    ENDIF
 
     ; Ensure .bss is aligned (A88)
     mov     rdi, r12
     mov     rsi, SEC_BSS
     call    asmctx_get_section
     IF rax, e, 0
-        movzx   ebx, word [rdx + SECTION_index] ; ebx = index
-        mov     rsi, [rdx + SECTION_align]
+        mov     r14, rdx                        ; r14 = BSS Section pointer
+        movzx   ebx, word [r14 + SECTION_index] ; ebx = index
+        mov     rsi, [r14 + SECTION_align]
         IF rsi, e, 0
             mov rsi, 8
         ENDIF
@@ -182,7 +185,7 @@ elf64_emit:
         mov     rax, rbx
         shl     rax, 4
         mov     [rsp + rax], rdx            ; offset
-        mov     r11, [rdx + SECTION_size]
+        mov     r11, [r14 + SECTION_size]
         mov     [rsp + rax + 8], r11        ; size
     ENDIF
 
@@ -581,6 +584,9 @@ elf64_write_ehdr:
     add     ecx, [r12 + ASMCTX_group_count]
     add     ecx, 3                 ; 0:NULL, 1..N:User, N+1:sym, N+2:str, N+3:shstr
     mov     word  [r14 + EHDR_SHSTRNDX], cx
+
+    mov     word  [r14 + EHDR_EHSIZE],    ELF64_EHDR_SIZE
+    mov     word  [r14 + EHDR_SHENTSIZE], ELF64_SHDR_SIZE
 
     xor     rax, rax
     jmp     .done
@@ -1095,7 +1101,7 @@ elf64_write_groups:
     xor     rbx, rbx               ; i = 0
 .outer_loop:
     cmp     bx, [r12 + ASMCTX_seccount]
-    jge     .done
+    jge     .success
     
     mov     rax, [r12 + ASMCTX_sections]
     mov     r10, [rax + rbx * 8]   ; r10 = SECTION*
@@ -1165,12 +1171,16 @@ elf64_write_groups:
     inc     rbx
     jmp     .outer_loop
 
+.success:
+    xor     rax, rax
+    jmp     .done
+
 .error:
     mov     rax, EXIT_FILE_WRITE
 .done:
-    movzx   eax, word [r12 + ASMCTX_seccount]
-    shl     rax, 3
-    add     rsp, rax
+    movzx   ecx, word [r12 + ASMCTX_seccount]
+    shl     rcx, 3
+    add     rsp, rcx
     
     pop     r15
     pop     r14
@@ -1692,11 +1702,9 @@ elf64_align_file:
 .error:
     mov     rax, EXIT_FILE_WRITE
 .done:
-    add     rsp, 512
-    pop     r15
-    pop     r14
     pop     r13
     pop     r12
+    pop     rbx
     epilogue
 
 ; ============================================================================

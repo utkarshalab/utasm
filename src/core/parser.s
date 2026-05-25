@@ -2250,6 +2250,7 @@ parser_handle_section_directive:
     push    r12
     push    r13
     push    r14
+    push    r15
     
     ; Get section name token
     call    preprocessor_next_token
@@ -2260,8 +2261,9 @@ parser_handle_section_directive:
     mov     rsi, [r12 + TOKEN_value]
     extern  asmctx_find_section
     call    asmctx_find_section
+    mov     r15, rax               ; r15 = find_section result
     
-    IF rax, e, OK
+    IF r15, e, OK
         mov     r13, rdx               ; r13 = existing section
         ELSE
         ; Create new section
@@ -2275,7 +2277,7 @@ parser_handle_section_directive:
         ENDIF
 
     ; 2. Auto-assign flags and type for standard sections if new
-    IF rax, ne, OK
+    IF r15, ne, OK
         mov     rdi, [r12 + TOKEN_value]
         mov     dword [r13 + SECTION_elf_type], SHT_PROGBITS ; Default
         
@@ -2284,12 +2286,14 @@ parser_handle_section_directive:
         call    str_cmp
         IF rax, e, OK
             mov word [r13 + SECTION_flags], (SHF_ALLOC | SHF_EXECINSTR)
+            mov byte [r13 + SECTION_type], SEC_TEXT
             ELSE
             ; .data -> AW
             lea     rsi, [str_data]
             call    str_cmp
             IF rax, e, OK
                 mov word [r13 + SECTION_flags], (SHF_ALLOC | SHF_WRITE)
+                mov byte [r13 + SECTION_type], SEC_DATA
                 ELSE
                 ; .bss -> AW, NOBITS
                 lea     rsi, [str_bss]
@@ -2297,12 +2301,14 @@ parser_handle_section_directive:
                 IF rax, e, OK
                     mov word [r13 + SECTION_flags], (SHF_ALLOC | SHF_WRITE)
                     mov dword [r13 + SECTION_elf_type], SHT_NOBITS
+                    mov byte [r13 + SECTION_type], SEC_BSS
                     ELSE
                     ; .rodata -> A
                     lea     rsi, [str_rodata]
                     call    str_cmp
                     IF rax, e, OK
                         mov word [r13 + SECTION_flags], SHF_ALLOC
+                        mov byte [r13 + SECTION_type], SEC_RODATA
                         ENDIF
                         ENDIF
                         ENDIF
@@ -2465,6 +2471,7 @@ parser_handle_section_directive:
             ENDIF
     
 .done:
+    pop     r15
     pop     r14
     pop     r13
     pop     r12
@@ -2472,6 +2479,7 @@ parser_handle_section_directive:
     epilogue
 
 .error:
+    pop     r15
     pop     r14
     pop     r13
     pop     r12
