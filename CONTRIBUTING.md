@@ -153,7 +153,7 @@ Types: `fix`, `feat`, `refactor`, `test`, `docs`, `chore`
 
 **Every bug fixed gets a regression test. No exceptions.**
 
-See [TESTS.md](TESTS.md) for the regression test format.
+See [tests.md](docs/tests.md) for the regression test format.
 
 ---
 

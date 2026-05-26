@@ -11,8 +11,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 - New project structure: `frontend/`, `middle/`, `backend/`, `core/`, `error/`, `cpu/`, `debug/`, `optimizer/`, `selfpatch/`, `profiler/`, `tools/`, `io/`, `lib/`, `host/`
-- TESTS.md — full test architecture documentation
-- ARCHITECTURE.md — design rationale and decisions
+- `docs/tests.md` — full test architecture documentation
+- `docs/architecture.md` — design rationale and decisions
 - CONTRIBUTING.md — contribution guidelines
 - CHANGELOG.md — this file
 - Makefile — development command shortcuts

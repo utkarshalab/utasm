@@ -47,7 +47,6 @@ utasm/
 ├── VERSION                      ; current release version
 ├── LICENSE                      ; Apache-2.0
 ├── README.md                    ; this file
-├── TESTS.md                     ; full test architecture documentation
 │
 ├── build/                       ; build output (generated, not committed)
 │   ├── gen0/                    ; Stage 1: NASM-compiled binary
@@ -55,9 +54,12 @@ utasm/
 │   └── gen2/                    ; Stage 3: Gen1-compiled binary (parity check)
 │
 ├── docs/
+│   ├── architecture.md          ; design rationale and decisions
 │   ├── errors.md                ; full error code reference E1xx–E30xx
 │   ├── warnings.md              ; full warning code reference W1xx–W20xx
 │   ├── hints.md                 ; full hint code reference H1xx–H5xx
+│   ├── tests.md                 ; full test architecture documentation
+│   ├── workflow.md              ; complete stage-by-stage workflow plans
 │   └── cpu_profiles.md          ; CPU profile documentation
 │
 ├── include/                     ; architecture-agnostic headers
@@ -446,7 +448,7 @@ utasm/
 │   └── ci.sh                    ; CI pipeline runner
 │
 └── tests/                       ; test suite root
-    └── (see TESTS.md)           ; full test architecture documented separately
+    └── (see docs/tests.md)      ; full test architecture documented separately
 ```
 
 ---
@@ -599,7 +601,7 @@ bash scripts/bootstrap.sh   # build Gen1 first
 bash scripts/test.sh        # run full test suite
 ```
 
-See [TESTS.md](TESTS.md) for the complete test architecture.
+See [tests.md](docs/tests.md) for the complete test architecture.
 
 ---
 
