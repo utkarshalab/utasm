@@ -56,8 +56,6 @@ utasm/
 ├── docs/
 │   ├── architecture.md          ; design rationale and decisions
 │   ├── error_reference.md       ; full error code reference (LXE0001+, etc.)
-│   ├── warnings.md              ; full warning code reference W1xx–W20xx
-│   ├── hints.md                 ; full hint code reference H1xx–H5xx
 │   ├── tests.md                 ; full test architecture documentation
 │   ├── workflow.md              ; complete stage-by-stage workflow plans
 │   └── cpu_profiles.md          ; CPU profile documentation

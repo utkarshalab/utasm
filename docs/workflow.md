@@ -3683,8 +3683,6 @@ Verify every file in README.md has a corresponding entry in docs/:
 
 ```
 docs/error_reference.md → every E1xx–E30xx code documented with example
-docs/warnings.md    → every W1xx–W20xx code documented
-docs/hints.md       → every H1xx–H5xx code documented
 docs/cpu_profiles.md→ every CPU profile documented with feature list
 docs/dev_guide.md   → how to add instruction, error, profile, format
 ARCHITECTURE.md     → major design decisions with rationale
