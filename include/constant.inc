@@ -21,7 +21,7 @@
 ;
 ; NOTE ON PARITY & CONVENTIONS:
 ; - Standard compiler exit codes (0 to 9) align precisely with the calling
-;   expectations in main.s, ERRORS.md, and docs/abi.md.
+;   expectations in main.s, docs/error_reference.md, and docs/abi.md.
 ; - Values 124 (EXIT_INTERNAL) and 125 (EXIT_OOM) were historically proposed
 ;   to keep compiler crash statuses distinct from standard shell/OS utility 
 ;   statuses, but consecutive codes 0-9 are preferred to prevent mismatch 
@@ -131,7 +131,7 @@
 %define MAX_MACRO_PARAMS       32          ; maximum parameters per macro
 %define MAX_MACRO_DEPTH        64          ; maximum nested macro expansion depth
 %define MAX_REP_COUNT          65536       ; maximum iterations per %rep block
-%define MAX_ERRORS             100         ; fatal hard stop threshold for error count (consistent with WORKFLOW.md and ERRORS.md)
+%define MAX_ERRORS             100         ; fatal hard stop threshold for error count (consistent with docs/workflow.md and docs/error_reference.md)
 %define MAX_ERRORS_SOFT        100         ; soft threshold for warning count reporting
 %define MAX_WARNINGS           100         ; threshold for warning count
 %define MAX_RELOC              8192        ; maximum relocation entries per object
@@ -1034,6 +1034,8 @@
 %define R_RISCV_JAL            17
 %define R_RISCV_CALL           18
 %define R_RISCV_CALL_PLT       19
+%define R_RISCV_CALL_HI20      18   ; alias for R_RISCV_CALL (auipc upper 20 bits)
+%define R_RISCV_CALL_LO12      19   ; alias for R_RISCV_CALL_PLT (jalr lower 12 bits)
 %define R_RISCV_GOT_EDI        20
 %define R_RISCV_GNU_PLT_IREL   22
 %define R_RISCV_PCREL_HI20     23

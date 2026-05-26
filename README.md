@@ -55,7 +55,7 @@ utasm/
 │
 ├── docs/
 │   ├── architecture.md          ; design rationale and decisions
-│   ├── errors.md                ; full error code reference E1xx–E30xx
+│   ├── error_reference.md       ; full error code reference (LXE0001+, etc.)
 │   ├── warnings.md              ; full warning code reference W1xx–W20xx
 │   ├── hints.md                 ; full hint code reference H1xx–H5xx
 │   ├── tests.md                 ; full test architecture documentation
@@ -482,7 +482,7 @@ error[E501]: operand size mismatch
    → expanded from macro 'LOAD_VAL' at include/utils.inc:17
 ```
 
-See [Error Reference](docs/errors.md) for the full error code table.
+See [Error Reference](docs/error_reference.md) for the full error code table.
 
 ---
 

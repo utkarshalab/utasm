@@ -12,7 +12,7 @@
 A file is COMPLETE when ALL of these are true:
 ├── Code written and assembles cleanly
 ├── All its unit tests pass
-├── All its error codes documented in docs/errors.md
+├── All its error codes documented in docs/error_reference.md
 ├── CHANGELOG.md updated
 └── Committed with a meaningful message
 
@@ -227,7 +227,7 @@ err_msg_table:
 ; ...
 ```
 
-Document every code in docs/errors.md as you add it.
+Document every code in docs/error_reference.md as you add it.
 Gate: file assembles. Every E1xx–E30xx code defined. Every message non-empty.
 
 ---
@@ -3682,7 +3682,7 @@ All regression tests pass. Zero exceptions.
 Verify every file in README.md has a corresponding entry in docs/:
 
 ```
-docs/errors.md      → every E1xx–E30xx code documented with example
+docs/error_reference.md → every E1xx–E30xx code documented with example
 docs/warnings.md    → every W1xx–W20xx code documented
 docs/hints.md       → every H1xx–H5xx code documented
 docs/cpu_profiles.md→ every CPU profile documented with feature list
@@ -3781,7 +3781,7 @@ Completion checklist per file:
 [ ] Assembles cleanly
 [ ] Tests written
 [ ] Tests passing
-[ ] Error codes documented in docs/errors.md
+[ ] Error codes documented in docs/error_reference.md
 [ ] CHANGELOG entry added
 [ ] Committed with meaningful message
 ```
