@@ -196,14 +196,14 @@ _start:
 
 .check_enc:
     test    rax, rax
-    jnz     .exit_error
+    jnz     .error_in_encoder
     jmp     .assembly_loop
 
 .finish_assembly:
     mov     rdi, rbx
     call    linker_run
     test    rax, rax
-    jnz     .exit_error
+    jnz     .error_in_linker
     
     xor     rax, rax
     jmp     .exit
@@ -224,6 +224,34 @@ _start:
 
 .exit_io_error:
     mov     rax, 3
+    jmp     .exit
+
+.error_in_encoder:
+    mov     r15, rax
+    mov     rdi, 2
+    lea     rsi, [rel msg_encoder_err]
+    call    print_str
+    mov     rdi, 2
+    mov     rsi, r15
+    call    print_num
+    mov     rdi, 2
+    lea     rsi, [rel msg_newline]
+    call    print_str
+    mov     rax, 5
+    jmp     .exit
+
+.error_in_linker:
+    mov     r15, rax
+    mov     rdi, 2
+    lea     rsi, [rel msg_linker_err]
+    call    print_str
+    mov     rdi, 2
+    mov     rsi, r15
+    call    print_num
+    mov     rdi, 2
+    lea     rsi, [rel msg_newline]
+    call    print_str
+    mov     rax, 6
     jmp     .exit
 
 .error_in_parser:
@@ -360,6 +388,8 @@ print_num:
     msg_usage:     db "Usage: utasm -f <fmt> <input> -o <output>", 10, 0
     msg_crit_init: db "CRITICAL: Initialization failed", 10, 0
     msg_parser_err:   db "Parser error: ", 0
+    msg_encoder_err:  db "Encoder error: ", 0
+    msg_linker_err:   db "Linker error: ", 0
     msg_at:           db " at ", 0
     msg_unknown_file: db "<unknown>", 0
     msg_colon:        db ":", 0

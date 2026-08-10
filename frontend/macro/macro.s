@@ -915,63 +915,6 @@ prep_handle_directive:
     mov     rbx, rdi               ; rbx = PrepState
     mov     r13, rsi               ; r13 = the token triggering the directive (% or %name)
     
-    ; Debug print at entry of prep_handle_directive
-    push    rdi
-    push    rsi
-    push    rdx
-    push    rcx
-    push    r8
-    push    r9
-    push    rax
-    
-    ; Print "prep_handle_directive: kind="
-    mov     rdi, 2
-    lea     rsi, [rel dbg_msg1]
-    call    print_str
-    
-    ; Print the token kind
-    movzx   rsi, byte [r13 + TOKEN_kind]
-    mov     rdi, 2
-    call    print_num
-    
-    ; If kind == TOK_DIRECTIVE (0x20), print value
-    cmp     byte [r13 + TOKEN_kind], 0x20
-    jne     .dbg_not_dir
-    
-    mov     rdi, 2
-    lea     rsi, [rel dbg_msg2]
-    call    print_str
-    
-    mov     rsi, [r13 + TOKEN_value]
-    test    rsi, rsi
-    jz      .dbg_no_val
-    mov     rdi, 2
-    call    print_str
-    jmp     .dbg_done
-.dbg_no_val:
-    mov     rdi, 2
-    lea     rsi, [rel dbg_msg_null]
-    call    print_str
-    jmp     .dbg_done
-    
-.dbg_not_dir:
-    mov     rdi, 2
-    lea     rsi, [rel dbg_msg3]
-    call    print_str
-    
-.dbg_done:
-    mov     rdi, 2
-    lea     rsi, [rel dbg_newline]
-    call    print_str
-    
-    pop     rax
-    pop     r9
-    pop     r8
-    pop     rcx
-    pop     rdx
-    pop     rsi
-    pop     rdi
-    
     ; check if we already have the identifier
     cmp     byte [r13 + TOKEN_kind], TOK_DIRECTIVE
     je      .have_ident
