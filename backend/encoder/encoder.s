@@ -34,18 +34,6 @@ amd64_encode_instruction:
     mov     rbx, rdi               ; RBX = AsmCtx
     mov     r12, rsi               ; R12 = INST
 
-    push    rax
-    push    rdx
-    push    rsi
-    push    rdi
-    lea     rsi, [rel msg_encoding_debug]
-    extern  print_str
-    call    print_str
-    pop     rdi
-    pop     rsi
-    pop     rdx
-    pop     rax
-
     ; A96: Dispatch Integrity - Validate operand count
     IF byte [r12 + INST_nops], g, 4
         mov rax, EXIT_ENCODE_FAIL
@@ -3658,12 +3646,14 @@ amd64_emit_reloc:
     ; 1. Check capacity
     mov     eax, [rbx + ASMCTX_nrelocs]
     cmp     eax, MAX_RELOC
-    jge     .error
+    jge     .error_capacity
 
     ; 2. Get slot pointer: relocs + nrelocs * RELOC_SIZE
     mov     rcx, rax
     imul    rcx, RELOC_SIZE
     mov     rdx, [rbx + ASMCTX_relocs]
+    test    rdx, rdx
+    jz      .error_no_reloc_table
     add     rdx, rcx           ; rdx = RELOC*
 
     ; 3. Get current active section
@@ -3672,10 +3662,10 @@ amd64_emit_reloc:
     jnz     .have_sec
     mov     r15, [rbx + ASMCTX_sections]
     test    r15, r15
-    jz      .error
+    jz      .error_no_sections_ptr
     mov     r15, [r15]
     test    r15, r15
-    jz      .error
+    jz      .error_no_first_section
 .have_sec:
 
     ; 4. Populate slot fields
@@ -3695,6 +3685,32 @@ amd64_emit_reloc:
     inc     dword [rbx + ASMCTX_nrelocs]
     xor     rax, rax
     jmp     .done
+
+.error_capacity:
+    push    rax
+    mov     rdi, 2
+    lea     rsi, [rel msg_reloc_cap_err]
+    extern  print_str
+    call    print_str
+    pop     rax
+    jmp     .error
+
+.error_no_reloc_table:
+    push    rax
+    mov     rdi, 2
+    lea     rsi, [rel msg_reloc_table_err]
+    call    print_str
+    pop     rax
+    jmp     .error
+
+.error_no_sections_ptr:
+.error_no_first_section:
+    push    rax
+    mov     rdi, 2
+    lea     rsi, [rel msg_reloc_sec_err]
+    call    print_str
+    pop     rax
+    jmp     .error
 
 .error:
     mov     rax, EXIT_RELOC_ERROR
@@ -4624,4 +4640,6 @@ amd64_encode_vex_unary:
     epilogue
 
 [SECTION .data]
-msg_encoding_debug: db "DEBUG: Encoding instruction", 10, 0
+msg_reloc_cap_err:   db "Reloc error: MAX_RELOC capacity exceeded", 10, 0
+msg_reloc_table_err: db "Reloc error: ASMCTX_relocs is NULL", 10, 0
+msg_reloc_sec_err:   db "Reloc error: No active section or sections array is NULL", 10, 0

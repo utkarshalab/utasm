@@ -234,6 +234,45 @@ _start:
     mov     rdi, 2
     mov     rsi, r15
     call    print_num
+    
+    ; Print " at "
+    mov     rdi, 2
+    lea     rsi, [rel msg_at]
+    call    print_str
+    
+    ; Get current LexerState
+    lea     rbx, [rel global_prep]
+    mov     rbx, [rbx + PREP_lexer]
+    
+    ; Print filename if not NULL
+    mov     rsi, [rbx + LEXER_file]
+    test    rsi, rsi
+    jz      .enc_no_file
+    mov     rdi, 2
+    call    print_str
+    jmp     .enc_print_line_col
+.enc_no_file:
+    mov     rdi, 2
+    lea     rsi, [rel msg_unknown_file]
+    call    print_str
+
+.enc_print_line_col:
+    mov     rdi, 2
+    lea     rsi, [rel msg_colon]
+    call    print_str
+    
+    mov     esi, dword [rbx + LEXER_line]
+    mov     rdi, 2
+    call    print_num
+    
+    mov     rdi, 2
+    lea     rsi, [rel msg_colon]
+    call    print_str
+    
+    movzx   rsi, word [rbx + LEXER_col]
+    mov     rdi, 2
+    call    print_num
+    
     mov     rdi, 2
     lea     rsi, [rel msg_newline]
     call    print_str
