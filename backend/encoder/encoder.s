@@ -3669,7 +3669,14 @@ amd64_emit_reloc:
     ; 3. Get current active section
     mov     r15, [rbx + ASMCTX_curr_sec]
     test    r15, r15
+    jnz     .have_sec
+    mov     r15, [rbx + ASMCTX_sections]
+    test    r15, r15
     jz      .error
+    mov     r15, [r15]
+    test    r15, r15
+    jz      .error
+.have_sec:
 
     ; 4. Populate slot fields
     mov     qword [rdx], 0     ; zero tag/type/pad0 first

@@ -2276,6 +2276,10 @@ parser_handle_section_directive:
         mov     r13, rdx
         ENDIF
 
+    ; Set active section in AsmCtx
+    mov     rdi, [rbx + PREP_ctx]
+    mov     [rdi + ASMCTX_curr_sec], r13
+
     ; 2. Auto-assign flags and type for standard sections if new
     IF r15, ne, OK
         mov     rdi, [r12 + TOKEN_value]
