@@ -901,9 +901,20 @@ parser_evaluate_factor:
         xor     rax, rax
         jmp     .done
     ELSEIF al, e, TOK_IDENT
+        ; Check if local label reference (starts with '.')
+        mov     rsi, [r12 + TOKEN_value]
+        mov     r10, [rbx + PREP_ctx]
+        cmp     byte [rsi], '.'
+        jne     .do_sym_lookup
+        mov     r14, [r10 + ASMCTX_last_global]
+        test    r14, r14
+        jz      .do_sym_lookup
+        call    parser_concat_local_name
+        mov     rsi, rdx               ; namespaced name
+
+.do_sym_lookup:
         ; Symbol lookup
         mov     rdi, [rbx + PREP_ctx]
-        mov     rsi, [r12 + TOKEN_value]
         extern  symbol_find
         call    symbol_find
         IF rax, e, OK
@@ -914,7 +925,7 @@ parser_evaluate_factor:
             ; Deferred symbol (R_ABS64 reloc)
             mov     rdx, 0
             mov     r11, 0                 ; no symbol metadata yet
-            mov     rcx, [r12 + TOKEN_value] ; return symbol name in RCX
+            mov     rcx, rsi               ; return namespaced symbol name in RCX
             xor     rax, rax
             ENDIF
         jmp     .done
@@ -1642,36 +1653,54 @@ parser_concat_local_name:
     push    rbx
     push    r12
     push    r13
+    push    r14
     
-    ; We need PrepState in RBX for the arena_alloc call
-    ; Assuming the caller is parser_handle_line which keeps PrepState in RBX
-    ; but we'll be safer and ensure it's valid if possible, 
-    ; or just assume caller convention and document it.
-    ; Actually, in our current arch, RBX IS the PrepState throughout the parser loop.
+    mov     r12, r14               ; r12 = global name
+    mov     r13, rsi               ; r13 = local name
     
-    mov     r12, r14               ; global
-    mov     r13, rsi               ; local
+    ; 1. Calculate lengths
+    mov     rdi, r12
+    extern  str_len
+    call    str_len
+    mov     r14, rax               ; r14 = len(global)
     
+    mov     rdi, r13
+    call    str_len
+    add     rax, r14               ; rax = len(global) + len(local)
+    inc     rax                    ; +1 for null terminator
+    
+    ; 2. Allocate buffer from arena
     mov     rdi, [rbx + PREP_arena]
-    mov     rsi, MAX_TOKEN
+    mov     rsi, rax
+    extern  arena_alloc
     call    arena_alloc
     check_err_to .error
-    mov     r10, rdx               ; R10 = temp buffer
+    mov     r10, rdx               ; r10 = allocated buffer ptr
     
+    ; 3. Copy global name to buffer
     mov     rdi, r10
     mov     rsi, r12
-    mov     rdx, r13
-    extern  str_concat
-    call    str_concat
+    mov     rcx, r14
+    rep     movsb
     
-    mov     rdx, r10
+    ; 4. Copy local name (including null terminator)
+    mov     rsi, r13
+.copy_local:
+    lodsb
+    stosb
+    test    al, al
+    jnz     .copy_local
+    
+    mov     rdx, r10               ; rdx = concatenated string pointer
     xor     rax, rax
+    pop     r14
     pop     r13
     pop     r12
     pop     rbx
     epilogue
 
 .error:
+    pop     r14
     pop     r13
     pop     r12
     pop     rbx

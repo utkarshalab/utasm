@@ -765,12 +765,15 @@ prep_expand_next:
         mov     byte [r14], '.'
         mov     byte [r14+1], '.'
         mov     byte [r14+2], '@'
+        mov     byte [r14+3], 0
         
         mov     rdi, r14
-        add     rdi, 3                 ; skip "..@"
         mov     rsi, r15               ; ID string
-        mov     rdx, [r12 + TOKEN_value] ; original label name
         extern  str_concat
+        call    str_concat
+        
+        mov     rdi, r14
+        mov     rsi, [r12 + TOKEN_value] ; original label name
         call    str_concat
         
         ; Update token
@@ -823,11 +826,15 @@ prep_expand_next:
         jnz     .done_concat           ; OOM or error
         
         mov     r14, rdx               ; r14 = concat buffer
+        mov     byte [r14], 0          ; null-terminate before str_concat
         
         mov     rdi, r14
         mov     rsi, [r12 + TOKEN_value]
-        mov     rdx, [rsp + TOKEN_value]
         extern  str_concat
+        call    str_concat
+        
+        mov     rdi, r14
+        mov     rsi, [rsp + TOKEN_value]
         call    str_concat
         
         ; 4. Update r12 to be the merged IDENT
