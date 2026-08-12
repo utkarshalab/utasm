@@ -322,31 +322,68 @@ elf64_emit:
     sub     rdx, r11
     mov     [rsp + rax + 8], rdx
 
-    ; ---- Write .rela.text ----
-    IF dword [r12 + ASMCTX_nrelocs], ne, 0
-        lea     ebx, [r14d + 4]
-        
-        mov     edi, r13d
-        xor     rsi, rsi
-        mov     rdx, 1
-        call    io_lseek
-        mov     rax, rbx
-        shl     rax, 4
-        mov     [rsp + rax], rdx
-        
-        call    elf64_write_rela
-        check_err
-        
-        mov     edi, r13d
-        xor     rsi, rsi
-        mov     rdx, 1
-        call    io_lseek
-        mov     rax, rbx
-        shl     rax, 4
-        mov     r11, [rsp + rax]
-        sub     rdx, r11
-        mov     [rsp + rax + 8], rdx
-    ENDIF
+    ; ---- Write one .rela.<name> per section that has relocations ----
+    ; Relocations carry the section they belong to. They must not all go into
+    ; .rela.text: the linker applies a relocation section to whatever sh_info
+    ; names, so a .rodata entry written there would be applied to .text.
+    ; The rela sections come last in the header table, so numbering them from
+    ; meta_base+4 upwards shifts nothing before them.
+    ; r15 = next rela section index, r10 = iteration index over sections
+    lea     r15d, [r14d + 4]
+    xor     r10d, r10d
+.rela_sec_loop:
+    cmp     r10w, [r12 + ASMCTX_seccount]
+    jge     .rela_sec_done
+
+    mov     rax, [r12 + ASMCTX_sections]
+    mov     rbx, [rax + r10 * 8]           ; rbx = SECTION*
+
+    push    r10
+    mov     rdi, r12
+    mov     rsi, rbx
+    call    elf64_relocs_in_section
+    pop     r10
+    test    rax, rax
+    jz      .rela_sec_next
+
+    ; Record start offset for this rela section
+    push    r10
+    push    rbx
+    mov     edi, r13d
+    xor     rsi, rsi
+    mov     rdx, 1
+    call    io_lseek
+    mov     rax, r15
+    shl     rax, 4
+    mov     [rsp + 16 + rax], rdx          ; +16 for the two pushes above
+
+    mov     rdi, rbx
+    call    elf64_write_rela
+    check_err_to .rela_err
+
+    mov     edi, r13d
+    xor     rsi, rsi
+    mov     rdx, 1
+    call    io_lseek
+    mov     rax, r15
+    shl     rax, 4
+    mov     r11, [rsp + 16 + rax]
+    sub     rdx, r11
+    mov     [rsp + 16 + rax + 8], rdx
+    pop     rbx
+    pop     r10
+
+    inc     r15d                           ; next rela section index
+
+.rela_sec_next:
+    inc     r10d
+    jmp     .rela_sec_loop
+
+.rela_err:
+    add     rsp, 16                        ; drop the two saved registers
+    jmp     .error
+
+.rela_sec_done:
 
     call    elf64_write_debug_line
     check_err
@@ -624,9 +661,13 @@ elf64_write_ehdr:
     movzx   eax, word [r12 + ASMCTX_seccount]
     add     eax, [r12 + ASMCTX_group_count]
     add     eax, 4                 ; NULL + symtab + strtab + shstrtab
-    IF dword [r12 + ASMCTX_nrelocs], ne, 0
-        inc     eax                ; .rela.text
-        ENDIF
+    ; plus one .rela.<name> for every section that has relocations
+    push    rax
+    mov     rdi, r12
+    call    elf64_count_rela_sections
+    mov     rcx, rax
+    pop     rax
+    add     eax, ecx
     mov     word  [r14 + EHDR_SHNUM], ax
     
     ; .shstrtab index is 1 + seccount + group_count + 2 (symtab, strtab)
@@ -1354,6 +1395,8 @@ shstrtab_data:
     db ".rela.text", 0  ; [44]
     db ".group", 0      ; [55]
     db ".rodata", 0     ; [62]
+    db ".rela.data", 0  ; [70]
+    db ".rela.rodata", 0; [81]
 shstrtab_end:
 
 [SECTION .text]
@@ -1376,11 +1419,116 @@ elf64_write_shstrtab:
     epilogue
 
 ; ============================================================================
+; elf64_relocs_in_section
+; ============================================================================
+;
+; Counts the relocations recorded against one section. Each RELOC stores the
+; section it lives in, so relocations can be grouped into a .rela.<name>
+; section per target - a .data relocation written into .rela.text would be
+; applied to .text by the linker.
+;
+; Input  : rdi = AsmCtx, rsi = SECTION*
+; Output : rax = count
+; Clobbers: rcx, rdx, r8, r9
+;
+elf64_relocs_in_section:
+    xor     rax, rax
+    test    rsi, rsi
+    jz      .done
+    mov     r8, [rdi + ASMCTX_relocs]
+    test    r8, r8
+    jz      .done
+    mov     r9d, [rdi + ASMCTX_nrelocs]
+    xor     rcx, rcx
+.loop:
+    cmp     ecx, r9d
+    jge     .done
+    mov     rdx, rcx
+    imul    rdx, RELOC_SIZE
+    add     rdx, r8
+    cmp     [rdx + RELOC_section], rsi
+    jne     .next
+    inc     rax
+.next:
+    inc     ecx
+    jmp     .loop
+.done:
+    ret
+
+; ============================================================================
+; elf64_count_rela_sections
+; ============================================================================
+;
+; How many .rela.<name> sections the object will carry: one per section that
+; has at least one relocation recorded against it.
+;
+; Input  : rdi = AsmCtx
+; Output : rax = count
+;
+elf64_count_rela_sections:
+    prologue
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    mov     rbx, rdi               ; rbx = AsmCtx
+    xor     r14, r14               ; r14 = count
+    xor     r13d, r13d             ; r13 = section index
+.loop:
+    cmp     r13w, [rbx + ASMCTX_seccount]
+    jge     .done
+    mov     rax, [rbx + ASMCTX_sections]
+    mov     r12, [rax + r13 * 8]
+    mov     rdi, rbx
+    mov     rsi, r12
+    call    elf64_relocs_in_section
+    test    rax, rax
+    jz      .next
+    inc     r14
+.next:
+    inc     r13d
+    jmp     .loop
+.done:
+    mov     rax, r14
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    epilogue
+
+; ============================================================================
+; elf64_rela_name_for
+; ============================================================================
+;
+; Offset in .shstrtab of the ".rela.<name>" string for a section.
+;
+; Input  : rsi = SECTION*
+; Output : eax = shstrtab offset
+;
+elf64_rela_name_for:
+    movzx   eax, byte [rsi + SECTION_type]
+    cmp     al, SEC_DATA
+    je      .data
+    cmp     al, SEC_RODATA
+    je      .rodata
+    mov     eax, 44                ; ".rela.text"
+    ret
+.data:
+    mov     eax, 70                ; ".rela.data"
+    ret
+.rodata:
+    mov     eax, 81                ; ".rela.rodata"
+    ret
+
+; ============================================================================
 ; elf64_write_rela
 ; ============================================================================
 ;
-; Writes .rela.text â€” relocation entries for unresolved symbols in .text.
-; Walks the RELOC table stored in AsmCtx.
+; Writes the relocation entries belonging to one section, as the body of that
+; section's .rela.<name>. Walks the RELOC table stored in AsmCtx and skips
+; every entry recorded against a different section.
+;
+; Input  : r12 = AsmCtx, r13d = fd, rdi = SECTION* to emit relocations for
 ;
 elf64_write_rela:
     prologue
@@ -1388,7 +1536,10 @@ elf64_write_rela:
     push    r14
     push    r15
 
-    sub     rsp, ELF64_RELA_SIZE   ; scratch Rela64 on stack
+    ; scratch Rela64, plus a slot for the target section: rbx/r12/r13/r14/r15
+    ; are all already spoken for here and rbp belongs to prologue/epilogue.
+    sub     rsp, ELF64_RELA_SIZE + 16
+    mov     [rsp + ELF64_RELA_SIZE], rdi   ; target SECTION*
 
     mov     rbx, [r12 + ASMCTX_relocs]
     mov     r14d, [r12 + ASMCTX_nrelocs]
@@ -1401,6 +1552,11 @@ elf64_write_rela:
     mov     rdi, rcx
     imul    rdi, RELOC_SIZE
     add     rdi, rbx                       ; rdi = RELOC*
+
+    ; Only the relocations belonging to this section
+    mov     rax, [rsp + ELF64_RELA_SIZE]
+    cmp     [rdi + RELOC_section], rax
+    jne     .next
 
     ; r_offset
     mov     rax, [rdi + RELOC_offset]
@@ -1440,13 +1596,17 @@ elf64_write_rela:
     pop     rcx
     check_err
 
+.next:
     inc     ecx
     jmp     .loop
 
 .error:
     mov     rax, EXIT_FILE_WRITE
+    jmp     .exit
 .done:
-    add     rsp, ELF64_RELA_SIZE
+    xor     rax, rax
+.exit:
+    add     rsp, ELF64_RELA_SIZE + 16
     pop     r15
     pop     r14
     pop     rbx
@@ -1761,60 +1921,75 @@ elf64_write_shdrs:
     call    io_write
     check_err
     
-    ; 6. .rela.text (if nrelocs != 0)
-    IF dword [rbx + ASMCTX_nrelocs], ne, 0
-        mov     rdi, rsp
-        mov     rsi, ELF64_SHDR_SIZE
-        call    mem_zero
-        mov     dword [rsp + SHDR_NAME], 44    ; ".rela.text"
-        mov     dword [rsp + SHDR_TYPE], 4     ; SHT_RELA
-        mov     qword [rsp + SHDR_FLAGS], 0x40 ; SHF_INFO_LINK
-        mov     qword [rsp + SHDR_ENTSIZE], 24 ; sizeof(Elf64_Rela)
-        
-        ; Link = .symtab index
-        movzx   eax, word [rbx + ASMCTX_seccount]
-        add     eax, [rbx + ASMCTX_group_count]
-        inc     eax                            ; NULL + User + Groups + SYMTAB
-        mov     dword [rsp + SHDR_LINK], eax
-        
-        ; Info = .text index. A file can carry relocations without having a
-        ; .text section at all, and asmctx_get_section hands back a null
-        ; pointer for one it does not have.
-        push    rcx
-        push    rsi
-        mov     rdi, rbx
-        mov     rsi, SEC_TEXT
-        call    asmctx_get_section
-        xor     eax, eax
-        test    rdx, rdx
-        jz      .no_text_for_rela
-        movzx   eax, word [rdx + SECTION_index] ; eax = index of .text
-    .no_text_for_rela:
-        pop     rsi
-        pop     rcx
-        mov     dword [rsp + SHDR_INFO], eax
-        
-        movzx   ecx, word [rbx + ASMCTX_seccount]
-        add     ecx, [rbx + ASMCTX_group_count]
-        add     ecx, 4                         ; index of .rela.text
-        
-        mov     rax, rcx
-        shl     rax, 4
-        add     rax, r15
-        mov     rdi, [rax]
-        mov     qword [rsp + SHDR_OFFSET], rdi
-        mov     rdi, [rax + 8]
-        mov     qword [rsp + SHDR_SIZE], rdi
-        
-        mov     qword [rsp + SHDR_ADDRALIGN], 8
-        
-        mov     edi, r12d
-        mov     rsi, rsp
-        mov     rdx, ELF64_SHDR_SIZE
-        call    io_write
-        check_err
-    ENDIF
-    
+    ; 6. One .rela.<name> header per section that has relocations, in the
+    ;    same section order the bodies were written in, so the indices match.
+    ;    r14 = next rela section index, r13 = section iteration index.
+    movzx   r14d, word [rbx + ASMCTX_seccount]
+    add     r14d, [rbx + ASMCTX_group_count]
+    add     r14d, 4                            ; first rela section index
+    xor     r13d, r13d
+
+.rela_hdr_loop:
+    cmp     r13w, [rbx + ASMCTX_seccount]
+    jge     .rela_hdr_done
+
+    ; The section pointer is re-derived rather than parked in a register:
+    ; rbx/r12/r15 are live and rbp belongs to prologue/epilogue.
+    mov     rax, [rbx + ASMCTX_sections]
+    mov     rsi, [rax + r13 * 8]               ; rsi = SECTION*
+
+    mov     rdi, rbx
+    call    elf64_relocs_in_section
+    test    rax, rax
+    jz      .rela_hdr_next
+
+    mov     rdi, rsp
+    mov     rsi, ELF64_SHDR_SIZE
+    call    mem_zero
+
+    mov     rax, [rbx + ASMCTX_sections]
+    mov     rsi, [rax + r13 * 8]
+    call    elf64_rela_name_for
+    mov     dword [rsp + SHDR_NAME], eax
+    mov     dword [rsp + SHDR_TYPE], 4         ; SHT_RELA
+    mov     qword [rsp + SHDR_FLAGS], 0x40     ; SHF_INFO_LINK
+    mov     qword [rsp + SHDR_ENTSIZE], 24     ; sizeof(Elf64_Rela)
+
+    ; Link = .symtab index
+    movzx   eax, word [rbx + ASMCTX_seccount]
+    add     eax, [rbx + ASMCTX_group_count]
+    inc     eax                                ; NULL + User + Groups + SYMTAB
+    mov     dword [rsp + SHDR_LINK], eax
+
+    ; Info = the section these relocations apply to
+    mov     rax, [rbx + ASMCTX_sections]
+    mov     rax, [rax + r13 * 8]
+    movzx   eax, word [rax + SECTION_index]
+    mov     dword [rsp + SHDR_INFO], eax
+
+    mov     rax, r14
+    shl     rax, 4
+    add     rax, r15
+    mov     rdi, [rax]
+    mov     qword [rsp + SHDR_OFFSET], rdi
+    mov     rdi, [rax + 8]
+    mov     qword [rsp + SHDR_SIZE], rdi
+
+    mov     qword [rsp + SHDR_ADDRALIGN], 8
+
+    mov     edi, r12d
+    mov     rsi, rsp
+    mov     rdx, ELF64_SHDR_SIZE
+    call    io_write
+    check_err
+
+    inc     r14d
+
+.rela_hdr_next:
+    inc     r13d
+    jmp     .rela_hdr_loop
+
+.rela_hdr_done:
     xor     rax, rax
     jmp     .done
 

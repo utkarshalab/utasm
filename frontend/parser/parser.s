@@ -2654,23 +2654,88 @@ parser_emit_data_16:
 .error:
     epilogue
 
-; NOTE: "dq <label>" writes the section-relative value with no relocation, so
-; a pointer table built by utasm holds offsets rather than addresses. Fixing
-; it needs per-section .rela.<name> sections: relocations are recorded with
-; the section they belong to, but the ELF writer emits a single hardcoded
-; .rela.text, so a .data/.rodata relocation would be applied to .text instead.
-; See the notes on the ELF writer before attempting it -- 19 sites derive
-; section indices arithmetically and all of them shift.
+;*
+; * [parser_data_symbol]
+; * Purpose: Decide whether an initialised data word refers to an address the
+; *   linker has to fill in, and with what name and addend. "dq label" must
+; *   be relocated: emitting the section-relative value in place leaves a
+; *   table of offsets rather than pointers, which faults on first use.
+; *   Constants and struct fields are plain numbers and never relocate.
+; * Input:
+; *   R8  = resolved SYMBOL* (0 if none)
+; *   R9  = deferred name string (0 if none, for a forward reference)
+; *   R10 = the evaluated value
+; * Output:
+; *   RSI = name to relocate against, or 0 for a plain number
+; *   RDI = addend to record
+; ;
+parser_data_symbol:
+    xor     rsi, rsi
+    mov     rdi, r10
+    test    r8, r8
+    jz      .try_deferred
+
+    ; A resolved symbol only carries an address for these kinds
+    movzx   eax, byte [r8 + SYMBOL_kind]
+    cmp     al, SYM_LABEL
+    je      .use_symbol
+    cmp     al, SYM_DATA
+    je      .use_symbol
+    cmp     al, SYM_EXTERN
+    je      .use_symbol
+    cmp     al, SYM_COMMON
+    je      .use_symbol
+    ret                            ; constant / struct / macro: a number
+
+.use_symbol:
+    mov     rsi, [r8 + SYMBOL_name]
+    mov     rdi, r10
+    sub     rdi, [r8 + SYMBOL_value]   ; addend = whatever was added to it
+    ret
+
+.try_deferred:
+    test    r9, r9
+    jz      .done
+    mov     rsi, r9                ; forward reference: the value is the addend
+    mov     rdi, r10
+.done:
+    ret
+
 parser_emit_data_32:
     prologue
 .loop:
     mov     rdi, rbx
     call    parser_evaluate_expression
     check_err
+
+    mov     r10, rdx
+    mov     r8, r11
+    mov     r9, rcx
+    call    parser_data_symbol
+    test    rsi, rsi
+    jz      .plain
+
+    mov     rdx, rsi               ; name
+    mov     rcx, rdi               ; addend
     mov     rdi, [rbx + PREP_ctx]
-    mov     rsi, rdx
+    mov     rax, [rdi + ASMCTX_curr_sec]
+    mov     rsi, [rax + SECTION_size]
+    mov     r8, R_X86_64_32
+    extern  reloc_record
+    call    reloc_record
+    check_err
+    mov     rdi, [rbx + PREP_ctx]
+    xor     rsi, rsi
     extern  asmctx_emit_dword
     call    asmctx_emit_dword
+    jmp     .next
+
+.plain:
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, r10
+    call    asmctx_emit_dword
+
+.next:
     mov     rdi, rbx
     call    preprocessor_peek_token
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
@@ -2678,6 +2743,7 @@ parser_emit_data_32:
         call    preprocessor_next_token
         jmp     .loop
         ENDIF
+    xor     rax, rax
     epilogue
 
 .error:
@@ -2689,10 +2755,34 @@ parser_emit_data_64:
     mov     rdi, rbx
     call    parser_evaluate_expression
     check_err
+
+    mov     r10, rdx
+    mov     r8, r11
+    mov     r9, rcx
+    call    parser_data_symbol
+    test    rsi, rsi
+    jz      .plain
+
+    mov     rdx, rsi               ; name
+    mov     rcx, rdi               ; addend
     mov     rdi, [rbx + PREP_ctx]
-    mov     rsi, rdx
+    mov     rax, [rdi + ASMCTX_curr_sec]
+    mov     rsi, [rax + SECTION_size]
+    mov     r8, R_X86_64_64
+    call    reloc_record
+    check_err
+    mov     rdi, [rbx + PREP_ctx]
+    xor     rsi, rsi
     extern  asmctx_emit_qword
     call    asmctx_emit_qword
+    jmp     .next
+
+.plain:
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, r10
+    call    asmctx_emit_qword
+
+.next:
     mov     rdi, rbx
     call    preprocessor_peek_token
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
@@ -2700,6 +2790,7 @@ parser_emit_data_64:
         call    preprocessor_next_token
         jmp     .loop
         ENDIF
+    xor     rax, rax
     epilogue
 
 .error:
