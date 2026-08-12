@@ -314,36 +314,36 @@ mnc_tb_x64:
     mnc_ent "iret", 0, 1295
     mnc_ent "iretd", 0, 1296
     mnc_ent "iretq", 0, 1297
-    mnc_ent "ja", 0, 3000
-    mnc_ent "jae", 0, 3001
+    mnc_ent "ja", 0, 3007
+    mnc_ent "jae", 0, 3003
     mnc_ent "jb", 0, 3002
-    mnc_ent "jbe", 0, 3003
-    mnc_ent "jc", 0, 3004
-    mnc_ent "je", 0, 3005
-    mnc_ent "jg", 0, 3006
-    mnc_ent "jge", 0, 3007
-    mnc_ent "jl", 0, 3008
-    mnc_ent "jle", 0, 3009
-    mnc_ent "jna", 0, 3010
-    mnc_ent "jnae", 0, 3011
-    mnc_ent "jnb", 0, 3012
-    mnc_ent "jnbe", 0, 3013
-    mnc_ent "jnc", 0, 3014
-    mnc_ent "jne", 0, 3015
-    mnc_ent "jng", 0, 3016
-    mnc_ent "jnge", 0, 3017
-    mnc_ent "jnl", 0, 3018
-    mnc_ent "jnle", 0, 3019
-    mnc_ent "jno", 0, 3020
-    mnc_ent "jnp", 0, 3021
-    mnc_ent "jns", 0, 3022
-    mnc_ent "jnz", 0, 3023
-    mnc_ent "jo", 0, 3024
-    mnc_ent "jp", 0, 3025
-    mnc_ent "jpe", 0, 3026
-    mnc_ent "jpo", 0, 3027
-    mnc_ent "js", 0, 3028
-    mnc_ent "jz", 0, 3029
+    mnc_ent "jbe", 0, 3006
+    mnc_ent "jc", 0, 3002
+    mnc_ent "je", 0, 3004
+    mnc_ent "jg", 0, 3015
+    mnc_ent "jge", 0, 3013
+    mnc_ent "jl", 0, 3012
+    mnc_ent "jle", 0, 3014
+    mnc_ent "jna", 0, 3006
+    mnc_ent "jnae", 0, 3002
+    mnc_ent "jnb", 0, 3003
+    mnc_ent "jnbe", 0, 3007
+    mnc_ent "jnc", 0, 3003
+    mnc_ent "jne", 0, 3005
+    mnc_ent "jng", 0, 3014
+    mnc_ent "jnge", 0, 3012
+    mnc_ent "jnl", 0, 3013
+    mnc_ent "jnle", 0, 3015
+    mnc_ent "jno", 0, 3001
+    mnc_ent "jnp", 0, 3011
+    mnc_ent "jns", 0, 3009
+    mnc_ent "jnz", 0, 3005
+    mnc_ent "jo", 0, 3000
+    mnc_ent "jp", 0, 3010
+    mnc_ent "jpe", 0, 3010
+    mnc_ent "jpo", 0, 3011
+    mnc_ent "js", 0, 3008
+    mnc_ent "jz", 0, 3004
     mnc_ent "cmovo", 0, 4000
     mnc_ent "cmovno", 0, 4001
     mnc_ent "cmovb", 0, 4002
@@ -1435,12 +1435,22 @@ amd64_register_table:
     dq H_ESP, (4 << 8) | REG_RSP
     compile_time_hash "ebp", H_EBP
     dq H_EBP, (4 << 8) | REG_RBP
-    %assign i 8
-    %rep 8
-        compile_time_hash "r%[i]d", H_R%[i]D
-        dq H_R%[i]D, (4 << 8) | %[i]
-    %assign i i+1
-    %endrep
+    compile_time_hash "r8d", H_R8D
+    dq H_R8D, (4 << 8) | 8
+    compile_time_hash "r9d", H_R9D
+    dq H_R9D, (4 << 8) | 9
+    compile_time_hash "r10d", H_R10D
+    dq H_R10D, (4 << 8) | 10
+    compile_time_hash "r11d", H_R11D
+    dq H_R11D, (4 << 8) | 11
+    compile_time_hash "r12d", H_R12D
+    dq H_R12D, (4 << 8) | 12
+    compile_time_hash "r13d", H_R13D
+    dq H_R13D, (4 << 8) | 13
+    compile_time_hash "r14d", H_R14D
+    dq H_R14D, (4 << 8) | 14
+    compile_time_hash "r15d", H_R15D
+    dq H_R15D, (4 << 8) | 15
 
     ; ---- 16-bit GPRs ----
     compile_time_hash "ax", H_AX
@@ -1459,12 +1469,22 @@ amd64_register_table:
     dq H_SP, (2 << 8) | REG_RSP
     compile_time_hash "bp", H_BP
     dq H_BP, (2 << 8) | REG_RBP
-    %assign i 8
-    %rep 8
-        compile_time_hash "r%[i]w", H_R%[i]W
-        dq H_R%[i]W, (2 << 8) | %[i]
-    %assign i i+1
-    %endrep
+    compile_time_hash "r8w", H_R8W
+    dq H_R8W, (2 << 8) | 8
+    compile_time_hash "r9w", H_R9W
+    dq H_R9W, (2 << 8) | 9
+    compile_time_hash "r10w", H_R10W
+    dq H_R10W, (2 << 8) | 10
+    compile_time_hash "r11w", H_R11W
+    dq H_R11W, (2 << 8) | 11
+    compile_time_hash "r12w", H_R12W
+    dq H_R12W, (2 << 8) | 12
+    compile_time_hash "r13w", H_R13W
+    dq H_R13W, (2 << 8) | 13
+    compile_time_hash "r14w", H_R14W
+    dq H_R14W, (2 << 8) | 14
+    compile_time_hash "r15w", H_R15W
+    dq H_R15W, (2 << 8) | 15
 
     ; ---- 8-bit GPRs (Low) ----
     compile_time_hash "al", H_AL
@@ -1483,12 +1503,22 @@ amd64_register_table:
     dq H_SPL, (1 << 8) | REG_RSP
     compile_time_hash "bpl", H_BPL
     dq H_BPL, (1 << 8) | REG_RBP
-    %assign i 8
-    %rep 8
-        compile_time_hash "r%[i]b", H_R%[i]B
-        dq H_R%[i]B, (1 << 8) | %[i]
-    %assign i i+1
-    %endrep
+    compile_time_hash "r8b", H_R8B
+    dq H_R8B, (1 << 8) | 8
+    compile_time_hash "r9b", H_R9B
+    dq H_R9B, (1 << 8) | 9
+    compile_time_hash "r10b", H_R10B
+    dq H_R10B, (1 << 8) | 10
+    compile_time_hash "r11b", H_R11B
+    dq H_R11B, (1 << 8) | 11
+    compile_time_hash "r12b", H_R12B
+    dq H_R12B, (1 << 8) | 12
+    compile_time_hash "r13b", H_R13B
+    dq H_R13B, (1 << 8) | 13
+    compile_time_hash "r14b", H_R14B
+    dq H_R14B, (1 << 8) | 14
+    compile_time_hash "r15b", H_R15B
+    dq H_R15B, (1 << 8) | 15
 
     ; ---- 8-bit GPRs (High) ----
     compile_time_hash "ah", H_AH
@@ -1503,40 +1533,284 @@ amd64_register_table:
     ; ---- SIMD (XMM) ----
     %assign i 0
     ; ---- SIMD (XMM/YMM/ZMM) ----
-    %assign i 0
-    %rep 32
-        compile_time_hash "xmm%[i]", H_XMM%[i]
-        dq H_XMM%[i], (16 << 8) | (80 + %[i])
-        compile_time_hash "ymm%[i]", H_YMM%[i]
-        dq H_YMM%[i], (32 << 8) | (80 + %[i])
-        compile_time_hash "zmm%[i]", H_ZMM%[i]
-        dq H_ZMM%[i], (64 << 8) | (80 + %[i])
-    %assign i i+1
-    %endrep
+    compile_time_hash "xmm0", H_XMM0
+    dq H_XMM0, (16 << 8) | 80
+    compile_time_hash "xmm1", H_XMM1
+    dq H_XMM1, (16 << 8) | 81
+    compile_time_hash "xmm2", H_XMM2
+    dq H_XMM2, (16 << 8) | 82
+    compile_time_hash "xmm3", H_XMM3
+    dq H_XMM3, (16 << 8) | 83
+    compile_time_hash "xmm4", H_XMM4
+    dq H_XMM4, (16 << 8) | 84
+    compile_time_hash "xmm5", H_XMM5
+    dq H_XMM5, (16 << 8) | 85
+    compile_time_hash "xmm6", H_XMM6
+    dq H_XMM6, (16 << 8) | 86
+    compile_time_hash "xmm7", H_XMM7
+    dq H_XMM7, (16 << 8) | 87
+    compile_time_hash "xmm8", H_XMM8
+    dq H_XMM8, (16 << 8) | 88
+    compile_time_hash "xmm9", H_XMM9
+    dq H_XMM9, (16 << 8) | 89
+    compile_time_hash "xmm10", H_XMM10
+    dq H_XMM10, (16 << 8) | 90
+    compile_time_hash "xmm11", H_XMM11
+    dq H_XMM11, (16 << 8) | 91
+    compile_time_hash "xmm12", H_XMM12
+    dq H_XMM12, (16 << 8) | 92
+    compile_time_hash "xmm13", H_XMM13
+    dq H_XMM13, (16 << 8) | 93
+    compile_time_hash "xmm14", H_XMM14
+    dq H_XMM14, (16 << 8) | 94
+    compile_time_hash "xmm15", H_XMM15
+    dq H_XMM15, (16 << 8) | 95
+    compile_time_hash "xmm16", H_XMM16
+    dq H_XMM16, (16 << 8) | 96
+    compile_time_hash "xmm17", H_XMM17
+    dq H_XMM17, (16 << 8) | 97
+    compile_time_hash "xmm18", H_XMM18
+    dq H_XMM18, (16 << 8) | 98
+    compile_time_hash "xmm19", H_XMM19
+    dq H_XMM19, (16 << 8) | 99
+    compile_time_hash "xmm20", H_XMM20
+    dq H_XMM20, (16 << 8) | 100
+    compile_time_hash "xmm21", H_XMM21
+    dq H_XMM21, (16 << 8) | 101
+    compile_time_hash "xmm22", H_XMM22
+    dq H_XMM22, (16 << 8) | 102
+    compile_time_hash "xmm23", H_XMM23
+    dq H_XMM23, (16 << 8) | 103
+    compile_time_hash "xmm24", H_XMM24
+    dq H_XMM24, (16 << 8) | 104
+    compile_time_hash "xmm25", H_XMM25
+    dq H_XMM25, (16 << 8) | 105
+    compile_time_hash "xmm26", H_XMM26
+    dq H_XMM26, (16 << 8) | 106
+    compile_time_hash "xmm27", H_XMM27
+    dq H_XMM27, (16 << 8) | 107
+    compile_time_hash "xmm28", H_XMM28
+    dq H_XMM28, (16 << 8) | 108
+    compile_time_hash "xmm29", H_XMM29
+    dq H_XMM29, (16 << 8) | 109
+    compile_time_hash "xmm30", H_XMM30
+    dq H_XMM30, (16 << 8) | 110
+    compile_time_hash "xmm31", H_XMM31
+    dq H_XMM31, (16 << 8) | 111
+    compile_time_hash "ymm0", H_YMM0
+    dq H_YMM0, (32 << 8) | 80
+    compile_time_hash "ymm1", H_YMM1
+    dq H_YMM1, (32 << 8) | 81
+    compile_time_hash "ymm2", H_YMM2
+    dq H_YMM2, (32 << 8) | 82
+    compile_time_hash "ymm3", H_YMM3
+    dq H_YMM3, (32 << 8) | 83
+    compile_time_hash "ymm4", H_YMM4
+    dq H_YMM4, (32 << 8) | 84
+    compile_time_hash "ymm5", H_YMM5
+    dq H_YMM5, (32 << 8) | 85
+    compile_time_hash "ymm6", H_YMM6
+    dq H_YMM6, (32 << 8) | 86
+    compile_time_hash "ymm7", H_YMM7
+    dq H_YMM7, (32 << 8) | 87
+    compile_time_hash "ymm8", H_YMM8
+    dq H_YMM8, (32 << 8) | 88
+    compile_time_hash "ymm9", H_YMM9
+    dq H_YMM9, (32 << 8) | 89
+    compile_time_hash "ymm10", H_YMM10
+    dq H_YMM10, (32 << 8) | 90
+    compile_time_hash "ymm11", H_YMM11
+    dq H_YMM11, (32 << 8) | 91
+    compile_time_hash "ymm12", H_YMM12
+    dq H_YMM12, (32 << 8) | 92
+    compile_time_hash "ymm13", H_YMM13
+    dq H_YMM13, (32 << 8) | 93
+    compile_time_hash "ymm14", H_YMM14
+    dq H_YMM14, (32 << 8) | 94
+    compile_time_hash "ymm15", H_YMM15
+    dq H_YMM15, (32 << 8) | 95
+    compile_time_hash "ymm16", H_YMM16
+    dq H_YMM16, (32 << 8) | 96
+    compile_time_hash "ymm17", H_YMM17
+    dq H_YMM17, (32 << 8) | 97
+    compile_time_hash "ymm18", H_YMM18
+    dq H_YMM18, (32 << 8) | 98
+    compile_time_hash "ymm19", H_YMM19
+    dq H_YMM19, (32 << 8) | 99
+    compile_time_hash "ymm20", H_YMM20
+    dq H_YMM20, (32 << 8) | 100
+    compile_time_hash "ymm21", H_YMM21
+    dq H_YMM21, (32 << 8) | 101
+    compile_time_hash "ymm22", H_YMM22
+    dq H_YMM22, (32 << 8) | 102
+    compile_time_hash "ymm23", H_YMM23
+    dq H_YMM23, (32 << 8) | 103
+    compile_time_hash "ymm24", H_YMM24
+    dq H_YMM24, (32 << 8) | 104
+    compile_time_hash "ymm25", H_YMM25
+    dq H_YMM25, (32 << 8) | 105
+    compile_time_hash "ymm26", H_YMM26
+    dq H_YMM26, (32 << 8) | 106
+    compile_time_hash "ymm27", H_YMM27
+    dq H_YMM27, (32 << 8) | 107
+    compile_time_hash "ymm28", H_YMM28
+    dq H_YMM28, (32 << 8) | 108
+    compile_time_hash "ymm29", H_YMM29
+    dq H_YMM29, (32 << 8) | 109
+    compile_time_hash "ymm30", H_YMM30
+    dq H_YMM30, (32 << 8) | 110
+    compile_time_hash "ymm31", H_YMM31
+    dq H_YMM31, (32 << 8) | 111
+    compile_time_hash "zmm0", H_ZMM0
+    dq H_ZMM0, (64 << 8) | 80
+    compile_time_hash "zmm1", H_ZMM1
+    dq H_ZMM1, (64 << 8) | 81
+    compile_time_hash "zmm2", H_ZMM2
+    dq H_ZMM2, (64 << 8) | 82
+    compile_time_hash "zmm3", H_ZMM3
+    dq H_ZMM3, (64 << 8) | 83
+    compile_time_hash "zmm4", H_ZMM4
+    dq H_ZMM4, (64 << 8) | 84
+    compile_time_hash "zmm5", H_ZMM5
+    dq H_ZMM5, (64 << 8) | 85
+    compile_time_hash "zmm6", H_ZMM6
+    dq H_ZMM6, (64 << 8) | 86
+    compile_time_hash "zmm7", H_ZMM7
+    dq H_ZMM7, (64 << 8) | 87
+    compile_time_hash "zmm8", H_ZMM8
+    dq H_ZMM8, (64 << 8) | 88
+    compile_time_hash "zmm9", H_ZMM9
+    dq H_ZMM9, (64 << 8) | 89
+    compile_time_hash "zmm10", H_ZMM10
+    dq H_ZMM10, (64 << 8) | 90
+    compile_time_hash "zmm11", H_ZMM11
+    dq H_ZMM11, (64 << 8) | 91
+    compile_time_hash "zmm12", H_ZMM12
+    dq H_ZMM12, (64 << 8) | 92
+    compile_time_hash "zmm13", H_ZMM13
+    dq H_ZMM13, (64 << 8) | 93
+    compile_time_hash "zmm14", H_ZMM14
+    dq H_ZMM14, (64 << 8) | 94
+    compile_time_hash "zmm15", H_ZMM15
+    dq H_ZMM15, (64 << 8) | 95
+    compile_time_hash "zmm16", H_ZMM16
+    dq H_ZMM16, (64 << 8) | 96
+    compile_time_hash "zmm17", H_ZMM17
+    dq H_ZMM17, (64 << 8) | 97
+    compile_time_hash "zmm18", H_ZMM18
+    dq H_ZMM18, (64 << 8) | 98
+    compile_time_hash "zmm19", H_ZMM19
+    dq H_ZMM19, (64 << 8) | 99
+    compile_time_hash "zmm20", H_ZMM20
+    dq H_ZMM20, (64 << 8) | 100
+    compile_time_hash "zmm21", H_ZMM21
+    dq H_ZMM21, (64 << 8) | 101
+    compile_time_hash "zmm22", H_ZMM22
+    dq H_ZMM22, (64 << 8) | 102
+    compile_time_hash "zmm23", H_ZMM23
+    dq H_ZMM23, (64 << 8) | 103
+    compile_time_hash "zmm24", H_ZMM24
+    dq H_ZMM24, (64 << 8) | 104
+    compile_time_hash "zmm25", H_ZMM25
+    dq H_ZMM25, (64 << 8) | 105
+    compile_time_hash "zmm26", H_ZMM26
+    dq H_ZMM26, (64 << 8) | 106
+    compile_time_hash "zmm27", H_ZMM27
+    dq H_ZMM27, (64 << 8) | 107
+    compile_time_hash "zmm28", H_ZMM28
+    dq H_ZMM28, (64 << 8) | 108
+    compile_time_hash "zmm29", H_ZMM29
+    dq H_ZMM29, (64 << 8) | 109
+    compile_time_hash "zmm30", H_ZMM30
+    dq H_ZMM30, (64 << 8) | 110
+    compile_time_hash "zmm31", H_ZMM31
+    dq H_ZMM31, (64 << 8) | 111
 
     ; ---- Opmask (K0-K7) ----
-    %assign i 0
-    %rep 8
-        compile_time_hash "k%[i]", H_K%[i]
-        dq H_K%[i], (8 << 8) | (72 + %[i])
-    %assign i i+1
-    %endrep
+    compile_time_hash "k0", H_K0
+    dq H_K0, (8 << 8) | 72
+    compile_time_hash "k1", H_K1
+    dq H_K1, (8 << 8) | 73
+    compile_time_hash "k2", H_K2
+    dq H_K2, (8 << 8) | 74
+    compile_time_hash "k3", H_K3
+    dq H_K3, (8 << 8) | 75
+    compile_time_hash "k4", H_K4
+    dq H_K4, (8 << 8) | 76
+    compile_time_hash "k5", H_K5
+    dq H_K5, (8 << 8) | 77
+    compile_time_hash "k6", H_K6
+    dq H_K6, (8 << 8) | 78
+    compile_time_hash "k7", H_K7
+    dq H_K7, (8 << 8) | 79
 
     ; ---- Control Registers (CR0-CR15) ----
-    %assign i 0
-    %rep 16
-        compile_time_hash "cr%[i]", H_CR%[i]
-        dq H_CR%[i], (8 << 8) | (32 + %[i])
-    %assign i i+1
-    %endrep
+    compile_time_hash "cr0", H_CR0
+    dq H_CR0, (8 << 8) | 32
+    compile_time_hash "cr1", H_CR1
+    dq H_CR1, (8 << 8) | 33
+    compile_time_hash "cr2", H_CR2
+    dq H_CR2, (8 << 8) | 34
+    compile_time_hash "cr3", H_CR3
+    dq H_CR3, (8 << 8) | 35
+    compile_time_hash "cr4", H_CR4
+    dq H_CR4, (8 << 8) | 36
+    compile_time_hash "cr5", H_CR5
+    dq H_CR5, (8 << 8) | 37
+    compile_time_hash "cr6", H_CR6
+    dq H_CR6, (8 << 8) | 38
+    compile_time_hash "cr7", H_CR7
+    dq H_CR7, (8 << 8) | 39
+    compile_time_hash "cr8", H_CR8
+    dq H_CR8, (8 << 8) | 40
+    compile_time_hash "cr9", H_CR9
+    dq H_CR9, (8 << 8) | 41
+    compile_time_hash "cr10", H_CR10
+    dq H_CR10, (8 << 8) | 42
+    compile_time_hash "cr11", H_CR11
+    dq H_CR11, (8 << 8) | 43
+    compile_time_hash "cr12", H_CR12
+    dq H_CR12, (8 << 8) | 44
+    compile_time_hash "cr13", H_CR13
+    dq H_CR13, (8 << 8) | 45
+    compile_time_hash "cr14", H_CR14
+    dq H_CR14, (8 << 8) | 46
+    compile_time_hash "cr15", H_CR15
+    dq H_CR15, (8 << 8) | 47
 
     ; ---- Debug Registers (DR0-DR15) ----
-    %assign i 0
-    %rep 16
-        compile_time_hash "dr%[i]", H_DR%[i]
-        dq H_DR%[i], (8 << 8) | (48 + %[i])
-    %assign i i+1
-    %endrep
+    compile_time_hash "dr0", H_DR0
+    dq H_DR0, (8 << 8) | 48
+    compile_time_hash "dr1", H_DR1
+    dq H_DR1, (8 << 8) | 49
+    compile_time_hash "dr2", H_DR2
+    dq H_DR2, (8 << 8) | 50
+    compile_time_hash "dr3", H_DR3
+    dq H_DR3, (8 << 8) | 51
+    compile_time_hash "dr4", H_DR4
+    dq H_DR4, (8 << 8) | 52
+    compile_time_hash "dr5", H_DR5
+    dq H_DR5, (8 << 8) | 53
+    compile_time_hash "dr6", H_DR6
+    dq H_DR6, (8 << 8) | 54
+    compile_time_hash "dr7", H_DR7
+    dq H_DR7, (8 << 8) | 55
+    compile_time_hash "dr8", H_DR8
+    dq H_DR8, (8 << 8) | 56
+    compile_time_hash "dr9", H_DR9
+    dq H_DR9, (8 << 8) | 57
+    compile_time_hash "dr10", H_DR10
+    dq H_DR10, (8 << 8) | 58
+    compile_time_hash "dr11", H_DR11
+    dq H_DR11, (8 << 8) | 59
+    compile_time_hash "dr12", H_DR12
+    dq H_DR12, (8 << 8) | 60
+    compile_time_hash "dr13", H_DR13
+    dq H_DR13, (8 << 8) | 61
+    compile_time_hash "dr14", H_DR14
+    dq H_DR14, (8 << 8) | 62
+    compile_time_hash "dr15", H_DR15
+    dq H_DR15, (8 << 8) | 63
 
     ; ---- Segments ----
     compile_time_hash "cs", H_CS

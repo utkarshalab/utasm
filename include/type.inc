@@ -22,7 +22,7 @@
 struc TOKEN
     field tag,      1       ; always TAG_TOKEN
     field kind,     1       ; TOK_* value
-    field flags,    1       ; reserved
+    field flags,    1       ; TOK_FLAG_* values
     field pad0,     5       ; alignment padding
     field value,    8       ; pointer or integer
     field line,     4       ; source line number (1-based)
@@ -144,10 +144,14 @@ struc MACROEXP
     field rep_count, 4      ; repetitions remaining (for %rep)
     field macro,    8       ; pointer to Macro symbol
     field parent,   8       ; parent MacroExpansion pointer
-    field params,   8       ; parameter string array
+    field params,   8       ; array of pointers to each argument's first token
     field body,     8       ; current body position token pointer
     field line,     4       ; invocation line number
     field pad1,     4       ; alignment padding
+    field arglens,  8       ; per-argument token counts (byte array)
+    field pend_ptr, 8       ; next token of the argument being substituted
+    field pend_cnt, 4       ; tokens still to emit from that argument
+    field exp_id,   4       ; id used by %%locals (shared with %rep bodies)
 endstruc
 
 ; ============================================================================
@@ -250,6 +254,11 @@ struc PREP
     field lexer,        8       ; current LexerState pointer
     field ctx,          8       ; pointer to AsmCtx
     field arena,        8       ; pointer to Arena
+    field cond_taken,   PREP_CTX_MAX ; per level: a branch already fired here
+    field ctx_depth,    4       ; %push context stack depth
+    field ctx_next_id,  4       ; next unique context id
+    field ctx_ids,      PREP_CTX_MAX * 4   ; unique id per stacked context
+    field ctx_names,    PREP_CTX_MAX * 8   ; name pointer per stacked context
 endstruc
 
 ; ============================================================================
@@ -413,5 +422,45 @@ struc UPKSECTION
     field flags,         4       ; section attribute flags
     field pad0,          4       ; alignment padding (maintains multiple of 8)
 endstruc
+
+; ============================================================================
+; STRUCT: ProfileEntry — single profiling measurement record
+; ============================================================================
+; One entry per assembler pipeline phase. Measures RDTSC cycle counts.
+; See docs/profiler_architecture.md §4.1 for byte-level layout.
+
+struc PROFENTRY
+    field tag,         1       ; TAG_PROFENTRY (0x10)
+    field phase_id,    1       ; PHASE_* identifier (0x01–0x08)
+    field is_hot,      1       ; TRUE if cycles > hot_threshold
+    field pad0,        5       ; alignment padding
+    field label,       8       ; pointer to phase name string
+    field start_tsc,   8       ; RDTSC value at phase entry
+    field end_tsc,     8       ; RDTSCP value at phase exit
+    field cycles,      8       ; accumulated delta (end - start - overhead)
+    field call_count,  4       ; invocation count
+    field pad1,        4       ; alignment padding
+endstruc
+; PROFENTRY_SIZE = 48 bytes (6 × 8)
+
+; ============================================================================
+; STRUCT: ProfileState — global profiler context
+; ============================================================================
+; Single instance allocated at profiler_init time. Owns the entry array.
+; See docs/profiler_architecture.md §4.2 for byte-level layout.
+
+struc PROFSTATE
+    field tag,            1    ; TAG_PROFSTATE (0x11)
+    field enabled,        1    ; TRUE if profiling is active
+    field num_entries,    2    ; current entry count (≤ MAX_PROF_ENTRIES)
+    field hot_threshold,  4    ; cycles threshold for hot path flag
+    field entries,        8    ; pointer to PROFENTRY[MAX_PROF_ENTRIES] array
+    field total_cycles,   8    ; sum of all phase cycles
+    field calib_overhead, 8    ; measured RDTSC pair overhead
+    field arena,          8    ; pointer to Arena allocator
+    field global_start,   8    ; TSC at profiler_init time
+    field global_end,     8    ; TSC at profiler_finalize time
+endstruc
+; PROFSTATE_SIZE = 56 bytes (7 × 8)
 
 %endif ; TYPE_S

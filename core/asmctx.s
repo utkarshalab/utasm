@@ -62,10 +62,11 @@ asm_ctx_emit_byte:
     mov     rdx, [r12 + SECTION_data]
     add     rdx, rax
     mov     [rdx], sil
-    
+
     inc     rax
     mov     [r12 + SECTION_size], rax
-    
+
+    xor     eax, eax               ; EXIT_OK — callers test rax as a status
     pop     r12
     pop     rbx
     epilogue
@@ -77,6 +78,9 @@ asm_ctx_emit_byte:
     epilogue
 
 .grow_section:
+    push    r13                    ; r13/r14 belong to the caller
+    push    r14
+
     ; 1. Calculate new capacity (current * 2)
     mov     rax, [r12 + SECTION_cap]
     shl     rax, 1
@@ -95,7 +99,7 @@ asm_ctx_emit_byte:
     xor     r9, r9
     call    io_mmap
     IF rax, ne, EXIT_OK
-        jmp .error
+        jmp .grow_error
     ENDIF
     mov     r14, rdx               ; r14 = new buffer ptr
     
@@ -113,9 +117,15 @@ asm_ctx_emit_byte:
     ; 5. Update section struct
     mov     [r12 + SECTION_data], r14
     mov     [r12 + SECTION_cap], r13
-    
+
+    pop     r14
+    pop     r13
+    mov     rax, [r12 + SECTION_size]   ; .write expects rax = write offset
     jmp     .write
 
+.grow_error:
+    pop     r14
+    pop     r13
 .error:
     mov     rax, EXIT_INTERNAL
 .done:
@@ -363,9 +373,10 @@ asmctx_find_section:
     mov     rsi, r12
     extern  str_cmp
     call    str_cmp
+    mov     r9, rax                ; keep compare result across the restores
     pop     rcx
     pop     rax
-    test    rax, rax
+    test    r9, r9
     jz      .found
     
     inc     rax

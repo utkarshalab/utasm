@@ -46,3 +46,4 @@ tests/perf/results/*.tsv
 CLAUDE.md
 .claude/skills/
 .claude/settings.local.json
+.claude

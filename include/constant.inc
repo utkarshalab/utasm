@@ -207,6 +207,9 @@
 %define TOK_CONCAT             0x1E
 %define TOK_AT                 0x1F
 %define TOK_DIRECTIVE          0x20
+
+; Token flags (TOKEN_flags)
+%define TOK_FLAG_INTERP        0x01        ; text contains %[NAME], resolve at expansion
 %define TOK_COMMENT            0x21
 %define TOK_FLOAT              0x22
 %define TOK_MACRO_LOCAL        0x23
@@ -364,6 +367,7 @@
 %define OP_FLAG_STRICT         0x02        ; STRICT keyword applied to enforce size
 %define OP_FLAG_NOSPLIT        0x04        ; NOSPLIT keyword applied to index register
 %define OP_FLAG_ABS            0x08        ; ABS keyword applied to force absolute offset
+%define OP_FLAG_SHORT          0x10        ; SHORT keyword applied to a branch target
 
 ; ============================================================================
 ; CONTEXT FLAGS
@@ -1367,6 +1371,11 @@
 ; MACRO ENGINE CONSTANTS
 ; ============================================================================
 %define MACRO_MAX_BODY_TOKENS  4096        ; absolute token capacity in macro body expansion
+%define MACRO_BODY_CAPACITY    1024        ; token slots reserved per %macro definition
+%define REP_BODY_CAPACITY      256         ; token slots reserved per %rep execution
+%define MACRO_ARG_CAPACITY     64          ; token slots reserved for one invocation's arguments
+%define LEX_INTERP_BUF         256         ; work buffer for %[...] identifier interpolation
+%define PREP_CTX_MAX           64          ; maximum nesting depth of %push contexts
 %define MACRO_TABLE_INIT_CAP   128         ; starting capacity of macro parser maps
 
 ; ============================================================================
@@ -1459,5 +1468,37 @@
 %define POISON_FREED           0xDEADBEEFDEADBEEF  ; invalid use-after-free canary pattern
 %define POISON_UNINIT          0xCDCDCDCDCDCDCDCD  ; uninitialized memory pattern
 %define POISON_STACK           0xFEEEFEEEFEEEFEEE  ; stack buffer canary guard
+
+; ============================================================================
+; PROFILER CONSTANTS
+; ============================================================================
+; Type tags, phase identifiers, and thresholds for the RDTSC-based profiler.
+; See docs/profiler_architecture.md for full design rationale.
+
+; ── Profiler Type Tags ──
+%define TAG_PROFENTRY          0x10        ; ProfileEntry struct identifier
+%define TAG_PROFSTATE          0x11        ; ProfileState struct identifier
+
+; ── Phase Identifiers ──
+; Each phase maps to one slot in the PROFENTRY array.
+; Values 0x01–0x08 are reserved for top-level pipeline phases.
+; Values 0x09–0x3F are reserved for future sub-phase expansion.
+%define PHASE_LEXER            0x01        ; frontend/lexer/* token scanning
+%define PHASE_PREPROCESSOR     0x02        ; frontend/macro/* expansion
+%define PHASE_PARSER           0x03        ; frontend/parser/* AST construction
+%define PHASE_SEMANTIC         0x04        ; middle/semantic/* validation
+%define PHASE_ENCODER          0x05        ; backend/encoder/* instruction encoding
+%define PHASE_LINKER           0x06        ; backend/linker/* relocation + layout
+%define PHASE_OUTPUT           0x07        ; backend/output/* binary emission
+%define PHASE_TOTAL            0x08        ; virtual: entire pipeline (init → finalize)
+
+; ── Limits ──
+%define MAX_PROF_PHASES        8           ; total top-level phase slots
+%define MAX_PROF_ENTRIES       64          ; max entries (8 phases + 56 sub-phases)
+%define PROF_CALIB_ITERS       1024        ; calibration loop iteration count
+
+; ── Thresholds ──
+%define PROF_HOT_THRESHOLD     10000000    ; 10M cycles ≈ 3.3ms at 3GHz
+%define PROF_WARN_THRESHOLD    50000000    ; 50M cycles ≈ 16.7ms at 3GHz (critical)
 
 %endif

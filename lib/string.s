@@ -80,12 +80,21 @@ string_length:
 ; Output   : rax = 0  if A == B
 ;              rax = -1 if A <  B
 ;              rax =  1 if A >  B
-; Clobbers : rcx, rdx
+; Clobbers : rax only.
+;   The walk below advances RDI/RSI and scratches CL/DL, so all four are saved
+;   and restored. Callers routinely keep the string pointer or a loop counter
+;   in those registers across the call, and a comparison that stopped part way
+;   through a string used to hand back a pointer into the middle of it.
 ;
 global str_compare
 str_compare:
 global str_cmp
 str_cmp:
+    push    rdi
+    push    rsi
+    push    rcx
+    push    rdx
+
     ; guard against NULL
     test    rdi, rdi
     jz      .a_null
@@ -106,24 +115,30 @@ str_cmp:
 
 .equal:
     xor     rax, rax               ; rax = 0
-    ret
+    jmp     .ret
 
 .a_less:
     mov     rax, -1
-    ret
+    jmp     .ret
 
 .a_greater:
     mov     rax, 1
-    ret
+    jmp     .ret
 
 .a_null:
     test    rsi, rsi
     jz      .equal                 ; both NULL = equal
     mov     rax, -1                ; A=NULL < B
-    ret
+    jmp     .ret
 
 .b_null:
     mov     rax, 1                 ; A > B=NULL
+
+.ret:
+    pop     rdx
+    pop     rcx
+    pop     rsi
+    pop     rdi
     ret
 
 ; ---- str_cmp_n --------------------------
@@ -1310,7 +1325,8 @@ path_get_filename:
     push    rbx
     mov     rbx, rdi
     
-    ; find last / or \
+    ; find the last / or \ separator
+    ; (a trailing backslash here would continue the line and eat the push)
     push    rdi
     call    str_len
     pop     rdi

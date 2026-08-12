@@ -69,10 +69,24 @@ reloc_record:
     pop     rdx
 
     ; Fill fields
+    mov     byte [rdx + RELOC_tag], TAG_RELOC
     mov     [rdx + RELOC_offset], r12
     mov     [rdx + RELOC_sym],    r13
     mov     [rdx + RELOC_addend], r14
     mov     [rdx + RELOC_type],   r8d
+
+    ; Target section: the one currently being emitted into
+    mov     rcx, [rbx + ASMCTX_curr_sec]
+    test    rcx, rcx
+    jnz     .have_target_sec
+    mov     rcx, [rbx + ASMCTX_sections]
+    test    rcx, rcx
+    jz      .no_target_sec
+    mov     rcx, [rcx]             ; fall back to the first section
+    test    rcx, rcx
+    jz      .no_target_sec
+.have_target_sec:
+    mov     [rdx + RELOC_section], rcx
 
     ; Increment count
     inc     dword [rbx + ASMCTX_nrelocs]
@@ -82,6 +96,10 @@ reloc_record:
 
 .oom:
     mov     rax, EXIT_OOM
+    jmp     .done
+
+.no_target_sec:
+    mov     rax, EXIT_INTERNAL
 
 .done:
     pop     r14
@@ -121,24 +139,24 @@ reloc_resolve_all:
     push    r15
 
     mov     rbx, rdi               ; AsmCtx
-    mov     r12, rsi               ; output buffer base
-    mov     r13, rdx               ; base_addr (ORG / load VA)
+    ; rsi/rdx (output buffer, base VA) are unused: patching targets each
+    ; relocation own section data buffer.
 
     mov     r14, [rbx + ASMCTX_relocs]
     mov     r15d, [rbx + ASMCTX_nrelocs]
-    xor     ecx, ecx               ; index
+    xor     r12d, r12d             ; index — must survive the calls below
 
 .loop:
-    cmp     ecx, r15d
+    cmp     r12d, r15d
     jge     .done
 
-    mov     r11, rcx
-    imul    r11, RELOC_SIZE
-    add     r11, r14                       ; r11 = RELOC*
+    mov     r13, r12
+    imul    r13, RELOC_SIZE
+    add     r13, r14                       ; r13 = RELOC* (survives calls)
 
     ; Resolve symbol
     mov     rdi, rbx
-    mov     rdx, [r11 + RELOC_sym]         ; sym name ptr
+    mov     rsi, [r13 + RELOC_sym]         ; sym name ptr (symbol_find takes rsi)
     call    symbol_find
     test    rax, rax
     jnz     .check_undef
@@ -155,16 +173,17 @@ reloc_resolve_all:
         ENDIF
     
     ; Check for special sections
-    IF ax, e, 0xFFFF ; SHN_ABS
+    IF ax, e, SHN_ABS
         mov     rax, [r10 + SYMBOL_value]
         jmp     .calc_patch_va
         ENDIF
-    IF ax, ge, MAX_SECTIONS
+    IF ax, ae, MAX_SECTIONS        ; unsigned: 0xFF00-0xFFFF are reserved
         mov     rax, EXIT_INVALID_SECTION
         jmp     .ret
         ENDIF
 
     mov     rdi, [rbx + ASMCTX_sections]
+    dec     eax                              ; ELF index is 1-based; array is 0-based
     mov     r8, [rdi + rax * 8]              ; r8 = SECTION*
     test    r8, r8
     jz      .undef
@@ -177,19 +196,21 @@ reloc_resolve_all:
     push    rax                              ; Preserve sym_va
 
     ; patch_offset = reloc.offset
-    mov     r8, [r11 + RELOC_offset]
+    mov     r8, [r13 + RELOC_offset]
 
-    ; patch_ptr = output_buffer + patch_offset
-    mov     r9, r12
+    ; patch_ptr = section data + patch_offset
+    ; (the section buffer is what gets written to the output file)
+    mov     r9, [r13 + RELOC_section]
+    mov     r9, [r9 + SECTION_data]
     add     r9, r8                           ; r9 = patch_ptr
 
     ; patch_va = reloc.section.addr + patch_offset
-    mov     rax, [r11 + RELOC_section]       ; rax = SECTION*
+    mov     rax, [r13 + RELOC_section]       ; rax = SECTION*
     mov     r10, [rax + SECTION_addr]
     add     r10, r8                          ; r10 = patch_va
 
     ; Apply the relocation via unified helper
-    mov     rdi, r11                       ; RELOC*
+    mov     rdi, r13                       ; RELOC*
     pop     rsi                            ; rsi = sym_va (restored)
     mov     rdx, r9                        ; rdx = patch_ptr
     mov     rcx, r10                       ; rcx = patch_va
@@ -197,7 +218,7 @@ reloc_resolve_all:
     check_err
 
 .next:
-    inc     ecx
+    inc     r12d
     jmp     .loop
 
 .done:
@@ -216,7 +237,7 @@ reloc_resolve_all:
     xor     rsi, rsi               ; no filename
     xor     rdx, rdx               ; no line
     xor     rcx, rcx               ; no col
-    mov     r8, [r11 + RELOC_sym]  ; symbol name
+    mov     r8, [r13 + RELOC_sym]  ; symbol name
     extern  error_emit
     call    error_emit
     
@@ -254,6 +275,10 @@ reloc_apply_one:
     ; ---- Dispatch ----
     cmp     r11d, R_X86_64_64
     je      .abs64
+    cmp     r11d, R_X86_64_32
+    je      .abs32
+    cmp     r11d, R_X86_64_32S
+    je      .abs32
     cmp     r11d, R_AARCH64_ADR_PREL_PG_HI21
     je      .aarch64_adrp
     cmp     r11d, R_AARCH64_ADD_ABS_LO12_NC
@@ -280,9 +305,8 @@ reloc_apply_one:
     je      .riscv_lo12_s
 
     ; Default: PC-relative (x86_64 PC32, etc)
+    ; The addend already carries -pc_adjust (see amd64_emit_reloc).
     sub     rax, r9                ; Target - Patch_VA
-    movsx   r10, dword [rbx + RELOC_pc_adjust]
-    sub     rax, r10               ; Adjust for PC (e.g. 4 for x86_64)
     mov     r10, [rbx + RELOC_addend]
     add     rax, r10
     
@@ -302,6 +326,11 @@ reloc_apply_one:
 .abs64:
     add     rax, r10
     mov     [r8], rax
+    jmp     .done_patch
+
+.abs32:
+    add     rax, r10               ; symbol value + addend
+    mov     [r8], eax
     jmp     .done_patch
 
 .aarch64_jmp26:

@@ -37,14 +37,31 @@ linker_run:
     mov     rbx, rdi               ; RBX = AsmCtx
 
     ; 1. Resolve all relocations
+    extern  global_profstate
+    extern  profiler_start_phase
+    extern  profiler_end_phase
+    lea     rdi, [rel global_profstate]
+    mov     rsi, PHASE_LINKER
+    call    profiler_start_phase
+
     mov     rdi, rbx
     call    reloc_resolve_all
+
+    push    rax
+    lea     rdi, [rel global_profstate]
+    mov     rsi, PHASE_LINKER
+    call    profiler_end_phase
+    pop     rax
     check_err
 
     ; 1.5 Check for section overlaps
-    mov     rdi, rbx
-    call    linker_check_overlaps
-    check_err
+    ; Only meaningful once VAs are assigned; in a relocatable object every
+    ; section sits at address 0 and would trivially "overlap".
+    IF byte [rbx + ASMCTX_standalone], e, 1
+        mov     rdi, rbx
+        call    linker_check_overlaps
+        check_err
+        ENDIF
 
     ; 1.6 Open Output File
     mov     rdi, [rbx + ASMCTX_output]
@@ -69,19 +86,29 @@ linker_run:
     jmp     .emit_elf
 
 .emit_binary:
+    lea     rdi, [rel global_profstate]
+    mov     rsi, PHASE_OUTPUT
+    call    profiler_start_phase
     mov     rdi, rbx
     mov     rsi, r12
     xor     rdx, rdx
     call    binary_emit
     mov     r13, rax
-    jmp     .close_and_done
+    jmp     .end_output_phase
 
 .emit_elf:
+    lea     rdi, [rel global_profstate]
+    mov     rsi, PHASE_OUTPUT
+    call    profiler_start_phase
     mov     rdi, rbx
     mov     rsi, r12
     call    elf64_emit
     mov     r13, rax
-    jmp     .close_and_done
+
+.end_output_phase:
+    lea     rdi, [rel global_profstate]
+    mov     rsi, PHASE_OUTPUT
+    call    profiler_end_phase
 
 .close_and_done:
     mov     rdi, r12

@@ -121,6 +121,20 @@ cli_parse:
     test    rax, rax
     jz      .handle_listing
 
+    ; check for --profile
+    mov     rdi, r14
+    lea     rsi, [rel .flag_profile]
+    call    str_cmp
+    test    rax, rax
+    jz      .handle_profile
+
+    ; check for -P (short form of --profile)
+    mov     rdi, r14
+    lea     rsi, [rel .flag_profile_short]
+    call    str_cmp
+    test    rax, rax
+    jz      .handle_profile
+
     ; If it starts with '-', it's an unknown flag
     cmp     byte [r14], '-'
     je      .unknown_flag
@@ -229,6 +243,10 @@ cli_parse:
     or      dword [rbx + ASMCTX_flags], CTX_FLAG_LISTING
     jmp     .next_arg
 
+.handle_profile:
+    or      dword [rbx + ASMCTX_flags], CTX_FLAG_PROFILE
+    jmp     .next_arg
+
 .next_arg:
     add     r13, 8
     dec     r12
@@ -268,3 +286,5 @@ cli_parse:
     .flag_color:   db "--color", 0
     .flag_werror:  db "-Werror", 0
     .flag_listing: db "--listing", 0
+    .flag_profile: db "--profile", 0
+    .flag_profile_short: db "-P", 0

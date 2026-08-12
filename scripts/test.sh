@@ -34,7 +34,7 @@ echo -e "${BOLD}[+] Executing Global Test Matrix...${NC}"
 test_files=$(find tests -name "*.s")
 
 for test_file in $test_files; do
-    ((TOTAL++))
+    TOTAL=$((TOTAL + 1))
     basename=$(basename "$test_file" .s)
     dirname=$(dirname "$test_file")
     arch="amd64" # Default
@@ -75,10 +75,10 @@ for test_file in $test_files; do
     if [ $is_negative -eq 1 ]; then
         if [ $exit_code -ne 0 ]; then
             echo -e "${GREEN}OK (Expected Failure)${NC}"
-            ((PASSED++))
+            PASSED=$((PASSED + 1))
         else
             echo -e "${RED}FAILED (Should have failed)${NC}"
-            ((FAILED++))
+            FAILED=$((FAILED + 1))
         fi
     else
         if [ $exit_code -eq 0 ]; then
@@ -108,18 +108,18 @@ for test_file in $test_files; do
                 
                 if [ $run_exit_code -eq 0 ]; then
                     echo -e "${GREEN}OK${NC}"
-                    ((PASSED++))
+                    PASSED=$((PASSED + 1))
                 else
                     echo -e "${RED}EXECUTION FAILED${NC}"
-                    ((FAILED++))
+                    FAILED=$((FAILED + 1))
                 fi
             else
                 echo -e "${GREEN}OK${NC}"
-                ((PASSED++))
+                PASSED=$((PASSED + 1))
             fi
         else
             echo -e "${RED}FAILED${NC}"
-            ((FAILED++))
+            FAILED=$((FAILED + 1))
             echo -e "${RED}    [!] Diagnostic Output for $test_file:${NC}"
             $UTASM_BIN -arch "$arch" -f elf64 "$test_file" -o "build/tests/$basename.o" || true
         fi
@@ -128,6 +128,56 @@ done
 
 echo "============================================================================"
 echo -e "    ${BOLD}TEST RESULTS: ${GREEN}$PASSED Passed${NC} | ${RED}$FAILED Failed${NC} | ${BOLD}Total: $TOTAL${NC}"
+echo "============================================================================"
+
+# ----------------------------------------------------------------------------
+# Profiler subsystem suite
+# ----------------------------------------------------------------------------
+if [ -x scripts/test_profiler.sh ] || [ -f scripts/test_profiler.sh ]; then
+    echo
+    echo -e "${BOLD}[+] Running Profiler subsystem suite...${NC}"
+    if bash scripts/test_profiler.sh; then
+        echo -e "${GREEN}[+] Profiler suite passed.${NC}"
+    else
+        echo -e "${RED}[-] Profiler suite FAILED.${NC}"
+        FAILED=$((FAILED + 1))
+    fi
+fi
+
+# ----------------------------------------------------------------------------
+# Profiler pipeline integration: --profile must produce a report, and must
+# stay silent (and not change the output) when it is not asked for.
+# ----------------------------------------------------------------------------
+if [ -x "$UTASM_BIN" ] && [ -f tests/hello_amd64.s ]; then
+    echo
+    echo -e "${BOLD}[+] Checking profiler pipeline integration...${NC}"
+    mkdir -p build/tests
+    if "$UTASM_BIN" --profile -f elf64 tests/hello_amd64.s \
+            -o build/tests/prof_on.o 2>build/tests/prof.err \
+        && grep -q "utasm profiler report" build/tests/prof.err; then
+        echo -e "${GREEN}    --profile emits a report: OK${NC}"
+    else
+        echo -e "${RED}    --profile did not emit a report: FAILED${NC}"
+        FAILED=$((FAILED + 1))
+    fi
+
+    if "$UTASM_BIN" -f elf64 tests/hello_amd64.s \
+            -o build/tests/prof_off.o 2>build/tests/prof_off.err \
+        && [ ! -s build/tests/prof_off.err ]; then
+        echo -e "${GREEN}    silent without --profile: OK${NC}"
+    else
+        echo -e "${RED}    unexpected output without --profile: FAILED${NC}"
+        FAILED=$((FAILED + 1))
+    fi
+
+    if cmp -s build/tests/prof_on.o build/tests/prof_off.o; then
+        echo -e "${GREEN}    profiling does not alter emitted output: OK${NC}"
+    else
+        echo -e "${RED}    profiling changed the emitted object: FAILED${NC}"
+        FAILED=$((FAILED + 1))
+    fi
+fi
+
 echo "============================================================================"
 
 if [ $FAILED -ne 0 ]; then

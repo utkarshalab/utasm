@@ -16,6 +16,8 @@ DEFAULT REL
 extern error_new_from_errno
 extern symbol_add
 extern str_len
+extern arena_alloc_string
+extern str_int_to_str
 extern arena_alloc
 extern lexer_next
 extern lexer_peek
@@ -231,7 +233,7 @@ prep_internal_next:
     mov     rsi, r12
     call    prep_expand_next
     test    rax, rax
-    jz      .done                  ; expansion produced a token
+    jz      .check_token           ; produced a token: process it like any other
     ; if expansion finished, try again (checks for parent or falls to lexer)
     jmp     .next
 
@@ -245,6 +247,21 @@ prep_internal_next:
     ; handle EOF
     cmp     byte [r12 + TOKEN_kind], TOK_EOF
     je      .handle_eof
+
+.check_token:
+    ; Tokens from a macro or %rep body get the same treatment as file tokens:
+    ; conditional skipping, nested macro calls and % directives all apply.
+
+    ; Resolve any %[NAME] in the token text first: the same body token can be
+    ; replayed with different symbol values on each %rep iteration.
+    test    byte [r12 + TOKEN_flags], TOK_FLAG_INTERP
+    jz      .no_interp
+    mov     rdi, rbx
+    mov     rsi, r12
+    call    prep_resolve_interp
+    test    rax, rax
+    jnz     .done
+.no_interp:
 
     ; check if skipping
     cmp     byte [rbx + PREP_skip_depth], 0
@@ -261,6 +278,8 @@ prep_internal_next:
     mov     rdi, rbx
     mov     rsi, r12
     call    prep_handle_directive
+    mov     rdi, rbx
+    call    prep_drop_stale_newline
     jmp     .next
 
 .not_skipping:
@@ -301,6 +320,13 @@ prep_internal_next:
     call    prep_handle_directive
     test    rax, rax
     jnz     .done                  ; error handling directive
+
+    ; A directive owns its whole line. Its operand reader stops on the
+    ; terminating NEWLINE and leaves it in the peek slot, but .next reads
+    ; straight from the lexer and would never consume it, so the next macro
+    ; call would collect that newline as its first argument token.
+    mov     rdi, rbx
+    call    prep_drop_stale_newline
 
     ; if the directive didn't produce a token, get next
     jmp     .next
@@ -381,6 +407,20 @@ prep_expand_start:
     mov     byte [r13 + MACROEXP_tag], TAG_MACRO_EXP
     mov     [r13 + MACROEXP_macro], r12
     mov     dword [r13 + MACROEXP_rep_count], 1 ; Default: expand once
+
+    ; %%locals are unique per *macro* expansion. A %rep body is an anonymous
+    ; macro running inside one, so it must reuse the enclosing id or the
+    ; %%names inside the loop would not match those outside it.
+    mov     r8, [rbx + PREP_ctx]
+    mov     eax, [r8 + ASMCTX_mac_exp_id]
+    cmp     qword [r12 + MACRO_name], 0
+    jne     .own_exp_id
+    mov     r9, [r8 + ASMCTX_mac_exp]
+    test    r9, r9
+    jz      .own_exp_id
+    mov     eax, [r9 + MACROEXP_exp_id]
+.own_exp_id:
+    mov     [r13 + MACROEXP_exp_id], eax
     ; Check arity
     movzx   rax, byte [r12 + MACRO_min_params]
     movzx   rdx, byte [r12 + MACRO_max_params]
@@ -394,6 +434,7 @@ prep_expand_start:
     movzx   r14, dl
     
 .alloc_params:
+    ; params[] : pointer to the first token of each argument
     mov     rsi, r14
     imul    rsi, 8
     mov     rdi, [rbx + PREP_arena]
@@ -401,104 +442,105 @@ prep_expand_start:
     check_err
     mov     [r13 + MACROEXP_params], rdx
     mov     r14, rdx               ; r14 = param array
-    
-    xor     r15, r15               ; current param index
-.param_loop:
-    ; Check if we reached max
-    movzx   rax, byte [r12 + MACRO_max_params]
-    IF al, ne, 0xFF
-        cmp r15b, al
-        jge .check_trailing
-        ELSE
-        ; Variadic limit (hardcoded to 32 slots in allocation)
-        IF r15, ge, 32
-            mov rax, EXIT_MACRO_ARITY_FAIL
-            jmp .error
-            ENDIF
-            ENDIF
-    
-    ; Peek to see if we have more arguments (comma or not)
-    ; Actually, we should lex and if it's a newline, we stop.
-    ; If it's a comma, we continue.
-    
-    ; For the first param, we don't need a comma.
-    test    r15, r15
-    jz      .parse_param_value
-    
-    ; consume comma
-    sub     rsp, TOKEN_SIZE
-    mov     rdi, [rbx + PREP_lexer]
-    mov     rsi, rsp
-    call    lexer_next
-    IF byte [rsp + TOKEN_kind], ne, TOK_COMMA
-        ; No more params? Check if we met min
-        add     rsp, TOKEN_SIZE
-        movzx   rax, byte [r12 + MACRO_min_params]
-        cmp     r15b, al
-        jl      .error_too_few_args
-        jmp     .done_params
-        ENDIF
-    add     rsp, TOKEN_SIZE
 
-.get_param:
-    ; Check if this is the LAST parameter of a variadic macro
-    movzx   rax, byte [r12 + MACRO_max_params]
-    IF al, e, 0xFF
-        ; If we are at min_params - 1? No, usually variadic is just the last one.
-        ; Let's say if we are at index (min_params - 1), we capture everything else.
-        movzx   rcx, byte [r12 + MACRO_min_params]
-        dec     rcx
-        IF r15, e, rcx
-            mov     rdx, r13
-            call    prep_capture_greedy
-            check_err
-            jmp     .done_params
-            ENDIF
-            ENDIF
-
-.parse_param_value:
-    ; allocate token for param
+    ; arglens[] : token count per argument
     mov     rdi, [rbx + PREP_arena]
-    mov     rsi, TOKEN_SIZE
+    mov     rsi, 32
     call    arena_alloc
-    test    rax, rax
-    jnz     .error
-    mov     [r14 + r15 * 8], rdx
-    
-    ; lex into it
-    mov     rdi, [rbx + PREP_lexer]
-    mov     rsi, rdx
-    call    lexer_next
-    test    rax, rax
-    jnz     .error
-    
-    ; Guard: check if we hit newline/EOF unexpectedly
-    mov     al, [rdx + TOKEN_kind]
-    cmp     al, TOK_NEWLINE
-    je      .check_min_params
-    cmp     al, TOK_EOF
-    je      .check_min_params
-    
-    inc     r15
-    jmp     .param_loop
+    check_err
+    mov     [r13 + MACROEXP_arglens], rdx
 
-.check_min_params:
+    ; One contiguous buffer for every argument token. The lexer allocates
+    ; token value strings from this same arena, so the slots have to be
+    ; reserved before any lexing starts, exactly like a macro body.
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, MACRO_ARG_CAPACITY * TOKEN_SIZE
+    call    arena_alloc
+    check_err
+    mov     [r13 + MACROEXP_pend_ptr], rdx     ; scratch: next free slot
+    mov     dword [r13 + MACROEXP_pend_cnt], 0 ; scratch: slots used
+
+    xor     r15, r15               ; r15 = argument index
+
+    ; A macro that declares no parameters consumes nothing from the line.
+    movzx   rax, byte [r12 + MACRO_max_params]
+    test    al, al
+    jz      .args_done
+
+.arg_loop:
+    ; Argument index bound (params[] holds at most 32 entries)
+    IF r15, ge, 32
+        mov     rax, EXIT_MACRO_ARITY_FAIL
+        jmp     .error
+        ENDIF
+
+    ; Start a new argument at the current cursor with a zero token count
+    mov     rax, [r13 + MACROEXP_pend_ptr]
+    mov     [r14 + r15 * 8], rax
+    mov     rcx, [r13 + MACROEXP_arglens]
+    mov     byte [rcx + r15], 0
+
+.arg_token:
+    mov     eax, [r13 + MACROEXP_pend_cnt]
+    cmp     eax, MACRO_ARG_CAPACITY
+    jge     .error_too_many_args
+
+    ; Read through the preprocessor rather than the raw lexer: a macro
+    ; called from inside another macro's body takes its arguments from
+    ; the expansion, and %N arguments must already be substituted when
+    ; they are captured.
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .error
+    mov     rsi, rdx
+    mov     rdi, [r13 + MACROEXP_pend_ptr]
+    mov     rcx, (TOKEN_SIZE / 8)
+    rep movsq
+
+    mov     rsi, [r13 + MACROEXP_pend_ptr]
+    movzx   eax, byte [rsi + TOKEN_kind]
+    cmp     al, TOK_NEWLINE
+    je      .arg_end_all
+    cmp     al, TOK_EOF
+    je      .arg_end_all
+    cmp     al, TOK_COMMA
+    je      .arg_end_one
+
+    ; Keep this token as part of the current argument
+    add     qword [r13 + MACROEXP_pend_ptr], TOKEN_SIZE
+    inc     dword [r13 + MACROEXP_pend_cnt]
+    mov     rcx, [r13 + MACROEXP_arglens]
+    inc     byte [rcx + r15]
+    jmp     .arg_token
+
+.arg_end_one:
+    ; A top-level comma ends this argument; the comma slot gets reused
+    inc     r15
+    jmp     .arg_loop
+
+.arg_end_all:
+    ; Newline or EOF ends the invocation. A trailing empty argument (the
+    ; macro was invoked with no arguments at all) does not count.
+    mov     rcx, [r13 + MACROEXP_arglens]
+    cmp     byte [rcx + r15], 0
+    je      .args_done
+    inc     r15
+
+.args_done:
+    ; Arity checks
     movzx   rax, byte [r12 + MACRO_min_params]
     cmp     r15b, al
     jl      .error_too_few_args
-    jmp     .done_params
+    movzx   rax, byte [r12 + MACRO_max_params]
+    IF al, ne, 0xFF
+        cmp     r15b, al
+        jg      .error_too_many_args
+        ENDIF
 
-.check_trailing:
-    ; Check for too many arguments (is there a comma next?)
-    mov     rdi, [rbx + PREP_lexer]
-    extern  lexer_peek
-    sub     rsp, TOKEN_SIZE
-    mov     rsi, rsp
-    call    lexer_peek
-    mov     al, [rsp + TOKEN_kind]
-    add     rsp, TOKEN_SIZE
-    cmp     al, TOK_COMMA
-    je      .error_too_many_args
+    ; Release the collection scratch: these fields drive substitution now
+    mov     qword [r13 + MACROEXP_pend_ptr], 0
+    mov     dword [r13 + MACROEXP_pend_cnt], 0
     jmp     .done_params
 
 .error_too_few_args:
@@ -564,6 +606,20 @@ prep_expand_next:
     test    r13, r13
     jz      .finished
 
+    ; 0. An argument spanning several tokens is served one token per call
+    mov     eax, [r13 + MACROEXP_pend_cnt]
+    test    eax, eax
+    jz      .no_pending
+        mov     rsi, [r13 + MACROEXP_pend_ptr]
+        mov     rdi, r12
+        mov     rcx, (TOKEN_SIZE / 8)
+        rep movsq
+        add     qword [r13 + MACROEXP_pend_ptr], TOKEN_SIZE
+        dec     dword [r13 + MACROEXP_pend_cnt]
+        jmp     .produced
+.no_pending:
+
+.retry_body:
     ; 1. Get current token index
     mov     rax, [r13 + MACROEXP_body]
     mov     r9, [r13 + MACROEXP_macro]
@@ -631,6 +687,10 @@ prep_expand_next:
 
     ; 3. Handle parameter substitution
     ; Macro parameters are TOK_DIRECTIVE with value like "0", "1", "2"...
+    ; A %%local is not a directive, so send it on to CASE 4 rather than
+    ; letting it pass through unresolved.
+    cmp     byte [r12 + TOKEN_kind], TOK_MACRO_LOCAL
+    je      .not_case3
     cmp     byte [r12 + TOKEN_kind], TOK_DIRECTIVE
     jne     .produced
 
@@ -664,17 +724,43 @@ prep_expand_next:
     cmp     al, 9
     jg      .not_case2
         ; it's a param ref! (1-9)
+        ; A %rep body running inside a macro has no parameters of its own,
+        ; so walk out to the nearest expansion that does.
+        mov     r11, r13
+.param_owner_loop:
+        cmp     byte [r11 + MACROEXP_nparams], 0
+        jne     .param_owner_found
+        mov     r11, [r11 + MACROEXP_parent]
+        test    r11, r11
+        jnz     .param_owner_loop
+        jmp     .retry_body
+.param_owner_found:
+
         ; check if it is within nparams
-        movzx   rcx, byte [r13 + MACROEXP_nparams]
+        movzx   rcx, byte [r11 + MACROEXP_nparams]
         cmp     al, cl
-        jg      .produced              ; out of range, keep as directive
-        
-        ; replace r12 with the parameter token
+        jg      .retry_body            ; optional parameter not supplied:
+                                       ; substitute nothing rather than leaking
+                                       ; "%4" out as a stray directive token
+
+        ; Substitute the argument. An argument may span several tokens: emit
+        ; the first here and leave the rest pending for the next calls.
         dec     al                     ; 0-indexed
-        mov     r11, [r13 + MACROEXP_params]
         movzx   rax, al
-        mov     rsi, [r11 + rax * 8]   ; rsi = param token
-        
+        mov     r10, r11               ; r10 = expansion owning the parameters
+        mov     r11, [r10 + MACROEXP_arglens]
+        movzx   rcx, byte [r11 + rax]  ; rcx = token count of this argument
+        test    rcx, rcx
+        jz      .retry_body            ; empty argument: substitute nothing
+
+        mov     r11, [r10 + MACROEXP_params]
+        mov     rsi, [r11 + rax * 8]   ; rsi = first token of the argument
+
+        dec     rcx
+        mov     [r13 + MACROEXP_pend_cnt], ecx
+        lea     rax, [rsi + TOKEN_SIZE]
+        mov     [r13 + MACROEXP_pend_ptr], rax
+
         mov     rdi, r12
         mov     rcx, (TOKEN_SIZE / 8)
         rep movsq
@@ -737,8 +823,7 @@ prep_expand_next:
     cmp     byte [r12 + TOKEN_kind], TOK_MACRO_LOCAL
     jne     .not_case4
         ; Expand to ..@ID_label
-        mov     r8, [rbx + PREP_ctx]
-        mov     r14d, dword [r8 + ASMCTX_mac_exp_id]
+        mov     r14d, dword [r13 + MACROEXP_exp_id]
         
         ; 1. Allocate buffer for ID string
         mov     rdi, [rbx + PREP_arena]
@@ -816,6 +901,28 @@ prep_expand_next:
             jmp     .done_concat
             ENDIF
         
+        ; 2.5 Both operands may still carry %[...] or %$ text: resolve them
+        ;     before joining, so ".if_ %+ %$uid" pastes the context's value.
+        test    byte [r12 + TOKEN_flags], TOK_FLAG_INTERP
+        jz      .concat_lhs_ready
+        mov     rdi, rbx
+        mov     rsi, r12
+        call    prep_resolve_interp
+.concat_lhs_ready:
+        test    byte [rsp + TOKEN_flags], TOK_FLAG_INTERP
+        jz      .concat_rhs_ready
+        mov     rdi, rbx
+        mov     rsi, rsp
+        call    prep_resolve_interp
+.concat_rhs_ready:
+        ; %assign / %define names paste as their value
+        mov     rdi, rbx
+        mov     rsi, r12
+        call    prep_subst_const_text
+        mov     rdi, rbx
+        mov     rsi, rsp
+        call    prep_subst_const_text
+
         ; 3. Concatenate r12 (merged so far) and rsp (next token)
         ; Allocate space for combined string
         mov     rdi, [rbx + PREP_arena]
@@ -837,8 +944,21 @@ prep_expand_next:
         mov     rsi, [rsp + TOKEN_value]
         call    str_concat
         
-        ; 4. Update r12 to be the merged IDENT
+        ; 4. Update r12 to be the merged token. When the right-hand piece
+        ;    carried the ':' (".lbl_ %+ id %+ _end:"), the join is still a
+        ;    label definition, not a plain identifier.
         mov     byte [r12 + TOKEN_kind], TOK_IDENT
+        mov     cl, [rsp + TOKEN_kind]
+        cmp     cl, TOK_LABEL
+        je      .concat_is_label
+        cmp     cl, TOK_LOCAL_LABEL
+        jne     .concat_kind_set
+.concat_is_label:
+        mov     byte [r12 + TOKEN_kind], TOK_LABEL
+        cmp     byte [r14], '.'
+        jne     .concat_kind_set
+        mov     byte [r12 + TOKEN_kind], TOK_LOCAL_LABEL
+.concat_kind_set:
         mov     [r12 + TOKEN_value], r14
         
         add     rsp, TOKEN_SIZE
@@ -960,6 +1080,66 @@ prep_handle_directive:
     jz      .do_def
 
     mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_assign]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_assign
+
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_push]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_push
+
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_pop]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_pop
+
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_ifctx]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_ifctx
+
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_ifidni]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_ifidni
+
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_elifidni]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_elifidni
+
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_elif]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_elif
+
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_error]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_error
+
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_strlen]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_strlen
+
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_substr]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_substr
+
+    mov     rdi, [r12 + TOKEN_value]
     lea     rsi, [dir_if]
     call    str_cmp
     test    rax, rax
@@ -1002,6 +1182,18 @@ prep_handle_directive:
     jz      .do_struc
 
     mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_unmacro]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_unmacro
+
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_unimacro]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_unmacro
+
+    mov     rdi, [r12 + TOKEN_value]
     lea     rsi, [dir_rep]
     call    str_cmp
     test    rax, rax
@@ -1033,6 +1225,69 @@ prep_handle_directive:
     mov     rdi, rbx
     call    prep_handle_def
     jmp     .done_cleanup
+
+.do_assign:
+    cmp     byte [rbx + PREP_skip_depth], 0
+    jne     .done_cleanup                  ; don't execute when skipping
+    mov     rdi, rbx
+    call    prep_handle_assign
+    jmp     .done_cleanup
+
+.do_push:
+    cmp     byte [rbx + PREP_skip_depth], 0
+    jne     .done_cleanup
+    mov     rdi, rbx
+    call    prep_handle_push
+    jmp     .done_cleanup
+
+.do_pop:
+    cmp     byte [rbx + PREP_skip_depth], 0
+    jne     .done_cleanup
+    mov     rdi, rbx
+    call    prep_handle_pop
+    jmp     .done_cleanup
+
+.do_ifctx:
+    mov     rdi, rbx
+    call    prep_handle_ifctx
+    jmp     .done_cleanup
+
+.do_ifidni:
+    mov     rdi, rbx
+    call    prep_handle_ifidni
+    jmp     .done_cleanup
+
+.do_elifidni:
+    mov     rdi, rbx
+    call    prep_handle_elifidni
+    jmp     .done_cleanup
+
+.do_elif:
+    mov     rdi, rbx
+    call    prep_handle_elif
+    jmp     .done_cleanup
+
+.do_error:
+    mov     rdi, rbx
+    call    prep_handle_error
+    jmp     .done_cleanup
+
+.do_strlen:
+    cmp     byte [rbx + PREP_skip_depth], 0
+    jne     .done_cleanup
+    mov     rdi, rbx
+    call    prep_handle_strlen
+    jmp     .done_cleanup
+
+.do_substr:
+    cmp     byte [rbx + PREP_skip_depth], 0
+    jne     .done_cleanup
+    mov     rdi, rbx
+    call    prep_handle_substr
+    jmp     .done_cleanup
+
+
+
 
 .do_if:
     mov     rdi, rbx
@@ -1068,6 +1323,13 @@ prep_handle_directive:
 .do_macro_normal:
     mov     rdi, rbx
     call    macro_handle_def
+    jmp     .done_cleanup
+
+.do_unmacro:
+    cmp     byte [rbx + PREP_skip_depth], 0
+    jne     .done_cleanup          ; inside a skipped block: ignore entirely
+    mov     rdi, rbx
+    call    prep_handle_unmacro
     jmp     .done_cleanup
 
 .do_rep:
@@ -1311,6 +1573,17 @@ prep_handle_inc:
 [SECTION .rodata]
 dir_inc:    db "include", 0
 dir_def:    db "define", 0
+dir_assign: db "assign", 0
+dir_push:   db "push", 0
+dir_pop:    db "pop", 0
+dir_ifctx:  db "ifctx", 0
+dir_ifidni:   db "ifidni", 0
+dir_elifidni: db "elifidni", 0
+dir_elif:     db "elif", 0
+dir_error:    db "error", 0
+dir_strlen:   db "strlen", 0
+dir_substr:   db "substr", 0
+msg_prep_error: db "preprocessor %error directive reached", 10, 0
 dir_if:     db "if", 0
 dir_ifdef:  db "ifdef", 0
 dir_ifndef: db "ifndef", 0
@@ -1322,6 +1595,8 @@ dir_macro:  db "macro", 0
 dir_endm:   db "endmacro", 0
 dir_struc:  db "struc", 0
 dir_endstruc: db "endstruc", 0
+dir_unmacro:  db "unmacro", 0
+dir_unimacro: db "unimacro", 0
 
 msg_preprocessor_dir_trace: db "[+] PREP: Directive: ", 0
 msg_newline:                db 10, 0
@@ -1354,6 +1629,1091 @@ dbg_newline:  db 10, 0
 .error:
     pop     rbx
     ret
+; ---- prep_subst_const_text --------------
+;
+; prep_subst_const_text
+; If the token names a %assign / %define constant, replace its text with the
+; constant's value in decimal. Pasting joins text, and "%assign i 7" makes i
+; a numeric macro: ".lbl_ %+ i" has to produce ".lbl_7", not ".lbl_i".
+;
+; Input    : rdi = pointer to PrepState
+;             rsi = pointer to Token (rewritten in place)
+;
+prep_subst_const_text:
+    prologue
+    push    rbx
+    push    r12
+    push    r13
+    mov     rbx, rdi
+    mov     r12, rsi
+
+    cmp     byte [r12 + TOKEN_kind], TOK_IDENT
+    jne     .done
+
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, [r12 + TOKEN_value]
+    call    symbol_find
+    test    rax, rax
+    jnz     .done
+    cmp     byte [rdx + SYMBOL_kind], SYM_CONSTANT
+    jne     .done
+    mov     r13, [rdx + SYMBOL_value]
+
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, 32
+    call    arena_alloc
+    test    rax, rax
+    jnz     .done
+
+    mov     rdi, rdx
+    mov     [r12 + TOKEN_value], rdx
+    mov     rsi, r13
+    call    str_int_to_str
+    mov     byte [r12 + TOKEN_kind], TOK_NUMBER
+
+.done:
+    pop     r13
+    pop     r12
+    pop     rbx
+    epilogue
+
+; ---- conditional level bookkeeping ------
+;
+; PREP_depth counts open conditionals and PREP_skip_depth counts how many of
+; them are currently suppressing output. cond_taken[level] records whether a
+; branch at that level has already fired, which is what makes %elif chains
+; behave: once one branch is taken, every later branch stays skipped.
+;
+; prep_cond_enter : rdi = PrepState, sil = 1 when the condition holds
+;
+prep_cond_enter:
+    movzx   eax, byte [rdi + PREP_depth]
+    cmp     al, PREP_CTX_MAX
+    jge     .overflow
+
+    cmp     byte [rdi + PREP_skip_depth], 0
+    jne     .outer_skipping
+
+    test    sil, sil
+    jz      .not_taken
+    mov     byte [rdi + PREP_cond_taken + rax], 1
+    inc     byte [rdi + PREP_depth]
+    xor     rax, rax
+    ret
+
+.not_taken:
+    mov     byte [rdi + PREP_cond_taken + rax], 0
+    inc     byte [rdi + PREP_skip_depth]
+    inc     byte [rdi + PREP_depth]
+    xor     rax, rax
+    ret
+
+.outer_skipping:
+    ; an enclosing level is suppressing: mark taken so %else cannot revive it
+    mov     byte [rdi + PREP_cond_taken + rax], 1
+    inc     byte [rdi + PREP_skip_depth]
+    inc     byte [rdi + PREP_depth]
+    xor     rax, rax
+    ret
+
+.overflow:
+    mov     rax, EXIT_MACRO_RECURSION
+    ret
+
+;
+; prep_cond_branch : rdi = PrepState, sil = 1 when this branch's condition
+;                    holds (%else passes 1). Handles %else / %elif / %elifidni.
+;
+prep_cond_branch:
+    movzx   eax, byte [rdi + PREP_depth]
+    test    al, al
+    jz      .no_if
+    dec     eax
+
+    movzx   ecx, byte [rdi + PREP_skip_depth]
+    cmp     cl, 1
+    jg      .unchanged             ; an outer level is skipping
+
+    cmp     byte [rdi + PREP_cond_taken + rax], 0
+    jne     .force_skip
+
+    test    sil, sil
+    jz      .stay_skipping
+    mov     byte [rdi + PREP_cond_taken + rax], 1
+    mov     byte [rdi + PREP_skip_depth], 0
+    xor     rax, rax
+    ret
+
+.stay_skipping:
+    mov     byte [rdi + PREP_skip_depth], 1
+    xor     rax, rax
+    ret
+
+.force_skip:
+    mov     byte [rdi + PREP_skip_depth], 1
+.unchanged:
+    xor     rax, rax
+    ret
+
+.no_if:
+    mov     rax, EXIT_ERROR
+    ret
+
+; ---- prep_str_cmp_ci --------------------
+;
+; Case-insensitive comparison of two NUL-terminated strings.
+; Input  : rdi, rsi = strings
+; Output : rax = 0 when equal
+;
+prep_str_cmp_ci:
+.loop:
+    movzx   eax, byte [rdi]
+    movzx   ecx, byte [rsi]
+
+    cmp     al, 'A'
+    jb      .a_ready
+    cmp     al, 'Z'
+    ja      .a_ready
+    add     al, 32
+.a_ready:
+    cmp     cl, 'A'
+    jb      .b_ready
+    cmp     cl, 'Z'
+    ja      .b_ready
+    add     cl, 32
+.b_ready:
+    cmp     al, cl
+    jne     .differ
+    test    al, al
+    jz      .equal
+    inc     rdi
+    inc     rsi
+    jmp     .loop
+
+.equal:
+    xor     rax, rax
+    ret
+.differ:
+    mov     rax, 1
+    ret
+
+; ---- prep_read_idn_pair -----------------
+;
+; Reads "A, B" from the directive line and reports whether the two token
+; texts are equal ignoring case. Used by %ifidni and %elifidni.
+;
+; Input  : rdi = PrepState
+; Output : rax = EXIT_OK, rdx = 1 when the texts match
+;
+prep_read_idn_pair:
+    prologue
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    mov     rbx, rdi
+
+    ; The operands belong to this directive and must be read even inside a
+    ; skipped block; with skipping active the token reader would swallow the
+    ; rest of the file instead of handing them back.
+    movzx   r14d, byte [rbx + PREP_skip_depth]
+    mov     byte [rbx + PREP_skip_depth], 0
+
+    mov     rdi, rbx
+    call    prep_drop_stale_newline
+
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .fail
+    mov     r12, [rdx + TOKEN_value]
+
+    ; separator
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .fail
+
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .fail
+    mov     r13, [rdx + TOKEN_value]
+
+    test    r12, r12
+    jz      .not_equal
+    test    r13, r13
+    jz      .not_equal
+
+    mov     rdi, r12
+    mov     rsi, r13
+    call    prep_str_cmp_ci
+    test    rax, rax
+    jnz     .not_equal
+
+    xor     rax, rax
+    mov     rdx, 1
+    jmp     .done
+
+.not_equal:
+    xor     rax, rax
+    xor     rdx, rdx
+    jmp     .done
+
+.fail:
+    xor     rdx, rdx
+
+.done:
+    mov     [rbx + PREP_skip_depth], r14b   ; restore the skip state
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    epilogue
+
+; ---- prep_handle_ifidni -----------------
+prep_handle_ifidni:
+    prologue
+    push    rbx
+    mov     rbx, rdi
+
+    mov     rdi, rbx
+    call    prep_read_idn_pair
+    test    rax, rax
+    jnz     .done
+
+    xor     esi, esi
+    test    rdx, rdx
+    setne   sil
+    mov     rdi, rbx
+    call    prep_cond_enter
+
+.done:
+    pop     rbx
+    epilogue
+
+; ---- prep_handle_elifidni ---------------
+prep_handle_elifidni:
+    prologue
+    push    rbx
+    mov     rbx, rdi
+
+    mov     rdi, rbx
+    call    prep_read_idn_pair
+    test    rax, rax
+    jnz     .done
+
+    xor     esi, esi
+    test    rdx, rdx
+    setne   sil
+    mov     rdi, rbx
+    call    prep_cond_branch
+
+.done:
+    pop     rbx
+    epilogue
+
+; ---- prep_handle_elif -------------------
+prep_handle_elif:
+    prologue
+    push    rbx
+    push    r12
+    mov     rbx, rdi
+
+    mov     rdi, rbx
+    call    prep_drop_stale_newline
+
+    ; Only evaluate when this level could still take a branch
+    movzx   eax, byte [rbx + PREP_depth]
+    test    al, al
+    jz      .no_if
+    dec     eax
+    movzx   ecx, byte [rbx + PREP_skip_depth]
+    cmp     cl, 1
+    jg      .no_eval
+    cmp     byte [rbx + PREP_cond_taken + rax], 0
+    jne     .no_eval
+
+    ; The condition is this directive's own operand: read it with skipping
+    ; suspended, or the token reader discards it along with the skipped block.
+    movzx   r12d, byte [rbx + PREP_skip_depth]
+    mov     byte [rbx + PREP_skip_depth], 0
+
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    mov     byte [rbx + PREP_skip_depth], r12b
+    test    rax, rax
+    jnz     .done
+    xor     esi, esi
+    test    rdx, rdx
+    setne   sil
+    mov     rdi, rbx
+    call    prep_cond_branch
+    jmp     .done
+
+.no_eval:
+    xor     esi, esi
+    mov     rdi, rbx
+    call    prep_cond_branch
+    jmp     .done
+
+.no_if:
+    mov     rax, EXIT_ERROR
+
+.done:
+    pop     r12
+    pop     rbx
+    epilogue
+
+; ---- prep_handle_error ------------------
+;
+; "%error message" — reported only when the line is actually reached.
+;
+prep_handle_error:
+    prologue
+    push    rbx
+    mov     rbx, rdi
+
+    ; While skipping there is nothing to report and nothing to drain: the
+    ; skip loop consumes the rest of the line itself. Peeking here would run
+    ; the preprocessor over the following %endif and swallow it.
+    cmp     byte [rbx + PREP_skip_depth], 0
+    jne     .done
+
+    mov     rdi, 2
+    lea     rsi, [rel msg_prep_error]
+    extern  print_str
+    call    print_str
+
+.drain:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .done
+    cmp     byte [rdx + TOKEN_kind], TOK_NEWLINE
+    je      .done
+    cmp     byte [rdx + TOKEN_kind], TOK_EOF
+    je      .done
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    jmp     .drain
+
+.done:
+    xor     rax, rax
+    pop     rbx
+    epilogue
+
+; ---- prep_raw_next ----------------------
+;
+; Reads the next token without expanding or interpreting it: from the active
+; macro/%rep body when one is running, otherwise from the file. %rep captures
+; its body with this, so a %rep written inside a macro copies the macro's
+; tokens instead of running off into the source file.
+;
+; Input  : rdi = PrepState, rsi = destination Token
+; Output : rax = EXIT_OK or error
+;
+prep_raw_next:
+    prologue
+    push    rbx
+    push    r12
+    push    r13
+    mov     rbx, rdi
+    mov     r12, rsi
+
+    mov     rax, [rbx + PREP_ctx]
+    mov     r13, [rax + ASMCTX_mac_exp]
+    test    r13, r13
+    jz      .from_lexer
+
+    mov     rax, [r13 + MACROEXP_body]
+    mov     r9, [r13 + MACROEXP_macro]
+    cmp     eax, [r9 + MACRO_ntokens]
+    jge     .from_lexer                ; body exhausted: continue in the file
+
+    mov     r10, [r9 + MACRO_tokens]
+    imul    rax, TOKEN_SIZE
+    add     r10, rax
+    mov     rdi, r12
+    mov     rsi, r10
+    mov     rcx, (TOKEN_SIZE / 8)
+    rep movsq
+    inc     qword [r13 + MACROEXP_body]
+    xor     rax, rax
+    jmp     .done
+
+.from_lexer:
+    mov     rdi, [rbx + PREP_lexer]
+    mov     rsi, r12
+    call    lexer_next
+
+.done:
+    pop     r13
+    pop     r12
+    pop     rbx
+    epilogue
+
+; ---- prep_handle_unmacro ----------------
+;
+; prep_handle_unmacro
+; "%unmacro name nparams" (and the case-insensitive "%unimacro") removes a
+; previously defined multi-line macro. The symbol table has no delete, so the
+; entry is retired in place by clearing its kind -- the macro-call lookup in
+; prep_internal_next only fires on SYM_MACRO, so an entry of any other kind is
+; inert. Removing a name that is not a macro is not an error, matching NASM.
+;
+; The parameter spec is parsed and discarded: it only disambiguates between
+; overloads, which utasm does not keep.
+;
+; Input    : rdi = pointer to PrepState
+; Output   : rax = EXIT_OK or error code
+;
+prep_handle_unmacro:
+    prologue
+    push    rbx
+    push    r12
+    sub     rsp, TOKEN_SIZE        ; scratch token
+    mov     rbx, rdi
+
+    mov     rdi, rbx
+    call    prep_drop_stale_newline
+
+    ; 1. Macro name, taken straight from the lexer. Reading it through the
+    ;    preprocessor would recognise the name as a macro *call* and expand
+    ;    it, which is exactly what %macro avoids for the same reason.
+    mov     rdi, [rbx + PREP_lexer]
+    mov     rsi, rsp
+    call    lexer_next
+    test    rax, rax
+    jnz     .done
+    IF byte [rsp + TOKEN_kind], ne, TOK_IDENT
+        mov     rax, EXIT_UNEXPECTED_TOKEN
+        jmp     .done
+        ENDIF
+    mov     r12, [rsp + TOKEN_value]
+
+    ; 2. Retire it if it is currently a macro
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, r12
+    extern  symbol_find
+    call    symbol_find
+    IF rax, e, OK
+        IF byte [rdx + SYMBOL_kind], e, SYM_MACRO
+            mov     byte [rdx + SYMBOL_kind], SYM_UNKNOWN
+            ENDIF
+        ENDIF
+
+    ; 3. Discard the parameter spec
+    mov     rdi, rbx
+    call    prep_drain_line
+    xor     rax, rax
+
+.done:
+    add     rsp, TOKEN_SIZE
+    pop     r12
+    pop     rbx
+    epilogue
+
+; ---- prep_drain_line --------------------
+;
+; Consumes what is left of the current directive's line, including the
+; terminating newline, so the next directive starts on a clean stream.
+; Directives that evaluate an expression stop *on* the newline and leave it
+; in the peek slot instead; those use prep_drop_stale_newline.
+;
+; Input : rdi = PrepState
+;
+prep_drain_line:
+    prologue
+    push    rbx
+    mov     rbx, rdi
+
+.loop:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .done
+    cmp     byte [rdx + TOKEN_kind], TOK_EOF
+    je      .done
+    cmp     byte [rdx + TOKEN_kind], TOK_NEWLINE
+    je      .eat_newline
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    jmp     .loop
+
+.eat_newline:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+
+.done:
+    xor     rax, rax
+    pop     rbx
+    epilogue
+
+; ---- prep_define_const ------------------
+;
+; Defines or re-defines a numeric constant, the way %assign does.
+; Input : rdi = PrepState, rsi = name string, rdx = value
+;
+prep_define_const:
+    prologue
+    push    rbx
+    push    r12
+    push    r13
+    sub     rsp, SYMBOL_SIZE
+    mov     rbx, rdi
+    mov     r12, rsi
+    mov     r13, rdx
+
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, r12
+    call    symbol_find
+    test    rax, rax
+    jnz     .create
+    mov     [rdx + SYMBOL_value], r13
+    xor     rax, rax
+    jmp     .done
+
+.create:
+    mov     rdi, rsp
+    mov     rcx, (SYMBOL_SIZE / 8)
+    xor     rax, rax
+    mov     r10, rdi
+    rep stosq
+    mov     rdi, r10
+
+    mov     byte [rdi + SYMBOL_tag], TAG_SYMBOL
+    mov     byte [rdi + SYMBOL_kind], SYM_CONSTANT
+    mov     [rdi + SYMBOL_name], r12
+    mov     [rdi + SYMBOL_value], r13
+
+    mov     rsi, rdi
+    mov     rdi, [rbx + PREP_ctx]
+    call    symbol_add
+
+.done:
+    add     rsp, SYMBOL_SIZE
+    pop     r13
+    pop     r12
+    pop     rbx
+    epilogue
+
+; ---- prep_handle_strlen -----------------
+;
+; "%strlen NAME "text"" defines NAME as the length of the string.
+;
+prep_handle_strlen:
+    prologue
+    push    rbx
+    push    r12
+    mov     rbx, rdi
+
+    mov     rdi, rbx
+    call    prep_drop_stale_newline
+
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .done
+    mov     r12, [rdx + TOKEN_value]   ; name
+
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .done
+    mov     rdi, [rdx + TOKEN_value]   ; string contents
+    test    rdi, rdi
+    jz      .empty
+    call    str_len
+    jmp     .define
+.empty:
+    xor     rax, rax
+
+.define:
+    mov     rdx, rax
+    mov     rdi, rbx
+    mov     rsi, r12
+    call    prep_define_const
+    mov     rdi, rbx
+    call    prep_drain_line
+    xor     rax, rax
+
+.done:
+    pop     r12
+    pop     rbx
+    epilogue
+
+; ---- prep_handle_substr -----------------
+;
+; "%substr NAME "text" index" defines NAME as the character at the 1-based
+; index. NASM yields a one-character string there; utasm stores the character
+; code directly, which is how compile_time_hash consumes it.
+;
+prep_handle_substr:
+    prologue
+    push    rbx
+    push    r12
+    push    r13
+    mov     rbx, rdi
+
+    mov     rdi, rbx
+    call    prep_drop_stale_newline
+
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .done
+    mov     r12, [rdx + TOKEN_value]   ; name
+
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .done
+    mov     r13, [rdx + TOKEN_value]   ; string contents
+
+    mov     rdi, rbx
+    call    parser_evaluate_expression ; 1-based index
+    test    rax, rax
+    jnz     .done
+    mov     rcx, rdx
+
+    xor     rax, rax
+    test    r13, r13
+    jz      .define
+    test    rcx, rcx
+    jle     .define
+    dec     rcx                        ; 0-based
+
+    ; bounds check against the string length
+    push    rcx
+    mov     rdi, r13
+    call    str_len
+    pop     rcx
+    cmp     rcx, rax
+    jge     .out_of_range
+    movzx   rax, byte [r13 + rcx]
+    jmp     .define
+.out_of_range:
+    xor     rax, rax
+
+.define:
+    mov     rdx, rax
+    mov     rdi, rbx
+    mov     rsi, r12
+    call    prep_define_const
+    mov     rdi, rbx
+    call    prep_drain_line
+    xor     rax, rax
+
+.done:
+    pop     r13
+    pop     r12
+    pop     rbx
+    epilogue
+
+; ---- prep_drop_stale_newline ------------
+;
+; prep_drop_stale_newline
+; Directives that evaluate an expression stop on the terminating NEWLINE and
+; leave it in the peek slot. It belongs to the finished line, so the next
+; directive that reads operands must not see it.
+;
+; Input    : rdi = pointer to PrepState
+;
+prep_drop_stale_newline:
+    cmp     byte [rdi + PREP_has_peek], TRUE
+    jne     .done
+    cmp     byte [rdi + PREP_peek + TOKEN_kind], TOK_NEWLINE
+    jne     .done
+    mov     byte [rdi + PREP_has_peek], FALSE
+.done:
+    ret
+
+; ---- prep_handle_push -------------------
+;
+; prep_handle_push
+; "%push name" opens a context. Each context gets a unique id, which is what
+; makes %$local names unique per IF/ENDIF pair.
+;
+; Input    : rdi = pointer to PrepState
+; Output   : rax = EXIT_OK or error code
+;
+prep_handle_push:
+    prologue
+    push    rbx
+    push    r12
+    mov     rbx, rdi
+
+    mov     rdi, rbx
+    call    prep_drop_stale_newline
+
+    mov     eax, [rbx + PREP_ctx_depth]
+    cmp     eax, PREP_CTX_MAX
+    jge     .overflow
+
+    ; the context name is optional
+    xor     r12, r12
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .store
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .store
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .store
+    mov     r12, [rdx + TOKEN_value]
+
+.store:
+    mov     eax, [rbx + PREP_ctx_depth]
+    mov     ecx, [rbx + PREP_ctx_next_id]
+    inc     ecx
+    mov     [rbx + PREP_ctx_next_id], ecx
+    mov     [rbx + PREP_ctx_ids + rax * 4], ecx
+    lea     rdx, [rbx + PREP_ctx_names]
+    mov     [rdx + rax * 8], r12
+    inc     eax
+    mov     [rbx + PREP_ctx_depth], eax
+
+    xor     rax, rax
+    jmp     .done
+
+.overflow:
+    mov     rax, EXIT_MACRO_RECURSION
+
+.done:
+    pop     r12
+    pop     rbx
+    epilogue
+
+; ---- prep_handle_pop --------------------
+;
+; prep_handle_pop
+; "%pop [name]" closes the innermost context.
+;
+prep_handle_pop:
+    prologue
+    push    rbx
+    mov     rbx, rdi
+
+    mov     rdi, rbx
+    call    prep_drop_stale_newline
+
+    ; an optional context name may follow; it is not verified
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .drop
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .drop
+    mov     rdi, rbx
+    call    preprocessor_next_token
+
+.drop:
+    mov     eax, [rbx + PREP_ctx_depth]
+    test    eax, eax
+    jz      .underflow
+    dec     eax
+    mov     [rbx + PREP_ctx_depth], eax
+    xor     rax, rax
+    jmp     .done
+
+.underflow:
+    mov     rax, EXIT_MACRO_DEF
+
+.done:
+    pop     rbx
+    epilogue
+
+; ---- prep_handle_ifctx ------------------
+;
+; prep_handle_ifctx
+; "%ifctx name" is true when the innermost context carries that name.
+;
+prep_handle_ifctx:
+    prologue
+    push    rbx
+    push    r12
+    mov     rbx, rdi
+
+    mov     rdi, rbx
+    call    prep_drop_stale_newline
+
+    ; already skipping: just track the nesting
+    cmp     byte [rbx + PREP_skip_depth], 0
+    jne     .nested_skip
+
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .done
+    mov     r12, [rdx + TOKEN_value]
+
+    mov     eax, [rbx + PREP_ctx_depth]
+    test    eax, eax
+    jz      .false
+    dec     eax
+    lea     rdx, [rbx + PREP_ctx_names]
+    mov     rsi, [rdx + rax * 8]
+    test    rsi, rsi
+    jz      .false
+
+    mov     rdi, r12
+    call    str_cmp
+    test    rax, rax
+    jnz     .false
+
+    ; true
+    inc     byte [rbx + PREP_depth]
+    xor     rax, rax
+    jmp     .done
+
+.false:
+    inc     byte [rbx + PREP_skip_depth]
+    inc     byte [rbx + PREP_depth]
+    xor     rax, rax
+    jmp     .done
+
+.nested_skip:
+    inc     byte [rbx + PREP_skip_depth]
+    inc     byte [rbx + PREP_depth]
+    xor     rax, rax
+
+.done:
+    pop     r12
+    pop     rbx
+    epilogue
+
+; ---- prep_resolve_interp ----------------
+;
+; prep_resolve_interp
+; Rewrites a token's text, replacing every "%[NAME]" with the decimal value
+; of NAME. A name that is not defined contributes nothing, matching how the
+; tables in include/arch/*.inc are built.
+;
+; Input    : rdi = pointer to PrepState
+;             rsi = pointer to Token (text is replaced in place)
+; Output   : rax = EXIT_OK or error code
+;
+prep_resolve_interp:
+    prologue
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    mov     rbx, rdi               ; rbx = PrepState
+    mov     r12, rsi               ; r12 = Token
+
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, LEX_INTERP_BUF
+    call    arena_alloc
+    test    rax, rax
+    jnz     .done
+    mov     r14, rdx               ; r14 = output buffer
+    xor     r15, r15               ; r15 = output length
+    mov     r13, [r12 + TOKEN_value] ; r13 = source cursor
+
+.scan:
+    cmp     r15, (LEX_INTERP_BUF - 24)
+    jge     .finish
+    movzx   rax, byte [r13]
+    test    al, al
+    jz      .finish
+
+    cmp     al, '%'
+    jne     .copy_char
+    cmp     byte [r13 + 1], '$'
+    je      .ctx_local
+    cmp     byte [r13 + 1], '['
+    jne     .copy_char
+
+    ; "%[" : read the name up to ']'
+    add     r13, 2
+    mov     r9, r13
+.name_loop:
+    movzx   rax, byte [r13]
+    test    al, al
+    jz      .finish
+    cmp     al, ']'
+    je      .name_done
+    inc     r13
+    jmp     .name_loop
+
+.name_done:
+    mov     r10, r13
+    sub     r10, r9                ; name length
+    inc     r13                    ; step over ']'
+
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, r9
+    mov     rdx, r10
+    call    arena_alloc_string
+    test    rax, rax
+    jnz     .done
+    mov     r9, rdx
+
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, r9
+    call    symbol_find
+    test    rax, rax
+    jnz     .scan                  ; undefined: contributes nothing
+
+    mov     rsi, [rdx + SYMBOL_value]
+    lea     rdi, [r14 + r15]
+    call    str_int_to_str
+    lea     rdi, [r14 + r15]
+    call    str_len
+    add     r15, rax
+    jmp     .scan
+
+.ctx_local:
+    ; "%$name" is local to the innermost %push context: rewrite it as the
+    ; ordinary symbol "__ctxN$name", which makes each IF/ENDIF pair unique.
+    add     r13, 2
+    mov     eax, [rbx + PREP_ctx_depth]
+    test    eax, eax
+    jz      .ctx_id_zero
+    dec     eax
+    mov     eax, [rbx + PREP_ctx_ids + rax * 4]
+    jmp     .ctx_id_ready
+.ctx_id_zero:
+    xor     eax, eax
+.ctx_id_ready:
+    mov     byte [r14 + r15], '_'
+    mov     byte [r14 + r15 + 1], '_'
+    mov     byte [r14 + r15 + 2], 'c'
+    mov     byte [r14 + r15 + 3], 't'
+    mov     byte [r14 + r15 + 4], 'x'
+    add     r15, 5
+    mov     rsi, rax
+    lea     rdi, [r14 + r15]
+    call    str_int_to_str
+    lea     rdi, [r14 + r15]
+    call    str_len
+    add     r15, rax
+    mov     byte [r14 + r15], '$'
+    inc     r15
+    jmp     .scan
+
+.copy_char:
+    mov     [r14 + r15], al
+    inc     r15
+    inc     r13
+    jmp     .scan
+
+.finish:
+    mov     byte [r14 + r15], 0
+    mov     [r12 + TOKEN_value], r14
+    mov     word [r12 + TOKEN_len], r15w
+    and     byte [r12 + TOKEN_flags], ~TOK_FLAG_INTERP
+    xor     rax, rax
+
+.done:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    epilogue
+
+; ---- prep_handle_assign -----------------
+;
+; prep_handle_assign
+; Handles "%assign NAME <expression>". Unlike %define, the value is an
+; integer expression evaluated immediately, and re-assignment is allowed
+; (that is what makes counters like "%assign i i+1" work).
+;
+; Input    : rdi = pointer to PrepState
+; Output   : rax = EXIT_OK or error code
+;
+prep_handle_assign:
+    prologue
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    sub     rsp, TOKEN_SIZE + SYMBOL_SIZE
+    mov     rbx, rdi               ; rbx = PrepState
+
+    ; A previous expression-evaluating directive can leave the terminating
+    ; NEWLINE in the peek slot. The name below is lexed straight from the
+    ; lexer, which does not consult that slot, so drop it first.
+    cmp     byte [rbx + PREP_has_peek], TRUE
+    jne     .no_stale_peek
+    cmp     byte [rbx + PREP_peek + TOKEN_kind], TOK_NEWLINE
+    jne     .no_stale_peek
+    mov     byte [rbx + PREP_has_peek], FALSE
+.no_stale_peek:
+
+    ; 1. Read the name through the preprocessor, not the raw lexer: inside a
+    ;    %rep or %macro body the tokens come from the expansion, not the file.
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .error
+    mov     r12, rdx
+    cmp     byte [r12 + TOKEN_kind], TOK_IDENT
+    jne     .error_ident
+    mov     r13, [r12 + TOKEN_value]
+
+    ; 2. Evaluate the value (same evaluator %if uses)
+    mov     rdi, rbx
+    extern  parser_evaluate_expression
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .error
+    mov     r14, rdx               ; r14 = value
+
+    ; 3. Re-assign in place when the name already exists
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, r13
+    call    symbol_find
+    test    rax, rax
+    jnz     .create
+    mov     [rdx + SYMBOL_value], r14
+    xor     rax, rax
+    jmp     .done
+
+.create:
+    lea     rdi, [rsp + TOKEN_SIZE]
+    mov     rcx, (SYMBOL_SIZE / 8)
+    xor     rax, rax
+    mov     r10, rdi
+    rep stosq
+    mov     rdi, r10
+
+    mov     byte [rdi + SYMBOL_tag], TAG_SYMBOL
+    mov     byte [rdi + SYMBOL_kind], SYM_CONSTANT
+    mov     [rdi + SYMBOL_name], r13
+    mov     [rdi + SYMBOL_value], r14
+
+    mov     rsi, rdi
+    mov     rdi, [rbx + PREP_ctx]
+    call    symbol_add
+    test    rax, rax
+    jnz     .error
+    xor     rax, rax
+    jmp     .done
+
+.error_ident:
+    mov     rax, EXIT_DEFINE
+    jmp     .done
+
+.error:
+    test    rax, rax
+    jnz     .done
+    mov     rax, EXIT_DEFINE
+
+.done:
+    add     rsp, TOKEN_SIZE + SYMBOL_SIZE
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    epilogue
+
 ; ---- prep_handle_def --------------------
 ;
 ; prep_handle_def
@@ -1367,239 +2727,115 @@ prep_handle_def:
     push    r12
     push    r13
     push    r14
+    sub     rsp, SYMBOL_SIZE
     mov     rbx, rdi               ; rbx = PrepState
-    
-    ; 112 is a multiple of 16. Perfect.
-    sub     rsp, (TOKEN_SIZE * 2) + SYMBOL_SIZE
-    
-    ; 1. Lex the identifier (the constant name)
-    mov     rdi, [rbx + PREP_lexer]
-    lea     r12, [rsp]             ; r12 = name token buffer
-    mov     rsi, r12
-    call    lexer_next
+
+    ; An expression-evaluating directive can leave the terminating NEWLINE
+    ; in the peek slot; it does not belong to this definition.
+    cmp     byte [rbx + PREP_has_peek], TRUE
+    jne     .no_stale_peek
+    cmp     byte [rbx + PREP_peek + TOKEN_kind], TOK_NEWLINE
+    jne     .no_stale_peek
+    mov     byte [rbx + PREP_has_peek], FALSE
+.no_stale_peek:
+
+    ; 1. Name (read through the preprocessor: %define also appears inside
+    ;    %macro and %rep bodies, where tokens come from the expansion)
+    mov     rdi, rbx
+    call    preprocessor_next_token
     test    rax, rax
     jnz     .error
-
+    mov     r12, rdx
     cmp     byte [r12 + TOKEN_kind], TOK_IDENT
-    jne     .expected_ident
-
-    ; Save the name pointer
+    jne     .error_ident
     mov     r13, [r12 + TOKEN_value]
 
-    ; Check if constant already exists
+    ; 2. A bare "%define NAME" is a marker (include guards); its value is 0
+    xor     r14, r14
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .error
+    cmp     byte [rdx + TOKEN_kind], TOK_NEWLINE
+    je      .store
+    cmp     byte [rdx + TOKEN_kind], TOK_EOF
+    je      .store
+
+    ; 3. Otherwise the value is an integer expression.
+    ;    NASM's %define is lazy, so the headers contain definitions that are
+    ;    never valid as expressions and never used. Evaluating eagerly must
+    ;    therefore not be fatal: such a name simply gets the value 0.
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jz      .have_value
+    xor     r14, r14
+    jmp     .skip_rest
+.have_value:
+    mov     r14, rdx
+    jmp     .store
+
+.skip_rest:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .store
+    cmp     byte [rdx + TOKEN_kind], TOK_NEWLINE
+    je      .store
+    cmp     byte [rdx + TOKEN_kind], TOK_EOF
+    je      .store
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    jmp     .skip_rest
+
+.store:
+    ; Redefinition updates the existing entry
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, r13
     call    symbol_find
     test    rax, rax
-    jnz     .not_found
-
-    ; Exist! rdx points to the existing SYMBOL struct. Save it in r14.
-    mov     r14, rdx
-
-    ; Lex the value
-    mov     rdi, [rbx + PREP_lexer]
-    lea     r12, [rsp + TOKEN_SIZE] ; r12 = value token buffer
-    mov     rsi, r12
-    call    lexer_next
-    test    rax, rax
-    jnz     .error
-
-    ; Parse value (if numeric)
-    cmp     byte [r12 + TOKEN_kind], TOK_NUMBER
-    jne     .redef_discard_rest
-
-    mov     rdi, [r12 + TOKEN_value]
-    call    str_to_int
-    mov     [r14 + SYMBOL_value], rdx
-
-.redef_discard_rest:
-    cmp     byte [r12 + TOKEN_kind], TOK_NEWLINE
-    je      .finish_redef
-    cmp     byte [r12 + TOKEN_kind], TOK_EOF
-    je      .finish_redef
-
-.redef_discard_loop:
-    mov     rdi, [rbx + PREP_lexer]
-    mov     rsi, r12
-    call    lexer_next
-    test    rax, rax
-    jnz     .error
-
-    cmp     byte [r12 + TOKEN_kind], TOK_NEWLINE
-    je      .finish_redef
-    cmp     byte [r12 + TOKEN_kind], TOK_EOF
-    je      .finish_redef
-    jmp     .redef_discard_loop
-
-.finish_redef:
+    jnz     .create
+    mov     [rdx + SYMBOL_value], r14
     xor     rax, rax
     jmp     .done
 
-.not_found:
-    ; 2. Lex the value
-    mov     rdi, [rbx + PREP_lexer]
-    lea     r12, [rsp + TOKEN_SIZE] ; r12 = value token buffer
-    mov     rsi, r12
-    call    lexer_next
-    test    rax, rax
-    jnz     .error
-
-    ; 3. Create a symbol entry
-    lea     rdi, [rsp + (TOKEN_SIZE * 2)] ; rdi = temp Symbol dest
-    
-    ; zero out the struct
-    mov     rcx, 6                 ; 48 / 8 = 6
+.create:
+    mov     rdi, rsp
+    mov     rcx, (SYMBOL_SIZE / 8)
     xor     rax, rax
-    mov     r10, rdi               ; save rdi
+    mov     r10, rdi
     rep stosq
-    mov     rdi, r10               ; restore rdi
+    mov     rdi, r10
 
     mov     byte [rdi + SYMBOL_tag], TAG_SYMBOL
     mov     byte [rdi + SYMBOL_kind], SYM_CONSTANT
     mov     [rdi + SYMBOL_name], r13
-    
-    mov     r14, rdi               ; save symbol ptr
-    ; handle value
-    cmp     byte [r12 + TOKEN_kind], TOK_NUMBER
-    jne     .discard_rest          ; for now, ignore non-numeric %def
+    mov     [rdi + SYMBOL_value], r14
 
-    mov     rdi, [r12 + TOKEN_value]
-    call    str_to_int             ; from string.s
-    mov     rdi, r14
-    mov     [rdi + SYMBOL_value], rdx
-
-.discard_rest:
-    cmp     byte [r12 + TOKEN_kind], TOK_NEWLINE
-    je      .finish_def
-    cmp     byte [r12 + TOKEN_kind], TOK_EOF
-    je      .finish_def
-
-.discard_loop:
-    mov     rdi, [rbx + PREP_lexer]
-    mov     rsi, r12               ; reuse value token slot
-    call    lexer_next
-    test    rax, rax
-    jnz     .error
-    
-    cmp     byte [r12 + TOKEN_kind], TOK_NEWLINE
-    je      .finish_def
-    cmp     byte [r12 + TOKEN_kind], TOK_EOF
-    je      .finish_def
-    jmp     .discard_loop
-
-.finish_def:
-    mov     rdi, [rbx + PREP_ctx]  ; rdi = AsmCtx
-    mov     rsi, r14               ; rsi = pointer to temp Symbol on stack
+    mov     rsi, rdi
+    mov     rdi, [rbx + PREP_ctx]
     call    symbol_add
     test    rax, rax
     jnz     .error
-
     xor     rax, rax
     jmp     .done
 
+.error_ident:
+    mov     rax, EXIT_DEFINE
+    jmp     .done
+
 .error:
-    mov     rax, EXIT_ERROR
+    test    rax, rax
+    jnz     .done
+    mov     rax, EXIT_DEFINE
+
 .done:
-    add     rsp, (TOKEN_SIZE * 2) + SYMBOL_SIZE
+    add     rsp, SYMBOL_SIZE
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
     epilogue
-    ret
-
-.expected_ident:
-    mov     rax, EXIT_ERROR
-    jmp     .done
-
-;*
-; * [prep_capture_greedy]
-; ;
-prep_capture_greedy:
-    prologue
-    push    rbx
-    push    r12
-    push    r13
-    push    r14
-    push    r15
-    push    rax                    ; Alignment
-    
-    mov     rbx, rdi               ; rbx = PrepState
-    mov     r15, rsi               ; r15 = param index
-    mov     r13, rdx               ; r13 = MACROEXP struct
-    mov     r12, [rbx + PREP_lexer]
-    
-    ; 1. Find the end of the line in the current lexer buffer
-    mov     r8, [r12 + LEXER_pos]  ; start
-    mov     r9, r8                 ; current
-.find_eol:
-    cmp     r9, [r12 + LEXER_end]
-    jge     .found_eol
-    movzx   rax, byte [r9]
-    cmp     al, 10                 ; LF
-    je      .found_eol
-    inc     r9
-    jmp     .find_eol
-
-.found_eol:
-    ; length = r9 - r8
-    mov     rdx, r9
-    sub     rdx, r8                ; rdx = length
-    
-    push    r8                     ; [rsp + 8] = start
-    push    rdx                    ; [rsp] = length
-    
-    ; 2. Allocate and copy
-    mov     rdi, [rbx + PREP_arena]
-    mov     rsi, [rsp]             ; length
-    inc     rsi                    ; +1 for null
-    call    arena_alloc
-    test    rax, rax
-    jnz     .error
-    mov     r10, rdx               ; r10 = dst
-    
-    mov     rdi, r10
-    mov     rsi, [rsp + 8]         ; start
-    mov     rdx, [rsp]             ; length
-    mov     rcx, rdx
-    rep     movsb
-    mov     byte [rdi], 0          ; null terminate
-    
-    ; 3. Update lexer position (consume the text, but not the newline)
-    mov     rax, [rsp + 8]         ; start
-    add     rax, [rsp]             ; + length = current
-    mov     [r12 + LEXER_pos], rax
-    
-    ; 4. Create string token
-    mov     rdi, [rbx + PREP_arena]
-    mov     rsi, TOKEN_SIZE
-    call    arena_alloc
-    test    rax, rax
-    jnz     .error
-    mov     byte [rdx + TOKEN_kind], TOK_STRING
-    mov     [rdx + TOKEN_value], r10
-    
-    ; 5. Store in macro params
-    mov     rcx, [r13 + MACROEXP_params]
-    mov     [rcx + r15 * 8], rdx
-    
-    xor     rax, rax
-    jmp     .done
-
-.error:
-    mov     rax, EXIT_ERROR
-    
-.done:
-    add     rsp, 16                ; clean up start/length on stack
-    pop     rcx
-    pop     r15
-    pop     r14
-    pop     r13
-    pop     r12
-    pop     rbx
-    epilogue
-    ret
-
 
 ; ---- prep_handle_if ---------------------
 ;
@@ -1620,30 +2856,25 @@ prep_handle_if:
 
     ; 2. Evaluate expression
     mov     rdi, rbx
+    call    prep_drop_stale_newline
+    mov     rdi, rbx
     extern  parser_evaluate_expression
     call    parser_evaluate_expression
     test    rax, rax
     jnz     .done
-    
-    ; 3. Evaluate boolean result
+
+    ; 3. Push the level with the result
+    xor     esi, esi
     test    rdx, rdx
-    jnz     .condition_true
-
-    ; 4. Condition false, begin skipping
-    inc     byte [rbx + PREP_skip_depth]
-    inc     byte [rbx + PREP_depth]
-    xor     rax, rax
-    jmp     .done
-
-.condition_true:
-    inc     byte [rbx + PREP_depth]
-    xor     rax, rax
+    setne   sil
+    mov     rdi, rbx
+    call    prep_cond_enter
     jmp     .done
 
 .already_skipping:
-    inc     byte [rbx + PREP_skip_depth]
-    inc     byte [rbx + PREP_depth]
-    xor     rax, rax
+    xor     esi, esi
+    mov     rdi, rbx
+    call    prep_cond_enter
 
 .done:
     pop     r12
@@ -1770,19 +3001,9 @@ prep_handle_else:
     ; If skip_depth > 1, an outer level is skipping, so %else doesn't matter.
     ; If skip_depth == 0, the current level was taken, so now we skip.
     
-    mov     al, [rbx + PREP_skip_depth]
-    cmp     al, 0
-    je      .was_taken
-    cmp     al, 1
-    je      .was_skipped
-    jmp     .done                  ; skip_depth > 1, keep skipping
-
-.was_taken:
-    inc     byte [rbx + PREP_skip_depth]
-    jmp     .done
-
-.was_skipped:
-    dec     byte [rbx + PREP_skip_depth]
+    mov     rdi, rbx
+    mov     esi, 1                 ; %else always "matches" if nothing did yet
+    call    prep_cond_branch
 
 .done:
     xor     rax, rax
@@ -2061,19 +3282,25 @@ macro_handle_def:
     mov     [r15 + MACRO_max_params], al
 
     ; 4. Capture tokens until %endmacro
+    ; The body must be one contiguous token array, so reserve it up front:
+    ; lexer_next allocates token value strings from this same arena, and
+    ; allocating the slots one at a time would interleave them with strings.
     mov     rdi, [rbx + PREP_arena]
-    mov     rax, [rdi + ARENA_ptr]
-    mov     [r15 + MACRO_tokens], rax
+    mov     rsi, MACRO_BODY_CAPACITY * TOKEN_SIZE
+    call    arena_alloc
+    test    rax, rax
+    jnz     .error
+    mov     [r15 + MACRO_tokens], rdx
     xor     r14, r14               ; r14 = token count
     mov     r13, 1                 ; r13 = nesting depth
 
 .capture_loop:
-    mov     rdi, [rbx + PREP_arena]
-    mov     rsi, TOKEN_SIZE
-    call    arena_alloc
-    test    rax, rax
-    jnz     .error
-    mov     r12, rdx               ; r12 = current token slot
+    cmp     r14, MACRO_BODY_CAPACITY
+    jge     .error_macro_def       ; body exceeds the reserved capacity
+    mov     r12, [r15 + MACRO_tokens]
+    mov     rax, r14
+    imul    rax, TOKEN_SIZE
+    add     r12, rax               ; r12 = current token slot
 
     mov     rdi, [rbx + PREP_lexer]
     mov     rsi, r12
@@ -2197,22 +3424,15 @@ prep_handle_rep:
     
     mov     rbx, rdi               ; rbx = PREP state
 
-    ; 1. Get repeat count
-    mov     rdi, [rbx + PREP_lexer]
-    sub     rsp, TOKEN_SIZE
-    mov     rsi, rsp
-    call    lexer_next
+    ; 1. Get repeat count. It is an expression, not just a literal:
+    ;    "%rep %%len" drives compile_time_hash.
+    mov     rdi, rbx
+    call    prep_drop_stale_newline
+    mov     rdi, rbx
+    call    parser_evaluate_expression
     test    rax, rax
     jnz     .error
-    
-    cmp     byte [rsp + TOKEN_kind], TOK_NUMBER
-    jne     .error
-    
-    mov     rdi, [rsp + TOKEN_value]
-    mov     rsi, [rsp + TOKEN_len]
-    call    str_to_int
     mov     r14, rdx               ; r14 = count
-    add     rsp, TOKEN_SIZE        ; Clean up temp token
 
     ; 2. Allocate anonymous MACRO struct
     mov     rdi, [rbx + PREP_arena]
@@ -2230,36 +3450,34 @@ prep_handle_rep:
     mov     qword [rbp - 56], 0    ; Total token count = 0
     xor     r13, r13               ; Nesting depth = 0
 
-    ; Record where the body starts
+    ; Reserve the body as one contiguous block: lexer_next allocates token
+    ; value strings from this same arena, so slots taken one at a time would
+    ; be interleaved with those strings.
     mov     rdi, [rbx + PREP_arena]
-    mov     rsi, 0                 ; zero-size alloc to get current pointer
+    mov     rsi, REP_BODY_CAPACITY * TOKEN_SIZE
     call    arena_alloc
+    test    rax, rax
+    jnz     .error
     mov     [r15 + MACRO_tokens], rdx
 
 .capture:
-    ; Check for EOF
-    mov     rdi, [rbx + PREP_lexer]
-    sub     rsp, TOKEN_SIZE
-    mov     rsi, rsp
-    call    lexer_peek
-    mov     al, [rsp + TOKEN_kind]
-    add     rsp, TOKEN_SIZE
-    cmp     al, TOK_EOF
-    je      .error_eof
 
-    ; Allocate slot for token
-    mov     rdi, [rbx + PREP_arena]
-    mov     rsi, TOKEN_SIZE
-    call    arena_alloc
-    test    rax, rax
-    jnz     .error
-    mov     r12, rdx               ; r12 = current token slot
-    
-    mov     rdi, [rbx + PREP_lexer]
+    ; Point at the next slot in the reserved body block
+    mov     rax, [rbp - 56]
+    cmp     rax, REP_BODY_CAPACITY
+    jge     .error
+    imul    rax, TOKEN_SIZE
+    mov     r12, [r15 + MACRO_tokens]
+    add     r12, rax               ; r12 = current token slot
+
+    mov     rdi, rbx
     mov     rsi, r12
-    call    lexer_next
+    call    prep_raw_next
     test    rax, rax
     jnz     .error
+
+    cmp     byte [r12 + TOKEN_kind], TOK_EOF
+    je      .error_eof
 
     ; Check for % directive
     cmp     byte [r12 + TOKEN_kind], TOK_DIRECTIVE

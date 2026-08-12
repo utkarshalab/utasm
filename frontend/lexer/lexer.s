@@ -21,6 +21,9 @@ extern mem_zero
 extern str_is_hex_digit
 extern str_is_ident_char
 extern str_utf8_decode
+extern str_len
+extern str_int_to_str
+extern symbol_find
 
 ; ============================================================================
 ; LEXER
@@ -199,7 +202,20 @@ lexer_next:
     je      .lex_char
 
     cmp     rcx, '%'               ; directive
-    je      .lex_directive
+    jne     .not_percent
+    mov     r10, [rbx + LEXER_pos]
+    lea     r11, [r10 + 1]
+    cmp     r11, [rbx + LEXER_end]
+    jge     .lex_directive
+    ; "%[NAME]" is a value, "%+" pastes tokens, "%$name" is a context local
+    cmp     byte [r11], '['
+    je      .lex_interp_value
+    cmp     byte [r11], '+'
+    je      .lex_paste
+    cmp     byte [r11], '$'
+    je      .lex_ctx_local
+    jmp     .lex_directive
+.not_percent:
 
     ; identifier, label, or number
     movzx   eax, byte [lexer_char_props + rcx]
@@ -380,12 +396,34 @@ lexer_next:
 .emit_single_amp:
     call    .token_begin
     mov     byte [r12 + TOKEN_kind], TOK_AMPERSAND
-    jmp     .advance_single
+    mov     cl, '&'
+    mov     r14b, TOK_AND
+    jmp     .maybe_doubled
 
 .emit_single_pipe:
     call    .token_begin
     mov     byte [r12 + TOKEN_kind], TOK_PIPE
-    jmp     .advance_single
+    mov     cl, '|'
+    mov     r14b, TOK_OR
+
+; A doubled '&' or '|' is the logical operator. CL holds the character and
+; R14B the token kind to emit for the pair.
+.maybe_doubled:
+    mov     r13, [rbx + LEXER_pos]
+    mov     r10, [rbx + LEXER_end]
+    dec     r10
+    cmp     r13, r10
+    jge     .advance_single
+    cmp     byte [r13 + 1], cl
+    jne     .advance_single
+
+    mov     byte [r12 + TOKEN_kind], r14b
+    add     qword [rbx + LEXER_pos], 2
+    add     word  [rbx + LEXER_col],  2
+    mov     word  [r12 + TOKEN_len],  2
+    xor     rax, rax
+    mov     rdx, r12
+    jmp     .done
 
 .emit_single_caret:
     call    .token_begin
@@ -452,10 +490,23 @@ lexer_next:
     jge     .emit_single_lt
     movzx   rcx, byte [r13 + 1]
     cmp     rcx, '<'
-    jne     .emit_single_lt
-    
+    jne     .check_le
+
     ; It is <<
     mov     byte [r12 + TOKEN_kind], TOK_LSHIFT
+    add     qword [rbx + LEXER_pos], 2
+    add     word  [rbx + LEXER_col],  2
+    mov     word  [r12 + TOKEN_len],  2
+    xor     rax, rax
+    mov     rdx, r12
+    jmp     .done
+
+.check_le:
+    cmp     rcx, '='
+    jne     .emit_single_lt
+
+    ; It is <=
+    mov     byte [r12 + TOKEN_kind], TOK_LE
     add     qword [rbx + LEXER_pos], 2
     add     word  [rbx + LEXER_col],  2
     mov     word  [r12 + TOKEN_len],  2
@@ -476,10 +527,23 @@ lexer_next:
     jge     .emit_single_gt
     movzx   rcx, byte [r13 + 1]
     cmp     rcx, '>'
-    jne     .emit_single_gt
-    
+    jne     .check_ge
+
     ; It is >>
     mov     byte [r12 + TOKEN_kind], TOK_RSHIFT
+    add     qword [rbx + LEXER_pos], 2
+    add     word  [rbx + LEXER_col],  2
+    mov     word  [r12 + TOKEN_len],  2
+    xor     rax, rax
+    mov     rdx, r12
+    jmp     .done
+
+.check_ge:
+    cmp     rcx, '='
+    jne     .emit_single_gt
+
+    ; It is >=
+    mov     byte [r12 + TOKEN_kind], TOK_GE
     add     qword [rbx + LEXER_pos], 2
     add     word  [rbx + LEXER_col],  2
     mov     word  [r12 + TOKEN_len],  2
@@ -588,6 +652,20 @@ lexer_next:
     jmp     .malformed_utf8
 
 .lex_ident_done:
+    ; An identifier run that stops at "%[" continues through interpolation,
+    ; e.g. REG_ZMM%[i] is one identifier whose text depends on i.
+    mov     r10, [rbx + LEXER_pos]
+    cmp     r10, [rbx + LEXER_end]
+    jge     .lex_ident_plain
+    cmp     byte [r10], '%'
+    jne     .lex_ident_plain
+    lea     r11, [r10 + 1]
+    cmp     r11, [rbx + LEXER_end]
+    jge     .lex_ident_plain
+    cmp     byte [r11], '['
+    je      .lex_ident_interp
+
+.lex_ident_plain:
     ; length = pos - start
     mov     r10, [rbx + LEXER_pos]
     sub     r10, r13                   ; r10 = length
@@ -638,6 +716,171 @@ lexer_next:
     mov     rdx, r12
     jmp     .done
 
+; ---- %+ token paste -------------------------
+;
+; Emitted as its own token; the preprocessor joins the tokens either side of
+; it while serving a macro body.
+;
+.lex_paste:
+    call    .token_begin
+    add     qword [rbx + LEXER_pos], 2
+    add     word  [rbx + LEXER_col], 2
+    mov     byte [r12 + TOKEN_kind], TOK_CONCAT
+    mov     qword [r12 + TOKEN_value], 0
+    xor     rax, rax
+    mov     rdx, r12
+    jmp     .done
+
+; ---- %$name context local -------------------
+;
+; Kept as raw text and rewritten to "__ctxN$name" when the token is served,
+; because which context is innermost depends on the expansion, not the file.
+;
+.lex_ctx_local:
+    call    .token_begin
+    mov     r13, [rbx + LEXER_pos]         ; text starts at '%'
+    add     qword [rbx + LEXER_pos], 2     ; skip "%$"
+    add     word  [rbx + LEXER_col], 2
+
+.ctx_local_loop:
+    mov     r10, [rbx + LEXER_pos]
+    cmp     r10, [rbx + LEXER_end]
+    jge     .ctx_local_done
+    movzx   rdi, byte [r10]
+    call    str_is_ident_char
+    cmp     rax, TRUE
+    jne     .ctx_local_done
+    inc     qword [rbx + LEXER_pos]
+    inc     word  [rbx + LEXER_col]
+    jmp     .ctx_local_loop
+
+.ctx_local_done:
+    mov     r10, [rbx + LEXER_pos]
+    sub     r10, r13
+    mov     rdi, [rbx + LEXER_arena]
+    mov     rsi, r13
+    mov     rdx, r10
+    call    arena_alloc_string
+    test    rax, rax
+    jnz     .fail
+
+    mov     [r12 + TOKEN_value], rdx
+    mov     word [r12 + TOKEN_len], r10w
+    mov     byte [r12 + TOKEN_kind], TOK_IDENT
+    or      byte [r12 + TOKEN_flags], TOK_FLAG_INTERP
+    xor     rax, rax
+    mov     rdx, r12
+    jmp     .done
+
+; ---- standalone %[NAME] value ----------------
+;
+; Produces a token holding the raw "%[NAME]" text. The value is substituted
+; during expansion, not here: a %rep body is lexed once but replayed many
+; times, and the named symbol usually changes between iterations.
+;
+.lex_interp_value:
+    call    .token_begin
+    mov     r13, [rbx + LEXER_pos]         ; text starts at '%'
+    add     qword [rbx + LEXER_pos], 2     ; skip "%["
+    add     word  [rbx + LEXER_col], 2
+
+.interp_val_loop:
+    mov     r10, [rbx + LEXER_pos]
+    cmp     r10, [rbx + LEXER_end]
+    jge     .interp_val_done
+    cmp     byte [r10], ']'
+    je      .interp_val_close
+    inc     qword [rbx + LEXER_pos]
+    inc     word  [rbx + LEXER_col]
+    jmp     .interp_val_loop
+
+.interp_val_close:
+    inc     qword [rbx + LEXER_pos]
+    inc     word  [rbx + LEXER_col]
+
+.interp_val_done:
+    mov     r10, [rbx + LEXER_pos]
+    sub     r10, r13
+    mov     rdi, [rbx + LEXER_arena]
+    mov     rsi, r13
+    mov     rdx, r10
+    call    arena_alloc_string
+    test    rax, rax
+    jnz     .fail
+
+    mov     [r12 + TOKEN_value], rdx
+    mov     word [r12 + TOKEN_len], r10w
+    mov     byte [r12 + TOKEN_kind], TOK_NUMBER
+    or      byte [r12 + TOKEN_flags], TOK_FLAG_INTERP
+    xor     rax, rax
+    mov     rdx, r12
+    jmp     .done
+
+; ---- identifier with %[...] interpolation ----
+;
+; Scans a name such as REG_ZMM%[i] as a single identifier and keeps the raw
+; text; the preprocessor substitutes each %[...] when the token is served.
+;
+.lex_ident_interp:
+.interp_scan:
+    mov     r10, [rbx + LEXER_pos]
+    cmp     r10, [rbx + LEXER_end]
+    jge     .interp_finish
+    movzx   rdi, byte [r10]
+
+    cmp     dil, '%'
+    je      .interp_maybe_open
+
+    call    str_is_ident_char
+    cmp     rax, TRUE
+    jne     .interp_finish
+    inc     qword [rbx + LEXER_pos]
+    inc     word  [rbx + LEXER_col]
+    jmp     .interp_scan
+
+.interp_maybe_open:
+    lea     r11, [r10 + 1]
+    cmp     r11, [rbx + LEXER_end]
+    jge     .interp_finish
+    cmp     byte [r11], '['
+    jne     .interp_finish
+
+    ; consume "%[" ... "]"
+    add     qword [rbx + LEXER_pos], 2
+    add     word  [rbx + LEXER_col], 2
+.interp_name_loop:
+    mov     r10, [rbx + LEXER_pos]
+    cmp     r10, [rbx + LEXER_end]
+    jge     .interp_finish
+    cmp     byte [r10], ']'
+    je      .interp_name_done
+    inc     qword [rbx + LEXER_pos]
+    inc     word  [rbx + LEXER_col]
+    jmp     .interp_name_loop
+
+.interp_name_done:
+    inc     qword [rbx + LEXER_pos]
+    inc     word  [rbx + LEXER_col]
+    jmp     .interp_scan
+
+.interp_finish:
+    mov     r10, [rbx + LEXER_pos]
+    sub     r10, r13                       ; raw text length
+    mov     rdi, [rbx + LEXER_arena]
+    mov     rsi, r13
+    mov     rdx, r10
+    call    arena_alloc_string
+    test    rax, rax
+    jnz     .fail
+
+    mov     [r12 + TOKEN_value], rdx
+    mov     word [r12 + TOKEN_len], r10w
+    mov     byte [r12 + TOKEN_kind], TOK_IDENT
+    or      byte [r12 + TOKEN_flags], TOK_FLAG_INTERP
+    xor     rax, rax
+    mov     rdx, r12
+    jmp     .done
+
 ; ---- number -----------------------------
 ;
 ; Reads numeric literal into arena string.
@@ -648,6 +891,7 @@ lexer_next:
     call    .token_begin
     mov     r13, [rbx + LEXER_pos]     ; start of number
     xor     r14, r14                   ; r14 = float flag (0=int, 1=float)
+    xor     r15, r15                   ; end of digits, when a suffix follows
 
 .lex_number_loop:
     mov     r10, [rbx + LEXER_pos]
@@ -687,12 +931,38 @@ lexer_next:
     cmp     rdi, 'P'
     je      .is_float
     
-    ; signs can appear after e/p
+    ; signs can appear after e/p, and only there: otherwise "4+8" would lex
+    ; as a single number token
+    ; integer size suffixes (1ULL, 32u, 5L) are consumed but are not part
+    ; of the numeric text handed to str_to_int
+    cmp     rdi, 'u'
+    je      .lex_number_suffix
+    cmp     rdi, 'U'
+    je      .lex_number_suffix
+    cmp     rdi, 'l'
+    je      .lex_number_suffix
+    cmp     rdi, 'L'
+    je      .lex_number_suffix
+
     cmp     rdi, '+'
-    je      .lex_number_advance
+    je      .lex_number_sign
     cmp     rdi, '-'
+    je      .lex_number_sign
+
+    jmp     .lex_number_done
+
+.lex_number_sign:
+    cmp     r10, r13               ; need a preceding character
+    jbe     .lex_number_done
+    movzx   rax, byte [r10 - 1]
+    cmp     al, 'e'
     je      .lex_number_advance
-    
+    cmp     al, 'E'
+    je      .lex_number_advance
+    cmp     al, 'p'
+    je      .lex_number_advance
+    cmp     al, 'P'
+    je      .lex_number_advance
     jmp     .lex_number_done
 
 .is_float:
@@ -704,8 +974,22 @@ lexer_next:
     inc     word  [rbx + LEXER_col]
     jmp     .lex_number_loop
 
+.lex_number_suffix:
+    ; remember where the digits stopped, then swallow the suffix letters
+    test    r15, r15
+    jnz     .lex_number_suffix_go
+    mov     r15, [rbx + LEXER_pos]
+.lex_number_suffix_go:
+    inc     qword [rbx + LEXER_pos]
+    inc     word  [rbx + LEXER_col]
+    jmp     .lex_number_loop
+
 .lex_number_done:
     mov     r10, [rbx + LEXER_pos]
+    test    r15, r15
+    jz      .lex_number_len
+    mov     r10, r15                   ; text ends before the suffix
+.lex_number_len:
     sub     r10, r13                   ; length
 
     ; copy raw number string into arena
@@ -1011,19 +1295,36 @@ lexer_next:
     inc     qword [rbx + LEXER_pos]
     inc     word  [rbx + LEXER_col]
 
+    ; A character constant may hold up to eight characters. NASM packs them
+    ; little-endian, so 'abcd' == 0x64636261 and the first one is the LSB.
+    xor     r13, r13               ; accumulated value
+    xor     r9, r9                 ; bit offset of the next character
+
+.lex_char_next:
     mov     r11, [rbx + LEXER_pos]
     cmp     r11, [rbx + LEXER_end]
     jge     .lex_char_unterminated
 
     movzx   rcx, byte [r11]
-    cmp     rcx, '\'               ; escape?
-    je      .lex_char_escape
+    cmp     rcx, 0x27              ; closing quote ends the literal
+    je      .lex_char_closing
 
+    cmp     rcx, '\'               ; escape?
+    jne     .lex_char_regular
+
+    ; '\' is a literal backslash: only treat it as an escape when another
+    ; character follows it before the closing quote.
+    lea     r10, [r11 + 1]
+    cmp     r10, [rbx + LEXER_end]
+    jge     .lex_char_escape
+    cmp     byte [r10], 0x27       ; next char is the closing quote?
+    jne     .lex_char_escape
+
+.lex_char_regular:
     ; regular character
-    mov     r13, rcx
     inc     qword [rbx + LEXER_pos]
     inc     word  [rbx + LEXER_col]
-    jmp     .lex_char_closing
+    jmp     .lex_char_accum
 
 .lex_char_escape:
     inc     qword [rbx + LEXER_pos]
@@ -1043,28 +1344,30 @@ lexer_next:
     je      .char_esc_t
     cmp     rcx, '0'
     je      .char_esc_0
-    mov     r13, rcx               ; literal
-    jmp     .lex_char_closing
+    jmp     .lex_char_accum        ; literal
 
 .char_esc_n:
-    mov     r13, 10
-    jmp     .lex_char_closing
+    mov     rcx, 10
+    jmp     .lex_char_accum
 .char_esc_t:
-    mov     r13, 9
-    jmp     .lex_char_closing
+    mov     rcx, 9
+    jmp     .lex_char_accum
 .char_esc_0:
-    xor     r13, r13
-    jmp     .lex_char_closing
+    xor     rcx, rcx
+
+.lex_char_accum:
+    mov     r10, rcx
+    and     r10, 0xFF
+    cmp     r9, 64
+    jge     .lex_char_next         ; anything past eight characters is dropped
+    mov     rcx, r9
+    shl     r10, cl
+    or      r13, r10
+    add     r9, 8
+    jmp     .lex_char_next
 
 .lex_char_closing:
-    ; expect closing '
-    mov     r11, [rbx + LEXER_pos]
-    cmp     r11, [rbx + LEXER_end]
-    jge     .lex_char_unterminated
-    movzx   rcx, byte [r11]
-    cmp     rcx, 0x27
-    jne     .lex_char_unterminated
-
+    ; consume the closing '
     inc     qword [rbx + LEXER_pos]
     inc     word  [rbx + LEXER_col]
 

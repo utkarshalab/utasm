@@ -89,38 +89,43 @@ elf64_emit:
 
     ; ---- 2. Write Program Headers (if standalone) ----
     IF byte [r12 + ASMCTX_standalone], e, 1
+        mov     rdi, r12
+        mov     esi, r13d
         call    elf64_write_phdrs
         check_err
         ENDIF
 
     ; ---- 3. Write .text section ----
+    ; A source file may define no code at all, so .text can be absent.
     mov     rdi, r12
     mov     rsi, SEC_TEXT
     call    asmctx_get_section
-    movzx   ebx, word [rdx + SECTION_index] ; ebx = index
-    
-    ; Record start
-    mov     edi, r13d
-    xor     rsi, rsi
-    mov     rdx, 1
-    call    io_lseek
-    mov     rax, rbx
-    shl     rax, 4
-    mov     [rsp + rax], rdx
-    
-    call    elf64_write_text_section
-    check_err
-    
-    ; Record end/size
-    mov     edi, r13d
-    xor     rsi, rsi
-    mov     rdx, 1
-    call    io_lseek
-    mov     rax, rbx
-    shl     rax, 4
-    mov     r11, [rsp + rax]
-    sub     rdx, r11
-    mov     [rsp + rax + 8], rdx
+    IF rax, e, 0
+        movzx   ebx, word [rdx + SECTION_index] ; ebx = index
+
+        ; Record start
+        mov     edi, r13d
+        xor     rsi, rsi
+        mov     rdx, 1
+        call    io_lseek
+        mov     rax, rbx
+        shl     rax, 4
+        mov     [rsp + rax], rdx
+
+        call    elf64_write_text_section
+        check_err
+
+        ; Record end/size
+        mov     edi, r13d
+        xor     rsi, rsi
+        mov     rdx, 1
+        call    io_lseek
+        mov     rax, rbx
+        shl     rax, 4
+        mov     r11, [rsp + rax]
+        sub     rdx, r11
+        mov     [rsp + rax + 8], rdx
+        ENDIF
 
     ; ---- 4. Write .data section ----
     ; Ensure .data is aligned correctly in file (A88)
@@ -162,6 +167,45 @@ elf64_emit:
         mov     [rsp + rax + 8], rdx
     ENDIF
 
+    ; ---- 4b. Write .rodata section ----
+    mov     rdi, r12
+    mov     rsi, SEC_RODATA
+    call    asmctx_get_section
+    IF rax, e, 0
+        movzx   ebx, word [rdx + SECTION_index] ; ebx = index
+
+        mov     rsi, [rdx + SECTION_align]
+        IF rsi, e, 0
+            mov rsi, 8
+        ENDIF
+        mov     edi, r13d
+        call    elf64_align_file
+        check_err
+
+        ; Record start
+        mov     edi, r13d
+        xor     rsi, rsi
+        mov     rdx, 1
+        call    io_lseek
+        mov     rax, rbx
+        shl     rax, 4
+        mov     [rsp + rax], rdx
+
+        call    elf64_write_rodata_section
+        check_err
+
+        ; Record end/size
+        mov     edi, r13d
+        xor     rsi, rsi
+        mov     rdx, 1
+        call    io_lseek
+        mov     rax, rbx
+        shl     rax, 4
+        mov     r11, [rsp + rax]
+        sub     rdx, r11
+        mov     [rsp + rax + 8], rdx
+    ENDIF
+
     ; Ensure .bss is aligned (A88)
     mov     rdi, r12
     mov     rsi, SEC_BSS
@@ -190,10 +234,13 @@ elf64_emit:
     ENDIF
 
     ; ---- 4.5 Write Section Groups (A57) ----
+    mov     rdi, r12
+    mov     esi, r13d
     call    elf64_write_groups
     check_err
 
     ; ---- 5. Write Metadata sections ----
+    mov     rdi, r12
     call    elf64_prepare_strtab
     check_err
 
@@ -211,7 +258,9 @@ elf64_emit:
     mov     rax, rbx
     shl     rax, 4
     mov     [rsp + rax], rdx
-    
+
+    mov     rdi, r12
+    mov     esi, r13d
     call    elf64_write_symtab
     check_err
     
@@ -468,16 +517,17 @@ elf64_resolve_entry:
     
     mov     r12, rdi ; AsmCtx
     
-    mov     rdi, [r12 + ASMCTX_symtab]
+    mov     rdi, r12               ; symbol_find takes the AsmCtx
     lea     rsi, [rel .str_start]
     extern  symbol_find
     call    symbol_find
     IF rax, e, EXIT_OK
         mov     r10, rdx ; SYMBOL*
         mov     rax, [r10 + SYMBOL_value]
-        
+
         ; Add section base address
         movzx   r11, word [r10 + SYMBOL_section]
+        dec     r11                ; ELF index is 1-based; array is 0-based
         mov     r14, [r12 + ASMCTX_sections]
         mov     r13, [r14 + r11 * 8] ; SECTION*
         add     rax, [r13 + SECTION_addr]
@@ -759,6 +809,31 @@ elf64_write_data_section:
     epilogue
 
 ; ============================================================================
+; elf64_write_rodata_section
+; ============================================================================
+elf64_write_rodata_section:
+    prologue
+
+    mov     rdi, r12
+    mov     rsi, SEC_RODATA
+    call    asmctx_get_section
+    check_err
+    mov     r10, rdx
+
+    mov     edi, r13d
+    mov     rsi, [r10 + SECTION_data]
+    mov     rdx, [r10 + SECTION_size]
+    call    io_write
+    check_err
+
+    xor     rax, rax
+    jmp     .done
+.error:
+    mov     rax, EXIT_FILE_WRITE
+.done:
+    epilogue
+
+; ============================================================================
 ; elf64_prepare_strtab
 ; ============================================================================
 elf64_prepare_strtab:
@@ -786,20 +861,37 @@ elf64_prepare_strtab:
     mov     rsi, [r13 + SYMBOL_name]
     test    rsi, rsi
     jz      .next_outer
-    
+
+    ; Symbols that never reach .symtab need no name in .strtab either
+    mov     r8, r13
+    call    elf64_symbol_is_emitted
+    test    rax, rax
+    jz      .next_outer
+
     ; Check if this string appeared before index r14
     xor     rcx, rcx               ; j = 0
 .inner_loop:
     cmp     ecx, r14d
     jge     .is_unique
-    
+
     mov     rdi, rcx
     imul    rdi, SYMBOL_SIZE
     add     rdi, rbx                       ; rdi = SYMBOL*
     mov     rax, [rdi + SYMBOL_name]
     test    rax, rax
     jz      .next_inner
-    
+
+    ; Only compare against symbols that were themselves assigned a name index
+    mov     r8, rdi
+    push    rsi
+    push    rcx
+    call    elf64_symbol_is_emitted
+    pop     rcx
+    pop     rsi
+    test    rax, rax
+    jz      .next_inner
+    mov     rax, [r8 + SYMBOL_name]        ; reload: the check above used RAX
+
     ; Compare names
     push    rsi
     push    rcx
@@ -867,6 +959,37 @@ elf64_prepare_strtab:
 ; Each utasm SYMBOL maps to one Sym64 entry (24 bytes).
 ; Input  : r12 = AsmCtx, r13 = fd
 ;
+;*
+; * [elf64_symbol_is_emitted]
+; * Purpose: Decide whether a symbol belongs in .symtab at all.
+; *   Preprocessor constants, macros and struct definitions are assembly-time
+; *   values, not addresses. NASM does not emit them, nothing can relocate
+; *   against them, and emitting them made objects several times larger than
+; *   they need to be. Anything exported is kept regardless of kind.
+; * Input:
+; *   R8 = SYMBOL*
+; * Output:
+; *   RAX = 1 to emit, 0 to skip.  Clobbers RAX only.
+; ;
+elf64_symbol_is_emitted:
+    cmp     byte [r8 + SYMBOL_vis], VIS_LOCAL
+    jne     .emit                  ; exported: always visible to the linker
+    movzx   eax, byte [r8 + SYMBOL_kind]
+    cmp     al, SYM_CONSTANT
+    je      .skip
+    cmp     al, SYM_MACRO
+    je      .skip
+    cmp     al, SYM_STRUCT
+    je      .skip
+    cmp     al, SYM_STRUCT_FIELD
+    je      .skip
+.emit:
+    mov     rax, 1
+    ret
+.skip:
+    xor     rax, rax
+    ret
+
 elf64_write_symtab:
     prologue
     push    rbx
@@ -902,12 +1025,17 @@ elf64_write_symtab:
     mov     r10, r14
     imul    r10, SYMBOL_SIZE
     add     r10, r15                       ; r10 = SYMBOL*
+    mov     r8, r10
+    call    elf64_symbol_is_emitted
+    test    rax, rax
+    jz      .next_local
     IF byte [r10 + SYMBOL_vis], e, VIS_LOCAL
         mov     [r10 + SYMBOL_elf_idx], r11d
         call    .write_one_sym
         check_err
         inc     r11
         ENDIF
+.next_local:
     inc     r14
     jmp     .local_loop
 
@@ -916,19 +1044,30 @@ elf64_write_symtab:
     xor     r14, r14
 .global_loop:
     cmp     r14d, ebx
-    jge     .done
+    jge     .ok
     
     mov     r10, r14
     imul    r10, SYMBOL_SIZE
     add     r10, r15                       ; r10 = SYMBOL*
+    mov     r8, r10
+    call    elf64_symbol_is_emitted
+    test    rax, rax
+    jz      .next_global
     IF byte [r10 + SYMBOL_vis], ne, VIS_LOCAL
         mov     [r10 + SYMBOL_elf_idx], r11d
         call    .write_one_sym
         check_err
         inc     r11
         ENDIF
+.next_global:
     inc     r14
     jmp     .global_loop
+
+.ok:
+    ; Both loops can fall out here with RAX still holding a predicate result,
+    ; so the success code has to be set explicitly.
+    xor     rax, rax
+    jmp     .done
 
 .error:
     mov     rax, EXIT_FILE_WRITE
@@ -946,15 +1085,17 @@ elf64_write_symtab:
     push    rdi
     push    rsi
     push    rdx
-    
+    push    rcx                    ; io_write clobbers rcx/r11 (syscall)
+    push    r11                    ; r11 = caller's ELF symbol index
+
     mov     rdi, rsp
-    add     rdi, 24                ; back to scratch
+    add     rdi, 48                ; back to scratch (40 pushed + 8 return addr)
     mov     rsi, ELF64_SYM_SIZE
     call    mem_zero
-    
+
     ; st_name
     mov     eax, [r10 + SYMBOL_name_idx]
-    mov     [rsp + 24 + SYM64_NAME], eax
+    mov     [rsp + 48 + SYM64_NAME], eax
     
     ; st_info: (bind << 4)
     ; (kind == LABEL ? FUNC : OBJECT)
@@ -966,28 +1107,30 @@ elf64_write_symtab:
         ELSE
         or      al, STT_OBJECT
         ENDIF
-    mov     [rsp + 24 + SYM64_INFO], al
+    mov     [rsp + 48 + SYM64_INFO], al
     
     ; st_other: STV_DEFAULT (0)
-    mov     byte [rsp + 24 + SYM64_OTHER], 0
+    mov     byte [rsp + 48 + SYM64_OTHER], 0
     
     ; st_shndx
     movzx   eax, word [r10 + SYMBOL_section]
-    mov     [rsp + 24 + SYM64_SHNDX], ax
+    mov     [rsp + 48 + SYM64_SHNDX], ax
     
     ; st_value
     mov     rax, [r10 + SYMBOL_value]
-    mov     [rsp + 24 + SYM64_VALUE], rax
+    mov     [rsp + 48 + SYM64_VALUE], rax
     
     ; st_size
     mov     rax, [r10 + SYMBOL_size]
-    mov     [rsp + 24 + SYM64_SIZE], rax
+    mov     [rsp + 48 + SYM64_SIZE], rax
     
     mov     edi, r13d
-    lea     rsi, [rsp + 24]
+    lea     rsi, [rsp + 48]
     mov     rdx, ELF64_SYM_SIZE
     call    io_write
     
+    pop     r11
+    pop     rcx
     pop     rdx
     pop     rsi
     pop     rdi
@@ -1044,17 +1187,17 @@ elf64_write_strtab:
     ; Only write if this is the first occurrence (idx == r15)
     IF eax, e, r15d
         mov     rsi, [rdi + SYMBOL_name]
-        push    rax
+        push    rcx                    ; io_write clobbers rcx (syscall)
         mov     rdi, rsi
         call    str_len
         mov     rdx, rax
         inc     rdx
-        
+
         mov     edi, r13d
         call    io_write
+        pop     rcx
         check_err
-        pop     rax
-        
+
         add     r15, rdx
         ENDIF
 
@@ -1196,6 +1339,24 @@ elf64_write_groups:
 ; Writes .shstrtab â€” section name string table.
 ; Fixed set of names for the standard sections we emit.
 ;
+; The table itself is defined here rather than at the end of the file: the
+; size below is a difference of two labels, and a difference of two *forward*
+; references cannot be resolved in a single pass.
+[SECTION .rodata]
+shstrtab_data:
+    db 0                ; [0]  null (index 0 = unnamed)
+    db ".text", 0       ; [1]
+    db ".data", 0       ; [7]
+    db ".bss",  0       ; [13]
+    db ".symtab", 0     ; [18]
+    db ".strtab", 0     ; [26]
+    db ".shstrtab", 0   ; [34]
+    db ".rela.text", 0  ; [44]
+    db ".group", 0      ; [55]
+    db ".rodata", 0     ; [62]
+shstrtab_end:
+
+[SECTION .text]
 elf64_write_shstrtab:
     prologue
 
@@ -1249,8 +1410,10 @@ elf64_write_rela:
     
     ; r_info: (sym_index << 32)
     mov     rsi, [r15 + RELOC_sym]
-    mov     rdi, [r12 + ASMCTX_symtab]
+    mov     rdi, r12               ; symbol_find takes the AsmCtx
+    push    rcx                    ; loop index: the callee clobbers rcx
     call    symbol_find
+    pop     rcx
     IF rax, e, EXIT_OK
         mov     eax, [rdx + SYMBOL_elf_idx]
     ELSE
@@ -1272,7 +1435,9 @@ elf64_write_rela:
     mov     edi, r13d
     mov     rsi, rsp
     mov     rdx, ELF64_RELA_SIZE
+    push    rcx                    ; io_write clobbers rcx (syscall)
     call    io_write
+    pop     rcx
     check_err
 
     inc     ecx
@@ -1348,6 +1513,8 @@ elf64_write_shdrs:
         mov     dword [rsp + SHDR_NAME], 7  ; ".data"
     ELSEIF dl, e, 'b'
         mov     dword [rsp + SHDR_NAME], 13 ; ".bss"
+    ELSEIF dl, e, 'r'
+        mov     dword [rsp + SHDR_NAME], 62 ; ".rodata"
     ENDIF
     
     mov     eax, [rsi + SECTION_elf_type]
@@ -1382,9 +1549,11 @@ elf64_write_shdrs:
     mov     edi, r12d
     mov     rsi, rsp
     mov     rdx, ELF64_SHDR_SIZE
+    push    rcx                    ; io_write clobbers rcx (syscall)
     call    io_write
+    pop     rcx
     check_err
-    
+
     inc     ecx
     jmp     .sec_loop
     
@@ -1504,9 +1673,14 @@ elf64_write_shdrs:
     mov     rax, rcx
     imul    rax, SYMBOL_SIZE
     add     rax, rsi
-    IF byte [rax + SYMBOL_vis], e, VIS_LOCAL
+    mov     r8, rax
+    call    elf64_symbol_is_emitted
+    test    rax, rax
+    jz      .count_next
+    IF byte [r8 + SYMBOL_vis], e, VIS_LOCAL
         inc     r10
     ENDIF
+.count_next:
     inc     ecx
     jmp     .count_local
 .count_done:
@@ -1603,13 +1777,19 @@ elf64_write_shdrs:
         inc     eax                            ; NULL + User + Groups + SYMTAB
         mov     dword [rsp + SHDR_LINK], eax
         
-        ; Info = .text index
+        ; Info = .text index. A file can carry relocations without having a
+        ; .text section at all, and asmctx_get_section hands back a null
+        ; pointer for one it does not have.
         push    rcx
         push    rsi
         mov     rdi, rbx
         mov     rsi, SEC_TEXT
         call    asmctx_get_section
+        xor     eax, eax
+        test    rdx, rdx
+        jz      .no_text_for_rela
         movzx   eax, word [rdx + SECTION_index] ; eax = index of .text
+    .no_text_for_rela:
         pop     rsi
         pop     rcx
         mov     dword [rsp + SHDR_INFO], eax
@@ -1707,20 +1887,4 @@ elf64_align_file:
     pop     rbx
     epilogue
 
-; ============================================================================
-; Read-only data: .shstrtab content
-; ============================================================================
-[SECTION .rodata]
-
-shstrtab_data:
-    db 0                ; [0]  null (index 0 = unnamed)
-    db ".text", 0       ; [1]
-    db ".data", 0       ; [7]
-    db ".bss",  0       ; [13]
-    db ".symtab", 0     ; [18]
-    db ".strtab", 0     ; [26]
-    db ".shstrtab", 0   ; [34]
-    db ".rela.text", 0  ; [44]
-    db ".group", 0      ; [55]
-shstrtab_end:
 %define shstrtab_size (shstrtab_end - shstrtab_data)

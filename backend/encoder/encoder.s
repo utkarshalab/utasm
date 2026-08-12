@@ -44,6 +44,28 @@ amd64_encode_instruction:
     mov     dword [rbx + ASMCTX_inst_len], 0
     
     ; 0. VALIDATION: Check operand size consistency (A87: Hardened)
+    ; MOVSX/MOVSXD/MOVZX widen their source, so their operands differ by design
+    movzx   eax, word [r12 + INST_op_id]
+    cmp     ax, 1426               ; MOVSX
+    je      .no_size_check
+    cmp     ax, 1427               ; MOVSXD
+    je      .no_size_check
+    cmp     ax, 1430               ; MOVZX
+    je      .no_size_check
+
+    ; Shifts and rotates take their count in CL or as an imm8, so the two
+    ; operand widths differ by design as well
+    cmp     ax, 1647               ; SHL
+    je      .no_size_check
+    cmp     ax, 1650               ; SHR
+    je      .no_size_check
+    cmp     ax, 1625               ; SAR
+    je      .no_size_check
+    cmp     ax, 1612               ; ROL
+    je      .no_size_check
+    cmp     ax, 1613               ; ROR
+    je      .no_size_check
+
     movzx   ecx, byte [r12 + INST_nops]
     IF ecx, ge, 2
         lea     r10, [r12 + INST_op0]
@@ -104,6 +126,14 @@ amd64_encode_instruction:
     
     IF ax, e, 1391                 ; MOV
         call    amd64_encode_mov
+    ELSEIF ax, e, 1430             ; MOVZX
+        mov     r13, 0xB6
+        call    amd64_encode_movx
+    ELSEIF ax, e, 1426             ; MOVSX
+        mov     r13, 0xBE
+        call    amd64_encode_movx
+    ELSEIF ax, e, 1427             ; MOVSXD
+        call    amd64_encode_movsxd
     ELSEIF ax, e, 1356             ; LEA
         call    amd64_encode_lea
     ELSEIF ax, e, 1006             ; ADD
@@ -113,6 +143,14 @@ amd64_encode_instruction:
     ELSEIF ax, e, 1676             ; SUB
         mov     r13, 0x29
         mov r14, 5
+        call amd64_encode_arithmetic
+    ELSEIF ax, e, 1004             ; ADC
+        mov     r13, 0x11
+        mov r14, 2
+        call amd64_encode_arithmetic
+    ELSEIF ax, e, 1628             ; SBB
+        mov     r13, 0x19
+        mov r14, 3
         call amd64_encode_arithmetic
     ELSEIF ax, e, 1075             ; CMP
         mov     r13, 0x39
@@ -158,15 +196,13 @@ amd64_encode_instruction:
         call    amd64_encode_call
     ELSEIF ax, e, 1298             ; JMP
         call    amd64_encode_jmp
-    ELSEIF ax, ge, 3000            ; Jcc
-        IF ax, le, 3029
-            call    amd64_encode_jcc
-            ENDIF
+    ELSEIF_RANGE ax, 3000, 3015    ; Jcc (id = 3000 + condition code)
+        call    amd64_encode_jcc
     ELSEIF ax, e, 1611             ; RET
         call    amd64_encode_ret
     ELSEIF ax, e, 1583             ; PUSH
         mov     r13, 0x50
-        mov r14, 0x35
+        mov r14, 0xFF          ; PUSH r/m is FF /6
         mov r15, 6
         call amd64_encode_push_pop
     ELSEIF ax, e, 1534             ; POP
@@ -197,37 +233,29 @@ amd64_encode_instruction:
         call amd64_encode_unary
     ELSEIF ax, e, 1276             ; IMUL
         call    amd64_encode_imul
-    ELSEIF ax, ge, 4000            ; CMOVcc & SETcc
+    ELSEIF ax, e, 2152             ; XCHG
+        call    amd64_encode_xchg
+    ELSEIF_RANGE ax, 4000, 4031    ; CMOVcc & SETcc
         IF ax, le, 4015
             call amd64_encode_cmovcc
-        ELSEIF ax, le, 4031
+        ELSE
             call amd64_encode_setcc
             ENDIF
-    ELSEIF ax, ge, 1418            ; MOVS - MOVSW
-        IF ax, le, 1425
-            mov r13, 0xA4
-            call amd64_encode_string
-            ENDIF
-    ELSEIF ax, ge, 1668            ; STOS - STOSW
-        IF ax, le, 1672
-            mov r13, 0xAA
-            call amd64_encode_string
-            ENDIF
-    ELSEIF ax, ge, 1368            ; LODS - LODSW
-        IF ax, le, 1372
-            mov r13, 0xAC
-            call amd64_encode_string
-            ENDIF
-    ELSEIF ax, ge, 1629            ; SCAS - SCASW
-        IF ax, le, 1632
-            mov r13, 0xAE
-            call amd64_encode_string
-            ENDIF
-    ELSEIF ax, ge, 1078            ; CMPS - CMPSW
-        IF ax, le, 1083
-            mov r13, 0xA6
-            call amd64_encode_string
-            ENDIF
+    ELSEIF_RANGE ax, 1418, 1425    ; MOVS - MOVSW
+        mov r13, 0xA4
+        call amd64_encode_string
+    ELSEIF_RANGE ax, 1668, 1672    ; STOS - STOSW
+        mov r13, 0xAA
+        call amd64_encode_string
+    ELSEIF_RANGE ax, 1368, 1372    ; LODS - LODSW
+        mov r13, 0xAC
+        call amd64_encode_string
+    ELSEIF_RANGE ax, 1629, 1632    ; SCAS - SCASW
+        mov r13, 0xAE
+        call amd64_encode_string
+    ELSEIF_RANGE ax, 1078, 1083    ; CMPS - CMPSW
+        mov r13, 0xA6
+        call amd64_encode_string
     ELSEIF ax, e, 1119             ; DIV
         mov     r14, 6
         call amd64_encode_unary
@@ -280,11 +308,9 @@ amd64_encode_instruction:
         call amd64_emit_prefixes
         mov     al, 0xAB
         call amd64_emit_byte
-    ELSEIF ax, ge, 1630            ; SCAS
-        IF ax, le, 1632
-            sub ax, 1630
-            ; logic for 0xA6/0xA7
-            ENDIF
+    ELSEIF_RANGE ax, 1630, 1632    ; SCAS
+        sub ax, 1630
+        ; logic for 0xA6/0xA7
     ELSEIF ax, e, 1647             ; SHL/SAL
         mov     r14, 4
         call amd64_encode_shift
@@ -318,7 +344,7 @@ amd64_encode_instruction:
         call amd64_emit_byte
         mov al, 0xA2
         call amd64_emit_byte
-    ELSEIF ax, e, 1591             ; RDTSC
+    ELSEIF ax, e, 1604             ; RDTSC
         mov     al, 0x0F
         call amd64_emit_byte
         mov al, 0x31
@@ -864,14 +890,14 @@ amd64_encode_instruction:
         call amd64_emit_byte
         mov     al, 0xE8
         call amd64_emit_byte
-    ELSEIF ax, e, 1642             ; SFENCE
+    ELSEIF ax, e, 1637             ; SFENCE
         mov     al, 0x0F
         call amd64_emit_byte
         mov al, 0xAE
         call amd64_emit_byte
         mov     al, 0xF8
         call amd64_emit_byte
-    ELSEIF ax, e, 1380             ; MFENCE
+    ELSEIF ax, e, 1385             ; MFENCE
         mov     al, 0x0F
         call amd64_emit_byte
         mov al, 0xAE
@@ -913,16 +939,14 @@ amd64_encode_instruction:
         call amd64_encode_rm_m
 
     ; ---- Step 3: FMA3 / FMA4 (EVEX/VEX) ----
-    ELSEIF ax, ge, 1832            ; FMA3 Range
-        IF ax, le, 1909
-            ; Complex VEX.DDS/NDS encoding required. Stubbing for OS kernel purity.
-            mov     al, 0x0F
-            call amd64_emit_byte
-            mov al, 0x38
-            call amd64_emit_byte
-            mov     al, 0x98
-            call amd64_emit_byte
-            ENDIF
+    ELSEIF_RANGE ax, 1832, 1909    ; FMA3 Range
+        ; Complex VEX.DDS/NDS encoding required. Stubbing for OS kernel purity.
+        mov     al, 0x0F
+        call amd64_emit_byte
+        mov al, 0x38
+        call amd64_emit_byte
+        mov     al, 0x98
+        call amd64_emit_byte
 
     ; ---- Step 4: Legacy 8087 Math ----
     ELSEIF ax, e, 5300             ; FSIN
@@ -992,48 +1016,40 @@ amd64_encode_instruction:
         call amd64_encode_rm_m
 
     ; ---- Step 5: AVX-512 (EVEX) ----
-    ELSEIF ax, ge, 5400            ; AVX-512 Range
-        IF ax, le, 5412
-            ; Complete EVEX 4-byte prefix stub
-            mov     al, 0x62
-            call amd64_emit_byte
-            mov     al, 0xF1
-            call amd64_emit_byte
-            mov     al, 0xFD
-            call amd64_emit_byte
-            mov     al, 0x08
-            call amd64_emit_byte
-            ENDIF
+    ELSEIF_RANGE ax, 5400, 5412    ; AVX-512 Range
+        ; Complete EVEX 4-byte prefix stub
+        mov     al, 0x62
+        call amd64_emit_byte
+        mov     al, 0xF1
+        call amd64_emit_byte
+        mov     al, 0xFD
+        call amd64_emit_byte
+        mov     al, 0x08
+        call amd64_emit_byte
 
     ; ---- Step 6: VNNI & BFLOAT16 ----
-    ELSEIF ax, ge, 5500            ; VNNI Range
-        IF ax, le, 5503
-            ; VEX/EVEX hybrid stub
-            mov     al, 0x62
-            call amd64_emit_byte
-            ENDIF
+    ELSEIF_RANGE ax, 5500, 5503    ; VNNI Range
+        ; VEX/EVEX hybrid stub
+        mov     al, 0x62
+        call amd64_emit_byte
 
     ; ---- Step 7: 3DNow! & AMD XOP ----
-    ELSEIF ax, ge, 5600            ; 3DNow Range
-        IF ax, le, 5612
-            ; 3DNow uses 0F 0F [ModRM] [Opcode] suffix
-            mov     al, 0x0F
-            call amd64_emit_byte
-            mov al, 0x0F
-            call amd64_emit_byte
-            ENDIF
+    ELSEIF_RANGE ax, 5600, 5612    ; 3DNow Range
+        ; 3DNow uses 0F 0F [ModRM] [Opcode] suffix
+        mov     al, 0x0F
+        call amd64_emit_byte
+        mov al, 0x0F
+        call amd64_emit_byte
 
     ; ---- Step 8: SGX Enclave Sub-Leafs ----
-    ELSEIF ax, ge, 5700            ; SGX Range
-        IF ax, le, 5706
-            ; Resolves to ENCLS (0F 01 CF) or ENCLU (0F 01 D7)
-            mov     al, 0x0F
-            call amd64_emit_byte
-            mov al, 0x01
-            call amd64_emit_byte
-            mov     al, 0xCF
-            call amd64_emit_byte
-            ENDIF
+    ELSEIF_RANGE ax, 5700, 5706    ; SGX Range
+        ; Resolves to ENCLS (0F 01 CF) or ENCLU (0F 01 D7)
+        mov     al, 0x0F
+        call amd64_emit_byte
+        mov al, 0x01
+        call amd64_emit_byte
+        mov     al, 0xCF
+        call amd64_emit_byte
 
     ELSEIF ax, e, 1054             ; BT
         mov     r13, 0xA3
@@ -1402,10 +1418,8 @@ amd64_encode_instruction:
         call amd64_emit_byte
 
     ; ----Intel MPX (Memory Protection Extensions) ----
-    ELSEIF ax, ge, 1043            ; BNDCL - BNDSTX
-        IF ax, le, 1049
-            call amd64_encode_mpx
-            ENDIF
+    ELSEIF_RANGE ax, 1043, 1049    ; BNDCL - BNDSTX
+        call amd64_encode_mpx
 
     ; ----Hardware Sign-Extension & Type Conversion ----
     ELSEIF ax, e, 1060             ; CBW
@@ -1445,15 +1459,16 @@ amd64_encode_instruction:
     ELSEIF ax, e, 1053             ; BSWAP
         lea     r10, [r12 + INST_op0]
         mov     al, [r10 + OPERAND_size]
-        mov     rsi, r10
-        mov rdx, 0
-        call amd64_emit_prefixes
+        xor     rsi, rsi
+        mov     rdx, r10           ; register lives in the opcode, so REX.B
+        call    amd64_emit_prefixes
         mov     al, 0x0F
-        call amd64_emit_byte
+        call    amd64_emit_byte
+        lea     r10, [r12 + INST_op0]  ; the calls above clobber r10
         mov     al, [r10 + OPERAND_reg]
-        and al, 7
-        add al, 0xC8
-        call amd64_emit_byte
+        and     al, 7
+        add     al, 0xC8
+        call    amd64_emit_byte
 
     ; ---- Phase 8.6: 1980s BCD Legacy Suite ----
     ELSEIF ax, e, 1000             ; AAA
@@ -1502,9 +1517,9 @@ amd64_encode_instruction:
         call    amd64_encode_branch
     ELSEIF ax, e, 1611             ; RET
         call    amd64_encode_ret
-    ELSEIF ax, ge, 4016            ; SETcc
+    ELSEIF_RANGE ax, 4016, 4031    ; SETcc
         call    amd64_encode_setcc
-    ELSEIF ax, ge, 4000            ; CMOVcc
+    ELSEIF_RANGE ax, 4000, 4015    ; CMOVcc
         call    amd64_encode_cmovcc
     ELSEIF ax, e, 1168             ; ENTER
         call    amd64_encode_enter
@@ -1543,7 +1558,7 @@ amd64_encode_instruction:
         mov r14, 2
         mov r15, 2
         call amd64_encode_vex
-    ELSEIF ax, ge, 5100            ; AVX-512 (EVEX)
+    ELSEIF_RANGE ax, 5100, 5106    ; AVX-512 (EVEX)
         IF ax, e, 5100             ; VAESENC
             mov r13, 0xDC
             mov r14, 2
@@ -1586,8 +1601,9 @@ amd64_encode_instruction:
         IF byte [r10 + OPERAND_kind], e, OP_SYMBOL
             mov al, RELOC_REL32
             mov rsi, [r10 + OPERAND_sym]
+            mov edx, 4                 ; rel32 ends the instruction
             call amd64_emit_reloc
-            xor rax, rax
+            xor rdi, rdi           ; emit_dword takes the value in RDI
             call amd64_emit_dword
             ELSE
             mov rdi, [r10 + OPERAND_imm]
@@ -1608,15 +1624,17 @@ amd64_encode_instruction:
         lea     r10, [r12 + INST_op0]
         mov     rax, [r10 + OPERAND_imm]
         call amd64_emit_byte
-    ELSEIF ax, e, 1069             ; CLI / STI / CLD / STD
+    ELSEIF ax, e, 1069             ; CLI
         mov     al, 0xFA
-        IF ax, e, 1666
-        mov al, 0xFB
-        ELSEIF ax, e, 1065
-        mov al, 0xFC
-        ELSEIF ax, e, 1665
-        mov al, 0xFD
-        ENDIF
+        call    amd64_emit_byte
+    ELSEIF ax, e, 1666             ; STI
+        mov     al, 0xFB
+        call    amd64_emit_byte
+    ELSEIF ax, e, 1065             ; CLD
+        mov     al, 0xFC
+        call    amd64_emit_byte
+    ELSEIF ax, e, 1665             ; STD
+        mov     al, 0xFD
         call    amd64_emit_byte
     ELSEIF ax, e, 1205             ; FLD1
         mov     al, 0xD9
@@ -1650,11 +1668,16 @@ amd64_encode_instruction:
             jmp     .error
         ENDIF
     
-    ; If a helper returned an error (30 or 53), preserve it.
-    ; Otherwise, clear RAX to signal success (0).
+    ; Preserve the error codes a helper may return, and clear RAX otherwise.
+    ; This is an allowlist rather than "any non-zero is an error" because the
+    ; emit helpers preserve RAX, so a helper that returns without setting it
+    ; hands back the caller's stale value. Any new error code a helper can
+    ; return has to be added here or it is silently reported as success.
     cmp     rax, EXIT_ENCODE_FAIL
     je      .done
     cmp     rax, EXIT_RELOC_ERROR
+    je      .done
+    cmp     rax, EXIT_INVALID_OPERAND
     je      .done
     xor     rax, rax
 .done:
@@ -1885,7 +1908,7 @@ amd64_encode_mov:
                 and cl, 0x07
                 add al, cl
                 call amd64_emit_byte
-                mov rax, [r14 + OPERAND_imm]
+                mov rdi, [r14 + OPERAND_imm]   ; emit_word takes its value in RDI
                 call amd64_emit_word
                 jmp .done
                 ENDIF
@@ -1909,12 +1932,18 @@ amd64_encode_mov:
 
         ; Case 3: MOV REG, MEM
         IF byte [r14 + OPERAND_kind], e, OP_MEM
-            ; Dynamic Prefixes
-            mov     rdi, r13
-            mov     rsi, r14
+            ; Dynamic Prefixes (al = size, rsi = ModRM.reg operand, rdx = rm)
+            mov     al, [r13 + OPERAND_size]
+            mov     rsi, r13         ; Reg -> ModRM.reg
+            mov     rdx, r14         ; Mem -> ModRM.rm
             call    amd64_emit_prefixes
-            
+            lea     r13, [r12 + INST_op0]
+            lea     r14, [r12 + INST_op1]
+
             mov     al, 0x8B
+            IF byte [r13 + OPERAND_size], e, 8
+                mov al, 0x8A       ; 8-bit load
+                ENDIF
             call amd64_emit_byte
             
             ; ModRM/SIB
@@ -1929,12 +1958,18 @@ amd64_encode_mov:
     ; Case 4: MOV MEM, REG
     IF byte [r13 + OPERAND_kind], e, OP_MEM
         IF byte [r14 + OPERAND_kind], e, OP_REG
-            ; Dynamic Prefixes
-            mov     rdi, r14         ; Reg is Src (Op1)
-            mov     rsi, r13         ; Mem is Dest (Op0)
+            ; Dynamic Prefixes (al = size, rsi = ModRM.reg operand, rdx = rm)
+            mov     al, [r14 + OPERAND_size]
+            mov     rsi, r14         ; Reg -> ModRM.reg
+            mov     rdx, r13         ; Mem -> ModRM.rm
             call    amd64_emit_prefixes
-            
+            lea     r13, [r12 + INST_op0]
+            lea     r14, [r12 + INST_op1]
+
             mov     al, 0x89
+            IF byte [r14 + OPERAND_size], e, 8
+                mov al, 0x88       ; 8-bit store
+                ENDIF
             call amd64_emit_byte
             
             mov     al, [r14 + OPERAND_reg]
@@ -1947,11 +1982,17 @@ amd64_encode_mov:
         ; Case 5: MOV MEM, IMM
         IF byte [r14 + OPERAND_kind], e, OP_IMM
             ; Dynamic Prefixes (W bit depends on MEM size)
-            mov     rdi, r13
-            mov     rsi, r14
+            mov     al, [r13 + OPERAND_size]
+            xor     rsi, rsi
+            mov     rdx, r13         ; Mem -> ModRM.rm
             call    amd64_emit_prefixes
+            lea     r13, [r12 + INST_op0]
+            lea     r14, [r12 + INST_op1]
             
             mov     al, 0xC7
+            IF byte [r13 + OPERAND_size], e, 8
+                mov al, 0xC6       ; 8-bit immediate store
+                ENDIF
             call amd64_emit_byte
             
             xor     al, al   ; Extension Digit 0
@@ -1959,8 +2000,17 @@ amd64_encode_mov:
             call    amd64_emit_modrm_sib
             
             mov     rdi, [r14 + OPERAND_imm]
-            ; check size to emit dd or dq? 
-            ; In x86_64, MOV [MEM], IMM32 is the standard even for 64-bit.
+            ; In x86_64, MOV [MEM], IMM32 is the standard even for 64-bit;
+            ; the 8-bit form (0xC6) takes an imm8 and a 16-bit store an imm16.
+            IF byte [r13 + OPERAND_size], e, 8
+                mov     rax, rdi
+                call    amd64_emit_byte
+                jmp     .done
+                ENDIF
+            IF byte [r13 + OPERAND_size], e, 16
+                call    amd64_emit_word
+                jmp     .done
+                ENDIF
             call    amd64_emit_dword
             jmp     .done
             ENDIF
@@ -1996,15 +2046,15 @@ amd64_encode_arithmetic:
             lea     r10, [r12 + INST_op0]
             lea     r11, [r12 + INST_op1]
             
-            ; Opcode is Base (8-bit) or Base + 1 (16/32/64-bit)
+            ; Table holds the 16/32/64-bit opcode; 8-bit form is Base - 1
             mov     rax, r13
-            IF byte [r10 + OPERAND_size], ne, 8
-                inc al
+            IF byte [r10 + OPERAND_size], e, 8
+                dec al
                 ENDIF
             call    amd64_emit_byte
             lea     r10, [r12 + INST_op0]
             lea     r11, [r12 + INST_op1]
-            
+
             ; ModR/M: 11
             ; src
             ; dest
@@ -2022,15 +2072,19 @@ amd64_encode_arithmetic:
         
         ; Case 2: r/m, imm
         IF byte [r11 + OPERAND_kind], e, OP_IMM
-            ; VALIDATION: Arithmetic instructions only support 32-bit sign-extended IMM
-            mov     rax, [r11 + OPERAND_imm]
-            mov     rcx, rax
-            sar     rcx, 31            ; Check if bits 31-63 are identical
-            IF ecx, ne, 0
-                IF ecx, ne, 0xFFFFFFFF
-                    jmp .error
-                    ENDIF
-                    ENDIF
+            ; VALIDATION: a 64-bit destination takes a sign-extended imm32, so
+            ; the immediate must fit. Narrower destinations accept any value of
+            ; their own width ("and edx, 0xFC000000" is legal).
+            IF byte [r10 + OPERAND_size], e, 64
+                mov     rax, [r11 + OPERAND_imm]
+                mov     rcx, rax
+                sar     rcx, 31            ; Check if bits 31-63 are identical
+                IF ecx, ne, 0
+                    IF ecx, ne, 0xFFFFFFFF
+                        jmp .error
+                        ENDIF
+                        ENDIF
+                ENDIF
 
             ; Smart Prefixes
             mov     al, [r10 + OPERAND_size]
@@ -2042,6 +2096,18 @@ amd64_encode_arithmetic:
             
             ; 8-bit case: 0x80 /extension
             IF byte [r10 + OPERAND_size], e, 8
+                ; AL takes the one-byte accumulator form (base + 3), no ModRM
+                IF byte [r10 + OPERAND_reg], e, REG_RAX
+                IF byte [r10 + OPERAND_is_high], e, 0
+                    mov rax, r13
+                    add al, 3
+                    call amd64_emit_byte
+                    lea     r11, [r12 + INST_op1]
+                    mov rax, [r11 + OPERAND_imm]
+                    call amd64_emit_byte
+                    jmp .done
+                    ENDIF
+                    ENDIF
                 mov al, 0x80
                 call amd64_emit_byte
                 lea     r10, [r12 + INST_op0]
@@ -2094,6 +2160,25 @@ amd64_encode_arithmetic:
             jmp     .done
 
 .long_imm:
+            ; rAX takes the one-byte accumulator form (base + 4) with no
+            ; ModRM byte. It is only shorter than 0x81 /digit, never than the
+            ; sign-extended 0x83 form handled above.
+            lea     r10, [r12 + INST_op0]
+            IF byte [r10 + OPERAND_reg], e, REG_RAX
+                mov     rax, r13
+                add     al, 4
+                call    amd64_emit_byte
+                lea     r10, [r12 + INST_op0]
+                lea     r11, [r12 + INST_op1]
+                mov     rdi, [r11 + OPERAND_imm]
+                IF byte [r10 + OPERAND_size], e, 16
+                    call    amd64_emit_word
+                    jmp     .done
+                    ENDIF
+                call    amd64_emit_dword
+                jmp     .done
+                ENDIF
+
             mov     al, 0x81
             call    amd64_emit_byte
             lea     r10, [r12 + INST_op0]
@@ -2113,7 +2198,13 @@ amd64_encode_arithmetic:
             lea     r10, [r12 + INST_op0]
             lea     r11, [r12 + INST_op1]
             
-            mov     rax, [r11 + OPERAND_imm]
+            mov     rdi, [r11 + OPERAND_imm]
+            ; A 16-bit destination takes an imm16; 32- and 64-bit both take
+            ; an imm32 (sign-extended for the 64-bit form).
+            IF byte [r10 + OPERAND_size], e, 16
+                call    amd64_emit_word
+                jmp     .done
+                ENDIF
             call    amd64_emit_dword
             jmp     .done
             ENDIF
@@ -2128,11 +2219,11 @@ amd64_encode_arithmetic:
             lea     r10, [r12 + INST_op0]
             lea     r11, [r12 + INST_op1]
             
-            ; Opcode is Base + 2 (8-bit) or Base + 3 (16/32/64-bit)
+            ; Table holds the 16/32/64-bit opcode; reg,mem form is Base + 2
             mov     rax, r13
             add al, 2
-            IF byte [r10 + OPERAND_size], ne, 8
-                inc al
+            IF byte [r10 + OPERAND_size], e, 8
+                dec al
                 ENDIF
             call    amd64_emit_byte
             lea     r10, [r12 + INST_op0]
@@ -2156,10 +2247,10 @@ amd64_encode_arithmetic:
             lea     r10, [r12 + INST_op0]
             lea     r11, [r12 + INST_op1]
             
-            ; Opcode is Base (8-bit) or Base + 1 (16/32/64-bit)
+            ; Table holds the 16/32/64-bit opcode; 8-bit form is Base - 1
             mov     rax, r13
-            IF byte [r11 + OPERAND_size], ne, 8
-                inc al
+            IF byte [r11 + OPERAND_size], e, 8
+                dec al
                 ENDIF
             call    amd64_emit_byte
             lea     r10, [r12 + INST_op0]
@@ -2226,6 +2317,11 @@ amd64_encode_arithmetic:
             lea     r10, [r12 + INST_op0]
             lea     r11, [r12 + INST_op1]
             mov rdi, [r11 + OPERAND_imm]
+            ; A 16-bit destination takes an imm16, wider ones an imm32
+            IF byte [r10 + OPERAND_size], e, 16
+                call    amd64_emit_word
+                jmp     .done
+                ENDIF
             call amd64_emit_dword
             jmp .done
             ENDIF
@@ -2259,6 +2355,92 @@ amd64_encode_sysret:
     ret
 
 ;*
+; * [amd64_encode_xchg]
+; * XCHG r/m, reg. A 16/32/64-bit exchange with the accumulator has the
+; * one-byte 90+r form; everything else is 86 /r (8-bit) or 87 /r.
+; ;
+amd64_encode_xchg:
+    prologue
+    cmp     byte [r12 + INST_nops], 2
+    jne     .error
+
+    lea     r10, [r12 + INST_op0]
+    lea     r11, [r12 + INST_op1]
+
+    IF byte [r10 + OPERAND_kind], ne, OP_REG
+        jmp .rm_form                       ; memory destination
+        ENDIF
+    IF byte [r11 + OPERAND_kind], ne, OP_REG
+        jmp .rm_form                       ; memory source
+        ENDIF
+    IF byte [r10 + OPERAND_size], e, 8
+        jmp .rm_form                       ; no short form for bytes
+        ENDIF
+
+    ; Accumulator short form: whichever operand is rAX names the opcode,
+    ; the other supplies the low three bits.
+    IF byte [r10 + OPERAND_reg], e, REG_RAX
+        mov     r15, r11
+        jmp     .short_form
+        ENDIF
+    IF byte [r11 + OPERAND_reg], e, REG_RAX
+        mov     r15, r10
+        jmp     .short_form
+        ENDIF
+    jmp     .rm_form
+
+.short_form:
+    mov     al, [r10 + OPERAND_size]
+    xor     rsi, rsi
+    mov     rdx, r15
+    call    amd64_emit_prefixes
+
+    mov     al, 0x90
+    mov     cl, [r15 + OPERAND_reg]
+    and     cl, 0x07
+    add     al, cl
+    call    amd64_emit_byte
+    jmp     .done
+
+.rm_form:
+    ; The register operand goes in ModRM.reg; the other becomes r/m. When both
+    ; are registers op0 takes the reg field, which is what NASM emits.
+    lea     r10, [r12 + INST_op0]
+    lea     r11, [r12 + INST_op1]
+    IF byte [r10 + OPERAND_kind], e, OP_REG
+        mov     r14, r10                   ; r14 = ModRM.reg operand
+        mov     r15, r11                   ; r15 = r/m operand
+        ELSE
+        mov     r14, r11
+        mov     r15, r10
+        ENDIF
+
+    IF byte [r14 + OPERAND_kind], ne, OP_REG
+        jmp .error                         ; memory-to-memory is not encodable
+        ENDIF
+
+    mov     al, [r14 + OPERAND_size]
+    mov     rsi, r14
+    mov     rdx, r15
+    call    amd64_emit_prefixes
+
+    mov     al, 0x87
+    IF byte [r14 + OPERAND_size], e, 8
+        mov al, 0x86
+        ENDIF
+    call    amd64_emit_byte
+
+    mov     al, [r14 + OPERAND_reg]
+    mov     rdi, r15
+    call    amd64_emit_modrm_sib
+    jmp     .done
+
+.error:
+    mov     rax, EXIT_ENCODE_FAIL
+.done:
+    epilogue
+
+;*
 ; * [amd64_encode_push]
 ; ;
 amd64_encode_push:
@@ -2273,7 +2455,8 @@ amd64_encode_push:
     xor     rsi, rsi
     mov     rdx, r10
     call    amd64_emit_prefixes
-    
+    lea     r10, [r12 + INST_op0]  ; emit_prefixes clobbers r10
+
     IF byte [r10 + OPERAND_kind], e, OP_REG
         mov     al, 0x50
         mov cl, [r10 + OPERAND_reg]
@@ -2303,7 +2486,7 @@ amd64_encode_push:
                 ENDIF
         mov     al, 0x68
         call amd64_emit_byte
-        mov     rax, [r10 + OPERAND_imm]
+        mov     rdi, [r10 + OPERAND_imm]
         call amd64_emit_dword
         jmp     .done
         ENDIF
@@ -2325,7 +2508,8 @@ amd64_encode_pop:
     xor     rsi, rsi
     mov     rdx, r10
     call    amd64_emit_prefixes
-    
+    lea     r10, [r12 + INST_op0]  ; emit_prefixes clobbers r10
+
     IF byte [r10 + OPERAND_kind], e, OP_REG
         mov     al, 0x58
         mov cl, [r10 + OPERAND_reg]
@@ -2357,14 +2541,14 @@ amd64_encode_branch:
     lea     r10, [r12 + INST_op0]
     
     ; Case 1: Symbol (REL32)
-    IF byte [r10 + OPERAND_kind], e, OP_SYMBOL
+    IF qword [r10 + OPERAND_sym], ne, 0
         mov     al, r13b
         call    amd64_emit_byte
-        mov     al, RELOC_REL32
+        lea     r10, [r12 + INST_op0]
         mov     rsi, [r10 + OPERAND_sym]
-        call    amd64_emit_reloc
-        xor     rax, rax
-        call    amd64_emit_dword
+        mov     rcx, 4             ; rel32 ends the instruction
+        mov     al, RELOC_REL32
+        call    amd64_emit_branch_disp
         jmp     .done
         ENDIF
     
@@ -2402,7 +2586,7 @@ amd64_encode_ret:
     mov     al, 0xC2
     call    amd64_emit_byte
     lea     r10, [r12 + INST_op0]
-    mov     rax, [r10 + OPERAND_imm]
+    mov     rdi, [r10 + OPERAND_imm]   ; emit_word takes its value in RDI
     call    amd64_emit_word
     jmp     .done
 .done:
@@ -2427,13 +2611,10 @@ amd64_encode_jcc:
     call amd64_emit_byte
     
     lea     r10, [r12 + INST_op0]
-    IF byte [r10 + OPERAND_kind], e, OP_SYMBOL
-        mov     al, RELOC_REL32
-        mov     rsi, [r10 + OPERAND_sym]
-        call    amd64_emit_reloc
-        ENDIF
-    xor     rax, rax
-    call    amd64_emit_dword
+    mov     rsi, [r10 + OPERAND_sym]
+    mov     rcx, 4                 ; rel32 ends the instruction
+    mov     al, RELOC_REL32
+    call    amd64_emit_branch_disp
 .done:
     epilogue
 
@@ -2447,14 +2628,10 @@ amd64_encode_branch_short:
     call    amd64_emit_byte
     
     lea     r10, [r12 + INST_op0]
-    IF byte [r10 + OPERAND_kind], e, OP_SYMBOL
-        mov     al, RELOC_REL8
-        mov     rsi, [r10 + OPERAND_sym]
-        call    amd64_emit_reloc
-        ENDIF
-    
-    xor     rax, rax
-    call    amd64_emit_byte    ; 1-byte placeholder
+    mov     rsi, [r10 + OPERAND_sym]
+    mov     rcx, 1                 ; rel8 ends the instruction
+    mov     al, RELOC_REL8
+    call    amd64_emit_branch_disp
     jmp     .done
 .done:
     epilogue
@@ -2471,16 +2648,120 @@ amd64_encode_jcc_short:
     call    amd64_emit_byte
     
     lea     r10, [r12 + INST_op0]
-    IF byte [r10 + OPERAND_kind], e, OP_SYMBOL
-        mov     al, RELOC_REL8
-        mov     rsi, [r10 + OPERAND_sym]
-        call    amd64_emit_reloc
-        ENDIF
-    
-    xor     rax, rax
-    call    amd64_emit_byte
+    mov     rsi, [r10 + OPERAND_sym]
+    mov     rcx, 1                 ; rel8 ends the instruction
+    mov     al, RELOC_REL8
+    call    amd64_emit_branch_disp
     jmp     .done
 .done:
+    epilogue
+
+;*
+; * [amd64_encode_movx]
+; * MOVZX / MOVSX: 0F B6/B7 (zero-extend) or 0F BE/BF (sign-extend).
+; * Input: r13 = base opcode (0xB6 or 0xBE); the source width picks base or base+1.
+; ;
+amd64_encode_movx:
+    prologue
+    lea     r10, [r12 + INST_op0]  ; dest register
+    lea     r11, [r12 + INST_op1]  ; source: register or memory
+
+    ; VALIDATION: MOVZX/MOVSX widen an 8- or 16-bit source only. No form takes
+    ; a 32-bit source -- a plain 32-bit MOV already zero-extends, and MOVSXD
+    ; covers the signed case. The general operand-size check in the dispatcher
+    ; deliberately skips these mnemonics, so without this they would encode a
+    ; dword source as if it were a byte one.
+    IF byte [r11 + OPERAND_size], e, 8
+        jmp .size_ok
+        ENDIF
+    IF byte [r11 + OPERAND_size], e, 16
+        jmp .size_ok
+        ENDIF
+    jmp     .error
+
+.size_ok:
+    ; The destination has to be wider than the source
+    mov     al, [r10 + OPERAND_size]
+    cmp     al, [r11 + OPERAND_size]
+    jbe     .error
+
+    ; Width of the destination drives REX.W / 0x66
+    mov     al, [r10 + OPERAND_size]
+    mov     rsi, r10               ; dest -> ModRM.reg (REX.R)
+    mov     rdx, r11               ; src  -> ModRM.rm  (REX.B/X)
+    call    amd64_emit_prefixes
+
+    mov     al, 0x0F
+    call    amd64_emit_byte
+
+    lea     r10, [r12 + INST_op0]
+    lea     r11, [r12 + INST_op1]
+    mov     rax, r13
+    IF byte [r11 + OPERAND_size], e, 16
+        inc     al                 ; word source: 0xB7 / 0xBF
+        ENDIF
+    call    amd64_emit_byte
+
+    lea     r10, [r12 + INST_op0]
+    lea     r11, [r12 + INST_op1]
+    IF byte [r11 + OPERAND_kind], e, OP_REG
+        mov     al, 0xC0
+        mov     cl, [r10 + OPERAND_reg]
+        and     cl, 0x07
+        shl     cl, 3
+        or      al, cl
+        mov     cl, [r11 + OPERAND_reg]
+        and     cl, 0x07
+        or      al, cl
+        call    amd64_emit_byte
+        ELSE
+        mov     al, [r10 + OPERAND_reg]
+        mov     rdi, r11
+        call    amd64_emit_modrm_sib
+        ENDIF
+    xor     rax, rax
+    jmp     .done
+
+.error:
+    mov     rax, EXIT_INVALID_OPERAND
+.done:
+    epilogue
+
+;*
+; * [amd64_encode_movsxd]
+; * MOVSXD r64, r/m32 — opcode 0x63 /r.
+; ;
+amd64_encode_movsxd:
+    prologue
+    lea     r10, [r12 + INST_op0]
+    lea     r11, [r12 + INST_op1]
+
+    mov     al, [r10 + OPERAND_size]
+    mov     rsi, r10
+    mov     rdx, r11
+    call    amd64_emit_prefixes
+
+    mov     al, 0x63
+    call    amd64_emit_byte
+
+    lea     r10, [r12 + INST_op0]
+    lea     r11, [r12 + INST_op1]
+    IF byte [r11 + OPERAND_kind], e, OP_REG
+        mov     al, 0xC0
+        mov     cl, [r10 + OPERAND_reg]
+        and     cl, 0x07
+        shl     cl, 3
+        or      al, cl
+        mov     cl, [r11 + OPERAND_reg]
+        and     cl, 0x07
+        or      al, cl
+        call    amd64_emit_byte
+        ELSE
+        mov     al, [r10 + OPERAND_reg]
+        mov     rdi, r11
+        call    amd64_emit_modrm_sib
+        ENDIF
+    xor     rax, rax
     epilogue
 
 ;*
@@ -2490,16 +2771,19 @@ amd64_encode_lea:
     prologue
     lea     r10, [r12 + INST_op0]
     lea     r11, [r12 + INST_op1]
-    
-    mov     al, 0x48       ; REX.W
-    IF byte [r10 + OPERAND_reg], ge, 8
-        or  al, 0x04       ; REX.R
-        ENDIF
+
+    ; REX.B/REX.X come from the address operand, so it has to go through
+    ; emit_prefixes rather than a hand-built REX.W.
+    mov     al, [r10 + OPERAND_size]
+    mov     rsi, r10               ; ModRM.reg = destination register
+    mov     rdx, r11               ; r/m = the address being formed
+    call    amd64_emit_prefixes
+
+    mov     al, 0x8D               ; Opcode LEA
     call    amd64_emit_byte
-    
-    mov     al, 0x8D       ; Opcode LEA
-    call    amd64_emit_byte
-    
+
+    lea     r10, [r12 + INST_op0]  ; the calls above clobber r10/r11
+    lea     r11, [r12 + INST_op1]
     mov     al, [r10 + OPERAND_reg]
     mov     rdi, r11
     call    amd64_emit_modrm_sib
@@ -2514,28 +2798,84 @@ amd64_encode_test:
     prologue
     lea     r10, [r12 + INST_op0]
     lea     r11, [r12 + INST_op1]
-    
-    ; REX
-    xor     r15, r15
+
+    IF byte [r11 + OPERAND_kind], e, OP_IMM
+        jmp .imm_form
+        ENDIF
+
+    ; TEST r/m, reg  ->  85 /r (84 /r for byte operands)
+    mov     al, [r10 + OPERAND_size]
+    mov     rsi, r11               ; ModRM.reg = source register
+    mov     rdx, r10               ; r/m = destination
+    call    amd64_emit_prefixes
+
+    lea     r10, [r12 + INST_op0]
+    mov     rax, r13               ; 0x85, one below for 8-bit
     IF byte [r10 + OPERAND_size], e, 8
-        or  r15, 0x48
+        dec al
         ENDIF
-    IF byte [r11 + OPERAND_reg], ge, 8
-        or  r15, 0x44      ; REX.R (Src)
-        ENDIF
-    
-    test    r15, r15
-    jz      .no_rex
-    mov     rax, r15
     call    amd64_emit_byte
-.no_rex:
-    mov     rax, r13       ; Opcode 0x85 (r/m, reg)
-    call    amd64_emit_byte
-    
+
+    lea     r10, [r12 + INST_op0]
+    lea     r11, [r12 + INST_op1]
     mov     al, [r11 + OPERAND_reg]
     mov     rdi, r10
     call    amd64_emit_modrm_sib
     jmp     .done
+
+.imm_form:
+    ; TEST r/m, imm -> F7 /0 id (F6 /0 ib for bytes). The accumulator has the
+    ; shorter A8/A9 form, which is what NASM picks.
+    mov     al, [r10 + OPERAND_size]
+    xor     rsi, rsi
+    mov     rdx, r10
+    call    amd64_emit_prefixes
+
+    lea     r10, [r12 + INST_op0]
+    IF byte [r10 + OPERAND_kind], ne, OP_REG
+        jmp .imm_modrm
+        ENDIF
+    IF byte [r10 + OPERAND_reg], ne, REG_RAX
+        jmp .imm_modrm
+        ENDIF
+
+    ; A8 ib / A9 id
+    mov     al, 0xA9
+    IF byte [r10 + OPERAND_size], e, 8
+        mov al, 0xA8
+        ENDIF
+    call    amd64_emit_byte
+    jmp     .imm_value
+
+.imm_modrm:
+    lea     r10, [r12 + INST_op0]
+    mov     al, 0xF7
+    IF byte [r10 + OPERAND_size], e, 8
+        mov al, 0xF6
+        ENDIF
+    call    amd64_emit_byte
+
+    lea     r10, [r12 + INST_op0]
+    mov     al, 0                  ; /0
+    mov     rdi, r10
+    call    amd64_emit_modrm_sib
+
+.imm_value:
+    lea     r10, [r12 + INST_op0]
+    lea     r11, [r12 + INST_op1]
+    IF byte [r10 + OPERAND_size], e, 8
+        mov     rax, [r11 + OPERAND_imm]
+        call    amd64_emit_byte
+        jmp     .done
+        ENDIF
+    IF byte [r10 + OPERAND_size], e, 16
+        mov     rdi, [r11 + OPERAND_imm]
+        call    amd64_emit_word
+        jmp     .done
+        ENDIF
+    mov     rdi, [r11 + OPERAND_imm]
+    call    amd64_emit_dword
+
 .done:
     epilogue
 
@@ -2546,27 +2886,41 @@ amd64_encode_test:
 amd64_encode_unary:
     prologue
     lea     r10, [r12 + INST_op0]
-    
-    xor     r15, r15
-    IF byte [r10 + OPERAND_size], e, 8
-        or  r15, 0x48
-        ENDIF
-    
-    test    r15, r15
-    jz      .no_rex
-    mov     rax, r15
-    call    amd64_emit_byte
-.no_rex:
-    mov     al, 0xFF       ; Multi-op Unary
-    IF r14b, ge, 2         ; NEG/NOT use 0xF7
+
+    ; Prefixes: REX.W / 0x66 / extended-register bits
+    mov     al, [r10 + OPERAND_size]
+    xor     rsi, rsi
+    mov     rdx, r10
+    call    amd64_emit_prefixes
+    lea     r10, [r12 + INST_op0]
+
+    ; 0xFF for INC/DEC (/0,/1), 0xF7 for NOT/NEG/MUL/IMUL/DIV/IDIV (/2../7)
+    mov     al, 0xFF
+    IF r14b, ge, 2
         mov al, 0xF7
         ENDIF
+    IF byte [r10 + OPERAND_size], e, 8
+        dec al             ; 8-bit forms are 0xFE / 0xF6
+        ENDIF
     call    amd64_emit_byte
-    
-    mov     al, r14b       ; Extension Digit
-    mov     rdi, r10
-    call    amd64_emit_modrm_sib
-    jmp     .done
+    lea     r10, [r12 + INST_op0]
+
+    IF byte [r10 + OPERAND_kind], e, OP_REG
+        ; Register form: ModRM mod=11, reg = extension digit, rm = register
+        mov     al, 0xC0
+        mov     cl, r14b
+        and     cl, 0x07
+        shl     cl, 3
+        or      al, cl
+        mov     cl, [r10 + OPERAND_reg]
+        and     cl, 0x07
+        or      al, cl
+        call    amd64_emit_byte
+        ELSE
+        mov     al, r14b       ; Extension Digit
+        mov     rdi, r10
+        call    amd64_emit_modrm_sib
+        ENDIF
 .done:
     epilogue
 
@@ -2577,36 +2931,76 @@ amd64_encode_unary:
 amd64_encode_shift:
     prologue
     lea     r10, [r12 + INST_op0]
-    lea     r11, [r12 + INST_op1]
-    
+
+    ; Prefixes come from the destination alone: the count is either CL or an
+    ; imm8 and never contributes REX.W or a size override.
+    mov     al, [r10 + OPERAND_size]
+    xor     rsi, rsi
+    mov     rdx, r10
+    call    amd64_emit_prefixes
+
+    ; r15 = opcode bias: the 8-bit forms are D0/D2/C0, one below the rest
+    lea     r10, [r12 + INST_op0]
     xor     r15, r15
     IF byte [r10 + OPERAND_size], e, 8
-        or  r15, 0x48
+        mov r15, 1
         ENDIF
-    
-    test    r15, r15
-    jz      .no_rex
-    mov     rax, r15
-    call    amd64_emit_byte
-.no_rex:
-    ; Opcode: 0xD1 (1), 0xD3 (CL), 0xC1 (imm8)
+
+    ; A bare "shl reg" and "shl reg, 1" both use the by-one opcode (D1)
+    lea     r11, [r12 + INST_op1]
+    IF byte [r12 + INST_nops], e, 1
+        jmp .by_one
+        ENDIF
     IF byte [r11 + OPERAND_kind], e, OP_IMM
-        mov al, 0xC1
+        IF qword [r11 + OPERAND_imm], e, 1
+            jmp .by_one
+            ENDIF
+
+        ; C1 /digit ib
+        mov     al, 0xC1
+        sub     al, r15b
         call    amd64_emit_byte
+        lea     r10, [r12 + INST_op0]
         mov     al, r14b
         mov     rdi, r10
         call    amd64_emit_modrm_sib
+        lea     r11, [r12 + INST_op1]
         mov     rax, [r11 + OPERAND_imm]
         call    amd64_emit_byte
-        ELSE
-        ; Default to shift by 1 (0xD1) for now
-        mov     al, 0xD1
-        call    amd64_emit_byte
-        mov     al, r14b
-        mov     rdi, r10
-        call    amd64_emit_modrm_sib
+        jmp     .done
         ENDIF
+
+    ; Register count: CL is the only encodable one (D3 /digit)
+    IF byte [r11 + OPERAND_kind], ne, OP_REG
+        jmp .error
+        ENDIF
+    IF byte [r11 + OPERAND_size], ne, 8
+        jmp .error
+        ENDIF
+    IF byte [r11 + OPERAND_reg], ne, REG_RCX
+        jmp .error
+        ENDIF
+    mov     al, 0xD3
+    sub     al, r15b
+    call    amd64_emit_byte
+    lea     r10, [r12 + INST_op0]
+    mov     al, r14b
+    mov     rdi, r10
+    call    amd64_emit_modrm_sib
     jmp     .done
+
+.by_one:
+    mov     al, 0xD1
+    sub     al, r15b
+    call    amd64_emit_byte
+    lea     r10, [r12 + INST_op0]
+    mov     al, r14b
+    mov     rdi, r10
+    call    amd64_emit_modrm_sib
+    jmp     .done
+
+.error:
+    mov     rax, EXIT_ENCODE_FAIL
 .done:
     epilogue
 
@@ -2615,65 +3009,100 @@ amd64_encode_shift:
 ; ;
 amd64_encode_imul:
     prologue
-    lea     r10, [r12 + INST_op0]
-    lea     r11, [r12 + INST_op1]
-    lea     rdx, [r12 + INST_op2]
-    
+
     ; 1-Operand: IMUL r/m (F7 /5)
     cmp     byte [r12 + INST_nops], 1
     IF e
-        mov r14, 5
-        jmp amd64_encode_unary_math
+        mov     r14, 5
+        call    amd64_encode_unary_math   ; has its own frame: call, never jmp
+        jmp     .done
         ENDIF
-    
-    ; 2-Operand: IMUL reg, r/m (0F AF)
+
+    ; 2-Operand with an immediate is the 3-operand form with the destination
+    ; doubling as the source: "imul rcx, 56" == "imul rcx, rcx, 56"
     cmp     byte [r12 + INST_nops], 2
     IF e
-        mov al, [r10 + OPERAND_size]
-        mov rsi, r10
-        mov rdx, r11
-        call amd64_emit_prefixes
-        mov al, 0x0F
-        call amd64_emit_byte
-        mov al, 0xAF
-        call amd64_emit_byte
-        mov al, [r10 + OPERAND_reg]
-        mov rdi, r11
-        call amd64_emit_modrm_sib
-        jmp .done
+        lea     r11, [r12 + INST_op1]
+        IF byte [r11 + OPERAND_kind], e, OP_IMM
+            lea     rdi, [r12 + INST_op2]
+            lea     rsi, [r12 + INST_op1]
+            mov     rcx, (OPERAND_SIZE / 8)
+            rep movsq                      ; op2 = the immediate
+            lea     rdi, [r12 + INST_op1]
+            lea     rsi, [r12 + INST_op0]
+            mov     rcx, (OPERAND_SIZE / 8)
+            rep movsq                      ; op1 = the destination
+            mov     byte [r12 + INST_nops], 3
+            ENDIF
         ENDIF
-    jmp .done
-.done:
-    epilogue
-    
-    ; 3-Operand: IMUL reg, r/m, imm (69/6B)
-    mov al, [r10 + OPERAND_size]
-    mov rsi, r10
-    mov rdx, r11
-    call amd64_emit_prefixes
-    
-    mov rax, [rdx + OPERAND_imm]
+
+    ; 2-Operand: IMUL reg, r/m (0F AF /r)
+    cmp     byte [r12 + INST_nops], 2
+    IF e
+        lea     r10, [r12 + INST_op0]
+        lea     r11, [r12 + INST_op1]
+        mov     al, [r10 + OPERAND_size]
+        mov     rsi, r10
+        mov     rdx, r11
+        call    amd64_emit_prefixes
+
+        mov     al, 0x0F
+        call    amd64_emit_byte
+        mov     al, 0xAF
+        call    amd64_emit_byte
+
+        ; the calls above clobber r10/r11, so take the operands again
+        lea     r10, [r12 + INST_op0]
+        lea     r11, [r12 + INST_op1]
+        mov     al, [r10 + OPERAND_reg]
+        mov     rdi, r11
+        call    amd64_emit_modrm_sib
+        jmp     .done
+        ENDIF
+
+    ; 3-Operand: IMUL reg, r/m, imm (6B /r ib when the immediate fits, else 69 /r id)
+    lea     r10, [r12 + INST_op0]
+    lea     r11, [r12 + INST_op1]
+    mov     al, [r10 + OPERAND_size]
+    mov     rsi, r10
+    mov     rdx, r11
+    call    amd64_emit_prefixes
+
+    lea     r10, [r12 + INST_op2]
+    mov     rax, [r10 + OPERAND_imm]
     IF rax, ge, -128
         IF rax, le, 127
-            mov al, 0x6B
-            call amd64_emit_byte
-            mov al, [r10 + OPERAND_reg]
-            mov rdi, r11
-            call amd64_emit_modrm_sib
-            mov rax, [rdx + OPERAND_imm]
-            call amd64_emit_byte
-            jmp .done
+            mov     al, 0x6B
+            call    amd64_emit_byte
+
+            lea     r10, [r12 + INST_op0]
+            lea     r11, [r12 + INST_op1]
+            mov     al, [r10 + OPERAND_reg]
+            mov     rdi, r11
+            call    amd64_emit_modrm_sib
+
+            lea     r10, [r12 + INST_op2]
+            mov     rax, [r10 + OPERAND_imm]
+            call    amd64_emit_byte
+            jmp     .done
             ENDIF
-            ENDIF
-    
-    mov al, 0x69
-    call amd64_emit_byte
-    mov al, [r10 + OPERAND_reg]
-    mov rdi, r11
-    call amd64_emit_modrm_sib
-    mov rdi, [rdx + OPERAND_imm]
-    call amd64_emit_dword
-    jmp .done
+        ENDIF
+
+    mov     al, 0x69
+    call    amd64_emit_byte
+
+    lea     r10, [r12 + INST_op0]
+    lea     r11, [r12 + INST_op1]
+    mov     al, [r10 + OPERAND_reg]
+    mov     rdi, r11
+    call    amd64_emit_modrm_sib
+
+    lea     r10, [r12 + INST_op2]
+    mov     rdi, [r10 + OPERAND_imm]
+    call    amd64_emit_dword
+
+.done:
+    epilogue
 
 ;*
 ; * [amd64_encode_unary_math]
@@ -2688,18 +3117,19 @@ amd64_encode_unary_math:
     xor     rsi, rsi
     mov     rdx, r10
     call    amd64_emit_prefixes
-    
+    lea     r10, [r12 + INST_op0]      ; emit_prefixes clobbers r10
+
     ; Opcode is 0xF6 (8-bit) or 0xF7 (16/32/64-bit)
     mov     al, 0xF6
     IF byte [r10 + OPERAND_size], ne, 8
         inc al
         ENDIF
     call    amd64_emit_byte
-    
+    lea     r10, [r12 + INST_op0]
+
     mov     al, r14b       ; Digit (4=MUL, 6=DIV, 7=IDIV)
     mov     rdi, r10
     call    amd64_emit_modrm_sib
-    jmp     .done
 .done:
     epilogue
 
@@ -2750,19 +3180,22 @@ amd64_encode_setcc:
     mov     r14, rax
     
     lea     r10, [r12 + INST_op0]
-    
-    ; REX if reg >= 8
-    IF byte [r10 + OPERAND_reg], ge, 8
-        mov al, 0x41
-        call    amd64_emit_byte
-        ENDIF
-    
+
+    ; SETcc always writes a byte. Go through emit_prefixes so R8B-R15B get
+    ; REX.B and SPL/BPL/SIL/DIL get the bare REX they require -- without it
+    ; those four encode as AH/CH/DH/BH instead.
+    mov     al, 8
+    xor     rsi, rsi
+    mov     rdx, r10
+    call    amd64_emit_prefixes
+
     mov     al, 0x0F
     call    amd64_emit_byte
     mov     al, 0x90
     add     al, r14b
     call    amd64_emit_byte
-    
+
+    lea     r10, [r12 + INST_op0]  ; the calls above clobber r10
     xor     al, al             ; Reg field 0
     mov     rdi, r10
     call    amd64_emit_modrm_sib
@@ -3330,30 +3763,48 @@ amd64_encode_string:
     
     ; Check suffixes (This is a bit hardcoded but fast)
     ; MOVSB=1419, STOSB=1669, LODSB=1369, SCASB=1630, CMPSB=1079
+    ; Every branch has to make its own assignment: an ELSEIF with an empty
+    ; body falls through with r8b untouched, which silently gave every
+    ; suffixed form the byte size.
     IF ax, e, 1419
+        mov r8b, 0
     ELSEIF ax, e, 1669
+        mov r8b, 0
     ELSEIF ax, e, 1369
+        mov r8b, 0
     ELSEIF ax, e, 1630
+        mov r8b, 0
     ELSEIF ax, e, 1079
         mov r8b, 0
     ; MOVSW=1425, STOSW=1672, LODSW=1372, SCASW=1632, CMPSW=1083
     ELSEIF ax, e, 1425
+        mov r8b, 1
     ELSEIF ax, e, 1672
+        mov r8b, 1
     ELSEIF ax, e, 1372
+        mov r8b, 1
     ELSEIF ax, e, 1632
+        mov r8b, 1
     ELSEIF ax, e, 1083
         mov r8b, 1
     ; MOVSD=1420, STOSD=1670, LODSD=1370, SCASD=1631, CMPSD=1080
     ELSEIF ax, e, 1420
+        mov r8b, 2
     ELSEIF ax, e, 1670
+        mov r8b, 2
     ELSEIF ax, e, 1370
+        mov r8b, 2
     ELSEIF ax, e, 1631
+        mov r8b, 2
     ELSEIF ax, e, 1080
         mov r8b, 2
-    ; MOVSQ=1423, STOSQ=1671, LODSQ=1371, SCASQ=???, CMPSQ=1081
+    ; MOVSQ=1423, STOSQ=1671, LODSQ=1371, CMPSQ=1081
     ELSEIF ax, e, 1423
+        mov r8b, 3
     ELSEIF ax, e, 1671
+        mov r8b, 3
     ELSEIF ax, e, 1371
+        mov r8b, 3
     ELSEIF ax, e, 1081
         mov r8b, 3
         ELSE
@@ -3631,6 +4082,96 @@ amd64_encode_rm_r:
 ; *   RSI: Pointer to Symbol String
 ; *   EDX: PC Adjustment (bytes from reloc site to end of instruction)
 ; ;
+;*
+; * [amd64_emit_branch_disp]
+; * Emits a branch displacement and the relocation it needs, if any.
+; * A target that is already defined, local, and in the section currently
+; * being emitted is computed here and needs no relocation — which is what
+; * NASM does, and what lets a later pass shorten the branch. Everything else
+; * (forward references, other sections, exported symbols) stays the linker's
+; * job and gets a zero placeholder.
+; * Input:
+; *   RSI = OPERAND_sym: a SYMBOL* when resolved, the raw name string for a
+; *         forward reference, or 0 for a non-symbolic target
+; *   RCX = displacement width in bytes (1 or 4)
+; *   AL  = relocation type to record when it cannot be resolved here
+; ;
+amd64_emit_branch_disp:
+    prologue
+    push    r13
+    push    r14
+    push    r15
+
+    movzx   r13d, al               ; r13 = fallback relocation type
+    mov     r14, rcx               ; r14 = displacement width
+    mov     r15, rsi               ; r15 = symbol or name
+
+    test    r15, r15
+    jz      .placeholder
+
+    cmp     byte [r15], TAG_SYMBOL
+    jne     .relocate              ; a raw name means a forward reference
+    cmp     byte [r15 + SYMBOL_kind], SYM_LABEL
+    jne     .relocate
+    cmp     byte [r15 + SYMBOL_vis], VIS_LOCAL
+    jne     .relocate              ; an exported symbol stays the linker's job
+
+    mov     r8, [rbx + ASMCTX_curr_sec]
+    test    r8, r8
+    jz      .relocate
+    mov     eax, [r8 + SECTION_index]
+    cmp     eax, [r15 + SYMBOL_section]
+    jne     .relocate
+
+    ; disp = target - address of the next instruction
+    mov     rdi, [r15 + SYMBOL_value]
+    mov     rax, [r8 + SECTION_size]
+    add     rax, r14
+    sub     rdi, rax
+
+    IF r14, e, 1
+        ; a rel8 target has to actually reach
+        IF rdi, l, -128
+            jmp .relocate
+            ENDIF
+        IF rdi, g, 127
+            jmp .relocate
+            ENDIF
+        mov     rax, rdi
+        call    amd64_emit_byte
+        jmp     .ok
+        ENDIF
+    call    amd64_emit_dword
+    jmp     .ok
+
+.relocate:
+    mov     rax, r13
+    mov     rsi, r15
+    mov     rdx, r14
+    call    amd64_emit_reloc
+    test    rax, rax
+    jnz     .done                  ; propagate a real relocation failure
+
+.placeholder:
+    IF r14, e, 1
+        xor     rax, rax
+        call    amd64_emit_byte
+        jmp     .ok
+        ENDIF
+    xor     rdi, rdi
+    call    amd64_emit_dword
+
+.ok:
+    ; The emit helpers preserve RAX, so it still holds the caller's stale
+    ; value here; the dispatcher reads it as the encoder's status.
+    xor     rax, rax
+
+.done:
+    pop     r15
+    pop     r14
+    pop     r13
+    epilogue
+
 amd64_emit_reloc:
     prologue
     push    rbx
@@ -3642,6 +4183,15 @@ amd64_emit_reloc:
     movzx   r12d, al           ; r12 = type
     mov     r13, rsi           ; r13 = symbol
     mov     r14d, edx          ; r14 = pc_adjust
+
+    ; Callers may hold either a SYMBOL* (symbol already defined) or the raw
+    ; name string (forward reference); relocations record the name.
+    test    r13, r13
+    jz      .sym_normalized
+    cmp     byte [r13], TAG_SYMBOL
+    jne     .sym_normalized
+    mov     r13, [r13 + SYMBOL_name]
+.sym_normalized:
 
     ; 1. Check capacity
     mov     eax, [rbx + ASMCTX_nrelocs]
@@ -3675,7 +4225,15 @@ amd64_emit_reloc:
     
     mov     rax, [r15 + SECTION_size]
     mov     [rdx + RELOC_offset], rax
+
+    ; PC-relative relocations carry the site->end-of-instruction distance in
+    ; the addend, so a RELA consumer computes S + A - P correctly.
     mov     qword [rdx + RELOC_addend], 0
+    IF r12d, e, R_X86_64_PC32
+        movsxd  rax, r14d
+        neg     rax
+        mov     [rdx + RELOC_addend], rax
+        ENDIF
     mov     [rdx + RELOC_sym], r13
     mov     [rdx + RELOC_section], r15
     mov     [rdx + RELOC_pc_adjust], r14d
@@ -3742,15 +4300,8 @@ amd64_emit_prefixes:
         ENDIF
     
     ; 2. Address-Size Override (0x67)
-    IF rdx, ne, 0
-        ; If memory operand uses 32-bit registers
-        IF byte [rdx + OPERAND_kind], e, OP_MEM
-            IF byte [rdx + OPERAND_size], e, 32
-                mov al, 0x67
-                call amd64_emit_byte
-                ENDIF
-            ENDIF
-        ENDIF
+    ;    Not emitted from OPERAND_size: for a memory operand that is the
+    ;    access width, not the width of the address registers.
 
     ; 3. REX Calculation
     xor     r11, r11
@@ -3764,26 +4315,66 @@ amd64_emit_prefixes:
         ; Even for non-64-bit, we need REX if using R8-R15
         ; or if using SIL/DIL/BPL/SPL in 8-bit mode
         xor r10, r10
+
+        ; SPL/BPL/SIL/DIL only exist with a REX prefix present; the same
+        ; encodings without one name AH/CH/DH/BH instead. This turns on the
+        ; operand's own width, not the operation width: "movzx eax, dil" is a
+        ; 32-bit operation whose source register still needs REX.
         IF rsi, ne, 0
+        IF byte [rsi + OPERAND_kind], e, OP_REG
+        IF byte [rsi + OPERAND_size], e, 8
+        IF byte [rsi + OPERAND_is_high], e, 0
+        IF byte [rsi + OPERAND_reg], ge, 4
+        IF byte [rsi + OPERAND_reg], le, 7
+            or r10, 1
+            ENDIF
+            ENDIF
+            ENDIF
+            ENDIF
+            ENDIF
+            ENDIF
+        IF rdx, ne, 0
+        IF byte [rdx + OPERAND_kind], e, OP_REG
+        IF byte [rdx + OPERAND_size], e, 8
+        IF byte [rdx + OPERAND_is_high], e, 0
+        IF byte [rdx + OPERAND_reg], ge, 4
+        IF byte [rdx + OPERAND_reg], le, 7
+            or r10, 1
+            ENDIF
+            ENDIF
+            ENDIF
+            ENDIF
+            ENDIF
+            ENDIF
+
+        IF rsi, ne, 0
+            IF byte [rsi + OPERAND_kind], e, OP_REG
             IF byte [rsi + OPERAND_reg], ge, 8
                 or r10, 1
-            ENDIF 
+            ENDIF
+            ENDIF
+            IF byte [rsi + OPERAND_kind], e, OP_MEM
             IF byte [rsi + OPERAND_base], ge, 8
                 or r10, 1
-            ENDIF 
+            ENDIF
             IF byte [rsi + OPERAND_index], ge, 8
                 or r10, 1
             ENDIF
             ENDIF
+            ENDIF
         IF rdx, ne, 0
+            IF byte [rdx + OPERAND_kind], e, OP_REG
             IF byte [rdx + OPERAND_reg], ge, 8
                 or r10, 1
-            ENDIF 
+            ENDIF
+            ENDIF
+            IF byte [rdx + OPERAND_kind], e, OP_MEM
             IF byte [rdx + OPERAND_base], ge, 8
                 or r10, 1
-            ENDIF 
+            ENDIF
             IF byte [rdx + OPERAND_index], ge, 8
                 or r10, 1
+            ENDIF
             ENDIF
             ENDIF
         IF r10, ne, 0
@@ -3794,30 +4385,37 @@ amd64_emit_prefixes:
     test    r11, r11
     jz      .done
     
-    ; REX.R (from op0/src reg)
+    ; REX.R (from op0/src reg). OPERAND_reg only means anything for a register
+    ; operand; on a memory operand it holds parser leftovers.
     IF rsi, ne, 0
-        mov cl, [rsi + OPERAND_reg]
-        IF cl, ge, 8
-            or r11, 0x04
+        IF byte [rsi + OPERAND_kind], e, OP_REG
+            mov cl, [rsi + OPERAND_reg]
+            IF cl, ge, 8
+                or r11, 0x04
+            ENDIF
+            ENDIF
         ENDIF
-        ENDIF
-    
-    ; REX.B (from op1/dest reg or mem base)
+
+    ; REX.B (dest register or memory base) and REX.X (memory index)
     IF rdx, ne, 0
-        mov cl, [rdx + OPERAND_reg]
-        IF cl, ge, 8
-            or r11, 0x01
-        ENDIF 
-        mov cl, [rdx + OPERAND_base]
-        IF cl, ge, 8
-            or r11, 0x01
-        ENDIF 
-        mov cl, [rdx + OPERAND_index]
-        IF cl, ge, 8
-            or r11, 0x02
+        IF byte [rdx + OPERAND_kind], e, OP_REG
+            mov cl, [rdx + OPERAND_reg]
+            IF cl, ge, 8
+                or r11, 0x01
+            ENDIF
+            ENDIF
+        IF byte [rdx + OPERAND_kind], e, OP_MEM
+            mov cl, [rdx + OPERAND_base]
+            IF cl, ge, 8
+                or r11, 0x01
+            ENDIF
+            mov cl, [rdx + OPERAND_index]
+            IF cl, ge, 8
+                or r11, 0x02
+            ENDIF
+            ENDIF
         ENDIF
-        ENDIF
-    
+
     IF r11, ne, 0
         ; VALIDATION: REX vs High-Byte (AH/CH/DH/BH)
         ; Architectural constraint: Cannot use REX with legacy 8-bit high regs.
@@ -3825,11 +4423,13 @@ amd64_emit_prefixes:
             IF byte [rsi + OPERAND_is_high], e, 1
                 jmp .error
             ENDIF
+            ENDIF
+        IF rdx, ne, 0
             IF byte [rdx + OPERAND_is_high], e, 1
                 jmp .error
             ENDIF
             ENDIF
-        
+
         mov     rax, r11
         call    amd64_emit_byte
         ENDIF
@@ -3857,7 +4457,21 @@ amd64_emit_modrm_sib:
     
     mov     r13, rdi            ; Operand
     movzx   r14, al             ; Reg field
-    
+    and     r14b, 0x07          ; low 3 bits only; REX.R carries bit 3
+
+    ; 0. A register operand is encoded directly as mod=11
+    IF byte [r13 + OPERAND_kind], e, OP_REG
+        mov     al, 0xC0
+        mov     cl, r14b
+        shl     cl, 3
+        or      al, cl
+        mov     cl, [r13 + OPERAND_reg]
+        and     cl, 0x07
+        or      al, cl
+        call    amd64_emit_byte
+        jmp     .done_sib
+        ENDIF
+
     ; 1. Check for RIP-Relative addressing
     mov     r8b, [r13 + OPERAND_base]
     IF r8b, e, REG_RIP
@@ -3867,13 +4481,25 @@ amd64_emit_modrm_sib:
         or      al, 0x05
         call    amd64_emit_byte
         
-        ; Emit Relocation for Symbol
-        mov     al, RELOC_REL32
+        ; Emit Relocation for Symbol.
+        ; OPERAND_sym holds a SYMBOL* once the symbol is defined, or the raw
+        ; name string for a forward reference; emit_reloc wants the name.
         mov     rsi, [r13 + OPERAND_sym]
+        IF rsi, e, 0
+            ; No symbol: emit the displacement as-is
+            mov     rdi, [r13 + OPERAND_imm]
+            call    amd64_emit_dword
+            jmp     .done_sib
+            ENDIF
+        IF byte [rsi], e, TAG_SYMBOL
+            mov     rsi, [rsi + SYMBOL_name]
+            ENDIF
+        mov     edx, 4                 ; disp32 ends the instruction
+        mov     al, RELOC_REL32
         call    amd64_emit_reloc
-        
+
         ; Emit 4-byte zero placeholder
-        xor     rax, rax
+        xor     rdi, rdi
         call    amd64_emit_dword
         jmp     .done_sib
         ENDIF
@@ -3882,10 +4508,55 @@ amd64_emit_modrm_sib:
     IF cl, e, 4
         jmp amd64_encode_instruction.error
         ENDIF
-    
+
+    ; 1.5 No base and no index: absolute [disp32]
+    ;     ModRM mod=00 rm=100, SIB index=100 (none) base=101 (disp32 follows)
+    cmp     r8b, 0xFF
+    jne     .have_base
+    cmp     cl, 0xFF
+    jne     .no_base_index
+
+    mov     al, r14b
+    shl     al, 3
+    or      al, 4
+    call    amd64_emit_byte
+    mov     al, 0x25
+    call    amd64_emit_byte
+
+    call    .reloc_name
+    test    rsi, rsi
+    jz      .abs_no_sym
+    xor     edx, edx               ; absolute: no PC adjustment
+    mov     al, R_X86_64_32S
+    call    amd64_emit_reloc
+    xor     rdi, rdi
+    call    amd64_emit_dword
+    jmp     .done_sib
+
+.abs_no_sym:
+    mov     rdi, [r13 + OPERAND_imm]
+    call    amd64_emit_dword
+    jmp     .done_sib
+
+    ; 1.6 Index but no base: ModRM mod=00 rm=100, SIB base=101, then disp32
+.no_base_index:
+    mov     r8b, 5              ; SIB base=101 means "no base register"
+    xor     rdx, rdx            ; Mod 00
+    jmp     .emit_start
+
+.have_base:
     xor     rdx, rdx            ; Mod field
+
+    ; A relocatable symbol in the displacement always needs a full disp32
+    call    .reloc_name
+    test    rsi, rsi
+    jz      .plain_disp
+    mov     dl, 2
+    jmp     .emit_start
+
+.plain_disp:
     mov     rdi, [r13 + OPERAND_imm] ; Displacement
-    
+
     ; Determine Mod based on Displacement
     test    rdi, rdi
     jz      .mod00
@@ -3926,7 +4597,9 @@ amd64_emit_modrm_sib:
     mov     cl, r8b              ; R/M (Base)
     and     cl, 0x07
     or      al, cl
+    push    rdx                 ; emit_byte clobbers rdx; dl holds Mod
     call    amd64_emit_byte
+    pop     rdx
     jmp     .disp
     
 .use_sib:
@@ -3936,7 +4609,9 @@ amd64_emit_modrm_sib:
     shl     r14b, 3
     or      al, r14b
     or      al, 4               ; R/M = 4 (SIB follows)
+    push    rdx                 ; emit_byte clobbers rdx; dl holds Mod
     call    amd64_emit_byte
+    pop     rdx
     
     ; Emit SIB
     ; Scale (2 bits)
@@ -3971,9 +4646,32 @@ jmp .s0
     and     al, 0x07
     or      cl, al
     mov     al, cl
+    push    rdx                 ; emit_byte clobbers rdx; dl holds Mod
     call    amd64_emit_byte
-    
+    pop     rdx
+
 .disp:
+    ; A relocatable displacement is a disp32 the linker fills in
+    push    rdx
+    call    .reloc_name
+    pop     rdx
+    test    rsi, rsi
+    jz      .disp_plain
+    xor     edx, edx               ; absolute: no PC adjustment
+    mov     al, R_X86_64_32S
+    call    amd64_emit_reloc
+    xor     rdi, rdi
+    call    amd64_emit_dword
+    jmp     .done_sib
+
+.disp_plain:
+    ; The no-base SIB form always carries a disp32
+    IF byte [r13 + OPERAND_base], e, 0xFF
+        mov     rdi, [r13 + OPERAND_imm]
+        call    amd64_emit_dword
+        jmp     .done_sib
+        ENDIF
+
     ; Emit Displacement
     IF dl, e, 1
         mov     rax, [r13 + OPERAND_imm]
@@ -3982,6 +4680,32 @@ jmp .s0
         mov     rdi, [r13 + OPERAND_imm]
         call    amd64_emit_dword
         ENDIF
+    jmp     .done_sib
+
+;
+; Returns RSI = the symbol name to relocate against, or 0 when the
+; displacement is a plain number. Constants and struct fields resolve to
+; numbers, not addresses, so they must never produce a relocation.
+;
+.reloc_name:
+    mov     rsi, [r13 + OPERAND_sym]
+    test    rsi, rsi
+    jz      .rn_none
+    cmp     byte [rsi], TAG_SYMBOL
+    jne     .rn_done               ; a raw name string: forward reference
+    movzx   eax, byte [rsi + SYMBOL_kind]
+    cmp     al, SYM_CONSTANT
+    je      .rn_none
+    cmp     al, SYM_STRUCT_FIELD
+    je      .rn_none
+    cmp     al, SYM_STRUCT
+    je      .rn_none
+    mov     rsi, [rsi + SYMBOL_name]
+.rn_done:
+    ret
+.rn_none:
+    xor     rsi, rsi
+    ret
 
 .done_sib:
     pop     r14
@@ -4019,12 +4743,18 @@ amd64_emit_byte:
 amd64_emit_dword:
     push    rax
     push    rcx
+    push    rdi                    ; amd64_emit_byte clobbers rdi/rcx
     mov     rcx, 4
 .loop:
+    mov     rdi, [rsp]
     mov     al, dil
+    push    rcx
     call    amd64_emit_byte
-    shr     rdi, 8
-    loop    .loop
+    pop     rcx
+    shr     qword [rsp], 8
+    dec     rcx
+    jnz     .loop
+    pop     rdi
     pop     rcx
     pop     rax
     ret
@@ -4035,15 +4765,14 @@ amd64_emit_dword:
 amd64_encode_jmp:
     prologue
     lea     r10, [r12 + INST_op0]
-    IF byte [r10 + OPERAND_kind], e, OP_SYMBOL
+    IF qword [r10 + OPERAND_sym], ne, 0
         mov     al, 0xE9
         call amd64_emit_byte
+        lea     r10, [r12 + INST_op0]
+        mov     rsi, [r10 + OPERAND_sym]
+        mov     rcx, 4
         mov     al, RELOC_REL32
-        mov rsi, [r10 + OPERAND_sym]
-        mov edx, 4
-        call amd64_emit_reloc
-        xor     rax, rax
-        call amd64_emit_dword
+        call    amd64_emit_branch_disp
         ELSE
         mov     r13, 0xFF
         mov r14, 4
@@ -4057,15 +4786,14 @@ amd64_encode_jmp:
 amd64_encode_call:
     prologue
     lea     r10, [r12 + INST_op0]
-    IF byte [r10 + OPERAND_kind], e, OP_SYMBOL
+    IF qword [r10 + OPERAND_sym], ne, 0
         mov     al, 0xE8
         call amd64_emit_byte
+        lea     r10, [r12 + INST_op0]
+        mov     rsi, [r10 + OPERAND_sym]
+        mov     rcx, 4
         mov     al, RELOC_REL32
-        mov rsi, [r10 + OPERAND_sym]
-        mov edx, 4
-        call amd64_emit_reloc
-        xor     rax, rax
-        call amd64_emit_dword
+        call    amd64_emit_branch_disp
         ELSE
         mov     r13, 0xFF
         mov r14, 2
@@ -4091,24 +4819,25 @@ amd64_encode_push_pop:
     prologue
     lea     r10, [r12 + INST_op0]
     IF byte [r10 + OPERAND_kind], e, OP_REG
-        mov     al, [r10 + OPERAND_reg]
-        mov     cl, al
-        and     cl, 7
-        mov     dl, r13b
-        add     dl, cl
         mov     al, [r10 + OPERAND_size]
         IF al, e, 16
             mov al, 0x66
             call amd64_emit_byte
             ENDIF
         ; REX prefix if reg >= 8
+        lea     r10, [r12 + INST_op0]
         mov     al, [r10 + OPERAND_reg]
         IF al, ge, 8
             mov al, 0x41
             call amd64_emit_byte
             ENDIF
-        mov     al, dl
-        call amd64_emit_byte
+        ; The opcode is built last: amd64_emit_byte scratches RDX/R10, so it
+        ; cannot be held across the prefix emission above.
+        lea     r10, [r12 + INST_op0]
+        mov     al, [r10 + OPERAND_reg]
+        and     al, 7
+        add     al, r13b
+        call    amd64_emit_byte
         ELSE
         ; MEM
         mov     al, [r10 + OPERAND_size]
@@ -4116,15 +4845,17 @@ amd64_encode_push_pop:
             mov al, 0x66
             call amd64_emit_byte
             ENDIF
+        lea     r10, [r12 + INST_op0]
         mov     al, 0
-        mov rsi, r10
-        mov rdx, 0
-        call amd64_emit_prefixes
+        xor     rsi, rsi
+        mov     rdx, r10           ; base/index supply REX.B and REX.X
+        call    amd64_emit_prefixes
         mov     al, r14b
-        call amd64_emit_byte
+        call    amd64_emit_byte
+        lea     r10, [r12 + INST_op0]  ; the calls above clobber r10
         mov     al, r15b
-        mov rdi, r10
-        call amd64_emit_modrm_sib
+        mov     rdi, r10
+        call    amd64_emit_modrm_sib
         ENDIF
     epilogue
 
@@ -4336,12 +5067,18 @@ amd64_emit_nop:
 amd64_emit_word:
     push    rax
     push    rcx
+    push    rdi                    ; amd64_emit_byte clobbers rdi/rcx
     mov     rcx, 2
 .loopw:
+    mov     rdi, [rsp]
     mov     al, dil
+    push    rcx
     call    amd64_emit_byte
-    shr     rdi, 8
-    loop    .loopw
+    pop     rcx
+    shr     qword [rsp], 8
+    dec     rcx
+    jnz     .loopw
+    pop     rdi
     pop     rcx
     pop     rax
     ret
@@ -4356,12 +5093,18 @@ amd64_emit_word:
 amd64_emit_qword:
     push    rax
     push    rcx
+    push    rdi                    ; amd64_emit_byte clobbers rdi/rcx
     mov     rcx, 8
 .loopq:
+    mov     rdi, [rsp]
     mov     al, dil
+    push    rcx
     call    amd64_emit_byte
-    shr     rdi, 8
-    loop    .loopq
+    pop     rcx
+    shr     qword [rsp], 8
+    dec     rcx
+    jnz     .loopq
+    pop     rdi
     pop     rcx
     pop     rax
     ret

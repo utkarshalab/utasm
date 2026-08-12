@@ -312,30 +312,28 @@
     %push if
     %assign %$uid __if_seq
     %assign %$branch 0
-    %xdefine %$endif_label .if_ %+ %$uid %+ _endif
-    %xdefine %%target .if_ %+ %$uid %+ _else_ %+ %$branch
 
     %if %0 == 1
         %ifidni %1, z
-            jnz strict near %%target
+            jnz strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %1, nz
-            jz strict near %%target
+            jz strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %1, e
-            jnz strict near %%target
+            jnz strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %1, ne
-            je strict near %%target
+            je strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %1, c
-            jnc strict near %%target
+            jnc strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %1, nc
-            jc strict near %%target
+            jc strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %1, s
-            jns strict near %%target
+            jns strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %1, ns
-            js strict near %%target
+            js strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %1, o
-            jno strict near %%target
+            jno strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %1, no
-            jo strict near %%target
+            jo strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %else
             %error "Unsupported single-argument condition: %1"
         %endif
@@ -347,44 +345,43 @@
         %endif
 
         %ifidni %2, ==
-            jne strict near %%target
+            jne strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, =
-            jne strict near %%target
+            jne strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, !=
-            je strict near %%target
+            je strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, <>
-            je strict near %%target
+            je strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, e
-            jne strict near %%target
+            jne strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, ne
-            je strict near %%target
+            je strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, g
-            jng strict near %%target
+            jng strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, ge
-            jnge strict near %%target
+            jnge strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, l
-            jnl strict near %%target
+            jnl strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, le
-            jnle strict near %%target
+            jnle strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, a
-            jna strict near %%target
+            jna strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, ae
-            jnae strict near %%target
+            jnae strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, b
-            jnb strict near %%target
+            jnb strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, be
-            jnbe strict near %%target
+            jnbe strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %endif
     %endif
 %endmacro
 
 %macro ELSEIF 3-4
     %ifctx if
-        jmp strict near %$endif_label
+        jmp strict near .if_ %+ %$uid %+ _endif
         .if_ %+ %$uid %+ _else_ %+ %$branch:
         %assign %$branch %$branch + 1
-        %xdefine %%target .if_ %+ %$uid %+ _else_ %+ %$branch
-        
+            
         %if %0 == 4
             cmp %1, %4
         %else
@@ -392,42 +389,65 @@
         %endif
         
         %ifidni %2, ==
-            jne strict near %%target
+            jne strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, =
-            jne strict near %%target
+            jne strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, !=
-            je strict near %%target
+            je strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, <>
-            je strict near %%target
+            je strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, e
-            jne strict near %%target
+            jne strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, ne
-            je strict near %%target
+            je strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, g
-            jng strict near %%target
+            jng strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, ge
-            jnge strict near %%target
+            jnge strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, l
-            jnl strict near %%target
+            jnl strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, le
-            jnle strict near %%target
+            jnle strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, a
-            jna strict near %%target
+            jna strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, ae
-            jnae strict near %%target
+            jnae strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, b
-            jnb strict near %%target
+            jnb strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %elifidni %2, be
-            jnbe strict near %%target
+            jnbe strict near .if_ %+ %$uid %+ _else_ %+ %$branch
         %endif
     %else
         %error "ELSEIF without IF"
     %endif
 %endmacro
 
+;*
+; * [ELSEIF_RANGE]
+; * Purpose: Chain branch taken when %1 lies within [%2, %3] inclusive.
+; * Usage  : ELSEIF_RANGE ax, 3000, 3029
+; * Note   : A plain "ELSEIF ax, ge, LO" wrapping an inner "IF ax, le, HI"
+; *          swallows every value above HI — the inner test failing exits the
+; *          whole chain instead of falling through to the next branch.
+; ;
+%macro ELSEIF_RANGE 3
+    %ifctx if
+        jmp strict near .if_ %+ %$uid %+ _endif
+        .if_ %+ %$uid %+ _else_ %+ %$branch:
+        %assign %$branch %$branch + 1
+    
+        cmp %1, %2
+        jl strict near .if_ %+ %$uid %+ _else_ %+ %$branch
+        cmp %1, %3
+        jg strict near .if_ %+ %$uid %+ _else_ %+ %$branch
+    %else
+        %error "ELSEIF_RANGE without IF"
+    %endif
+%endmacro
+
 %macro ELSE 0
     %ifctx if
-        jmp strict near %$endif_label
+        jmp strict near .if_ %+ %$uid %+ _endif
         .if_ %+ %$uid %+ _else_ %+ %$branch:
         %assign %$branch %$branch + 1
     %else
@@ -438,7 +458,7 @@
 %macro ENDIF 0
     %ifctx if
         .if_ %+ %$uid %+ _else_ %+ %$branch:
-        %$endif_label:
+        .if_ %+ %$uid %+ _endif:
         %pop if
     %else
         %error "ENDIF without IF"

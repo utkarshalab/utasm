@@ -27,6 +27,7 @@ extern amd64_encode_instruction
 extern aarch64_encode_instruction
 extern riscv64_encode_instruction
 extern linker_run
+extern global_profstate
 
 [SECTION .bss]
     align 64
@@ -59,7 +60,7 @@ _start:
 
     ; 1. Initialize Arena
     lea     rdi, [rel global_arena]
-    mov     rsi, 0x04000000 ; 64MB
+    mov     rsi, 0x20000000 ; 512MB (lazily mapped)
     call    arena_init
     test    rax, rax
     jnz     .exit_oom
@@ -94,6 +95,20 @@ _start:
 
     cmp     qword [rbx + ASMCTX_input], 0
     je      .show_usage
+
+    ; 4.5 Profiler start-up.
+    ; Only initialised when --profile/-P is given: profiler_init is what sets
+    ; PROFSTATE_enabled, and every profiler_start_phase/end_phase call checks
+    ; that flag first. global_profstate lives in .bss, so when profiling is
+    ; off the instrumentation below costs one predictable branch per call.
+    test    dword [rbx + ASMCTX_flags], CTX_FLAG_PROFILE
+    jz      .profiler_off
+    mov     rdi, [rbx + ASMCTX_arena]
+    extern  profiler_init
+    call    profiler_init
+    test    rax, rax
+    jnz     .exit_error
+.profiler_off:
 
     ; 5. Pipeline Setup
     mov     rdi, rbx
@@ -146,9 +161,25 @@ _start:
     jnz     .exit_error
 
 .assembly_loop:
+    ; PHASE_PARSER covers the whole frontend: the lexer and preprocessor are
+    ; demand-driven from inside parser_parse_instruction, so this one span
+    ; accounts for lexing, macro expansion and parsing together.
+    lea     rdi, [rel global_profstate]
+    mov     rsi, PHASE_PARSER
+    extern  profiler_start_phase
+    call    profiler_start_phase
+
     lea     rdi, [rel global_prep]           ; parser_parse_instruction takes PrepState in RDI
     call    parser_parse_instruction
-    
+    push    rax
+    push    rdx
+    lea     rdi, [rel global_profstate]
+    mov     rsi, PHASE_PARSER
+    extern  profiler_end_phase
+    call    profiler_end_phase
+    pop     rdx
+    pop     rax
+
     test    rax, rax
     jnz     .error_in_parser
     
@@ -174,6 +205,10 @@ _start:
     call    asm_ctx_align
 
 .encode:
+    lea     rdi, [rel global_profstate]
+    mov     rsi, PHASE_ENCODER
+    call    profiler_start_phase
+
     mov     rdi, rbx
     mov     rsi, r12
     movzx   rax, byte [rbx + ASMCTX_target]
@@ -183,7 +218,8 @@ _start:
     je      .call_aarch64
     cmp     rax, 3 ; RISCV64
     je      .call_riscv64
-    jmp     .assembly_loop
+    xor     rax, rax
+    jmp     .check_enc
 
 .call_amd64:
     call    amd64_encode_instruction
@@ -195,6 +231,12 @@ _start:
     call    riscv64_encode_instruction
 
 .check_enc:
+    push    rax
+    lea     rdi, [rel global_profstate]
+    mov     rsi, PHASE_ENCODER
+    call    profiler_end_phase
+    pop     rax
+
     test    rax, rax
     jnz     .error_in_encoder
     jmp     .assembly_loop
@@ -204,7 +246,17 @@ _start:
     call    linker_run
     test    rax, rax
     jnz     .error_in_linker
-    
+
+    ; Profiler teardown. Both calls return immediately when profiling is off,
+    ; so this needs no flag check of its own.
+    lea     rdi, [rel global_profstate]
+    extern  profiler_finalize
+    call    profiler_finalize
+    lea     rdi, [rel global_profstate]
+    lea     rsi, [rel global_ctx]
+    extern  profiler_report
+    call    profiler_report
+
     xor     rax, rax
     jmp     .exit
 

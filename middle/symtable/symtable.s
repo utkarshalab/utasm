@@ -66,10 +66,11 @@ symbol_init:
 
 ; ---- symbol_hash ------------------------
 ; FNV-1a 64-bit hash
-; Input: RSI = string pointer
+; Input: RSI = string pointer (preserved)
 ; Output: RAX = hash
 symbol_hash:
     prologue
+    push    rsi                     ; callers keep using the name afterwards
     mov     rax, 0xcbf29ce484222325 ; FNV offset basis
     mov     r10, 0x100000001b3      ; FNV prime
 .loop:
@@ -81,6 +82,7 @@ symbol_hash:
     inc     rsi
     jmp     .loop
 .done:
+    pop     rsi
     epilogue
 
 ; ---- symbol_add -------------------------
@@ -198,13 +200,16 @@ symbol_find:
     test    rdx, rdx
     jz      .not_found
     
-    ; Compare names
+    ; Compare names. str_cmp scratches CL/DL, and RCX is the probe counter,
+    ; so it has to be saved or a collision sends the probe to a random slot.
+    push    rcx
     push    rdx
     mov     rdi, [rdx + SYMBOL_name]
     mov     rsi, r12
     extern  str_cmp
     call    str_cmp
     pop     rdx
+    pop     rcx
 
     test    rax, rax
     jz      .found
