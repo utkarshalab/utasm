@@ -169,6 +169,10 @@
 %define TAG_OPERAND            0x0C
 %define TAG_INSTRUCTION        0x0D
 %define TAG_ARCHIVE            0x0E
+; 0x10–0x11 are taken by the profiler (TAG_PROFENTRY / TAG_PROFSTATE)
+%define TAG_VEC                0x12        ; growable array (lib/vec.s)
+%define TAG_LIST               0x13        ; doubly linked list (lib/list.s)
+%define TAG_FMTBUF             0x14        ; string builder (lib/fmt.s)
 
 ; ============================================================================
 ; TOKEN TYPES
