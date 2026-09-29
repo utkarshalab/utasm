@@ -25,6 +25,8 @@ extern str_compare
 extern asm_ctx_align
 extern str_concat
 extern error_emit
+extern error_hint_mnemonic
+extern error_hint_directive
 extern asm_ctx_create_section
 extern asmctx_get_section
 extern asmctx_emit_byte
@@ -391,6 +393,13 @@ parser_parse_instruction:
     jmp     .error
 
 .unknown_mnemonic:
+    mov     rdi, [r12 + TOKEN_value]
+    call    error_hint_mnemonic
+    test    rax, rax
+    jnz     .unknown_done
+    mov     rdi, [r12 + TOKEN_value]
+    call    error_hint_directive
+.unknown_done:
     mov     rax, EXIT_UNKNOWN_INSTR
     jmp     .done
 

@@ -15,6 +15,7 @@ DEFAULT REL
 
 extern str_len
 extern global_ctx
+extern error_hint_symbol
 
 ; ============================================================================
 ; ERROR REPORTER
@@ -188,6 +189,24 @@ error_emit:
     pop     r12
     pop     rbx
     ret
+
+; Emits an undefined-symbol diagnostic with a best-effort name suggestion.
+; Arguments and behavior otherwise match error_emit.
+global error_emit_undefined_symbol
+error_emit_undefined_symbol:
+    push    rdi
+    push    rsi
+    push    rdx
+    push    rcx
+    push    r8
+    mov     rsi, r8
+    call    error_hint_symbol
+    pop     r8
+    pop     rcx
+    pop     rdx
+    pop     rsi
+    pop     rdi
+    jmp     error_emit
 
 ; ---- error_warn -------------------------
 ;

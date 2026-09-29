@@ -238,8 +238,8 @@ reloc_resolve_all:
     xor     rdx, rdx               ; no line
     xor     rcx, rcx               ; no col
     mov     r8, [r13 + RELOC_sym]  ; symbol name
-    extern  error_emit
-    call    error_emit
+    extern  error_emit_undefined_symbol
+    call    error_emit_undefined_symbol
     
     mov     rax, EXIT_UNDEF_REF
     jmp     .ret
