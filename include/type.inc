@@ -134,7 +134,8 @@ struc SECTION
     field index,    4       ; ELF section index
     field group_flags, 4    ; GRP_COMDAT
     field group_sig,   8    ; pointer to signature SYMBOL
-    field pad1,        8    ; maintain 16-byte alignment
+    field relax_frozen, 1   ; 1 = code here must not move (optimizer/jump.s)
+    field pad1,        7    ; maintain 16-byte alignment
 endstruc
 
 ; ============================================================================
