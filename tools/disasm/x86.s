@@ -114,6 +114,18 @@ DEFAULT REL
 %define FM_BRORX    71          ; rorx: gpr, r/m, imm8
 %define FM_XZERO    72          ; vzeroupper / vzeroall
 %define FM_X87      73          ; x87 escape (D8-DF), decoded by dx_x87
+%define FM_EVEX     74          ; EVEX (AVX-512), operands by dx_evex_operands
+%define FM_G9       75          ; 0F C7: cmpxchg8b/16b, rdrand, rdseed
+
+; ---- EVEX entry flags (EV_* in scripts/gen_x86_tables.py) ----
+%define EV_BCST     1           ; EVEX.b with memory: broadcast one element
+%define EV_SCALAR   2           ; V and H are xmm whatever the vector length
+%define EV_ER       4           ; EVEX.b with registers: rounding control
+%define EV_SAE      8           ; EVEX.b with registers: {sae}
+%define EV_PINT     16          ; vpcmp predicate in the name
+%define EV_PFP      32          ; vcmp predicate in the name
+%define EV_NELEM    64          ; disp8*N scales by one element
+%define EV_MOVS     128         ; vmovss/vmovsd: H only in the register form
 
 ; SSE entry flags (x86_sse0f / x86_sse38 / x86_sse3a)
 %define SF_MEM      7           ; memory size: 1 B, 2 W, 3 D, 4 Q, 5 vector
@@ -161,6 +173,7 @@ dx_vvvv:    resb 1              ; VEX.vvvv (already inverted), 0-15
 dx_vpfx:    resb 1              ; print a "v" before the SSE name
 dx_vclass:  resb 1              ; vector registers: 0 mm, 1 xmm, 2 ymm
 dx_half:    resb 1              ; widening op: source is half the destination width
+dx_narrow:  resb 1              ; narrowing op: xmm destination, source by VEX.L
 dx_namebuf: resb 24             ; a mnemonic built at decode time
 dx_p67:     resb 1              ; address-size prefix: 32-bit address registers
 dx_map:     resb 1              ; 1 = one-byte map, 2 = 0F map
@@ -181,6 +194,18 @@ dx_base:    resb 1              ; 0-15, NO_REG or RIP_REG
 dx_index:   resb 1              ; 0-15 or NO_REG
 dx_scale:   resb 1
 dx_hasdisp: resb 1
+dx_disp8n:  resb 1              ; disp8 scale (EVEX disp8*N), else 1
+dx_evex:    resb 1              ; 1 = EVEX-encoded
+dx_reghi:   resb 1              ; 16 when EVEX.R' selects vector registers 16-31
+dx_rmhi:    resb 1              ; 16 when EVEX.X does (register ModRM.rm)
+dx_eaaa:    resb 1              ; EVEX opmask register (0 = none)
+dx_ez:      resb 1              ; EVEX.z: zeroing
+dx_eb:      resb 1              ; EVEX.b: broadcast / rounding / sae
+dx_eround:  resb 1              ; rounding mode (EVEX.L'L with b and registers)
+dx_emsize:  resb 1              ; entry memory size class
+dx_eflags:  resb 1              ; entry EV_* flags
+dx_epred:   resb 1              ; the imm8 is a predicate already in the name
+dx_fwait:   resb 1              ; 9B folded into the x87 instruction (fstsw ...)
 
 [SECTION .text]
 
@@ -227,6 +252,7 @@ x86_decode:
     mov     [rel dx_vvvv], al
     mov     [rel dx_vpfx], al
     mov     [rel dx_half], al
+    mov     [rel dx_narrow], al
     mov     byte [rel dx_vclass], 1
     mov     [rel dx_p67], al
     mov     [rel dx_lock], al
@@ -234,6 +260,15 @@ x86_decode:
     mov     [rel dx_repne], al
     mov     [rel dx_seg], al
     mov     [rel dx_fail], al
+    mov     [rel dx_evex], al
+    mov     [rel dx_reghi], al
+    mov     [rel dx_rmhi], al
+    mov     [rel dx_eaaa], al
+    mov     [rel dx_ez], al
+    mov     [rel dx_eb], al
+    mov     [rel dx_epred], al
+    mov     [rel dx_fwait], al
+    mov     byte [rel dx_disp8n], 1
 
     ; ---- legacy prefixes ----
 .prefix:
@@ -293,6 +328,8 @@ x86_decode:
 
     ; ---- REX ----
 .rex:
+    cmp     al, 0x62
+    je      .evex
     cmp     al, 0xC5
     je      .vex2
     cmp     al, 0xC4
@@ -364,6 +401,18 @@ x86_decode:
     pop     rcx
     cmp     byte [rel dx_fail], 0
     jne     .bad
+    ; k-mask instructions (AVX-512 opmask registers)
+    call    dx_kop_find                    ; keeps rcx
+    test    rax, rax
+    jnz     .kop
+    cmp     byte [rel dx_map], 2
+    jne     .vex_tables
+    cmp     byte [rel dx_op], 0xAE
+    jne     .vex_tables
+    test    ecx, ecx
+    jz      .vex_ae
+    jmp     .bad
+.vex_tables:
     ; VEX-only table first
     lea     rdx, [rel x86_vex0f]
     cmp     byte [rel dx_map], 3
@@ -431,12 +480,18 @@ x86_decode:
     je      .not_half
     cmp     ecx, 0
     je      .is_half
+    cmp     ecx, 1                         ; vcvtpd2ps (66)
+    je      .is_narrow
     jmp     .not_half
 .half_e6:
     cmp     byte [rel dx_op], 0xE6         ; vcvtdq2pd (F3)
     jne     .not_half
     cmp     ecx, 2
-    jne     .not_half
+    je      .is_half
+    jmp     .is_narrow                     ; vcvttpd2dq (66), vcvtpd2dq (F2)
+.is_narrow:
+    mov     byte [rel dx_narrow], 1
+    jmp     .not_half
 .is_half:
     mov     byte [rel dx_half], 1
     jmp     .by_l
@@ -457,6 +512,150 @@ x86_decode:
     cmp     byte [rel dx_vl], 0
     je      .entry_loaded
     mov     byte [rel dx_vclass], 2
+    jmp     .entry_loaded
+
+    ; ---- EVEX (62 P0 P1 P2): AVX-512 ----
+; P0 = R X B R' 0 0 m m, P1 = W vvvv 1 pp, P2 = z L'L b V' aaa. As with VEX,
+; R/X/B/W become a synthetic REX byte; R' (and X for a register rm) select
+; vector registers 16-31, V' extends vvvv.
+.evex:
+    call    dx_rd8                         ; 62
+    call    dx_rd8                         ; P0
+    test    al, 0x0C
+    jnz     .bad
+    mov     ecx, eax
+    and     ecx, 3
+    jz      .bad
+    inc     ecx                            ; 1/2/3 -> maps 2/3/4
+    mov     [rel dx_map], cl
+    mov     edx, 0x40
+    test    al, 0x80
+    jnz     .e_x
+    or      edx, 4                         ; R
+.e_x:
+    test    al, 0x40
+    jnz     .e_b
+    or      edx, 2                         ; X
+    mov     byte [rel dx_rmhi], 16
+.e_b:
+    test    al, 0x20
+    jnz     .e_r2
+    or      edx, 1                         ; B
+.e_r2:
+    test    al, 0x10
+    jnz     .e_p1
+    mov     byte [rel dx_reghi], 16        ; R'
+.e_p1:
+    call    dx_rd8                         ; P1 (rd8 keeps edx)
+    test    al, 4
+    jz      .bad
+    test    al, 0x80
+    jz      .e_w
+    or      edx, 8                         ; W
+.e_w:
+    mov     [rel dx_rex], dl
+    mov     ecx, eax
+    shr     ecx, 3
+    not     ecx
+    and     ecx, 15
+    mov     [rel dx_vvvv], cl
+    and     eax, 3
+    mov     r8d, eax                       ; pp
+    call    dx_rd8                         ; P2
+    mov     ecx, eax
+    and     ecx, 7
+    mov     [rel dx_eaaa], cl
+    mov     ecx, eax
+    shr     ecx, 7
+    mov     [rel dx_ez], cl
+    mov     ecx, eax
+    shr     ecx, 4
+    and     ecx, 1
+    mov     [rel dx_eb], cl
+    mov     ecx, eax
+    shr     ecx, 5
+    and     ecx, 3
+    mov     [rel dx_vl], cl
+    test    al, 8
+    jnz     .e_op
+    or      byte [rel dx_vvvv], 16         ; V'
+.e_op:
+    call    dx_rd8                         ; opcode
+    mov     [rel dx_op], al
+    cmp     byte [rel dx_fail], 0
+    jne     .bad
+    ; key = map << 24 | opcode << 16 | pp << 8 | W << 4
+    movzx   ecx, byte [rel dx_map]
+    shl     ecx, 8
+    or      ecx, eax
+    shl     ecx, 8
+    or      ecx, r8d
+    shl     ecx, 8
+    test    byte [rel dx_rex], 8
+    jz      .e_key
+    or      ecx, 0x10
+.e_key:
+    mov     r9d, ecx
+    call    dx_evex_find
+    test    r12, r12
+    jnz     .e_found
+    ; a group member: 8 + ModRM.reg in the key
+    call    dx_peek
+    cmp     byte [rel dx_fail], 0
+    jne     .bad
+    shr     eax, 3
+    and     eax, 7
+    lea     ecx, [r9 + rax + 8]
+    call    dx_evex_find
+    test    r12, r12
+    jz      .bad
+.e_found:
+    mov     byte [rel dx_evex], 1
+    movzx   r13d, word [r12 + 4]           ; name
+    mov     al, [r12 + 6]
+    mov     [rel dx_emsize], al
+    mov     al, [r12 + 7]
+    mov     [rel dx_eflags], al
+    call    dx_peek                        ; ModRM
+    cmp     byte [rel dx_fail], 0
+    jne     .bad
+    shr     eax, 6
+    cmp     eax, 3
+    je      .e_regs
+    ; memory: EVEX.b broadcasts one element, and disp8 is scaled by N
+    cmp     byte [rel dx_vl], 3
+    je      .bad
+    cmp     byte [rel dx_eb], 0
+    je      .e_n_size
+    test    byte [rel dx_eflags], EV_BCST
+    jz      .bad
+    jmp     .e_n_elem
+.e_n_size:
+    test    byte [rel dx_eflags], EV_NELEM
+    jnz     .e_n_elem
+    call    dx_evex_bytes
+    jmp     .e_n
+.e_n_elem:
+    call    dx_evex_elem
+.e_n:
+    mov     [rel dx_disp8n], al
+    jmp     .e_ready
+.e_regs:
+    ; registers: EVEX.b means rounding control or {sae}, at 512 bits
+    cmp     byte [rel dx_eb], 0
+    je      .e_len
+    test    byte [rel dx_eflags], EV_ER | EV_SAE
+    jz      .bad
+    mov     al, [rel dx_vl]
+    mov     [rel dx_eround], al
+    mov     byte [rel dx_vl], 2
+    jmp     .e_ready
+.e_len:
+    cmp     byte [rel dx_vl], 3
+    je      .bad
+.e_ready:
+    mov     byte [rel dx_flags], FL_MODRM
+    mov     byte [rel dx_form], FM_EVEX
     jmp     .entry_loaded
 
     ; ---- opcode ----
@@ -489,6 +688,19 @@ x86_decode:
     jne     .bad
 .have_op:
     mov     [rel dx_op], al
+    ; 9B + fnstsw/fnstcw/fnclex/...: objdump writes one instruction, no "n"
+    cmp     byte [rel dx_map], 1
+    jne     .not_wait
+    cmp     al, 0x9B
+    jne     .not_wait
+    call    dx_fwait_combo
+    test    eax, eax
+    jz      .not_wait
+    call    dx_rd8
+    mov     [rel dx_op], al
+    mov     byte [rel dx_fwait], 1
+    jmp     .x87
+.not_wait:
 
     ; ---- SSE family: 0F / 0F 38 / 0F 3A chosen by the mandatory prefix ----
     cmp     byte [rel dx_map], 2
@@ -630,13 +842,67 @@ x86_decode:
 
     ; ---- redundant 66 prefixes: objdump writes "data16 " for each ----
 .data16:
-    cmp     byte [rel dx_n66], 1
-    jbe     .data16_done
-    dec     byte [rel dx_n66]
+    movzx   eax, byte [rel dx_n66]
+    test    eax, eax
+    jz      .rexw
+    test    byte [rel dx_rex], 8
+    jz      .d16_keep
+    cmp     byte [rel dx_sflags], 0
+    je      .d16_loop                      ; REX.W overrides 66: each is data16
+.d16_keep:
+    dec     eax                            ; one 66 sets the operand size
+.d16_loop:
+    test    eax, eax
+    jz      .rexw
+    push    rax
     lea     rsi, [rel s_data16]
     call    dx_puts
-    jmp     .data16
+    pop     rax
+    dec     eax
+    jmp     .d16_loop
+    ; ---- REX.W on a near call/jmp does nothing: objdump writes "rex.W" ----
+.rexw:
+    test    byte [rel dx_rex], 8
+    jz      .data16_done
+    test    byte [rel dx_flags], FL_F64
+    jz      .data16_done
+    cmp     byte [rel dx_sflags], 0
+    jne     .data16_done
+    lea     rsi, [rel s_rexw]
+    call    dx_puts
 .data16_done:
+
+    ; ---- one-byte map prefixes objdump spells out ----
+    cmp     byte [rel dx_map], 1
+    jne     .spelled_done
+    ; F3 C3 / F3 C2: "repz ret"
+    movzx   eax, byte [rel dx_op]
+    and     eax, 0xFE
+    cmp     eax, 0xC2
+    jne     .notrack
+    cmp     byte [rel dx_rep], 0
+    je      .spelled_done
+    mov     byte [rel dx_rep], 0
+    lea     rsi, [rel s_repz]
+    call    dx_puts
+    jmp     .spelled_done
+.notrack:
+    ; 3E on an indirect call/jmp (FF /2, FF /4): "notrack"
+    cmp     byte [rel dx_op], 0xFF
+    jne     .spelled_done
+    cmp     byte [rel dx_seg], 'd'
+    jne     .spelled_done
+    movzx   eax, byte [rel dx_regno]
+    and     eax, 7
+    cmp     eax, 2
+    je      .notrack_put
+    cmp     eax, 4
+    jne     .spelled_done
+.notrack_put:
+    mov     byte [rel dx_seg], 0
+    lea     rsi, [rel s_notrack]
+    call    dx_puts
+.spelled_done:
 
     ; ---- 0F 1F nop with a segment prefix: objdump writes "cs nop ..." ----
     cmp     byte [rel dx_map], 2
@@ -666,6 +932,44 @@ x86_decode:
     cmp     byte [rel dx_fail], 0
     jne     .bad
     call    dx_x87
+    cmp     byte [rel dx_fail], 0
+    jne     .bad
+    jmp     .finish
+
+    ; ---- k-mask instructions: rax = x86_kops entry ----
+.kop:
+    mov     r12, rax
+    call    dx_modrm_decode
+    cmp     byte [rel dx_fail], 0
+    jne     .bad
+    call    dx_kop
+    cmp     byte [rel dx_fail], 0
+    jne     .bad
+    jmp     .finish
+
+    ; ---- VEX 0F AE: vldmxcsr / vstmxcsr (memory, /2 and /3) ----
+.vex_ae:
+    cmp     byte [rel dx_vl], 0
+    jne     .bad
+    call    dx_modrm_decode
+    cmp     byte [rel dx_fail], 0
+    jne     .bad
+    cmp     byte [rel dx_mod], 3
+    je      .bad
+    movzx   eax, byte [rel dx_regno]
+    and     eax, 7
+    lea     rsi, [rel s_vldmxcsr]
+    cmp     eax, 2
+    je      .vex_ae_put
+    lea     rsi, [rel s_vstmxcsr]
+    cmp     eax, 3
+    jne     .bad
+.vex_ae_put:
+    mov     [rel dx_mnem], rsi
+    mov     esi, 1
+    call    dx_mnemonic
+    mov     edi, 32
+    call    dx_mem
     cmp     byte [rel dx_fail], 0
     jne     .bad
 
@@ -836,6 +1140,8 @@ dx_modrm_decode:
 .disp8:
     call    dx_rd8
     movsx   rax, al
+    movzx   ecx, byte [rel dx_disp8n]      ; EVEX compressed displacement
+    imul    rax, rcx
     mov     [rel dx_disp], rax
     mov     byte [rel dx_hasdisp], 1
     ret
@@ -964,6 +1270,18 @@ dx_mem:
     je      .size
     lea     rsi, [rel s_tbyte]
     cmp     edi, 80
+    je      .size
+    lea     rsi, [rel s_zmmword]
+    cmp     edi, 512
+    je      .size
+    lea     rsi, [rel s_dword_bcst]        ; EVEX broadcast: 0x100 + element bits
+    cmp     edi, 0x120
+    je      .size
+    lea     rsi, [rel s_qword_bcst]
+    cmp     edi, 0x140
+    je      .size
+    lea     rsi, [rel s_oword]
+    cmp     edi, 0x180
     je      .size
     lea     rsi, [rel s_qword]
 .size:
@@ -1128,6 +1446,7 @@ dx_x87:
     cmp     byte [rbx + 15], 0xFF
     je      .fail
     mov     [rel dx_mnem], rbx
+    call    dx_x87_wait
     mov     esi, 1
     call    dx_mnemonic
     movzx   edi, byte [rbx + 15]
@@ -1180,6 +1499,7 @@ dx_x87:
 .fix_hit:
     lea     rax, [rbx + 2]
     mov     [rel dx_mnem], rax
+    call    dx_x87_wait
     movzx   esi, byte [rbx + 15]
     call    dx_mnemonic
     cmp     byte [rbx + 15], 0
@@ -1207,6 +1527,570 @@ dx_x87:
     call    dx_putc
     mov     esi, ')'
     jmp     dx_putc
+
+; dx_x87_wait: after a folded 9B, "fnstsw" becomes "fstsw" (and so on)
+dx_x87_wait:
+    cmp     byte [rel dx_fwait], 0
+    je      .ret
+    mov     rsi, [rel dx_mnem]
+    lea     rdi, [rel dx_namebuf]
+    mov     byte [rdi], 'f'
+    add     rsi, 2
+    inc     rdi
+.copy:
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    test    al, al
+    jnz     .copy
+    lea     rax, [rel dx_namebuf]
+    mov     [rel dx_mnem], rax
+.ret:
+    ret
+
+; dx_fwait_combo: eax = 1 when the bytes after a 9B are one of the "fn"
+; instructions objdump folds it into: fnstenv/fnstcw (D9 /6 /7), fnsave/
+; fnstsw (DD /6 /7), fnclex/fninit (DB E2/E3), fnstsw ax (DF E0)
+dx_fwait_combo:
+    mov     rcx, [rel dx_cur]
+    lea     rdx, [rcx + 2]
+    cmp     rdx, [rel dx_end]
+    ja      .no
+    movzx   eax, byte [rcx]
+    movzx   edx, byte [rcx + 1]
+    cmp     eax, 0xDB
+    je      .db
+    cmp     eax, 0xDF
+    je      .df
+    cmp     edx, 0xC0
+    jae     .no                            ; D9 / DD: memory forms only
+    shr     edx, 3
+    and     edx, 7
+    cmp     eax, 0xD9
+    je      .d9dd
+    cmp     eax, 0xDD
+    jne     .no
+.d9dd:
+    cmp     edx, 6
+    jae     .yes
+    jmp     .no
+.db:
+    cmp     edx, 0xE2
+    je      .yes
+    cmp     edx, 0xE3
+    je      .yes
+    jmp     .no
+.df:
+    cmp     edx, 0xE0
+    je      .yes
+.no:
+    xor     eax, eax
+    ret
+.yes:
+    mov     eax, 1
+    ret
+
+; ============================================================================
+; EVEX (AVX-512)
+; ============================================================================
+
+; dx_evex_find: r12 = the x86_evex entry with key ecx, or 0
+dx_evex_find:
+    lea     r12, [rel x86_evex]
+.scan:
+    mov     eax, [r12]
+    test    eax, eax
+    jz      .none
+    cmp     eax, ecx
+    je      .ret
+    add     r12, 16
+    jmp     .scan
+.none:
+    xor     r12d, r12d
+.ret:
+    ret
+
+; dx_evex_bytes: eax = size in bytes of the memory operand (not a broadcast)
+dx_evex_bytes:
+    movzx   ecx, byte [rel dx_vl]
+    mov     edx, 16
+    shl     edx, cl                        ; vector length in bytes
+    movzx   eax, byte [rel dx_emsize]
+    test    eax, eax
+    jz      .full
+    cmp     eax, 4
+    ja      .part
+    lea     ecx, [rax - 1]                 ; b/w/d/q: 1/2/4/8
+    mov     eax, 1
+    shl     eax, cl
+    ret
+.part:
+    cmp     eax, 8
+    je      .x
+    cmp     eax, 9
+    je      .y
+    lea     ecx, [rax - 4]                 ; half/quarter/eighth of the vector
+    shr     edx, cl
+.full:
+    mov     eax, edx
+    ret
+.x:
+    mov     eax, 16
+    ret
+.y:
+    mov     eax, 32
+    ret
+
+; dx_evex_elem: eax = element size in bytes (8 with W, else 4)
+dx_evex_elem:
+    mov     eax, 4
+    test    byte [rel dx_rex], 8
+    jz      .ret
+    mov     eax, 8
+.ret:
+    ret
+
+; ---- dx_evex_operands --------------------
+; Prints the mnemonic and the operands the entry's shape string lists (see
+; x86_evex in scripts/gen_x86_tables.py), with {kN}{z} after the first one.
+; r12 = the x86_evex entry.
+dx_evex_operands:
+    push    rbx
+    push    r14
+    ; vpclmulqdq: the four known selectors have names
+    cmp     byte [rel dx_map], 4
+    jne     .preds
+    cmp     byte [rel dx_op], 0x44
+    jne     .preds
+    call    dx_peek
+    cmp     byte [rel dx_fail], 0
+    jne     .done
+    lea     rsi, [rel s_pclmul_ll]
+    cmp     eax, 0x00
+    je      .pclmul
+    lea     rsi, [rel s_pclmul_hl]
+    cmp     eax, 0x01
+    je      .pclmul
+    lea     rsi, [rel s_pclmul_lh]
+    cmp     eax, 0x10
+    je      .pclmul
+    lea     rsi, [rel s_pclmul_hh]
+    cmp     eax, 0x11
+    jne     .named
+.pclmul:
+    mov     [rel dx_mnem], rsi
+    mov     byte [rel dx_vpfx], 1          ; "v" + pclmul...
+    mov     byte [rel dx_epred], 1         ; the selector is in the name
+    jmp     .named
+.preds:
+    ; vpcmp / vcmp: a known predicate goes into the name
+    test    byte [rel dx_eflags], EV_PINT | EV_PFP
+    jz      .named
+    call    dx_peek
+    cmp     byte [rel dx_fail], 0
+    jne     .done
+    test    byte [rel dx_eflags], EV_PFP
+    jnz     .pfp
+    cmp     eax, 3                         ; vpcmp: 0-2 and 4-6 have names
+    je      .named
+    cmp     eax, 7
+    jae     .named
+    mov     ecx, 5                         ; after "vpcmp"
+    jmp     .pred
+.pfp:
+    cmp     eax, 32
+    jae     .named
+    mov     ecx, 4                         ; after "vcmp"
+.pred:
+    mov     byte [rel dx_epred], 1
+    mov     rsi, [rel dx_mnem]
+    lea     rdi, [rel dx_namebuf]
+.p_head:
+    mov     dl, [rsi]
+    mov     [rdi], dl
+    inc     rsi
+    inc     rdi
+    dec     ecx
+    jnz     .p_head
+    lea     rdx, [rel cmp_preds]
+    shl     eax, 4
+    add     rdx, rax
+.p_pred:
+    mov     al, [rdx]
+    test    al, al
+    jz      .p_tail
+    mov     [rdi], al
+    inc     rdx
+    inc     rdi
+    jmp     .p_pred
+.p_tail:
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    test    al, al
+    jnz     .p_tail
+    lea     rax, [rel dx_namebuf]
+    mov     [rel dx_mnem], rax
+.named:
+    mov     esi, 1
+    call    dx_mnemonic
+    lea     rbx, [r12 + 8]                 ; shape
+    xor     r14d, r14d                     ; operands printed so far
+.next:
+    movzx   eax, byte [rbx]
+    test    eax, eax
+    jz      .done
+    inc     rbx
+    cmp     eax, 'H'
+    jne     .not_h
+    test    byte [rel dx_eflags], EV_MOVS
+    jz      .not_h
+    cmp     byte [rel dx_mod], 3
+    jne     .next                          ; vmovss/vmovsd with memory: no H
+.not_h:
+    cmp     eax, 'I'
+    jne     .sep
+    cmp     byte [rel dx_epred], 0
+    je      .sep
+    call    dx_rd8                         ; the predicate, already named
+    jmp     .next
+.sep:
+    test    r14d, r14d
+    jz      .first
+    push    rax
+    call    dx_sep
+    pop     rax
+.first:
+    call    .operand
+    cmp     byte [rel dx_fail], 0
+    jne     .done
+    inc     r14d
+    cmp     r14d, 1
+    jne     .next
+    call    .mask
+    jmp     .next
+
+.done:
+    pop     r14
+    pop     rbx
+    ret
+
+; one operand; eax = its letter
+.operand:
+    cmp     eax, 'V'
+    je      .o_V
+    cmp     eax, 'H'
+    je      .o_H
+    cmp     eax, 'W'
+    je      .o_W
+    cmp     eax, 'Y'
+    je      .o_Y
+    cmp     eax, 'E'
+    je      .o_E
+    cmp     eax, 'G'
+    je      .o_G
+    cmp     eax, 'K'
+    je      .o_K
+    cmp     eax, 'k'
+    je      .o_k
+    cmp     eax, 'I'
+    je      .o_I
+.o_fail:
+    mov     byte [rel dx_fail], 1
+    ret
+.o_V:
+    call    .main_class
+    movzx   esi, byte [rel dx_regno]
+    movzx   eax, byte [rel dx_reghi]
+    or      esi, eax
+    jmp     dx_vecreg_c
+.o_Y:
+    movzx   edi, byte [rel dx_vl]          ; half the vector length, at least xmm
+    test    edi, edi
+    jnz     .y_class
+    mov     edi, 1
+.y_class:
+    movzx   esi, byte [rel dx_regno]
+    movzx   eax, byte [rel dx_reghi]
+    or      esi, eax
+    jmp     dx_vecreg_c
+.o_H:
+    call    .main_class
+    movzx   esi, byte [rel dx_vvvv]
+    jmp     dx_vecreg_c
+.o_W:
+    cmp     byte [rel dx_mod], 3
+    jne     .memory
+    call    dx_evex_bytes                  ; register as wide as the memory form
+    mov     edi, 1
+    cmp     eax, 32
+    jb      .w_reg
+    mov     edi, 2
+    je      .w_reg
+    mov     edi, 3
+.w_reg:
+    movzx   esi, byte [rel dx_rmreg]
+    movzx   eax, byte [rel dx_rmhi]
+    or      esi, eax
+    call    dx_vecreg_c
+    jmp     .round
+.o_E:
+    cmp     byte [rel dx_mod], 3
+    jne     .memory
+    call    .gpr_size
+    movzx   esi, byte [rel dx_rmreg]
+    call    dx_reg
+    jmp     .round
+.o_G:
+    call    .gpr_size
+    movzx   esi, byte [rel dx_regno]
+    jmp     dx_reg
+.o_K:
+    movzx   esi, byte [rel dx_regno]
+    jmp     dx_kreg
+.o_k:
+    cmp     byte [rel dx_mod], 3
+    jne     .o_fail
+    movzx   esi, byte [rel dx_rmreg]
+    jmp     dx_kreg
+.o_I:
+    call    dx_rd8
+    mov     rsi, rax
+    jmp     dx_hex
+
+.memory:
+    cmp     byte [rel dx_eb], 0
+    je      .m_plain
+    call    dx_evex_elem                   ; "DWORD BCST [...]"
+    mov     edi, 0x120
+    cmp     eax, 8
+    jne     .m_put
+    mov     edi, 0x140
+    jmp     .m_put
+.m_plain:
+    call    dx_evex_bytes
+    mov     edi, eax
+    shl     edi, 3
+.m_put:
+    jmp     dx_mem
+
+; {rn-sae} / {sae} after a register source when EVEX.b is set
+.round:
+    cmp     byte [rel dx_eb], 0
+    je      .r_ret
+    lea     rsi, [rel s_sae]
+    test    byte [rel dx_eflags], EV_ER
+    jz      .r_put
+    movzx   eax, byte [rel dx_eround]
+    shl     eax, 4
+    lea     rsi, [rel s_rounds]
+    add     rsi, rax
+.r_put:
+    jmp     dx_puts
+.r_ret:
+    ret
+
+; edi = register class of V and H
+.main_class:
+    mov     edi, 1
+    test    byte [rel dx_eflags], EV_SCALAR
+    jnz     .mc_ret
+    movzx   edi, byte [rel dx_vl]
+    inc     edi
+.mc_ret:
+    ret
+
+; edi = 64 with W, else 32
+.gpr_size:
+    mov     edi, 32
+    test    byte [rel dx_rex], 8
+    jz      .gs_ret
+    mov     edi, 64
+.gs_ret:
+    ret
+
+; "{kN}" when a mask is applied, "{z}" when zeroing
+.mask:
+    movzx   eax, byte [rel dx_eaaa]
+    test    eax, eax
+    jz      .no_k
+    lea     rsi, [rel s_kopen]
+    call    dx_puts
+    movzx   esi, byte [rel dx_eaaa]
+    add     esi, '0'
+    call    dx_putc
+    mov     esi, '}'
+    call    dx_putc
+.no_k:
+    cmp     byte [rel dx_ez], 0
+    je      .mask_ret
+    lea     rsi, [rel s_zmask]
+    jmp     dx_puts
+.mask_ret:
+    ret
+
+; dx_kreg: mask register k(esi & 7)
+dx_kreg:
+    and     esi, 7
+    push    rsi
+    mov     esi, 'k'
+    call    dx_putc
+    pop     rsi
+    add     esi, '0'
+    jmp     dx_putc
+
+; ---- k-mask instructions (VEX) -----------
+
+; dx_kop_find: rax = the x86_kops entry for this VEX instruction, or 0.
+; ecx = VEX.pp (kept).
+dx_kop_find:
+    lea     rax, [rel x86_kops]
+    mov     edx, ecx
+    test    byte [rel dx_rex], 8
+    jz      .scan
+    or      edx, 4                         ; pp | W << 2
+.scan:
+    cmp     byte [rax], 0
+    je      .none
+    movzx   r8d, byte [rax]
+    movzx   r9d, byte [rel dx_map]
+    cmp     r8d, r9d
+    jne     .next
+    movzx   r8d, byte [rax + 1]
+    movzx   r9d, byte [rel dx_op]
+    cmp     r8d, r9d
+    jne     .next
+    movzx   r8d, byte [rax + 2]
+    cmp     r8d, edx
+    je      .ret
+.next:
+    add     rax, 16
+    jmp     .scan
+.none:
+    xor     eax, eax
+.ret:
+    ret
+
+; dx_kop: prints the k-mask instruction whose x86_kops entry is r12
+dx_kop:
+    push    rbx
+    mov     rbx, r12
+    xor     eax, eax                       ; VEX.L: 1 for k,k,k forms, else 0
+    cmp     byte [rbx + 3], 1
+    jne     .l
+    mov     eax, 1
+.l:
+    cmp     [rel dx_vl], al
+    jne     .fail
+    lea     rax, [rbx + 4]
+    mov     [rel dx_mnem], rax
+    movzx   eax, byte [rbx + 3]
+    cmp     byte [rel dx_mod], 3
+    je      .regs
+    cmp     eax, 2                         ; only kmov has memory forms
+    je      .go
+    cmp     eax, 3
+    je      .go
+    jmp     .fail
+.regs:
+    cmp     eax, 3
+    je      .fail
+.go:
+    mov     esi, 1
+    call    dx_mnemonic
+    movzx   eax, byte [rbx + 3]
+    cmp     eax, 3
+    je      .s_store
+    cmp     eax, 5
+    je      .s_gpr_k
+    movzx   esi, byte [rel dx_regno]       ; k from ModRM.reg first
+    call    dx_kreg
+    call    dx_sep
+    movzx   eax, byte [rbx + 3]
+    cmp     eax, 1
+    je      .s_three
+    cmp     eax, 4
+    je      .s_k_gpr
+    cmp     byte [rel dx_mod], 3
+    jne     .s_mem
+    movzx   esi, byte [rel dx_rmreg]
+    call    dx_kreg
+    cmp     byte [rbx + 3], 7
+    jne     .done
+    call    dx_sep
+    call    dx_rd8
+    mov     rsi, rax
+    call    dx_hex
+    jmp     .done
+.s_three:
+    movzx   esi, byte [rel dx_vvvv]
+    call    dx_kreg
+    call    dx_sep
+    movzx   esi, byte [rel dx_rmreg]
+    call    dx_kreg
+    jmp     .done
+.s_k_gpr:
+    call    .gpr_size
+    movzx   esi, byte [rel dx_rmreg]
+    call    dx_reg
+    jmp     .done
+.s_mem:
+    call    .mem_size
+    call    dx_mem
+    jmp     .done
+.s_store:
+    call    .mem_size
+    call    dx_mem
+    call    dx_sep
+    movzx   esi, byte [rel dx_regno]
+    call    dx_kreg
+    jmp     .done
+.s_gpr_k:
+    call    .gpr_size
+    movzx   esi, byte [rel dx_regno]
+    call    dx_reg
+    call    dx_sep
+    movzx   esi, byte [rel dx_rmreg]
+    call    dx_kreg
+    jmp     .done
+.fail:
+    mov     byte [rel dx_fail], 1
+.done:
+    pop     rbx
+    ret
+
+; edi = 64 for kmovq, else 32
+.gpr_size:
+    mov     edi, 32
+    test    byte [rel dx_rex], 8
+    jz      .gs_ret
+    mov     edi, 64
+.gs_ret:
+    ret
+
+; edi = memory size from the name's last letter (b/w/d/q)
+.mem_size:
+    lea     rsi, [rbx + 4]
+.ms_end:
+    cmp     byte [rsi + 1], 0
+    je      .ms_last
+    inc     rsi
+    jmp     .ms_end
+.ms_last:
+    mov     edi, 8
+    cmp     byte [rsi], 'b'
+    je      .ms_ret
+    mov     edi, 16
+    cmp     byte [rsi], 'w'
+    je      .ms_ret
+    mov     edi, 32
+    cmp     byte [rsi], 'd'
+    je      .ms_ret
+    mov     edi, 64
+.ms_ret:
+    ret
 
 ; ============================================================================
 ; Operands, by form
@@ -1305,9 +2189,52 @@ dx_operands:
     je      .f_g7
     cmp     eax, FM_GAE
     je      .f_gae
+    cmp     eax, FM_EVEX
+    je      .f_evex
+    cmp     eax, FM_G9
+    je      .f_g9
     cmp     eax, FM_VW
     jb      .unknown_form
     call    dx_sse_operands
+    jmp     .done
+.f_evex:
+    call    dx_evex_operands
+    jmp     .done
+
+.f_g9:                                     ; 0F C7
+    movzx   eax, byte [rel dx_regno]
+    and     eax, 7
+    cmp     byte [rel dx_mod], 3
+    je      .g9_reg
+    cmp     eax, 1                         ; cmpxchg8b m64 / cmpxchg16b m128
+    jne     .sys_bad
+    lea     rsi, [rel s_cmpxchg8b]
+    mov     ebx, 64
+    test    byte [rel dx_rex], 8
+    jz      .g9_mem
+    lea     rsi, [rel s_cmpxchg16b]
+    mov     ebx, 0x180                     ; OWORD PTR
+.g9_mem:
+    mov     [rel dx_mnem], rsi
+    mov     esi, 1
+    call    dx_mnemonic
+    mov     edi, ebx
+    call    dx_mem
+    jmp     .done
+.g9_reg:                                   ; rdrand / rdseed r16/32/64
+    lea     rsi, [rel s_rdrand]
+    cmp     eax, 6
+    je      .g9_rput
+    lea     rsi, [rel s_rdseed]
+    cmp     eax, 7
+    jne     .sys_bad
+.g9_rput:
+    mov     [rel dx_mnem], rsi
+    mov     esi, 1
+    call    dx_mnemonic
+    mov     edi, ebx
+    movzx   esi, byte [rel dx_rmreg]
+    call    dx_reg
     jmp     .done
 .unknown_form:
     mov     byte [rel dx_fail], 1
@@ -1972,8 +2899,13 @@ dx_sse_operands:
 
 .CMPS:                                     ; cmpps xmm,xmm,imm - or cmpltps xmm,xmm
     call    .peek_imm
+    cmp     eax, 32
+    jae     .VWI
+    cmp     byte [rel dx_vex], 0
+    jne     .cmps_pred                     ; VEX: 32 predicates, SSE: 8
     cmp     eax, 8
     jae     .VWI
+.cmps_pred:
     ; "cmp" + predicate + the entry's suffix (ps/pd/ss/sd)
     lea     rdi, [rel dx_namebuf]
     mov     byte [rdi], 'c'
@@ -1981,7 +2913,8 @@ dx_sse_operands:
     mov     byte [rdi + 2], 'p'
     add     rdi, 3
     lea     rsi, [rel cmp_preds]
-    lea     rsi, [rsi + rax*8]
+    shl     eax, 4
+    add     rsi, rax
 .cmps_copy:
     mov     cl, [rsi]
     test    cl, cl
@@ -2268,7 +3201,7 @@ dx_name_last:
 ; dx_vecreg: vector register esi ("mm3" / "xmm12")
 dx_vecreg:
     movzx   edi, byte [rel dx_vclass]
-; dx_vecreg_c: vector register esi of class edi (0 mm, 1 xmm, 2 ymm)
+; dx_vecreg_c: vector register esi of class edi (0 mm, 1 xmm, 2 ymm, 3 zmm)
 dx_vecreg_c:
     push    rsi
     push    rdi
@@ -2279,6 +3212,9 @@ dx_vecreg_c:
     cmp     edi, 1
     je      .prefix
     lea     rsi, [rel s_ymm]
+    cmp     edi, 2
+    je      .prefix
+    lea     rsi, [rel s_zmm]
 .prefix:
     call    dx_puts
     pop     rdi
@@ -2294,6 +3230,23 @@ dx_vecreg_c:
 dx_memsize:
     movzx   eax, byte [rel dx_sflags]
     and     eax, SF_MEM
+    ; W makes a DWORD operand QWORD where it also renames the instruction
+    ; (pinsrd -> pinsrq, vfmadd213ss -> vfmadd213sd)
+    cmp     eax, 3
+    jne     .sized
+    test    byte [rel dx_rex], 8
+    jz      .sized
+    test    byte [rel dx_sflags], SF_WQ
+    jnz     .wide
+    cmp     byte [rel dx_vex], 0
+    je      .sized
+    cmp     byte [rel dx_vpfx], 0
+    jne     .sized
+    test    byte [rel dx_sflags], VF_WSD
+    jz      .sized
+.wide:
+    mov     eax, 4
+.sized:
     xor     edi, edi
     cmp     eax, 1
     jne     .w
@@ -2321,7 +3274,10 @@ dx_memsize:
 
 dx_opV:
     movzx   esi, byte [rel dx_regno]
-    jmp     dx_vecreg
+    cmp     byte [rel dx_narrow], 0
+    je      dx_vecreg
+    mov     edi, 1                         ; narrowing conversion: always xmm
+    jmp     dx_vecreg_c
 
 dx_opW:
     cmp     byte [rel dx_half], 0
@@ -2506,6 +3462,24 @@ s_dword:    db "DWORD PTR ", 0
 s_qword:    db "QWORD PTR ", 0
 s_xmmword:  db "XMMWORD PTR ", 0
 s_ymmword:  db "YMMWORD PTR ", 0
+s_zmmword:  db "ZMMWORD PTR ", 0
+s_dword_bcst: db "DWORD BCST ", 0
+s_qword_bcst: db "QWORD BCST ", 0
+s_zmm:      db "zmm", 0
+s_oword:    db "OWORD PTR ", 0
+s_cmpxchg8b: db "cmpxchg8b", 0
+s_cmpxchg16b: db "cmpxchg16b", 0
+s_rdrand:   db "rdrand", 0
+s_rdseed:   db "rdseed", 0
+s_vldmxcsr: db "vldmxcsr", 0
+s_vstmxcsr: db "vstmxcsr", 0
+s_kopen:    db "{k", 0
+s_zmask:    db "{z}", 0
+s_sae:      db "{sae}", 0
+s_rounds:   db "{rn-sae}", 0, 0, 0, 0, 0, 0, 0, 0
+            db "{rd-sae}", 0, 0, 0, 0, 0, 0, 0, 0
+            db "{ru-sae}", 0, 0, 0, 0, 0, 0, 0, 0
+            db "{rz-sae}", 0, 0, 0, 0, 0, 0, 0, 0
 s_tbyte:    db "TBYTE PTR ", 0
 s_st:       db "st", 0
 s_commast:  db ",st", 0
@@ -2524,8 +3498,39 @@ s_pclmul_hl: db "pclmulhqlqdq", 0
 s_pclmul_lh: db "pclmullqhqdq", 0
 s_pclmul_hh: db "pclmulhqhqdq", 0
 ; cmpps predicates 0-7, 8-byte slots
-cmp_preds:  db "eq",0,0,0,0,0,0, "lt",0,0,0,0,0,0, "le",0,0,0,0,0,0, "unord",0,0,0
-            db "neq",0,0,0,0,0, "nlt",0,0,0,0,0, "nle",0,0,0,0,0, "ord",0,0,0,0,0
+; the 32 vcmp predicates (legacy SSE uses the first 8), 16 bytes each
+cmp_preds:  db "eq", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "lt", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "le", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "unord", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "neq", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "nlt", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "nle", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "ord", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "eq_uq", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "nge", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "ngt", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "false", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "neq_oq", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "ge", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "gt", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "true", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "eq_os", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "lt_oq", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "le_oq", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "unord_s", 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "neq_us", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "nlt_uq", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "nle_uq", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "ord_s", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "eq_us", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "nge_uq", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "ngt_uq", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "false_os", 0, 0, 0, 0, 0, 0, 0, 0
+            db "neq_os", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "ge_oq", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "gt_oq", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            db "true_us", 0, 0, 0, 0, 0, 0, 0, 0, 0
 s_ds:       db "ds:", 0
 s_rip:      db "rip", 0
 s_eip:      db "eip", 0
@@ -2533,6 +3538,8 @@ s_lock:     db "lock ", 0
 s_rep:      db "rep ", 0
 s_repz:     db "repz ", 0
 s_repnz:    db "repnz ", 0
+s_notrack:  db "notrack ", 0
+s_rexw:     db "rex.W ", 0
 s_comma1:   db ",1", 0
 s_commacl:  db ",cl", 0
 s_esrdi:    db "es:[rdi]", 0
@@ -2561,6 +3568,10 @@ g7_reg_names:  db 0xC8, "monitor", 0, 0,0,0,0,0,0,0
                db 0xCB, "stac", 0, 0,0,0,0,0,0,0,0,0,0
                db 0xD0, "xgetbv", 0, 0,0,0,0,0,0,0,0
                db 0xD1, "xsetbv", 0, 0,0,0,0,0,0,0,0
+               db 0xD5, "xend", 0, 0,0,0,0,0,0,0,0,0,0
+               db 0xD6, "xtest", 0, 0,0,0,0,0,0,0,0,0
+               db 0xEE, "rdpkru", 0, 0,0,0,0,0,0,0,0
+               db 0xEF, "wrpkru", 0, 0,0,0,0,0,0,0,0
                db 0xF8, "swapgs", 0, 0,0,0,0,0,0,0,0
                db 0xF9, "rdtscp", 0, 0,0,0,0,0,0,0,0
                db 0
