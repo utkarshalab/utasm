@@ -26,6 +26,8 @@ extern asm_ctx_align
 extern str_concat
 extern error_emit
 extern error_hint_mnemonic
+extern relax_freeze_current
+extern relax_freeze_symref
 extern asm_ctx_create_section
 extern asmctx_get_section
 extern asmctx_emit_byte
@@ -740,6 +742,25 @@ parser_evaluate_additive:
         mov     r8, rcx                ; deferred name, if any
         or      r8, r11                ; resolved SYMBOL*, if any
 
+        ; "label_b - label_a" turns positions into a plain number, so the
+        ; sections of both labels must not move afterwards (jump shortening
+        ; in optimizer/jump.s leaves them alone).
+        test    r8, r8
+        jz      .no_diff_freeze
+        push    rdi
+        push    rsi
+        mov     rdi, r11
+        mov     rsi, rcx
+        call    relax_freeze_symref
+        mov     rdi, r15
+        mov     rsi, r14
+        call    relax_freeze_symref
+        pop     rsi
+        pop     rdi
+.no_diff_freeze:
+        mov     r8, rcx
+        or      r8, r11
+
         sub     r13, rdx
         jo      .overflow
 
@@ -1166,7 +1187,9 @@ parser_evaluate_factor:
         xor     rax, rax
         jmp     .done
     ELSEIF al, e, TOK_DOLLAR
-        ; Current location counter ($)
+        ; Current location counter ($). The position becomes a plain
+        ; number here, so code in this section must not move afterwards.
+        call    relax_freeze_current
         mov     rax, [rbx + PREP_ctx]
         mov     rax, [rax + ASMCTX_curr_sec]
         IF rax, e, 0
@@ -2624,6 +2647,11 @@ parser_handle_equ:
     ; Evaluate expression
     call    parser_evaluate_expression
     check_err
+    ; "x equ label" copies a position into a constant: keep the label's
+    ; section from moving (optimizer/jump.s).
+    mov     rdi, r11
+    mov     rsi, rcx
+    call    relax_freeze_symref
     mov     r12, rdx               ; r12 = value
     
     ; Get last symbol
