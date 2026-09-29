@@ -411,6 +411,7 @@
 ; required; they deliberately do not affect assembly semantics.
 %define CTX_FLAG_SHOW_HELP     0x200000
 %define CTX_FLAG_SHOW_VERSION  0x400000
+%define CTX_FLAG_DEFAULT_REL   0x800000    ; DEFAULT REL: [label] means [rel label]
 
 ; ============================================================================
 ; CPU FEATURE BITS (AMD64)
