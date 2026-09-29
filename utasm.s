@@ -27,6 +27,7 @@ extern amd64_encode_instruction
 extern aarch64_encode_instruction
 extern riscv64_encode_instruction
 extern linker_run
+extern inspect_file
 extern global_profstate
 
 [SECTION .bss]
@@ -100,6 +101,10 @@ _start:
 
     cmp     qword [rbx + ASMCTX_input], 0
     je      .show_usage
+
+    ; 4.1 --inspect: print an existing ELF file instead of assembling
+    cmp     byte [rbx + ASMCTX_inspect], 0
+    jne     .inspect
 
     ; 4.5 Profiler start-up.
     ; Only initialised when --profile/-P is given: profiler_init is what sets
@@ -284,6 +289,44 @@ _start:
     lea     rsi, [rel msg_version]
     call    print_str
     xor     eax, eax
+    jmp     .exit
+
+.inspect:
+    mov     rdi, [rbx + ASMCTX_input]
+    movzx   esi, byte [rbx + ASMCTX_inspect]
+    call    inspect_file
+    test    rax, rax
+    jz      .exit
+    mov     r12, rax                ; exit with the specific error code
+
+    ; utasm: cannot inspect '<file>': <reason>
+    lea     r13, [rel msg_insp_nofile]
+    cmp     r12, EXIT_FILE_NOT_FOUND
+    je      .inspect_report
+    lea     r13, [rel msg_insp_perm]
+    cmp     r12, EXIT_FILE_PERM
+    je      .inspect_report
+    lea     r13, [rel msg_insp_fmt]
+    cmp     r12, EXIT_INVALID_FORMAT
+    je      .inspect_report
+    lea     r13, [rel msg_insp_write]
+    cmp     r12, EXIT_FILE_WRITE
+    je      .inspect_report
+    lea     r13, [rel msg_insp_other]
+.inspect_report:
+    mov     rdi, 2
+    lea     rsi, [rel msg_insp_pre]
+    call    print_str
+    mov     rdi, 2
+    mov     rsi, [rbx + ASMCTX_input]
+    call    print_str
+    mov     rdi, 2
+    lea     rsi, [rel msg_insp_mid]
+    call    print_str
+    mov     rdi, 2
+    mov     rsi, r13
+    call    print_str
+    mov     rax, r12
     jmp     .exit
 
 .exit_oom:
@@ -497,18 +540,29 @@ print_num:
 [SECTION .data]
     msg_usage:     db "Usage: utasm [options] <source.s>", 10, "Try 'utasm --help' for usage.", 10, 0
     msg_help:      db "utasm 0.1.0 — multi-architecture assembler and linker", 10, 10, \
-                       "Usage: utasm [options] <source.s>", 10, 10, \
+                       "Usage: utasm [options] <source.s>", 10, \
+                       "       utasm --inspect [--inspect-only <parts>] <file>", 10, 10, \
                        "Options:", 10, \
-                       "  -f <format>              elf64 (default), bin", 10, \
-                       "  -o <file>                output path (default: source.o / source.bin)", 10, \
-                       "  -a, -arch, --arch <arch> amd64 (default), aarch64, riscv64", 10, \
+                       "  -f, --format <format>     elf64 (default), bin", 10, \
+                       "  -o <file>                 output path (default: source.o / source.bin)", 10, \
+                       "  -a, -arch, --arch <arch>  amd64 (default), aarch64, riscv64", 10, \
                        "  --standalone              produce a standalone executable", 10, \
                        "  --profile, -P             print internal compiler profile", 10, \
                        "  --verbose                 enable verbose diagnostics", 10, \
                        "  --color | --no-color      control diagnostic color", 10, \
                        "  -Werror                   treat warnings as errors", 10, \
+                       "  --inspect                 inspect an ELF file instead of assembling", 10, \
+                       "  --inspect-only <parts>    inspect only: header,sections,segments,", 10, \
+                       "                            symbols,relocs,all (comma-separated)", 10, \
                        "  -h, --help                show this help", 10, \
                        "  -v, --version             show version", 10, 0
+    msg_insp_pre:   db "utasm: cannot inspect '", 0
+    msg_insp_mid:   db "': ", 0
+    msg_insp_nofile: db "no such file", 10, 0
+    msg_insp_perm:  db "permission denied", 10, 0
+    msg_insp_fmt:   db "not a valid ELF64 little-endian file", 10, 0
+    msg_insp_write: db "error writing output", 10, 0
+    msg_insp_other: db "could not read the file", 10, 0
     msg_version:   db "utasm 0.1.0", 10, 0
     msg_crit_init: db "CRITICAL: Initialization failed", 10, 0
     msg_parser_err:   db "Parser error: ", 0
