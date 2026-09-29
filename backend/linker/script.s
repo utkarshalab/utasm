@@ -11,7 +11,7 @@
 %include "include/macro.inc"
 
 extern lexer_init
-extern lexer_next_token
+extern lexer_next
 
 [SECTION .text]
 
