@@ -44,6 +44,60 @@ struc ARENA
 endstruc
 
 ; ============================================================================
+; STRUCT: Vec  (lib/vec.s)
+; ============================================================================
+; Growable array of fixed-size elements, backed by an Arena.
+; Growth allocates a new buffer and copies; the old one is abandoned
+; (arenas never free individual blocks).
+
+struc VEC
+    field tag,       1      ; always TAG_VEC
+    field pad0,      3      ; alignment padding
+    field elem_size, 4      ; bytes per element (> 0)
+    field data,      8      ; pointer to element storage
+    field len,       8      ; number of elements in use
+    field cap,       8      ; number of elements allocated
+    field arena,     8      ; Arena used for (re)allocation
+endstruc
+
+; ============================================================================
+; STRUCT: List / ListNode  (lib/list.s)
+; ============================================================================
+; Doubly linked list of 64-bit values (integers or pointers).
+; Nodes are allocated from an Arena; removed nodes are not reclaimed.
+
+struc LIST
+    field tag,      1       ; always TAG_LIST
+    field pad0,     7       ; alignment padding
+    field head,     8       ; first LISTNODE or 0
+    field tail,     8       ; last LISTNODE or 0
+    field count,    8       ; number of nodes
+    field arena,    8       ; Arena used for node allocation
+endstruc
+
+struc LISTNODE
+    field next,     8       ; next node or 0
+    field prev,     8       ; previous node or 0
+    field value,    8       ; payload
+endstruc
+
+; ============================================================================
+; STRUCT: FmtBuf  (lib/fmt.s)
+; ============================================================================
+; Bounded string builder over a caller-supplied buffer. One byte is always
+; reserved for the NUL terminator. Writes past capacity are dropped and
+; set the truncated flag instead of overflowing.
+
+struc FMTBUF
+    field tag,       1      ; always TAG_FMTBUF
+    field truncated, 1      ; 1 once any write was dropped
+    field pad0,      6      ; alignment padding
+    field buf,       8      ; destination buffer
+    field len,       8      ; bytes written (excluding NUL)
+    field cap,       8      ; buffer size in bytes (including NUL slot)
+endstruc
+
+; ============================================================================
 ; STRUCT: Symbol
 ; ============================================================================
 
