@@ -165,10 +165,11 @@ reloc_resolve_all:
     ; Check if symbol is undefined
     movzx   eax, word [r10 + SYMBOL_section]
     IF ax, e, 0                            ; SHN_UNDEF
-        ; Only error if we are in binary mode
-        mov     rax, [rbx + ASMCTX_flags]
-        test    rax, CTX_FLAG_FORMAT_BIN
-        jnz     .undef
+        ; Only error if we are in flat-binary mode. ASMCTX_fmt is the
+        ; authoritative output selection; compatibility flag bits can no
+        ; longer become stale after repeated -f options.
+        cmp     byte [rbx + ASMCTX_fmt], FMT_BIN
+        je      .undef
         jmp     .next                      ; Skip patching, keep for .rela
         ENDIF
     
@@ -226,9 +227,8 @@ reloc_resolve_all:
     jmp     .ret
 
 .check_undef:
-    mov     rax, [rbx + ASMCTX_flags]
-    test    rax, CTX_FLAG_FORMAT_BIN
-    jnz     .undef
+    cmp     byte [rbx + ASMCTX_fmt], FMT_BIN
+    je      .undef
     jmp     .next
 
 .undef:
