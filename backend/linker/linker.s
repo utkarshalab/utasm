@@ -36,6 +36,12 @@ linker_run:
     push    r13
     mov     rbx, rdi               ; RBX = AsmCtx
 
+    ; 0. Shorten forward jumps now that every label is known (moves code,
+    ;    so it must run before relocations are resolved)
+    extern  relax_run
+    mov     rdi, rbx
+    call    relax_run
+
     ; 1. Resolve all relocations
     extern  global_profstate
     extern  profiler_start_phase
