@@ -561,7 +561,8 @@ print_num:
                    db "                            (default) | also remove and merge jumps", 10
                    db "  --inspect                 inspect an ELF file instead of assembling", 10
                    db "  --inspect-only <parts>    inspect only: header,sections,segments,", 10
-                   db "                            symbols,relocs,all (comma-separated)", 10
+                   db "                            symbols,relocs,all,disasm (comma-separated)", 10
+                   db "  --disasm                  disassemble an ELF file's code (x86-64)", 10
                    db "  -h, --help                show this help", 10
                    db "  -v, --version             show version", 10, 0
     msg_insp_pre:   db "utasm: cannot inspect '", 0
