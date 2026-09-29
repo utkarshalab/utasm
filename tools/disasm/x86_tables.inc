@@ -49,10 +49,20 @@ x86_names:
     db "aesimc", 0, "aesenc", 0, "aesenclast", 0, "aesdec", 0, "aesdeclast", 0, "movbe", 0, "crc32", 0, "roundps", 0
     db "roundpd", 0, "roundss", 0, "roundsd", 0, "blendps", 0, "blendpd", 0, "pblendw", 0, "palignr", 0, "pextrb", 0
     db "pextrd", 0, "extractps", 0, "pinsrb", 0, "insertps", 0, "pinsrd", 0, "dpps", 0, "dppd", 0, "mpsadbw", 0
-    db "pclmulqdq", 0, "pcmpestrm", 0, "pcmpestri", 0, "pcmpistrm", 0, "pcmpistri", 0, "aeskeygenassist", 0, "rol", 0, "ror", 0
-    db "rcl", 0, "rcr", 0, "shl", 0, "shr", 0, "sar", 0, "not", 0, "neg", 0, "mul", 0
-    db "div", 0, "idiv", 0, "inc", 0, "dec", 0, "sldt", 0, "str", 0, "lldt", 0, "ltr", 0
-    db "verr", 0, "verw", 0, "psrldq", 0, "pslldq", 0, "prefetchnta", 0, "prefetcht0", 0, "prefetcht1", 0, "prefetcht2", 0
+    db "pclmulqdq", 0, "pcmpestrm", 0, "pcmpestri", 0, "pcmpistrm", 0, "pcmpistri", 0, "aeskeygenassist", 0, "vzeroupper", 0, "vpermilps", 0
+    db "vpermilpd", 0, "vtestps", 0, "vtestpd", 0, "vpermps", 0, "vbroadcastss", 0, "vbroadcastsd", 0, "vbroadcastf128", 0, "vmaskmovps", 0
+    db "vmaskmovpd", 0, "vpermd", 0, "vpsrlvd", 0, "vpsravd", 0, "vpsllvd", 0, "vpbroadcastd", 0, "vpbroadcastq", 0, "vbroadcasti128", 0
+    db "vpbroadcastb", 0, "vpbroadcastw", 0, "vpmaskmovd", 0, "vfmaddsub132ps", 0, "vfmsubadd132ps", 0, "vfmadd132ps", 0, "vfmadd132ss", 0, "vfmsub132ps", 0
+    db "vfmsub132ss", 0, "vfnmadd132ps", 0, "vfnmadd132ss", 0, "vfnmsub132ps", 0, "vfnmsub132ss", 0, "vfmaddsub213ps", 0, "vfmsubadd213ps", 0, "vfmadd213ps", 0
+    db "vfmadd213ss", 0, "vfmsub213ps", 0, "vfmsub213ss", 0, "vfnmadd213ps", 0, "vfnmadd213ss", 0, "vfnmsub213ps", 0, "vfnmsub213ss", 0, "vfmaddsub231ps", 0
+    db "vfmsubadd231ps", 0, "vfmadd231ps", 0, "vfmadd231ss", 0, "vfmsub231ps", 0, "vfmsub231ss", 0, "vfnmadd231ps", 0, "vfnmadd231ss", 0, "vfnmsub231ps", 0
+    db "vfnmsub231ss", 0, "andn", 0, "bzhi", 0, "pext", 0, "pdep", 0, "mulx", 0, "bextr", 0, "shlx", 0
+    db "sarx", 0, "shrx", 0, "vpermq", 0, "vpermpd", 0, "vpblendd", 0, "vperm2f128", 0, "vinsertf128", 0, "vextractf128", 0
+    db "vinserti128", 0, "vextracti128", 0, "vperm2i128", 0, "vblendvps", 0, "vblendvpd", 0, "vpblendvb", 0, "rorx", 0, "rol", 0
+    db "ror", 0, "rcl", 0, "rcr", 0, "shl", 0, "shr", 0, "sar", 0, "not", 0, "neg", 0
+    db "mul", 0, "div", 0, "idiv", 0, "inc", 0, "dec", 0, "sldt", 0, "str", 0, "lldt", 0
+    db "ltr", 0, "verr", 0, "verw", 0, "psrldq", 0, "pslldq", 0, "blsr", 0, "blsmsk", 0, "blsi", 0
+    db "prefetchnta", 0, "prefetcht0", 0, "prefetcht1", 0, "prefetcht2", 0
 
 x86_map1:
     dw 0x0006
@@ -617,7 +627,7 @@ x86_map2:
     db  0, 0x00        ; 16
     dw 0xffff
     db  0, 0x00        ; 17
-    dw 0x000f
+    dw 0x0010
     db 12, 0x07        ; 18
     dw 0xffff
     db  0, 0x00        ; 19
@@ -3264,7 +3274,7 @@ x86_sse38:
     dw 0xffff
     db  0, 0x00        ; 40
     dw 0x075e
-    db 58, 0x05        ; 41
+    db 58, 0x45        ; 41
     dw 0xffff
     db  0, 0x00        ; 42
     dw 0xffff
@@ -3296,7 +3306,7 @@ x86_sse38:
     dw 0xffff
     db  0, 0x00        ; 50
     dw 0x0767
-    db 58, 0x05        ; 51
+    db 58, 0x45        ; 51
     dw 0xffff
     db  0, 0x00        ; 52
     dw 0xffff
@@ -3304,7 +3314,7 @@ x86_sse38:
     dw 0xffff
     db  0, 0x00        ; 54
     dw 0x0770
-    db 58, 0x05        ; 55
+    db 58, 0x45        ; 55
     dw 0xffff
     db  0, 0x00        ; 56
     dw 0xffff
@@ -7232,6 +7242,6156 @@ x86_sse3a:
     dw 0xffff
     db  0, 0x00        ; 3ff
 
+x86_vex0f:
+    dw 0xffff
+    db  0, 0x00        ; 00
+    dw 0xffff
+    db  0, 0x00        ; 01
+    dw 0xffff
+    db  0, 0x00        ; 02
+    dw 0xffff
+    db  0, 0x00        ; 03
+    dw 0xffff
+    db  0, 0x00        ; 04
+    dw 0xffff
+    db  0, 0x00        ; 05
+    dw 0xffff
+    db  0, 0x00        ; 06
+    dw 0xffff
+    db  0, 0x00        ; 07
+    dw 0xffff
+    db  0, 0x00        ; 08
+    dw 0xffff
+    db  0, 0x00        ; 09
+    dw 0xffff
+    db  0, 0x00        ; 0a
+    dw 0xffff
+    db  0, 0x00        ; 0b
+    dw 0xffff
+    db  0, 0x00        ; 0c
+    dw 0xffff
+    db  0, 0x00        ; 0d
+    dw 0xffff
+    db  0, 0x00        ; 0e
+    dw 0xffff
+    db  0, 0x00        ; 0f
+    dw 0xffff
+    db  0, 0x00        ; 10
+    dw 0xffff
+    db  0, 0x00        ; 11
+    dw 0xffff
+    db  0, 0x00        ; 12
+    dw 0xffff
+    db  0, 0x00        ; 13
+    dw 0xffff
+    db  0, 0x00        ; 14
+    dw 0xffff
+    db  0, 0x00        ; 15
+    dw 0xffff
+    db  0, 0x00        ; 16
+    dw 0xffff
+    db  0, 0x00        ; 17
+    dw 0xffff
+    db  0, 0x00        ; 18
+    dw 0xffff
+    db  0, 0x00        ; 19
+    dw 0xffff
+    db  0, 0x00        ; 1a
+    dw 0xffff
+    db  0, 0x00        ; 1b
+    dw 0xffff
+    db  0, 0x00        ; 1c
+    dw 0xffff
+    db  0, 0x00        ; 1d
+    dw 0xffff
+    db  0, 0x00        ; 1e
+    dw 0xffff
+    db  0, 0x00        ; 1f
+    dw 0xffff
+    db  0, 0x00        ; 20
+    dw 0xffff
+    db  0, 0x00        ; 21
+    dw 0xffff
+    db  0, 0x00        ; 22
+    dw 0xffff
+    db  0, 0x00        ; 23
+    dw 0xffff
+    db  0, 0x00        ; 24
+    dw 0xffff
+    db  0, 0x00        ; 25
+    dw 0xffff
+    db  0, 0x00        ; 26
+    dw 0xffff
+    db  0, 0x00        ; 27
+    dw 0xffff
+    db  0, 0x00        ; 28
+    dw 0xffff
+    db  0, 0x00        ; 29
+    dw 0xffff
+    db  0, 0x00        ; 2a
+    dw 0xffff
+    db  0, 0x00        ; 2b
+    dw 0xffff
+    db  0, 0x00        ; 2c
+    dw 0xffff
+    db  0, 0x00        ; 2d
+    dw 0xffff
+    db  0, 0x00        ; 2e
+    dw 0xffff
+    db  0, 0x00        ; 2f
+    dw 0xffff
+    db  0, 0x00        ; 30
+    dw 0xffff
+    db  0, 0x00        ; 31
+    dw 0xffff
+    db  0, 0x00        ; 32
+    dw 0xffff
+    db  0, 0x00        ; 33
+    dw 0xffff
+    db  0, 0x00        ; 34
+    dw 0xffff
+    db  0, 0x00        ; 35
+    dw 0xffff
+    db  0, 0x00        ; 36
+    dw 0xffff
+    db  0, 0x00        ; 37
+    dw 0xffff
+    db  0, 0x00        ; 38
+    dw 0xffff
+    db  0, 0x00        ; 39
+    dw 0xffff
+    db  0, 0x00        ; 3a
+    dw 0xffff
+    db  0, 0x00        ; 3b
+    dw 0xffff
+    db  0, 0x00        ; 3c
+    dw 0xffff
+    db  0, 0x00        ; 3d
+    dw 0xffff
+    db  0, 0x00        ; 3e
+    dw 0xffff
+    db  0, 0x00        ; 3f
+    dw 0xffff
+    db  0, 0x00        ; 40
+    dw 0xffff
+    db  0, 0x00        ; 41
+    dw 0xffff
+    db  0, 0x00        ; 42
+    dw 0xffff
+    db  0, 0x00        ; 43
+    dw 0xffff
+    db  0, 0x00        ; 44
+    dw 0xffff
+    db  0, 0x00        ; 45
+    dw 0xffff
+    db  0, 0x00        ; 46
+    dw 0xffff
+    db  0, 0x00        ; 47
+    dw 0xffff
+    db  0, 0x00        ; 48
+    dw 0xffff
+    db  0, 0x00        ; 49
+    dw 0xffff
+    db  0, 0x00        ; 4a
+    dw 0xffff
+    db  0, 0x00        ; 4b
+    dw 0xffff
+    db  0, 0x00        ; 4c
+    dw 0xffff
+    db  0, 0x00        ; 4d
+    dw 0xffff
+    db  0, 0x00        ; 4e
+    dw 0xffff
+    db  0, 0x00        ; 4f
+    dw 0xffff
+    db  0, 0x00        ; 50
+    dw 0xffff
+    db  0, 0x00        ; 51
+    dw 0xffff
+    db  0, 0x00        ; 52
+    dw 0xffff
+    db  0, 0x00        ; 53
+    dw 0xffff
+    db  0, 0x00        ; 54
+    dw 0xffff
+    db  0, 0x00        ; 55
+    dw 0xffff
+    db  0, 0x00        ; 56
+    dw 0xffff
+    db  0, 0x00        ; 57
+    dw 0xffff
+    db  0, 0x00        ; 58
+    dw 0xffff
+    db  0, 0x00        ; 59
+    dw 0xffff
+    db  0, 0x00        ; 5a
+    dw 0xffff
+    db  0, 0x00        ; 5b
+    dw 0xffff
+    db  0, 0x00        ; 5c
+    dw 0xffff
+    db  0, 0x00        ; 5d
+    dw 0xffff
+    db  0, 0x00        ; 5e
+    dw 0xffff
+    db  0, 0x00        ; 5f
+    dw 0xffff
+    db  0, 0x00        ; 60
+    dw 0xffff
+    db  0, 0x00        ; 61
+    dw 0xffff
+    db  0, 0x00        ; 62
+    dw 0xffff
+    db  0, 0x00        ; 63
+    dw 0xffff
+    db  0, 0x00        ; 64
+    dw 0xffff
+    db  0, 0x00        ; 65
+    dw 0xffff
+    db  0, 0x00        ; 66
+    dw 0xffff
+    db  0, 0x00        ; 67
+    dw 0xffff
+    db  0, 0x00        ; 68
+    dw 0xffff
+    db  0, 0x00        ; 69
+    dw 0xffff
+    db  0, 0x00        ; 6a
+    dw 0xffff
+    db  0, 0x00        ; 6b
+    dw 0xffff
+    db  0, 0x00        ; 6c
+    dw 0xffff
+    db  0, 0x00        ; 6d
+    dw 0xffff
+    db  0, 0x00        ; 6e
+    dw 0xffff
+    db  0, 0x00        ; 6f
+    dw 0xffff
+    db  0, 0x00        ; 70
+    dw 0xffff
+    db  0, 0x00        ; 71
+    dw 0xffff
+    db  0, 0x00        ; 72
+    dw 0xffff
+    db  0, 0x00        ; 73
+    dw 0xffff
+    db  0, 0x00        ; 74
+    dw 0xffff
+    db  0, 0x00        ; 75
+    dw 0xffff
+    db  0, 0x00        ; 76
+    dw 0xffff
+    db  0, 0x00        ; 77
+    dw 0xffff
+    db  0, 0x00        ; 78
+    dw 0xffff
+    db  0, 0x00        ; 79
+    dw 0xffff
+    db  0, 0x00        ; 7a
+    dw 0xffff
+    db  0, 0x00        ; 7b
+    dw 0xffff
+    db  0, 0x00        ; 7c
+    dw 0xffff
+    db  0, 0x00        ; 7d
+    dw 0xffff
+    db  0, 0x00        ; 7e
+    dw 0xffff
+    db  0, 0x00        ; 7f
+    dw 0xffff
+    db  0, 0x00        ; 80
+    dw 0xffff
+    db  0, 0x00        ; 81
+    dw 0xffff
+    db  0, 0x00        ; 82
+    dw 0xffff
+    db  0, 0x00        ; 83
+    dw 0xffff
+    db  0, 0x00        ; 84
+    dw 0xffff
+    db  0, 0x00        ; 85
+    dw 0xffff
+    db  0, 0x00        ; 86
+    dw 0xffff
+    db  0, 0x00        ; 87
+    dw 0xffff
+    db  0, 0x00        ; 88
+    dw 0xffff
+    db  0, 0x00        ; 89
+    dw 0xffff
+    db  0, 0x00        ; 8a
+    dw 0xffff
+    db  0, 0x00        ; 8b
+    dw 0xffff
+    db  0, 0x00        ; 8c
+    dw 0xffff
+    db  0, 0x00        ; 8d
+    dw 0xffff
+    db  0, 0x00        ; 8e
+    dw 0xffff
+    db  0, 0x00        ; 8f
+    dw 0xffff
+    db  0, 0x00        ; 90
+    dw 0xffff
+    db  0, 0x00        ; 91
+    dw 0xffff
+    db  0, 0x00        ; 92
+    dw 0xffff
+    db  0, 0x00        ; 93
+    dw 0xffff
+    db  0, 0x00        ; 94
+    dw 0xffff
+    db  0, 0x00        ; 95
+    dw 0xffff
+    db  0, 0x00        ; 96
+    dw 0xffff
+    db  0, 0x00        ; 97
+    dw 0xffff
+    db  0, 0x00        ; 98
+    dw 0xffff
+    db  0, 0x00        ; 99
+    dw 0xffff
+    db  0, 0x00        ; 9a
+    dw 0xffff
+    db  0, 0x00        ; 9b
+    dw 0xffff
+    db  0, 0x00        ; 9c
+    dw 0xffff
+    db  0, 0x00        ; 9d
+    dw 0xffff
+    db  0, 0x00        ; 9e
+    dw 0xffff
+    db  0, 0x00        ; 9f
+    dw 0xffff
+    db  0, 0x00        ; a0
+    dw 0xffff
+    db  0, 0x00        ; a1
+    dw 0xffff
+    db  0, 0x00        ; a2
+    dw 0xffff
+    db  0, 0x00        ; a3
+    dw 0xffff
+    db  0, 0x00        ; a4
+    dw 0xffff
+    db  0, 0x00        ; a5
+    dw 0xffff
+    db  0, 0x00        ; a6
+    dw 0xffff
+    db  0, 0x00        ; a7
+    dw 0xffff
+    db  0, 0x00        ; a8
+    dw 0xffff
+    db  0, 0x00        ; a9
+    dw 0xffff
+    db  0, 0x00        ; aa
+    dw 0xffff
+    db  0, 0x00        ; ab
+    dw 0xffff
+    db  0, 0x00        ; ac
+    dw 0xffff
+    db  0, 0x00        ; ad
+    dw 0xffff
+    db  0, 0x00        ; ae
+    dw 0xffff
+    db  0, 0x00        ; af
+    dw 0xffff
+    db  0, 0x00        ; b0
+    dw 0xffff
+    db  0, 0x00        ; b1
+    dw 0xffff
+    db  0, 0x00        ; b2
+    dw 0xffff
+    db  0, 0x00        ; b3
+    dw 0xffff
+    db  0, 0x00        ; b4
+    dw 0xffff
+    db  0, 0x00        ; b5
+    dw 0xffff
+    db  0, 0x00        ; b6
+    dw 0xffff
+    db  0, 0x00        ; b7
+    dw 0xffff
+    db  0, 0x00        ; b8
+    dw 0xffff
+    db  0, 0x00        ; b9
+    dw 0xffff
+    db  0, 0x00        ; ba
+    dw 0xffff
+    db  0, 0x00        ; bb
+    dw 0xffff
+    db  0, 0x00        ; bc
+    dw 0xffff
+    db  0, 0x00        ; bd
+    dw 0xffff
+    db  0, 0x00        ; be
+    dw 0xffff
+    db  0, 0x00        ; bf
+    dw 0xffff
+    db  0, 0x00        ; c0
+    dw 0xffff
+    db  0, 0x00        ; c1
+    dw 0xffff
+    db  0, 0x00        ; c2
+    dw 0xffff
+    db  0, 0x00        ; c3
+    dw 0xffff
+    db  0, 0x00        ; c4
+    dw 0xffff
+    db  0, 0x00        ; c5
+    dw 0xffff
+    db  0, 0x00        ; c6
+    dw 0xffff
+    db  0, 0x00        ; c7
+    dw 0xffff
+    db  0, 0x00        ; c8
+    dw 0xffff
+    db  0, 0x00        ; c9
+    dw 0xffff
+    db  0, 0x00        ; ca
+    dw 0xffff
+    db  0, 0x00        ; cb
+    dw 0xffff
+    db  0, 0x00        ; cc
+    dw 0xffff
+    db  0, 0x00        ; cd
+    dw 0xffff
+    db  0, 0x00        ; ce
+    dw 0xffff
+    db  0, 0x00        ; cf
+    dw 0xffff
+    db  0, 0x00        ; d0
+    dw 0xffff
+    db  0, 0x00        ; d1
+    dw 0xffff
+    db  0, 0x00        ; d2
+    dw 0xffff
+    db  0, 0x00        ; d3
+    dw 0xffff
+    db  0, 0x00        ; d4
+    dw 0xffff
+    db  0, 0x00        ; d5
+    dw 0xffff
+    db  0, 0x00        ; d6
+    dw 0xffff
+    db  0, 0x00        ; d7
+    dw 0xffff
+    db  0, 0x00        ; d8
+    dw 0xffff
+    db  0, 0x00        ; d9
+    dw 0xffff
+    db  0, 0x00        ; da
+    dw 0xffff
+    db  0, 0x00        ; db
+    dw 0xffff
+    db  0, 0x00        ; dc
+    dw 0xffff
+    db  0, 0x00        ; dd
+    dw 0xffff
+    db  0, 0x00        ; de
+    dw 0xffff
+    db  0, 0x00        ; df
+    dw 0xffff
+    db  0, 0x00        ; e0
+    dw 0xffff
+    db  0, 0x00        ; e1
+    dw 0xffff
+    db  0, 0x00        ; e2
+    dw 0xffff
+    db  0, 0x00        ; e3
+    dw 0xffff
+    db  0, 0x00        ; e4
+    dw 0xffff
+    db  0, 0x00        ; e5
+    dw 0xffff
+    db  0, 0x00        ; e6
+    dw 0xffff
+    db  0, 0x00        ; e7
+    dw 0xffff
+    db  0, 0x00        ; e8
+    dw 0xffff
+    db  0, 0x00        ; e9
+    dw 0xffff
+    db  0, 0x00        ; ea
+    dw 0xffff
+    db  0, 0x00        ; eb
+    dw 0xffff
+    db  0, 0x00        ; ec
+    dw 0xffff
+    db  0, 0x00        ; ed
+    dw 0xffff
+    db  0, 0x00        ; ee
+    dw 0xffff
+    db  0, 0x00        ; ef
+    dw 0xffff
+    db  0, 0x00        ; f0
+    dw 0xffff
+    db  0, 0x00        ; f1
+    dw 0xffff
+    db  0, 0x00        ; f2
+    dw 0xffff
+    db  0, 0x00        ; f3
+    dw 0xffff
+    db  0, 0x00        ; f4
+    dw 0xffff
+    db  0, 0x00        ; f5
+    dw 0xffff
+    db  0, 0x00        ; f6
+    dw 0xffff
+    db  0, 0x00        ; f7
+    dw 0xffff
+    db  0, 0x00        ; f8
+    dw 0xffff
+    db  0, 0x00        ; f9
+    dw 0xffff
+    db  0, 0x00        ; fa
+    dw 0xffff
+    db  0, 0x00        ; fb
+    dw 0xffff
+    db  0, 0x00        ; fc
+    dw 0xffff
+    db  0, 0x00        ; fd
+    dw 0xffff
+    db  0, 0x00        ; fe
+    dw 0xffff
+    db  0, 0x00        ; ff
+    dw 0xffff
+    db  0, 0x00        ; 100
+    dw 0xffff
+    db  0, 0x00        ; 101
+    dw 0xffff
+    db  0, 0x00        ; 102
+    dw 0xffff
+    db  0, 0x00        ; 103
+    dw 0xffff
+    db  0, 0x00        ; 104
+    dw 0xffff
+    db  0, 0x00        ; 105
+    dw 0xffff
+    db  0, 0x00        ; 106
+    dw 0xffff
+    db  0, 0x00        ; 107
+    dw 0xffff
+    db  0, 0x00        ; 108
+    dw 0xffff
+    db  0, 0x00        ; 109
+    dw 0xffff
+    db  0, 0x00        ; 10a
+    dw 0xffff
+    db  0, 0x00        ; 10b
+    dw 0xffff
+    db  0, 0x00        ; 10c
+    dw 0xffff
+    db  0, 0x00        ; 10d
+    dw 0xffff
+    db  0, 0x00        ; 10e
+    dw 0xffff
+    db  0, 0x00        ; 10f
+    dw 0xffff
+    db  0, 0x00        ; 110
+    dw 0xffff
+    db  0, 0x00        ; 111
+    dw 0xffff
+    db  0, 0x00        ; 112
+    dw 0xffff
+    db  0, 0x00        ; 113
+    dw 0xffff
+    db  0, 0x00        ; 114
+    dw 0xffff
+    db  0, 0x00        ; 115
+    dw 0xffff
+    db  0, 0x00        ; 116
+    dw 0xffff
+    db  0, 0x00        ; 117
+    dw 0xffff
+    db  0, 0x00        ; 118
+    dw 0xffff
+    db  0, 0x00        ; 119
+    dw 0xffff
+    db  0, 0x00        ; 11a
+    dw 0xffff
+    db  0, 0x00        ; 11b
+    dw 0xffff
+    db  0, 0x00        ; 11c
+    dw 0xffff
+    db  0, 0x00        ; 11d
+    dw 0xffff
+    db  0, 0x00        ; 11e
+    dw 0xffff
+    db  0, 0x00        ; 11f
+    dw 0xffff
+    db  0, 0x00        ; 120
+    dw 0xffff
+    db  0, 0x00        ; 121
+    dw 0xffff
+    db  0, 0x00        ; 122
+    dw 0xffff
+    db  0, 0x00        ; 123
+    dw 0xffff
+    db  0, 0x00        ; 124
+    dw 0xffff
+    db  0, 0x00        ; 125
+    dw 0xffff
+    db  0, 0x00        ; 126
+    dw 0xffff
+    db  0, 0x00        ; 127
+    dw 0xffff
+    db  0, 0x00        ; 128
+    dw 0xffff
+    db  0, 0x00        ; 129
+    dw 0xffff
+    db  0, 0x00        ; 12a
+    dw 0xffff
+    db  0, 0x00        ; 12b
+    dw 0xffff
+    db  0, 0x00        ; 12c
+    dw 0xffff
+    db  0, 0x00        ; 12d
+    dw 0xffff
+    db  0, 0x00        ; 12e
+    dw 0xffff
+    db  0, 0x00        ; 12f
+    dw 0xffff
+    db  0, 0x00        ; 130
+    dw 0xffff
+    db  0, 0x00        ; 131
+    dw 0xffff
+    db  0, 0x00        ; 132
+    dw 0xffff
+    db  0, 0x00        ; 133
+    dw 0xffff
+    db  0, 0x00        ; 134
+    dw 0xffff
+    db  0, 0x00        ; 135
+    dw 0xffff
+    db  0, 0x00        ; 136
+    dw 0xffff
+    db  0, 0x00        ; 137
+    dw 0xffff
+    db  0, 0x00        ; 138
+    dw 0xffff
+    db  0, 0x00        ; 139
+    dw 0xffff
+    db  0, 0x00        ; 13a
+    dw 0xffff
+    db  0, 0x00        ; 13b
+    dw 0xffff
+    db  0, 0x00        ; 13c
+    dw 0xffff
+    db  0, 0x00        ; 13d
+    dw 0xffff
+    db  0, 0x00        ; 13e
+    dw 0xffff
+    db  0, 0x00        ; 13f
+    dw 0xffff
+    db  0, 0x00        ; 140
+    dw 0xffff
+    db  0, 0x00        ; 141
+    dw 0xffff
+    db  0, 0x00        ; 142
+    dw 0xffff
+    db  0, 0x00        ; 143
+    dw 0xffff
+    db  0, 0x00        ; 144
+    dw 0xffff
+    db  0, 0x00        ; 145
+    dw 0xffff
+    db  0, 0x00        ; 146
+    dw 0xffff
+    db  0, 0x00        ; 147
+    dw 0xffff
+    db  0, 0x00        ; 148
+    dw 0xffff
+    db  0, 0x00        ; 149
+    dw 0xffff
+    db  0, 0x00        ; 14a
+    dw 0xffff
+    db  0, 0x00        ; 14b
+    dw 0xffff
+    db  0, 0x00        ; 14c
+    dw 0xffff
+    db  0, 0x00        ; 14d
+    dw 0xffff
+    db  0, 0x00        ; 14e
+    dw 0xffff
+    db  0, 0x00        ; 14f
+    dw 0xffff
+    db  0, 0x00        ; 150
+    dw 0xffff
+    db  0, 0x00        ; 151
+    dw 0xffff
+    db  0, 0x00        ; 152
+    dw 0xffff
+    db  0, 0x00        ; 153
+    dw 0xffff
+    db  0, 0x00        ; 154
+    dw 0xffff
+    db  0, 0x00        ; 155
+    dw 0xffff
+    db  0, 0x00        ; 156
+    dw 0xffff
+    db  0, 0x00        ; 157
+    dw 0xffff
+    db  0, 0x00        ; 158
+    dw 0xffff
+    db  0, 0x00        ; 159
+    dw 0xffff
+    db  0, 0x00        ; 15a
+    dw 0xffff
+    db  0, 0x00        ; 15b
+    dw 0xffff
+    db  0, 0x00        ; 15c
+    dw 0xffff
+    db  0, 0x00        ; 15d
+    dw 0xffff
+    db  0, 0x00        ; 15e
+    dw 0xffff
+    db  0, 0x00        ; 15f
+    dw 0xffff
+    db  0, 0x00        ; 160
+    dw 0xffff
+    db  0, 0x00        ; 161
+    dw 0xffff
+    db  0, 0x00        ; 162
+    dw 0xffff
+    db  0, 0x00        ; 163
+    dw 0xffff
+    db  0, 0x00        ; 164
+    dw 0xffff
+    db  0, 0x00        ; 165
+    dw 0xffff
+    db  0, 0x00        ; 166
+    dw 0xffff
+    db  0, 0x00        ; 167
+    dw 0xffff
+    db  0, 0x00        ; 168
+    dw 0xffff
+    db  0, 0x00        ; 169
+    dw 0xffff
+    db  0, 0x00        ; 16a
+    dw 0xffff
+    db  0, 0x00        ; 16b
+    dw 0xffff
+    db  0, 0x00        ; 16c
+    dw 0xffff
+    db  0, 0x00        ; 16d
+    dw 0xffff
+    db  0, 0x00        ; 16e
+    dw 0xffff
+    db  0, 0x00        ; 16f
+    dw 0xffff
+    db  0, 0x00        ; 170
+    dw 0xffff
+    db  0, 0x00        ; 171
+    dw 0xffff
+    db  0, 0x00        ; 172
+    dw 0xffff
+    db  0, 0x00        ; 173
+    dw 0xffff
+    db  0, 0x00        ; 174
+    dw 0xffff
+    db  0, 0x00        ; 175
+    dw 0xffff
+    db  0, 0x00        ; 176
+    dw 0xffff
+    db  0, 0x00        ; 177
+    dw 0xffff
+    db  0, 0x00        ; 178
+    dw 0xffff
+    db  0, 0x00        ; 179
+    dw 0xffff
+    db  0, 0x00        ; 17a
+    dw 0xffff
+    db  0, 0x00        ; 17b
+    dw 0xffff
+    db  0, 0x00        ; 17c
+    dw 0xffff
+    db  0, 0x00        ; 17d
+    dw 0xffff
+    db  0, 0x00        ; 17e
+    dw 0xffff
+    db  0, 0x00        ; 17f
+    dw 0xffff
+    db  0, 0x00        ; 180
+    dw 0xffff
+    db  0, 0x00        ; 181
+    dw 0xffff
+    db  0, 0x00        ; 182
+    dw 0xffff
+    db  0, 0x00        ; 183
+    dw 0xffff
+    db  0, 0x00        ; 184
+    dw 0xffff
+    db  0, 0x00        ; 185
+    dw 0xffff
+    db  0, 0x00        ; 186
+    dw 0xffff
+    db  0, 0x00        ; 187
+    dw 0xffff
+    db  0, 0x00        ; 188
+    dw 0xffff
+    db  0, 0x00        ; 189
+    dw 0xffff
+    db  0, 0x00        ; 18a
+    dw 0xffff
+    db  0, 0x00        ; 18b
+    dw 0xffff
+    db  0, 0x00        ; 18c
+    dw 0xffff
+    db  0, 0x00        ; 18d
+    dw 0xffff
+    db  0, 0x00        ; 18e
+    dw 0xffff
+    db  0, 0x00        ; 18f
+    dw 0xffff
+    db  0, 0x00        ; 190
+    dw 0xffff
+    db  0, 0x00        ; 191
+    dw 0xffff
+    db  0, 0x00        ; 192
+    dw 0xffff
+    db  0, 0x00        ; 193
+    dw 0xffff
+    db  0, 0x00        ; 194
+    dw 0xffff
+    db  0, 0x00        ; 195
+    dw 0xffff
+    db  0, 0x00        ; 196
+    dw 0xffff
+    db  0, 0x00        ; 197
+    dw 0xffff
+    db  0, 0x00        ; 198
+    dw 0xffff
+    db  0, 0x00        ; 199
+    dw 0xffff
+    db  0, 0x00        ; 19a
+    dw 0xffff
+    db  0, 0x00        ; 19b
+    dw 0xffff
+    db  0, 0x00        ; 19c
+    dw 0xffff
+    db  0, 0x00        ; 19d
+    dw 0xffff
+    db  0, 0x00        ; 19e
+    dw 0xffff
+    db  0, 0x00        ; 19f
+    dw 0xffff
+    db  0, 0x00        ; 1a0
+    dw 0xffff
+    db  0, 0x00        ; 1a1
+    dw 0xffff
+    db  0, 0x00        ; 1a2
+    dw 0xffff
+    db  0, 0x00        ; 1a3
+    dw 0xffff
+    db  0, 0x00        ; 1a4
+    dw 0xffff
+    db  0, 0x00        ; 1a5
+    dw 0xffff
+    db  0, 0x00        ; 1a6
+    dw 0xffff
+    db  0, 0x00        ; 1a7
+    dw 0xffff
+    db  0, 0x00        ; 1a8
+    dw 0xffff
+    db  0, 0x00        ; 1a9
+    dw 0xffff
+    db  0, 0x00        ; 1aa
+    dw 0xffff
+    db  0, 0x00        ; 1ab
+    dw 0xffff
+    db  0, 0x00        ; 1ac
+    dw 0xffff
+    db  0, 0x00        ; 1ad
+    dw 0xffff
+    db  0, 0x00        ; 1ae
+    dw 0xffff
+    db  0, 0x00        ; 1af
+    dw 0xffff
+    db  0, 0x00        ; 1b0
+    dw 0xffff
+    db  0, 0x00        ; 1b1
+    dw 0xffff
+    db  0, 0x00        ; 1b2
+    dw 0xffff
+    db  0, 0x00        ; 1b3
+    dw 0xffff
+    db  0, 0x00        ; 1b4
+    dw 0xffff
+    db  0, 0x00        ; 1b5
+    dw 0xffff
+    db  0, 0x00        ; 1b6
+    dw 0xffff
+    db  0, 0x00        ; 1b7
+    dw 0xffff
+    db  0, 0x00        ; 1b8
+    dw 0xffff
+    db  0, 0x00        ; 1b9
+    dw 0xffff
+    db  0, 0x00        ; 1ba
+    dw 0xffff
+    db  0, 0x00        ; 1bb
+    dw 0xffff
+    db  0, 0x00        ; 1bc
+    dw 0xffff
+    db  0, 0x00        ; 1bd
+    dw 0xffff
+    db  0, 0x00        ; 1be
+    dw 0xffff
+    db  0, 0x00        ; 1bf
+    dw 0xffff
+    db  0, 0x00        ; 1c0
+    dw 0xffff
+    db  0, 0x00        ; 1c1
+    dw 0xffff
+    db  0, 0x00        ; 1c2
+    dw 0xffff
+    db  0, 0x00        ; 1c3
+    dw 0xffff
+    db  0, 0x00        ; 1c4
+    dw 0xffff
+    db  0, 0x00        ; 1c5
+    dw 0xffff
+    db  0, 0x00        ; 1c6
+    dw 0xffff
+    db  0, 0x00        ; 1c7
+    dw 0xffff
+    db  0, 0x00        ; 1c8
+    dw 0xffff
+    db  0, 0x00        ; 1c9
+    dw 0xffff
+    db  0, 0x00        ; 1ca
+    dw 0xffff
+    db  0, 0x00        ; 1cb
+    dw 0xffff
+    db  0, 0x00        ; 1cc
+    dw 0xffff
+    db  0, 0x00        ; 1cd
+    dw 0xffff
+    db  0, 0x00        ; 1ce
+    dw 0xffff
+    db  0, 0x00        ; 1cf
+    dw 0xffff
+    db  0, 0x00        ; 1d0
+    dw 0xffff
+    db  0, 0x00        ; 1d1
+    dw 0xffff
+    db  0, 0x00        ; 1d2
+    dw 0xffff
+    db  0, 0x00        ; 1d3
+    dw 0xffff
+    db  0, 0x00        ; 1d4
+    dw 0xffff
+    db  0, 0x00        ; 1d5
+    dw 0xffff
+    db  0, 0x00        ; 1d6
+    dw 0xffff
+    db  0, 0x00        ; 1d7
+    dw 0xffff
+    db  0, 0x00        ; 1d8
+    dw 0xffff
+    db  0, 0x00        ; 1d9
+    dw 0xffff
+    db  0, 0x00        ; 1da
+    dw 0xffff
+    db  0, 0x00        ; 1db
+    dw 0x096a
+    db 72, 0x00        ; 1dc
+    dw 0xffff
+    db  0, 0x00        ; 1dd
+    dw 0xffff
+    db  0, 0x00        ; 1de
+    dw 0xffff
+    db  0, 0x00        ; 1df
+    dw 0xffff
+    db  0, 0x00        ; 1e0
+    dw 0xffff
+    db  0, 0x00        ; 1e1
+    dw 0xffff
+    db  0, 0x00        ; 1e2
+    dw 0xffff
+    db  0, 0x00        ; 1e3
+    dw 0xffff
+    db  0, 0x00        ; 1e4
+    dw 0xffff
+    db  0, 0x00        ; 1e5
+    dw 0xffff
+    db  0, 0x00        ; 1e6
+    dw 0xffff
+    db  0, 0x00        ; 1e7
+    dw 0xffff
+    db  0, 0x00        ; 1e8
+    dw 0xffff
+    db  0, 0x00        ; 1e9
+    dw 0xffff
+    db  0, 0x00        ; 1ea
+    dw 0xffff
+    db  0, 0x00        ; 1eb
+    dw 0xffff
+    db  0, 0x00        ; 1ec
+    dw 0xffff
+    db  0, 0x00        ; 1ed
+    dw 0xffff
+    db  0, 0x00        ; 1ee
+    dw 0xffff
+    db  0, 0x00        ; 1ef
+    dw 0xffff
+    db  0, 0x00        ; 1f0
+    dw 0xffff
+    db  0, 0x00        ; 1f1
+    dw 0xffff
+    db  0, 0x00        ; 1f2
+    dw 0xffff
+    db  0, 0x00        ; 1f3
+    dw 0xffff
+    db  0, 0x00        ; 1f4
+    dw 0xffff
+    db  0, 0x00        ; 1f5
+    dw 0xffff
+    db  0, 0x00        ; 1f6
+    dw 0xffff
+    db  0, 0x00        ; 1f7
+    dw 0xffff
+    db  0, 0x00        ; 1f8
+    dw 0xffff
+    db  0, 0x00        ; 1f9
+    dw 0xffff
+    db  0, 0x00        ; 1fa
+    dw 0xffff
+    db  0, 0x00        ; 1fb
+    dw 0xffff
+    db  0, 0x00        ; 1fc
+    dw 0xffff
+    db  0, 0x00        ; 1fd
+    dw 0xffff
+    db  0, 0x00        ; 1fe
+    dw 0xffff
+    db  0, 0x00        ; 1ff
+    dw 0xffff
+    db  0, 0x00        ; 200
+    dw 0xffff
+    db  0, 0x00        ; 201
+    dw 0xffff
+    db  0, 0x00        ; 202
+    dw 0xffff
+    db  0, 0x00        ; 203
+    dw 0xffff
+    db  0, 0x00        ; 204
+    dw 0xffff
+    db  0, 0x00        ; 205
+    dw 0xffff
+    db  0, 0x00        ; 206
+    dw 0xffff
+    db  0, 0x00        ; 207
+    dw 0xffff
+    db  0, 0x00        ; 208
+    dw 0xffff
+    db  0, 0x00        ; 209
+    dw 0xffff
+    db  0, 0x00        ; 20a
+    dw 0xffff
+    db  0, 0x00        ; 20b
+    dw 0xffff
+    db  0, 0x00        ; 20c
+    dw 0xffff
+    db  0, 0x00        ; 20d
+    dw 0xffff
+    db  0, 0x00        ; 20e
+    dw 0xffff
+    db  0, 0x00        ; 20f
+    dw 0xffff
+    db  0, 0x00        ; 210
+    dw 0xffff
+    db  0, 0x00        ; 211
+    dw 0xffff
+    db  0, 0x00        ; 212
+    dw 0xffff
+    db  0, 0x00        ; 213
+    dw 0xffff
+    db  0, 0x00        ; 214
+    dw 0xffff
+    db  0, 0x00        ; 215
+    dw 0xffff
+    db  0, 0x00        ; 216
+    dw 0xffff
+    db  0, 0x00        ; 217
+    dw 0xffff
+    db  0, 0x00        ; 218
+    dw 0xffff
+    db  0, 0x00        ; 219
+    dw 0xffff
+    db  0, 0x00        ; 21a
+    dw 0xffff
+    db  0, 0x00        ; 21b
+    dw 0xffff
+    db  0, 0x00        ; 21c
+    dw 0xffff
+    db  0, 0x00        ; 21d
+    dw 0xffff
+    db  0, 0x00        ; 21e
+    dw 0xffff
+    db  0, 0x00        ; 21f
+    dw 0xffff
+    db  0, 0x00        ; 220
+    dw 0xffff
+    db  0, 0x00        ; 221
+    dw 0xffff
+    db  0, 0x00        ; 222
+    dw 0xffff
+    db  0, 0x00        ; 223
+    dw 0xffff
+    db  0, 0x00        ; 224
+    dw 0xffff
+    db  0, 0x00        ; 225
+    dw 0xffff
+    db  0, 0x00        ; 226
+    dw 0xffff
+    db  0, 0x00        ; 227
+    dw 0xffff
+    db  0, 0x00        ; 228
+    dw 0xffff
+    db  0, 0x00        ; 229
+    dw 0xffff
+    db  0, 0x00        ; 22a
+    dw 0xffff
+    db  0, 0x00        ; 22b
+    dw 0xffff
+    db  0, 0x00        ; 22c
+    dw 0xffff
+    db  0, 0x00        ; 22d
+    dw 0xffff
+    db  0, 0x00        ; 22e
+    dw 0xffff
+    db  0, 0x00        ; 22f
+    dw 0xffff
+    db  0, 0x00        ; 230
+    dw 0xffff
+    db  0, 0x00        ; 231
+    dw 0xffff
+    db  0, 0x00        ; 232
+    dw 0xffff
+    db  0, 0x00        ; 233
+    dw 0xffff
+    db  0, 0x00        ; 234
+    dw 0xffff
+    db  0, 0x00        ; 235
+    dw 0xffff
+    db  0, 0x00        ; 236
+    dw 0xffff
+    db  0, 0x00        ; 237
+    dw 0xffff
+    db  0, 0x00        ; 238
+    dw 0xffff
+    db  0, 0x00        ; 239
+    dw 0xffff
+    db  0, 0x00        ; 23a
+    dw 0xffff
+    db  0, 0x00        ; 23b
+    dw 0xffff
+    db  0, 0x00        ; 23c
+    dw 0xffff
+    db  0, 0x00        ; 23d
+    dw 0xffff
+    db  0, 0x00        ; 23e
+    dw 0xffff
+    db  0, 0x00        ; 23f
+    dw 0xffff
+    db  0, 0x00        ; 240
+    dw 0xffff
+    db  0, 0x00        ; 241
+    dw 0xffff
+    db  0, 0x00        ; 242
+    dw 0xffff
+    db  0, 0x00        ; 243
+    dw 0xffff
+    db  0, 0x00        ; 244
+    dw 0xffff
+    db  0, 0x00        ; 245
+    dw 0xffff
+    db  0, 0x00        ; 246
+    dw 0xffff
+    db  0, 0x00        ; 247
+    dw 0xffff
+    db  0, 0x00        ; 248
+    dw 0xffff
+    db  0, 0x00        ; 249
+    dw 0xffff
+    db  0, 0x00        ; 24a
+    dw 0xffff
+    db  0, 0x00        ; 24b
+    dw 0xffff
+    db  0, 0x00        ; 24c
+    dw 0xffff
+    db  0, 0x00        ; 24d
+    dw 0xffff
+    db  0, 0x00        ; 24e
+    dw 0xffff
+    db  0, 0x00        ; 24f
+    dw 0xffff
+    db  0, 0x00        ; 250
+    dw 0xffff
+    db  0, 0x00        ; 251
+    dw 0xffff
+    db  0, 0x00        ; 252
+    dw 0xffff
+    db  0, 0x00        ; 253
+    dw 0xffff
+    db  0, 0x00        ; 254
+    dw 0xffff
+    db  0, 0x00        ; 255
+    dw 0xffff
+    db  0, 0x00        ; 256
+    dw 0xffff
+    db  0, 0x00        ; 257
+    dw 0xffff
+    db  0, 0x00        ; 258
+    dw 0xffff
+    db  0, 0x00        ; 259
+    dw 0xffff
+    db  0, 0x00        ; 25a
+    dw 0xffff
+    db  0, 0x00        ; 25b
+    dw 0xffff
+    db  0, 0x00        ; 25c
+    dw 0xffff
+    db  0, 0x00        ; 25d
+    dw 0xffff
+    db  0, 0x00        ; 25e
+    dw 0xffff
+    db  0, 0x00        ; 25f
+    dw 0xffff
+    db  0, 0x00        ; 260
+    dw 0xffff
+    db  0, 0x00        ; 261
+    dw 0xffff
+    db  0, 0x00        ; 262
+    dw 0xffff
+    db  0, 0x00        ; 263
+    dw 0xffff
+    db  0, 0x00        ; 264
+    dw 0xffff
+    db  0, 0x00        ; 265
+    dw 0xffff
+    db  0, 0x00        ; 266
+    dw 0xffff
+    db  0, 0x00        ; 267
+    dw 0xffff
+    db  0, 0x00        ; 268
+    dw 0xffff
+    db  0, 0x00        ; 269
+    dw 0xffff
+    db  0, 0x00        ; 26a
+    dw 0xffff
+    db  0, 0x00        ; 26b
+    dw 0xffff
+    db  0, 0x00        ; 26c
+    dw 0xffff
+    db  0, 0x00        ; 26d
+    dw 0xffff
+    db  0, 0x00        ; 26e
+    dw 0xffff
+    db  0, 0x00        ; 26f
+    dw 0xffff
+    db  0, 0x00        ; 270
+    dw 0xffff
+    db  0, 0x00        ; 271
+    dw 0xffff
+    db  0, 0x00        ; 272
+    dw 0xffff
+    db  0, 0x00        ; 273
+    dw 0xffff
+    db  0, 0x00        ; 274
+    dw 0xffff
+    db  0, 0x00        ; 275
+    dw 0xffff
+    db  0, 0x00        ; 276
+    dw 0xffff
+    db  0, 0x00        ; 277
+    dw 0xffff
+    db  0, 0x00        ; 278
+    dw 0xffff
+    db  0, 0x00        ; 279
+    dw 0xffff
+    db  0, 0x00        ; 27a
+    dw 0xffff
+    db  0, 0x00        ; 27b
+    dw 0xffff
+    db  0, 0x00        ; 27c
+    dw 0xffff
+    db  0, 0x00        ; 27d
+    dw 0xffff
+    db  0, 0x00        ; 27e
+    dw 0xffff
+    db  0, 0x00        ; 27f
+    dw 0xffff
+    db  0, 0x00        ; 280
+    dw 0xffff
+    db  0, 0x00        ; 281
+    dw 0xffff
+    db  0, 0x00        ; 282
+    dw 0xffff
+    db  0, 0x00        ; 283
+    dw 0xffff
+    db  0, 0x00        ; 284
+    dw 0xffff
+    db  0, 0x00        ; 285
+    dw 0xffff
+    db  0, 0x00        ; 286
+    dw 0xffff
+    db  0, 0x00        ; 287
+    dw 0xffff
+    db  0, 0x00        ; 288
+    dw 0xffff
+    db  0, 0x00        ; 289
+    dw 0xffff
+    db  0, 0x00        ; 28a
+    dw 0xffff
+    db  0, 0x00        ; 28b
+    dw 0xffff
+    db  0, 0x00        ; 28c
+    dw 0xffff
+    db  0, 0x00        ; 28d
+    dw 0xffff
+    db  0, 0x00        ; 28e
+    dw 0xffff
+    db  0, 0x00        ; 28f
+    dw 0xffff
+    db  0, 0x00        ; 290
+    dw 0xffff
+    db  0, 0x00        ; 291
+    dw 0xffff
+    db  0, 0x00        ; 292
+    dw 0xffff
+    db  0, 0x00        ; 293
+    dw 0xffff
+    db  0, 0x00        ; 294
+    dw 0xffff
+    db  0, 0x00        ; 295
+    dw 0xffff
+    db  0, 0x00        ; 296
+    dw 0xffff
+    db  0, 0x00        ; 297
+    dw 0xffff
+    db  0, 0x00        ; 298
+    dw 0xffff
+    db  0, 0x00        ; 299
+    dw 0xffff
+    db  0, 0x00        ; 29a
+    dw 0xffff
+    db  0, 0x00        ; 29b
+    dw 0xffff
+    db  0, 0x00        ; 29c
+    dw 0xffff
+    db  0, 0x00        ; 29d
+    dw 0xffff
+    db  0, 0x00        ; 29e
+    dw 0xffff
+    db  0, 0x00        ; 29f
+    dw 0xffff
+    db  0, 0x00        ; 2a0
+    dw 0xffff
+    db  0, 0x00        ; 2a1
+    dw 0xffff
+    db  0, 0x00        ; 2a2
+    dw 0xffff
+    db  0, 0x00        ; 2a3
+    dw 0xffff
+    db  0, 0x00        ; 2a4
+    dw 0xffff
+    db  0, 0x00        ; 2a5
+    dw 0xffff
+    db  0, 0x00        ; 2a6
+    dw 0xffff
+    db  0, 0x00        ; 2a7
+    dw 0xffff
+    db  0, 0x00        ; 2a8
+    dw 0xffff
+    db  0, 0x00        ; 2a9
+    dw 0xffff
+    db  0, 0x00        ; 2aa
+    dw 0xffff
+    db  0, 0x00        ; 2ab
+    dw 0xffff
+    db  0, 0x00        ; 2ac
+    dw 0xffff
+    db  0, 0x00        ; 2ad
+    dw 0xffff
+    db  0, 0x00        ; 2ae
+    dw 0xffff
+    db  0, 0x00        ; 2af
+    dw 0xffff
+    db  0, 0x00        ; 2b0
+    dw 0xffff
+    db  0, 0x00        ; 2b1
+    dw 0xffff
+    db  0, 0x00        ; 2b2
+    dw 0xffff
+    db  0, 0x00        ; 2b3
+    dw 0xffff
+    db  0, 0x00        ; 2b4
+    dw 0xffff
+    db  0, 0x00        ; 2b5
+    dw 0xffff
+    db  0, 0x00        ; 2b6
+    dw 0xffff
+    db  0, 0x00        ; 2b7
+    dw 0xffff
+    db  0, 0x00        ; 2b8
+    dw 0xffff
+    db  0, 0x00        ; 2b9
+    dw 0xffff
+    db  0, 0x00        ; 2ba
+    dw 0xffff
+    db  0, 0x00        ; 2bb
+    dw 0xffff
+    db  0, 0x00        ; 2bc
+    dw 0xffff
+    db  0, 0x00        ; 2bd
+    dw 0xffff
+    db  0, 0x00        ; 2be
+    dw 0xffff
+    db  0, 0x00        ; 2bf
+    dw 0xffff
+    db  0, 0x00        ; 2c0
+    dw 0xffff
+    db  0, 0x00        ; 2c1
+    dw 0xffff
+    db  0, 0x00        ; 2c2
+    dw 0xffff
+    db  0, 0x00        ; 2c3
+    dw 0xffff
+    db  0, 0x00        ; 2c4
+    dw 0xffff
+    db  0, 0x00        ; 2c5
+    dw 0xffff
+    db  0, 0x00        ; 2c6
+    dw 0xffff
+    db  0, 0x00        ; 2c7
+    dw 0xffff
+    db  0, 0x00        ; 2c8
+    dw 0xffff
+    db  0, 0x00        ; 2c9
+    dw 0xffff
+    db  0, 0x00        ; 2ca
+    dw 0xffff
+    db  0, 0x00        ; 2cb
+    dw 0xffff
+    db  0, 0x00        ; 2cc
+    dw 0xffff
+    db  0, 0x00        ; 2cd
+    dw 0xffff
+    db  0, 0x00        ; 2ce
+    dw 0xffff
+    db  0, 0x00        ; 2cf
+    dw 0xffff
+    db  0, 0x00        ; 2d0
+    dw 0xffff
+    db  0, 0x00        ; 2d1
+    dw 0xffff
+    db  0, 0x00        ; 2d2
+    dw 0xffff
+    db  0, 0x00        ; 2d3
+    dw 0xffff
+    db  0, 0x00        ; 2d4
+    dw 0xffff
+    db  0, 0x00        ; 2d5
+    dw 0xffff
+    db  0, 0x00        ; 2d6
+    dw 0xffff
+    db  0, 0x00        ; 2d7
+    dw 0xffff
+    db  0, 0x00        ; 2d8
+    dw 0xffff
+    db  0, 0x00        ; 2d9
+    dw 0xffff
+    db  0, 0x00        ; 2da
+    dw 0xffff
+    db  0, 0x00        ; 2db
+    dw 0xffff
+    db  0, 0x00        ; 2dc
+    dw 0xffff
+    db  0, 0x00        ; 2dd
+    dw 0xffff
+    db  0, 0x00        ; 2de
+    dw 0xffff
+    db  0, 0x00        ; 2df
+    dw 0xffff
+    db  0, 0x00        ; 2e0
+    dw 0xffff
+    db  0, 0x00        ; 2e1
+    dw 0xffff
+    db  0, 0x00        ; 2e2
+    dw 0xffff
+    db  0, 0x00        ; 2e3
+    dw 0xffff
+    db  0, 0x00        ; 2e4
+    dw 0xffff
+    db  0, 0x00        ; 2e5
+    dw 0xffff
+    db  0, 0x00        ; 2e6
+    dw 0xffff
+    db  0, 0x00        ; 2e7
+    dw 0xffff
+    db  0, 0x00        ; 2e8
+    dw 0xffff
+    db  0, 0x00        ; 2e9
+    dw 0xffff
+    db  0, 0x00        ; 2ea
+    dw 0xffff
+    db  0, 0x00        ; 2eb
+    dw 0xffff
+    db  0, 0x00        ; 2ec
+    dw 0xffff
+    db  0, 0x00        ; 2ed
+    dw 0xffff
+    db  0, 0x00        ; 2ee
+    dw 0xffff
+    db  0, 0x00        ; 2ef
+    dw 0xffff
+    db  0, 0x00        ; 2f0
+    dw 0xffff
+    db  0, 0x00        ; 2f1
+    dw 0xffff
+    db  0, 0x00        ; 2f2
+    dw 0xffff
+    db  0, 0x00        ; 2f3
+    dw 0xffff
+    db  0, 0x00        ; 2f4
+    dw 0xffff
+    db  0, 0x00        ; 2f5
+    dw 0xffff
+    db  0, 0x00        ; 2f6
+    dw 0xffff
+    db  0, 0x00        ; 2f7
+    dw 0xffff
+    db  0, 0x00        ; 2f8
+    dw 0xffff
+    db  0, 0x00        ; 2f9
+    dw 0xffff
+    db  0, 0x00        ; 2fa
+    dw 0xffff
+    db  0, 0x00        ; 2fb
+    dw 0xffff
+    db  0, 0x00        ; 2fc
+    dw 0xffff
+    db  0, 0x00        ; 2fd
+    dw 0xffff
+    db  0, 0x00        ; 2fe
+    dw 0xffff
+    db  0, 0x00        ; 2ff
+    dw 0xffff
+    db  0, 0x00        ; 300
+    dw 0xffff
+    db  0, 0x00        ; 301
+    dw 0xffff
+    db  0, 0x00        ; 302
+    dw 0xffff
+    db  0, 0x00        ; 303
+    dw 0xffff
+    db  0, 0x00        ; 304
+    dw 0xffff
+    db  0, 0x00        ; 305
+    dw 0xffff
+    db  0, 0x00        ; 306
+    dw 0xffff
+    db  0, 0x00        ; 307
+    dw 0xffff
+    db  0, 0x00        ; 308
+    dw 0xffff
+    db  0, 0x00        ; 309
+    dw 0xffff
+    db  0, 0x00        ; 30a
+    dw 0xffff
+    db  0, 0x00        ; 30b
+    dw 0xffff
+    db  0, 0x00        ; 30c
+    dw 0xffff
+    db  0, 0x00        ; 30d
+    dw 0xffff
+    db  0, 0x00        ; 30e
+    dw 0xffff
+    db  0, 0x00        ; 30f
+    dw 0xffff
+    db  0, 0x00        ; 310
+    dw 0xffff
+    db  0, 0x00        ; 311
+    dw 0xffff
+    db  0, 0x00        ; 312
+    dw 0xffff
+    db  0, 0x00        ; 313
+    dw 0xffff
+    db  0, 0x00        ; 314
+    dw 0xffff
+    db  0, 0x00        ; 315
+    dw 0xffff
+    db  0, 0x00        ; 316
+    dw 0xffff
+    db  0, 0x00        ; 317
+    dw 0xffff
+    db  0, 0x00        ; 318
+    dw 0xffff
+    db  0, 0x00        ; 319
+    dw 0xffff
+    db  0, 0x00        ; 31a
+    dw 0xffff
+    db  0, 0x00        ; 31b
+    dw 0xffff
+    db  0, 0x00        ; 31c
+    dw 0xffff
+    db  0, 0x00        ; 31d
+    dw 0xffff
+    db  0, 0x00        ; 31e
+    dw 0xffff
+    db  0, 0x00        ; 31f
+    dw 0xffff
+    db  0, 0x00        ; 320
+    dw 0xffff
+    db  0, 0x00        ; 321
+    dw 0xffff
+    db  0, 0x00        ; 322
+    dw 0xffff
+    db  0, 0x00        ; 323
+    dw 0xffff
+    db  0, 0x00        ; 324
+    dw 0xffff
+    db  0, 0x00        ; 325
+    dw 0xffff
+    db  0, 0x00        ; 326
+    dw 0xffff
+    db  0, 0x00        ; 327
+    dw 0xffff
+    db  0, 0x00        ; 328
+    dw 0xffff
+    db  0, 0x00        ; 329
+    dw 0xffff
+    db  0, 0x00        ; 32a
+    dw 0xffff
+    db  0, 0x00        ; 32b
+    dw 0xffff
+    db  0, 0x00        ; 32c
+    dw 0xffff
+    db  0, 0x00        ; 32d
+    dw 0xffff
+    db  0, 0x00        ; 32e
+    dw 0xffff
+    db  0, 0x00        ; 32f
+    dw 0xffff
+    db  0, 0x00        ; 330
+    dw 0xffff
+    db  0, 0x00        ; 331
+    dw 0xffff
+    db  0, 0x00        ; 332
+    dw 0xffff
+    db  0, 0x00        ; 333
+    dw 0xffff
+    db  0, 0x00        ; 334
+    dw 0xffff
+    db  0, 0x00        ; 335
+    dw 0xffff
+    db  0, 0x00        ; 336
+    dw 0xffff
+    db  0, 0x00        ; 337
+    dw 0xffff
+    db  0, 0x00        ; 338
+    dw 0xffff
+    db  0, 0x00        ; 339
+    dw 0xffff
+    db  0, 0x00        ; 33a
+    dw 0xffff
+    db  0, 0x00        ; 33b
+    dw 0xffff
+    db  0, 0x00        ; 33c
+    dw 0xffff
+    db  0, 0x00        ; 33d
+    dw 0xffff
+    db  0, 0x00        ; 33e
+    dw 0xffff
+    db  0, 0x00        ; 33f
+    dw 0xffff
+    db  0, 0x00        ; 340
+    dw 0xffff
+    db  0, 0x00        ; 341
+    dw 0xffff
+    db  0, 0x00        ; 342
+    dw 0xffff
+    db  0, 0x00        ; 343
+    dw 0xffff
+    db  0, 0x00        ; 344
+    dw 0xffff
+    db  0, 0x00        ; 345
+    dw 0xffff
+    db  0, 0x00        ; 346
+    dw 0xffff
+    db  0, 0x00        ; 347
+    dw 0xffff
+    db  0, 0x00        ; 348
+    dw 0xffff
+    db  0, 0x00        ; 349
+    dw 0xffff
+    db  0, 0x00        ; 34a
+    dw 0xffff
+    db  0, 0x00        ; 34b
+    dw 0xffff
+    db  0, 0x00        ; 34c
+    dw 0xffff
+    db  0, 0x00        ; 34d
+    dw 0xffff
+    db  0, 0x00        ; 34e
+    dw 0xffff
+    db  0, 0x00        ; 34f
+    dw 0xffff
+    db  0, 0x00        ; 350
+    dw 0xffff
+    db  0, 0x00        ; 351
+    dw 0xffff
+    db  0, 0x00        ; 352
+    dw 0xffff
+    db  0, 0x00        ; 353
+    dw 0xffff
+    db  0, 0x00        ; 354
+    dw 0xffff
+    db  0, 0x00        ; 355
+    dw 0xffff
+    db  0, 0x00        ; 356
+    dw 0xffff
+    db  0, 0x00        ; 357
+    dw 0xffff
+    db  0, 0x00        ; 358
+    dw 0xffff
+    db  0, 0x00        ; 359
+    dw 0xffff
+    db  0, 0x00        ; 35a
+    dw 0xffff
+    db  0, 0x00        ; 35b
+    dw 0xffff
+    db  0, 0x00        ; 35c
+    dw 0xffff
+    db  0, 0x00        ; 35d
+    dw 0xffff
+    db  0, 0x00        ; 35e
+    dw 0xffff
+    db  0, 0x00        ; 35f
+    dw 0xffff
+    db  0, 0x00        ; 360
+    dw 0xffff
+    db  0, 0x00        ; 361
+    dw 0xffff
+    db  0, 0x00        ; 362
+    dw 0xffff
+    db  0, 0x00        ; 363
+    dw 0xffff
+    db  0, 0x00        ; 364
+    dw 0xffff
+    db  0, 0x00        ; 365
+    dw 0xffff
+    db  0, 0x00        ; 366
+    dw 0xffff
+    db  0, 0x00        ; 367
+    dw 0xffff
+    db  0, 0x00        ; 368
+    dw 0xffff
+    db  0, 0x00        ; 369
+    dw 0xffff
+    db  0, 0x00        ; 36a
+    dw 0xffff
+    db  0, 0x00        ; 36b
+    dw 0xffff
+    db  0, 0x00        ; 36c
+    dw 0xffff
+    db  0, 0x00        ; 36d
+    dw 0xffff
+    db  0, 0x00        ; 36e
+    dw 0xffff
+    db  0, 0x00        ; 36f
+    dw 0xffff
+    db  0, 0x00        ; 370
+    dw 0xffff
+    db  0, 0x00        ; 371
+    dw 0xffff
+    db  0, 0x00        ; 372
+    dw 0xffff
+    db  0, 0x00        ; 373
+    dw 0xffff
+    db  0, 0x00        ; 374
+    dw 0xffff
+    db  0, 0x00        ; 375
+    dw 0xffff
+    db  0, 0x00        ; 376
+    dw 0xffff
+    db  0, 0x00        ; 377
+    dw 0xffff
+    db  0, 0x00        ; 378
+    dw 0xffff
+    db  0, 0x00        ; 379
+    dw 0xffff
+    db  0, 0x00        ; 37a
+    dw 0xffff
+    db  0, 0x00        ; 37b
+    dw 0xffff
+    db  0, 0x00        ; 37c
+    dw 0xffff
+    db  0, 0x00        ; 37d
+    dw 0xffff
+    db  0, 0x00        ; 37e
+    dw 0xffff
+    db  0, 0x00        ; 37f
+    dw 0xffff
+    db  0, 0x00        ; 380
+    dw 0xffff
+    db  0, 0x00        ; 381
+    dw 0xffff
+    db  0, 0x00        ; 382
+    dw 0xffff
+    db  0, 0x00        ; 383
+    dw 0xffff
+    db  0, 0x00        ; 384
+    dw 0xffff
+    db  0, 0x00        ; 385
+    dw 0xffff
+    db  0, 0x00        ; 386
+    dw 0xffff
+    db  0, 0x00        ; 387
+    dw 0xffff
+    db  0, 0x00        ; 388
+    dw 0xffff
+    db  0, 0x00        ; 389
+    dw 0xffff
+    db  0, 0x00        ; 38a
+    dw 0xffff
+    db  0, 0x00        ; 38b
+    dw 0xffff
+    db  0, 0x00        ; 38c
+    dw 0xffff
+    db  0, 0x00        ; 38d
+    dw 0xffff
+    db  0, 0x00        ; 38e
+    dw 0xffff
+    db  0, 0x00        ; 38f
+    dw 0xffff
+    db  0, 0x00        ; 390
+    dw 0xffff
+    db  0, 0x00        ; 391
+    dw 0xffff
+    db  0, 0x00        ; 392
+    dw 0xffff
+    db  0, 0x00        ; 393
+    dw 0xffff
+    db  0, 0x00        ; 394
+    dw 0xffff
+    db  0, 0x00        ; 395
+    dw 0xffff
+    db  0, 0x00        ; 396
+    dw 0xffff
+    db  0, 0x00        ; 397
+    dw 0xffff
+    db  0, 0x00        ; 398
+    dw 0xffff
+    db  0, 0x00        ; 399
+    dw 0xffff
+    db  0, 0x00        ; 39a
+    dw 0xffff
+    db  0, 0x00        ; 39b
+    dw 0xffff
+    db  0, 0x00        ; 39c
+    dw 0xffff
+    db  0, 0x00        ; 39d
+    dw 0xffff
+    db  0, 0x00        ; 39e
+    dw 0xffff
+    db  0, 0x00        ; 39f
+    dw 0xffff
+    db  0, 0x00        ; 3a0
+    dw 0xffff
+    db  0, 0x00        ; 3a1
+    dw 0xffff
+    db  0, 0x00        ; 3a2
+    dw 0xffff
+    db  0, 0x00        ; 3a3
+    dw 0xffff
+    db  0, 0x00        ; 3a4
+    dw 0xffff
+    db  0, 0x00        ; 3a5
+    dw 0xffff
+    db  0, 0x00        ; 3a6
+    dw 0xffff
+    db  0, 0x00        ; 3a7
+    dw 0xffff
+    db  0, 0x00        ; 3a8
+    dw 0xffff
+    db  0, 0x00        ; 3a9
+    dw 0xffff
+    db  0, 0x00        ; 3aa
+    dw 0xffff
+    db  0, 0x00        ; 3ab
+    dw 0xffff
+    db  0, 0x00        ; 3ac
+    dw 0xffff
+    db  0, 0x00        ; 3ad
+    dw 0xffff
+    db  0, 0x00        ; 3ae
+    dw 0xffff
+    db  0, 0x00        ; 3af
+    dw 0xffff
+    db  0, 0x00        ; 3b0
+    dw 0xffff
+    db  0, 0x00        ; 3b1
+    dw 0xffff
+    db  0, 0x00        ; 3b2
+    dw 0xffff
+    db  0, 0x00        ; 3b3
+    dw 0xffff
+    db  0, 0x00        ; 3b4
+    dw 0xffff
+    db  0, 0x00        ; 3b5
+    dw 0xffff
+    db  0, 0x00        ; 3b6
+    dw 0xffff
+    db  0, 0x00        ; 3b7
+    dw 0xffff
+    db  0, 0x00        ; 3b8
+    dw 0xffff
+    db  0, 0x00        ; 3b9
+    dw 0xffff
+    db  0, 0x00        ; 3ba
+    dw 0xffff
+    db  0, 0x00        ; 3bb
+    dw 0xffff
+    db  0, 0x00        ; 3bc
+    dw 0xffff
+    db  0, 0x00        ; 3bd
+    dw 0xffff
+    db  0, 0x00        ; 3be
+    dw 0xffff
+    db  0, 0x00        ; 3bf
+    dw 0xffff
+    db  0, 0x00        ; 3c0
+    dw 0xffff
+    db  0, 0x00        ; 3c1
+    dw 0xffff
+    db  0, 0x00        ; 3c2
+    dw 0xffff
+    db  0, 0x00        ; 3c3
+    dw 0xffff
+    db  0, 0x00        ; 3c4
+    dw 0xffff
+    db  0, 0x00        ; 3c5
+    dw 0xffff
+    db  0, 0x00        ; 3c6
+    dw 0xffff
+    db  0, 0x00        ; 3c7
+    dw 0xffff
+    db  0, 0x00        ; 3c8
+    dw 0xffff
+    db  0, 0x00        ; 3c9
+    dw 0xffff
+    db  0, 0x00        ; 3ca
+    dw 0xffff
+    db  0, 0x00        ; 3cb
+    dw 0xffff
+    db  0, 0x00        ; 3cc
+    dw 0xffff
+    db  0, 0x00        ; 3cd
+    dw 0xffff
+    db  0, 0x00        ; 3ce
+    dw 0xffff
+    db  0, 0x00        ; 3cf
+    dw 0xffff
+    db  0, 0x00        ; 3d0
+    dw 0xffff
+    db  0, 0x00        ; 3d1
+    dw 0xffff
+    db  0, 0x00        ; 3d2
+    dw 0xffff
+    db  0, 0x00        ; 3d3
+    dw 0xffff
+    db  0, 0x00        ; 3d4
+    dw 0xffff
+    db  0, 0x00        ; 3d5
+    dw 0xffff
+    db  0, 0x00        ; 3d6
+    dw 0xffff
+    db  0, 0x00        ; 3d7
+    dw 0xffff
+    db  0, 0x00        ; 3d8
+    dw 0xffff
+    db  0, 0x00        ; 3d9
+    dw 0xffff
+    db  0, 0x00        ; 3da
+    dw 0xffff
+    db  0, 0x00        ; 3db
+    dw 0xffff
+    db  0, 0x00        ; 3dc
+    dw 0xffff
+    db  0, 0x00        ; 3dd
+    dw 0xffff
+    db  0, 0x00        ; 3de
+    dw 0xffff
+    db  0, 0x00        ; 3df
+    dw 0xffff
+    db  0, 0x00        ; 3e0
+    dw 0xffff
+    db  0, 0x00        ; 3e1
+    dw 0xffff
+    db  0, 0x00        ; 3e2
+    dw 0xffff
+    db  0, 0x00        ; 3e3
+    dw 0xffff
+    db  0, 0x00        ; 3e4
+    dw 0xffff
+    db  0, 0x00        ; 3e5
+    dw 0xffff
+    db  0, 0x00        ; 3e6
+    dw 0xffff
+    db  0, 0x00        ; 3e7
+    dw 0xffff
+    db  0, 0x00        ; 3e8
+    dw 0xffff
+    db  0, 0x00        ; 3e9
+    dw 0xffff
+    db  0, 0x00        ; 3ea
+    dw 0xffff
+    db  0, 0x00        ; 3eb
+    dw 0xffff
+    db  0, 0x00        ; 3ec
+    dw 0xffff
+    db  0, 0x00        ; 3ed
+    dw 0xffff
+    db  0, 0x00        ; 3ee
+    dw 0xffff
+    db  0, 0x00        ; 3ef
+    dw 0xffff
+    db  0, 0x00        ; 3f0
+    dw 0xffff
+    db  0, 0x00        ; 3f1
+    dw 0xffff
+    db  0, 0x00        ; 3f2
+    dw 0xffff
+    db  0, 0x00        ; 3f3
+    dw 0xffff
+    db  0, 0x00        ; 3f4
+    dw 0xffff
+    db  0, 0x00        ; 3f5
+    dw 0xffff
+    db  0, 0x00        ; 3f6
+    dw 0xffff
+    db  0, 0x00        ; 3f7
+    dw 0xffff
+    db  0, 0x00        ; 3f8
+    dw 0xffff
+    db  0, 0x00        ; 3f9
+    dw 0xffff
+    db  0, 0x00        ; 3fa
+    dw 0xffff
+    db  0, 0x00        ; 3fb
+    dw 0xffff
+    db  0, 0x00        ; 3fc
+    dw 0xffff
+    db  0, 0x00        ; 3fd
+    dw 0xffff
+    db  0, 0x00        ; 3fe
+    dw 0xffff
+    db  0, 0x00        ; 3ff
+
+x86_vex38:
+    dw 0xffff
+    db  0, 0x00        ; 00
+    dw 0xffff
+    db  0, 0x00        ; 01
+    dw 0xffff
+    db  0, 0x00        ; 02
+    dw 0xffff
+    db  0, 0x00        ; 03
+    dw 0xffff
+    db  0, 0x00        ; 04
+    dw 0xffff
+    db  0, 0x00        ; 05
+    dw 0xffff
+    db  0, 0x00        ; 06
+    dw 0xffff
+    db  0, 0x00        ; 07
+    dw 0xffff
+    db  0, 0x00        ; 08
+    dw 0xffff
+    db  0, 0x00        ; 09
+    dw 0xffff
+    db  0, 0x00        ; 0a
+    dw 0xffff
+    db  0, 0x00        ; 0b
+    dw 0xffff
+    db  0, 0x00        ; 0c
+    dw 0xffff
+    db  0, 0x00        ; 0d
+    dw 0xffff
+    db  0, 0x00        ; 0e
+    dw 0xffff
+    db  0, 0x00        ; 0f
+    dw 0xffff
+    db  0, 0x00        ; 10
+    dw 0xffff
+    db  0, 0x00        ; 11
+    dw 0xffff
+    db  0, 0x00        ; 12
+    dw 0xffff
+    db  0, 0x00        ; 13
+    dw 0xffff
+    db  0, 0x00        ; 14
+    dw 0xffff
+    db  0, 0x00        ; 15
+    dw 0xffff
+    db  0, 0x00        ; 16
+    dw 0xffff
+    db  0, 0x00        ; 17
+    dw 0xffff
+    db  0, 0x00        ; 18
+    dw 0xffff
+    db  0, 0x00        ; 19
+    dw 0xffff
+    db  0, 0x00        ; 1a
+    dw 0xffff
+    db  0, 0x00        ; 1b
+    dw 0xffff
+    db  0, 0x00        ; 1c
+    dw 0xffff
+    db  0, 0x00        ; 1d
+    dw 0xffff
+    db  0, 0x00        ; 1e
+    dw 0xffff
+    db  0, 0x00        ; 1f
+    dw 0xffff
+    db  0, 0x00        ; 20
+    dw 0xffff
+    db  0, 0x00        ; 21
+    dw 0xffff
+    db  0, 0x00        ; 22
+    dw 0xffff
+    db  0, 0x00        ; 23
+    dw 0xffff
+    db  0, 0x00        ; 24
+    dw 0xffff
+    db  0, 0x00        ; 25
+    dw 0xffff
+    db  0, 0x00        ; 26
+    dw 0xffff
+    db  0, 0x00        ; 27
+    dw 0xffff
+    db  0, 0x00        ; 28
+    dw 0xffff
+    db  0, 0x00        ; 29
+    dw 0xffff
+    db  0, 0x00        ; 2a
+    dw 0xffff
+    db  0, 0x00        ; 2b
+    dw 0xffff
+    db  0, 0x00        ; 2c
+    dw 0xffff
+    db  0, 0x00        ; 2d
+    dw 0xffff
+    db  0, 0x00        ; 2e
+    dw 0xffff
+    db  0, 0x00        ; 2f
+    dw 0xffff
+    db  0, 0x00        ; 30
+    dw 0x0975
+    db 44, 0x25        ; 31
+    dw 0xffff
+    db  0, 0x00        ; 32
+    dw 0xffff
+    db  0, 0x00        ; 33
+    dw 0xffff
+    db  0, 0x00        ; 34
+    dw 0x097f
+    db 44, 0x25        ; 35
+    dw 0xffff
+    db  0, 0x00        ; 36
+    dw 0xffff
+    db  0, 0x00        ; 37
+    dw 0xffff
+    db  0, 0x00        ; 38
+    dw 0x0989
+    db 44, 0x05        ; 39
+    dw 0xffff
+    db  0, 0x00        ; 3a
+    dw 0xffff
+    db  0, 0x00        ; 3b
+    dw 0xffff
+    db  0, 0x00        ; 3c
+    dw 0x0991
+    db 44, 0x05        ; 3d
+    dw 0xffff
+    db  0, 0x00        ; 3e
+    dw 0xffff
+    db  0, 0x00        ; 3f
+    dw 0xffff
+    db  0, 0x00        ; 40
+    dw 0xffff
+    db  0, 0x00        ; 41
+    dw 0xffff
+    db  0, 0x00        ; 42
+    dw 0xffff
+    db  0, 0x00        ; 43
+    dw 0xffff
+    db  0, 0x00        ; 44
+    dw 0xffff
+    db  0, 0x00        ; 45
+    dw 0xffff
+    db  0, 0x00        ; 46
+    dw 0xffff
+    db  0, 0x00        ; 47
+    dw 0xffff
+    db  0, 0x00        ; 48
+    dw 0xffff
+    db  0, 0x00        ; 49
+    dw 0xffff
+    db  0, 0x00        ; 4a
+    dw 0xffff
+    db  0, 0x00        ; 4b
+    dw 0xffff
+    db  0, 0x00        ; 4c
+    dw 0xffff
+    db  0, 0x00        ; 4d
+    dw 0xffff
+    db  0, 0x00        ; 4e
+    dw 0xffff
+    db  0, 0x00        ; 4f
+    dw 0xffff
+    db  0, 0x00        ; 50
+    dw 0xffff
+    db  0, 0x00        ; 51
+    dw 0xffff
+    db  0, 0x00        ; 52
+    dw 0xffff
+    db  0, 0x00        ; 53
+    dw 0xffff
+    db  0, 0x00        ; 54
+    dw 0xffff
+    db  0, 0x00        ; 55
+    dw 0xffff
+    db  0, 0x00        ; 56
+    dw 0xffff
+    db  0, 0x00        ; 57
+    dw 0xffff
+    db  0, 0x00        ; 58
+    dw 0x0999
+    db 44, 0x25        ; 59
+    dw 0xffff
+    db  0, 0x00        ; 5a
+    dw 0xffff
+    db  0, 0x00        ; 5b
+    dw 0xffff
+    db  0, 0x00        ; 5c
+    dw 0xffff
+    db  0, 0x00        ; 5d
+    dw 0xffff
+    db  0, 0x00        ; 5e
+    dw 0xffff
+    db  0, 0x00        ; 5f
+    dw 0xffff
+    db  0, 0x00        ; 60
+    dw 0x09a1
+    db 62, 0x03        ; 61
+    dw 0xffff
+    db  0, 0x00        ; 62
+    dw 0xffff
+    db  0, 0x00        ; 63
+    dw 0xffff
+    db  0, 0x00        ; 64
+    dw 0x09ae
+    db 62, 0x04        ; 65
+    dw 0xffff
+    db  0, 0x00        ; 66
+    dw 0xffff
+    db  0, 0x00        ; 67
+    dw 0xffff
+    db  0, 0x00        ; 68
+    dw 0x09bb
+    db 62, 0x05        ; 69
+    dw 0xffff
+    db  0, 0x00        ; 6a
+    dw 0xffff
+    db  0, 0x00        ; 6b
+    dw 0xffff
+    db  0, 0x00        ; 6c
+    dw 0xffff
+    db  0, 0x00        ; 6d
+    dw 0xffff
+    db  0, 0x00        ; 6e
+    dw 0xffff
+    db  0, 0x00        ; 6f
+    dw 0xffff
+    db  0, 0x00        ; 70
+    dw 0xffff
+    db  0, 0x00        ; 71
+    dw 0xffff
+    db  0, 0x00        ; 72
+    dw 0xffff
+    db  0, 0x00        ; 73
+    dw 0xffff
+    db  0, 0x00        ; 74
+    dw 0xffff
+    db  0, 0x00        ; 75
+    dw 0xffff
+    db  0, 0x00        ; 76
+    dw 0xffff
+    db  0, 0x00        ; 77
+    dw 0xffff
+    db  0, 0x00        ; 78
+    dw 0xffff
+    db  0, 0x00        ; 79
+    dw 0xffff
+    db  0, 0x00        ; 7a
+    dw 0xffff
+    db  0, 0x00        ; 7b
+    dw 0xffff
+    db  0, 0x00        ; 7c
+    dw 0xffff
+    db  0, 0x00        ; 7d
+    dw 0xffff
+    db  0, 0x00        ; 7e
+    dw 0xffff
+    db  0, 0x00        ; 7f
+    dw 0xffff
+    db  0, 0x00        ; 80
+    dw 0xffff
+    db  0, 0x00        ; 81
+    dw 0xffff
+    db  0, 0x00        ; 82
+    dw 0xffff
+    db  0, 0x00        ; 83
+    dw 0xffff
+    db  0, 0x00        ; 84
+    dw 0xffff
+    db  0, 0x00        ; 85
+    dw 0xffff
+    db  0, 0x00        ; 86
+    dw 0xffff
+    db  0, 0x00        ; 87
+    dw 0xffff
+    db  0, 0x00        ; 88
+    dw 0xffff
+    db  0, 0x00        ; 89
+    dw 0xffff
+    db  0, 0x00        ; 8a
+    dw 0xffff
+    db  0, 0x00        ; 8b
+    dw 0xffff
+    db  0, 0x00        ; 8c
+    dw 0xffff
+    db  0, 0x00        ; 8d
+    dw 0xffff
+    db  0, 0x00        ; 8e
+    dw 0xffff
+    db  0, 0x00        ; 8f
+    dw 0xffff
+    db  0, 0x00        ; 90
+    dw 0xffff
+    db  0, 0x00        ; 91
+    dw 0xffff
+    db  0, 0x00        ; 92
+    dw 0xffff
+    db  0, 0x00        ; 93
+    dw 0xffff
+    db  0, 0x00        ; 94
+    dw 0xffff
+    db  0, 0x00        ; 95
+    dw 0xffff
+    db  0, 0x00        ; 96
+    dw 0xffff
+    db  0, 0x00        ; 97
+    dw 0xffff
+    db  0, 0x00        ; 98
+    dw 0xffff
+    db  0, 0x00        ; 99
+    dw 0xffff
+    db  0, 0x00        ; 9a
+    dw 0xffff
+    db  0, 0x00        ; 9b
+    dw 0xffff
+    db  0, 0x00        ; 9c
+    dw 0xffff
+    db  0, 0x00        ; 9d
+    dw 0xffff
+    db  0, 0x00        ; 9e
+    dw 0xffff
+    db  0, 0x00        ; 9f
+    dw 0xffff
+    db  0, 0x00        ; a0
+    dw 0xffff
+    db  0, 0x00        ; a1
+    dw 0xffff
+    db  0, 0x00        ; a2
+    dw 0xffff
+    db  0, 0x00        ; a3
+    dw 0xffff
+    db  0, 0x00        ; a4
+    dw 0xffff
+    db  0, 0x00        ; a5
+    dw 0xffff
+    db  0, 0x00        ; a6
+    dw 0xffff
+    db  0, 0x00        ; a7
+    dw 0xffff
+    db  0, 0x00        ; a8
+    dw 0xffff
+    db  0, 0x00        ; a9
+    dw 0xffff
+    db  0, 0x00        ; aa
+    dw 0xffff
+    db  0, 0x00        ; ab
+    dw 0xffff
+    db  0, 0x00        ; ac
+    dw 0xffff
+    db  0, 0x00        ; ad
+    dw 0xffff
+    db  0, 0x00        ; ae
+    dw 0xffff
+    db  0, 0x00        ; af
+    dw 0xffff
+    db  0, 0x00        ; b0
+    dw 0x09ca
+    db 69, 0x05        ; b1
+    dw 0xffff
+    db  0, 0x00        ; b2
+    dw 0xffff
+    db  0, 0x00        ; b3
+    dw 0xffff
+    db  0, 0x00        ; b4
+    dw 0x09d5
+    db 69, 0x05        ; b5
+    dw 0xffff
+    db  0, 0x00        ; b6
+    dw 0xffff
+    db  0, 0x00        ; b7
+    dw 0xffff
+    db  0, 0x00        ; b8
+    dw 0x09ca
+    db 70, 0x05        ; b9
+    dw 0xffff
+    db  0, 0x00        ; ba
+    dw 0xffff
+    db  0, 0x00        ; bb
+    dw 0xffff
+    db  0, 0x00        ; bc
+    dw 0x09d5
+    db 70, 0x05        ; bd
+    dw 0xffff
+    db  0, 0x00        ; be
+    dw 0xffff
+    db  0, 0x00        ; bf
+    dw 0xffff
+    db  0, 0x00        ; c0
+    dw 0xffff
+    db  0, 0x00        ; c1
+    dw 0xffff
+    db  0, 0x00        ; c2
+    dw 0xffff
+    db  0, 0x00        ; c3
+    dw 0xffff
+    db  0, 0x00        ; c4
+    dw 0xffff
+    db  0, 0x00        ; c5
+    dw 0xffff
+    db  0, 0x00        ; c6
+    dw 0xffff
+    db  0, 0x00        ; c7
+    dw 0xffff
+    db  0, 0x00        ; c8
+    dw 0xffff
+    db  0, 0x00        ; c9
+    dw 0xffff
+    db  0, 0x00        ; ca
+    dw 0xffff
+    db  0, 0x00        ; cb
+    dw 0xffff
+    db  0, 0x00        ; cc
+    dw 0xffff
+    db  0, 0x00        ; cd
+    dw 0xffff
+    db  0, 0x00        ; ce
+    dw 0xffff
+    db  0, 0x00        ; cf
+    dw 0xffff
+    db  0, 0x00        ; d0
+    dw 0xffff
+    db  0, 0x00        ; d1
+    dw 0xffff
+    db  0, 0x00        ; d2
+    dw 0xffff
+    db  0, 0x00        ; d3
+    dw 0xffff
+    db  0, 0x00        ; d4
+    dw 0xffff
+    db  0, 0x00        ; d5
+    dw 0xffff
+    db  0, 0x00        ; d6
+    dw 0xffff
+    db  0, 0x00        ; d7
+    dw 0xffff
+    db  0, 0x00        ; d8
+    dw 0x09e0
+    db 44, 0x25        ; d9
+    dw 0xffff
+    db  0, 0x00        ; da
+    dw 0xffff
+    db  0, 0x00        ; db
+    dw 0xffff
+    db  0, 0x00        ; dc
+    dw 0xffff
+    db  0, 0x00        ; dd
+    dw 0xffff
+    db  0, 0x00        ; de
+    dw 0xffff
+    db  0, 0x00        ; df
+    dw 0xffff
+    db  0, 0x00        ; e0
+    dw 0xffff
+    db  0, 0x00        ; e1
+    dw 0xffff
+    db  0, 0x00        ; e2
+    dw 0xffff
+    db  0, 0x00        ; e3
+    dw 0xffff
+    db  0, 0x00        ; e4
+    dw 0xffff
+    db  0, 0x00        ; e5
+    dw 0xffff
+    db  0, 0x00        ; e6
+    dw 0xffff
+    db  0, 0x00        ; e7
+    dw 0xffff
+    db  0, 0x00        ; e8
+    dw 0xffff
+    db  0, 0x00        ; e9
+    dw 0xffff
+    db  0, 0x00        ; ea
+    dw 0xffff
+    db  0, 0x00        ; eb
+    dw 0xffff
+    db  0, 0x00        ; ec
+    dw 0xffff
+    db  0, 0x00        ; ed
+    dw 0xffff
+    db  0, 0x00        ; ee
+    dw 0xffff
+    db  0, 0x00        ; ef
+    dw 0xffff
+    db  0, 0x00        ; f0
+    dw 0xffff
+    db  0, 0x00        ; f1
+    dw 0xffff
+    db  0, 0x00        ; f2
+    dw 0xffff
+    db  0, 0x00        ; f3
+    dw 0xffff
+    db  0, 0x00        ; f4
+    dw 0xffff
+    db  0, 0x00        ; f5
+    dw 0xffff
+    db  0, 0x00        ; f6
+    dw 0xffff
+    db  0, 0x00        ; f7
+    dw 0xffff
+    db  0, 0x00        ; f8
+    dw 0xffff
+    db  0, 0x00        ; f9
+    dw 0xffff
+    db  0, 0x00        ; fa
+    dw 0xffff
+    db  0, 0x00        ; fb
+    dw 0xffff
+    db  0, 0x00        ; fc
+    dw 0xffff
+    db  0, 0x00        ; fd
+    dw 0xffff
+    db  0, 0x00        ; fe
+    dw 0xffff
+    db  0, 0x00        ; ff
+    dw 0xffff
+    db  0, 0x00        ; 100
+    dw 0xffff
+    db  0, 0x00        ; 101
+    dw 0xffff
+    db  0, 0x00        ; 102
+    dw 0xffff
+    db  0, 0x00        ; 103
+    dw 0xffff
+    db  0, 0x00        ; 104
+    dw 0xffff
+    db  0, 0x00        ; 105
+    dw 0xffff
+    db  0, 0x00        ; 106
+    dw 0xffff
+    db  0, 0x00        ; 107
+    dw 0xffff
+    db  0, 0x00        ; 108
+    dw 0xffff
+    db  0, 0x00        ; 109
+    dw 0xffff
+    db  0, 0x00        ; 10a
+    dw 0xffff
+    db  0, 0x00        ; 10b
+    dw 0xffff
+    db  0, 0x00        ; 10c
+    dw 0xffff
+    db  0, 0x00        ; 10d
+    dw 0xffff
+    db  0, 0x00        ; 10e
+    dw 0xffff
+    db  0, 0x00        ; 10f
+    dw 0xffff
+    db  0, 0x00        ; 110
+    dw 0xffff
+    db  0, 0x00        ; 111
+    dw 0xffff
+    db  0, 0x00        ; 112
+    dw 0xffff
+    db  0, 0x00        ; 113
+    dw 0xffff
+    db  0, 0x00        ; 114
+    dw 0x09e7
+    db 44, 0x35        ; 115
+    dw 0xffff
+    db  0, 0x00        ; 116
+    dw 0xffff
+    db  0, 0x00        ; 117
+    dw 0xffff
+    db  0, 0x00        ; 118
+    dw 0x09ef
+    db 44, 0x25        ; 119
+    dw 0xffff
+    db  0, 0x00        ; 11a
+    dw 0xffff
+    db  0, 0x00        ; 11b
+    dw 0xffff
+    db  0, 0x00        ; 11c
+    dw 0x09f7
+    db 44, 0x35        ; 11d
+    dw 0xffff
+    db  0, 0x00        ; 11e
+    dw 0xffff
+    db  0, 0x00        ; 11f
+    dw 0xffff
+    db  0, 0x00        ; 120
+    dw 0xffff
+    db  0, 0x00        ; 121
+    dw 0xffff
+    db  0, 0x00        ; 122
+    dw 0xffff
+    db  0, 0x00        ; 123
+    dw 0xffff
+    db  0, 0x00        ; 124
+    dw 0xffff
+    db  0, 0x00        ; 125
+    dw 0xffff
+    db  0, 0x00        ; 126
+    dw 0xffff
+    db  0, 0x00        ; 127
+    dw 0xffff
+    db  0, 0x00        ; 128
+    dw 0xffff
+    db  0, 0x00        ; 129
+    dw 0xffff
+    db  0, 0x00        ; 12a
+    dw 0xffff
+    db  0, 0x00        ; 12b
+    dw 0xffff
+    db  0, 0x00        ; 12c
+    dw 0xffff
+    db  0, 0x00        ; 12d
+    dw 0xffff
+    db  0, 0x00        ; 12e
+    dw 0xffff
+    db  0, 0x00        ; 12f
+    dw 0xffff
+    db  0, 0x00        ; 130
+    dw 0xffff
+    db  0, 0x00        ; 131
+    dw 0xffff
+    db  0, 0x00        ; 132
+    dw 0xffff
+    db  0, 0x00        ; 133
+    dw 0xffff
+    db  0, 0x00        ; 134
+    dw 0xffff
+    db  0, 0x00        ; 135
+    dw 0xffff
+    db  0, 0x00        ; 136
+    dw 0xffff
+    db  0, 0x00        ; 137
+    dw 0xffff
+    db  0, 0x00        ; 138
+    dw 0xffff
+    db  0, 0x00        ; 139
+    dw 0xffff
+    db  0, 0x00        ; 13a
+    dw 0xffff
+    db  0, 0x00        ; 13b
+    dw 0xffff
+    db  0, 0x00        ; 13c
+    dw 0xffff
+    db  0, 0x00        ; 13d
+    dw 0xffff
+    db  0, 0x00        ; 13e
+    dw 0xffff
+    db  0, 0x00        ; 13f
+    dw 0xffff
+    db  0, 0x00        ; 140
+    dw 0xffff
+    db  0, 0x00        ; 141
+    dw 0xffff
+    db  0, 0x00        ; 142
+    dw 0xffff
+    db  0, 0x00        ; 143
+    dw 0xffff
+    db  0, 0x00        ; 144
+    dw 0xffff
+    db  0, 0x00        ; 145
+    dw 0xffff
+    db  0, 0x00        ; 146
+    dw 0xffff
+    db  0, 0x00        ; 147
+    dw 0xffff
+    db  0, 0x00        ; 148
+    dw 0xffff
+    db  0, 0x00        ; 149
+    dw 0xffff
+    db  0, 0x00        ; 14a
+    dw 0xffff
+    db  0, 0x00        ; 14b
+    dw 0xffff
+    db  0, 0x00        ; 14c
+    dw 0xffff
+    db  0, 0x00        ; 14d
+    dw 0xffff
+    db  0, 0x00        ; 14e
+    dw 0xffff
+    db  0, 0x00        ; 14f
+    dw 0xffff
+    db  0, 0x00        ; 150
+    dw 0xffff
+    db  0, 0x00        ; 151
+    dw 0xffff
+    db  0, 0x00        ; 152
+    dw 0xffff
+    db  0, 0x00        ; 153
+    dw 0xffff
+    db  0, 0x00        ; 154
+    dw 0xffff
+    db  0, 0x00        ; 155
+    dw 0xffff
+    db  0, 0x00        ; 156
+    dw 0xffff
+    db  0, 0x00        ; 157
+    dw 0xffff
+    db  0, 0x00        ; 158
+    dw 0xffff
+    db  0, 0x00        ; 159
+    dw 0xffff
+    db  0, 0x00        ; 15a
+    dw 0xffff
+    db  0, 0x00        ; 15b
+    dw 0xffff
+    db  0, 0x00        ; 15c
+    dw 0xffff
+    db  0, 0x00        ; 15d
+    dw 0xffff
+    db  0, 0x00        ; 15e
+    dw 0xffff
+    db  0, 0x00        ; 15f
+    dw 0xffff
+    db  0, 0x00        ; 160
+    dw 0x09ff
+    db 62, 0x03        ; 161
+    dw 0xffff
+    db  0, 0x00        ; 162
+    dw 0xffff
+    db  0, 0x00        ; 163
+    dw 0xffff
+    db  0, 0x00        ; 164
+    dw 0x0a0c
+    db 62, 0x04        ; 165
+    dw 0xffff
+    db  0, 0x00        ; 166
+    dw 0xffff
+    db  0, 0x00        ; 167
+    dw 0xffff
+    db  0, 0x00        ; 168
+    dw 0x0a19
+    db 62, 0x05        ; 169
+    dw 0xffff
+    db  0, 0x00        ; 16a
+    dw 0xffff
+    db  0, 0x00        ; 16b
+    dw 0xffff
+    db  0, 0x00        ; 16c
+    dw 0xffff
+    db  0, 0x00        ; 16d
+    dw 0xffff
+    db  0, 0x00        ; 16e
+    dw 0xffff
+    db  0, 0x00        ; 16f
+    dw 0xffff
+    db  0, 0x00        ; 170
+    dw 0xffff
+    db  0, 0x00        ; 171
+    dw 0xffff
+    db  0, 0x00        ; 172
+    dw 0xffff
+    db  0, 0x00        ; 173
+    dw 0xffff
+    db  0, 0x00        ; 174
+    dw 0xffff
+    db  0, 0x00        ; 175
+    dw 0xffff
+    db  0, 0x00        ; 176
+    dw 0xffff
+    db  0, 0x00        ; 177
+    dw 0xffff
+    db  0, 0x00        ; 178
+    dw 0xffff
+    db  0, 0x00        ; 179
+    dw 0xffff
+    db  0, 0x00        ; 17a
+    dw 0xffff
+    db  0, 0x00        ; 17b
+    dw 0xffff
+    db  0, 0x00        ; 17c
+    dw 0xffff
+    db  0, 0x00        ; 17d
+    dw 0xffff
+    db  0, 0x00        ; 17e
+    dw 0xffff
+    db  0, 0x00        ; 17f
+    dw 0xffff
+    db  0, 0x00        ; 180
+    dw 0xffff
+    db  0, 0x00        ; 181
+    dw 0xffff
+    db  0, 0x00        ; 182
+    dw 0xffff
+    db  0, 0x00        ; 183
+    dw 0xffff
+    db  0, 0x00        ; 184
+    dw 0xffff
+    db  0, 0x00        ; 185
+    dw 0xffff
+    db  0, 0x00        ; 186
+    dw 0xffff
+    db  0, 0x00        ; 187
+    dw 0xffff
+    db  0, 0x00        ; 188
+    dw 0xffff
+    db  0, 0x00        ; 189
+    dw 0xffff
+    db  0, 0x00        ; 18a
+    dw 0xffff
+    db  0, 0x00        ; 18b
+    dw 0xffff
+    db  0, 0x00        ; 18c
+    dw 0xffff
+    db  0, 0x00        ; 18d
+    dw 0xffff
+    db  0, 0x00        ; 18e
+    dw 0xffff
+    db  0, 0x00        ; 18f
+    dw 0xffff
+    db  0, 0x00        ; 190
+    dw 0xffff
+    db  0, 0x00        ; 191
+    dw 0xffff
+    db  0, 0x00        ; 192
+    dw 0xffff
+    db  0, 0x00        ; 193
+    dw 0xffff
+    db  0, 0x00        ; 194
+    dw 0xffff
+    db  0, 0x00        ; 195
+    dw 0xffff
+    db  0, 0x00        ; 196
+    dw 0xffff
+    db  0, 0x00        ; 197
+    dw 0xffff
+    db  0, 0x00        ; 198
+    dw 0xffff
+    db  0, 0x00        ; 199
+    dw 0xffff
+    db  0, 0x00        ; 19a
+    dw 0xffff
+    db  0, 0x00        ; 19b
+    dw 0xffff
+    db  0, 0x00        ; 19c
+    dw 0xffff
+    db  0, 0x00        ; 19d
+    dw 0xffff
+    db  0, 0x00        ; 19e
+    dw 0xffff
+    db  0, 0x00        ; 19f
+    dw 0xffff
+    db  0, 0x00        ; 1a0
+    dw 0xffff
+    db  0, 0x00        ; 1a1
+    dw 0xffff
+    db  0, 0x00        ; 1a2
+    dw 0xffff
+    db  0, 0x00        ; 1a3
+    dw 0xffff
+    db  0, 0x00        ; 1a4
+    dw 0xffff
+    db  0, 0x00        ; 1a5
+    dw 0xffff
+    db  0, 0x00        ; 1a6
+    dw 0xffff
+    db  0, 0x00        ; 1a7
+    dw 0xffff
+    db  0, 0x00        ; 1a8
+    dw 0xffff
+    db  0, 0x00        ; 1a9
+    dw 0xffff
+    db  0, 0x00        ; 1aa
+    dw 0xffff
+    db  0, 0x00        ; 1ab
+    dw 0xffff
+    db  0, 0x00        ; 1ac
+    dw 0xffff
+    db  0, 0x00        ; 1ad
+    dw 0xffff
+    db  0, 0x00        ; 1ae
+    dw 0xffff
+    db  0, 0x00        ; 1af
+    dw 0xffff
+    db  0, 0x00        ; 1b0
+    dw 0xffff
+    db  0, 0x00        ; 1b1
+    dw 0xffff
+    db  0, 0x00        ; 1b2
+    dw 0xffff
+    db  0, 0x00        ; 1b3
+    dw 0xffff
+    db  0, 0x00        ; 1b4
+    dw 0xffff
+    db  0, 0x00        ; 1b5
+    dw 0xffff
+    db  0, 0x00        ; 1b6
+    dw 0xffff
+    db  0, 0x00        ; 1b7
+    dw 0xffff
+    db  0, 0x00        ; 1b8
+    dw 0xffff
+    db  0, 0x00        ; 1b9
+    dw 0xffff
+    db  0, 0x00        ; 1ba
+    dw 0xffff
+    db  0, 0x00        ; 1bb
+    dw 0xffff
+    db  0, 0x00        ; 1bc
+    dw 0xffff
+    db  0, 0x00        ; 1bd
+    dw 0xffff
+    db  0, 0x00        ; 1be
+    dw 0xffff
+    db  0, 0x00        ; 1bf
+    dw 0xffff
+    db  0, 0x00        ; 1c0
+    dw 0xffff
+    db  0, 0x00        ; 1c1
+    dw 0xffff
+    db  0, 0x00        ; 1c2
+    dw 0xffff
+    db  0, 0x00        ; 1c3
+    dw 0xffff
+    db  0, 0x00        ; 1c4
+    dw 0xffff
+    db  0, 0x00        ; 1c5
+    dw 0xffff
+    db  0, 0x00        ; 1c6
+    dw 0xffff
+    db  0, 0x00        ; 1c7
+    dw 0xffff
+    db  0, 0x00        ; 1c8
+    dw 0xffff
+    db  0, 0x00        ; 1c9
+    dw 0xffff
+    db  0, 0x00        ; 1ca
+    dw 0xffff
+    db  0, 0x00        ; 1cb
+    dw 0xffff
+    db  0, 0x00        ; 1cc
+    dw 0xffff
+    db  0, 0x00        ; 1cd
+    dw 0xffff
+    db  0, 0x00        ; 1ce
+    dw 0xffff
+    db  0, 0x00        ; 1cf
+    dw 0xffff
+    db  0, 0x00        ; 1d0
+    dw 0xffff
+    db  0, 0x00        ; 1d1
+    dw 0xffff
+    db  0, 0x00        ; 1d2
+    dw 0xffff
+    db  0, 0x00        ; 1d3
+    dw 0xffff
+    db  0, 0x00        ; 1d4
+    dw 0xffff
+    db  0, 0x00        ; 1d5
+    dw 0xffff
+    db  0, 0x00        ; 1d6
+    dw 0xffff
+    db  0, 0x00        ; 1d7
+    dw 0xffff
+    db  0, 0x00        ; 1d8
+    dw 0xffff
+    db  0, 0x00        ; 1d9
+    dw 0xffff
+    db  0, 0x00        ; 1da
+    dw 0xffff
+    db  0, 0x00        ; 1db
+    dw 0xffff
+    db  0, 0x00        ; 1dc
+    dw 0xffff
+    db  0, 0x00        ; 1dd
+    dw 0xffff
+    db  0, 0x00        ; 1de
+    dw 0xffff
+    db  0, 0x00        ; 1df
+    dw 0xffff
+    db  0, 0x00        ; 1e0
+    dw 0x0a28
+    db 62, 0x01        ; 1e1
+    dw 0xffff
+    db  0, 0x00        ; 1e2
+    dw 0xffff
+    db  0, 0x00        ; 1e3
+    dw 0xffff
+    db  0, 0x00        ; 1e4
+    dw 0x0a35
+    db 62, 0x02        ; 1e5
+    dw 0xffff
+    db  0, 0x00        ; 1e6
+    dw 0xffff
+    db  0, 0x00        ; 1e7
+    dw 0xffff
+    db  0, 0x00        ; 1e8
+    dw 0xffff
+    db  0, 0x00        ; 1e9
+    dw 0xffff
+    db  0, 0x00        ; 1ea
+    dw 0xffff
+    db  0, 0x00        ; 1eb
+    dw 0xffff
+    db  0, 0x00        ; 1ec
+    dw 0xffff
+    db  0, 0x00        ; 1ed
+    dw 0xffff
+    db  0, 0x00        ; 1ee
+    dw 0xffff
+    db  0, 0x00        ; 1ef
+    dw 0xffff
+    db  0, 0x00        ; 1f0
+    dw 0xffff
+    db  0, 0x00        ; 1f1
+    dw 0xffff
+    db  0, 0x00        ; 1f2
+    dw 0xffff
+    db  0, 0x00        ; 1f3
+    dw 0xffff
+    db  0, 0x00        ; 1f4
+    dw 0xffff
+    db  0, 0x00        ; 1f5
+    dw 0xffff
+    db  0, 0x00        ; 1f6
+    dw 0xffff
+    db  0, 0x00        ; 1f7
+    dw 0xffff
+    db  0, 0x00        ; 1f8
+    dw 0xffff
+    db  0, 0x00        ; 1f9
+    dw 0xffff
+    db  0, 0x00        ; 1fa
+    dw 0xffff
+    db  0, 0x00        ; 1fb
+    dw 0xffff
+    db  0, 0x00        ; 1fc
+    dw 0xffff
+    db  0, 0x00        ; 1fd
+    dw 0xffff
+    db  0, 0x00        ; 1fe
+    dw 0xffff
+    db  0, 0x00        ; 1ff
+    dw 0xffff
+    db  0, 0x00        ; 200
+    dw 0xffff
+    db  0, 0x00        ; 201
+    dw 0xffff
+    db  0, 0x00        ; 202
+    dw 0xffff
+    db  0, 0x00        ; 203
+    dw 0xffff
+    db  0, 0x00        ; 204
+    dw 0xffff
+    db  0, 0x00        ; 205
+    dw 0xffff
+    db  0, 0x00        ; 206
+    dw 0xffff
+    db  0, 0x00        ; 207
+    dw 0xffff
+    db  0, 0x00        ; 208
+    dw 0xffff
+    db  0, 0x00        ; 209
+    dw 0xffff
+    db  0, 0x00        ; 20a
+    dw 0xffff
+    db  0, 0x00        ; 20b
+    dw 0xffff
+    db  0, 0x00        ; 20c
+    dw 0xffff
+    db  0, 0x00        ; 20d
+    dw 0xffff
+    db  0, 0x00        ; 20e
+    dw 0xffff
+    db  0, 0x00        ; 20f
+    dw 0xffff
+    db  0, 0x00        ; 210
+    dw 0xffff
+    db  0, 0x00        ; 211
+    dw 0xffff
+    db  0, 0x00        ; 212
+    dw 0xffff
+    db  0, 0x00        ; 213
+    dw 0xffff
+    db  0, 0x00        ; 214
+    dw 0xffff
+    db  0, 0x00        ; 215
+    dw 0xffff
+    db  0, 0x00        ; 216
+    dw 0xffff
+    db  0, 0x00        ; 217
+    dw 0xffff
+    db  0, 0x00        ; 218
+    dw 0xffff
+    db  0, 0x00        ; 219
+    dw 0xffff
+    db  0, 0x00        ; 21a
+    dw 0xffff
+    db  0, 0x00        ; 21b
+    dw 0xffff
+    db  0, 0x00        ; 21c
+    dw 0xffff
+    db  0, 0x00        ; 21d
+    dw 0xffff
+    db  0, 0x00        ; 21e
+    dw 0xffff
+    db  0, 0x00        ; 21f
+    dw 0xffff
+    db  0, 0x00        ; 220
+    dw 0xffff
+    db  0, 0x00        ; 221
+    dw 0xffff
+    db  0, 0x00        ; 222
+    dw 0xffff
+    db  0, 0x00        ; 223
+    dw 0xffff
+    db  0, 0x00        ; 224
+    dw 0xffff
+    db  0, 0x00        ; 225
+    dw 0xffff
+    db  0, 0x00        ; 226
+    dw 0xffff
+    db  0, 0x00        ; 227
+    dw 0xffff
+    db  0, 0x00        ; 228
+    dw 0xffff
+    db  0, 0x00        ; 229
+    dw 0xffff
+    db  0, 0x00        ; 22a
+    dw 0xffff
+    db  0, 0x00        ; 22b
+    dw 0xffff
+    db  0, 0x00        ; 22c
+    dw 0xffff
+    db  0, 0x00        ; 22d
+    dw 0xffff
+    db  0, 0x00        ; 22e
+    dw 0xffff
+    db  0, 0x00        ; 22f
+    dw 0xffff
+    db  0, 0x00        ; 230
+    dw 0x0a42
+    db 69, 0x15        ; 231
+    dw 0xffff
+    db  0, 0x00        ; 232
+    dw 0xffff
+    db  0, 0x00        ; 233
+    dw 0xffff
+    db  0, 0x00        ; 234
+    dw 0xffff
+    db  0, 0x00        ; 235
+    dw 0xffff
+    db  0, 0x00        ; 236
+    dw 0xffff
+    db  0, 0x00        ; 237
+    dw 0xffff
+    db  0, 0x00        ; 238
+    dw 0x0a42
+    db 70, 0x15        ; 239
+    dw 0xffff
+    db  0, 0x00        ; 23a
+    dw 0xffff
+    db  0, 0x00        ; 23b
+    dw 0xffff
+    db  0, 0x00        ; 23c
+    dw 0xffff
+    db  0, 0x00        ; 23d
+    dw 0xffff
+    db  0, 0x00        ; 23e
+    dw 0xffff
+    db  0, 0x00        ; 23f
+    dw 0xffff
+    db  0, 0x00        ; 240
+    dw 0xffff
+    db  0, 0x00        ; 241
+    dw 0xffff
+    db  0, 0x00        ; 242
+    dw 0xffff
+    db  0, 0x00        ; 243
+    dw 0xffff
+    db  0, 0x00        ; 244
+    dw 0xffff
+    db  0, 0x00        ; 245
+    dw 0xffff
+    db  0, 0x00        ; 246
+    dw 0xffff
+    db  0, 0x00        ; 247
+    dw 0xffff
+    db  0, 0x00        ; 248
+    dw 0xffff
+    db  0, 0x00        ; 249
+    dw 0xffff
+    db  0, 0x00        ; 24a
+    dw 0xffff
+    db  0, 0x00        ; 24b
+    dw 0xffff
+    db  0, 0x00        ; 24c
+    dw 0xffff
+    db  0, 0x00        ; 24d
+    dw 0xffff
+    db  0, 0x00        ; 24e
+    dw 0xffff
+    db  0, 0x00        ; 24f
+    dw 0xffff
+    db  0, 0x00        ; 250
+    dw 0xffff
+    db  0, 0x00        ; 251
+    dw 0xffff
+    db  0, 0x00        ; 252
+    dw 0xffff
+    db  0, 0x00        ; 253
+    dw 0xffff
+    db  0, 0x00        ; 254
+    dw 0xffff
+    db  0, 0x00        ; 255
+    dw 0xffff
+    db  0, 0x00        ; 256
+    dw 0xffff
+    db  0, 0x00        ; 257
+    dw 0xffff
+    db  0, 0x00        ; 258
+    dw 0x0a4d
+    db 44, 0x2d        ; 259
+    dw 0xffff
+    db  0, 0x00        ; 25a
+    dw 0xffff
+    db  0, 0x00        ; 25b
+    dw 0xffff
+    db  0, 0x00        ; 25c
+    dw 0x0a5c
+    db 44, 0x2d        ; 25d
+    dw 0xffff
+    db  0, 0x00        ; 25e
+    dw 0xffff
+    db  0, 0x00        ; 25f
+    dw 0xffff
+    db  0, 0x00        ; 260
+    dw 0x0a6b
+    db 44, 0x2d        ; 261
+    dw 0xffff
+    db  0, 0x00        ; 262
+    dw 0xffff
+    db  0, 0x00        ; 263
+    dw 0xffff
+    db  0, 0x00        ; 264
+    dw 0x0a77
+    db 44, 0x2b        ; 265
+    dw 0xffff
+    db  0, 0x00        ; 266
+    dw 0xffff
+    db  0, 0x00        ; 267
+    dw 0xffff
+    db  0, 0x00        ; 268
+    dw 0x0a83
+    db 44, 0x2d        ; 269
+    dw 0xffff
+    db  0, 0x00        ; 26a
+    dw 0xffff
+    db  0, 0x00        ; 26b
+    dw 0xffff
+    db  0, 0x00        ; 26c
+    dw 0x0a8f
+    db 44, 0x2b        ; 26d
+    dw 0xffff
+    db  0, 0x00        ; 26e
+    dw 0xffff
+    db  0, 0x00        ; 26f
+    dw 0xffff
+    db  0, 0x00        ; 270
+    dw 0x0a9b
+    db 44, 0x2d        ; 271
+    dw 0xffff
+    db  0, 0x00        ; 272
+    dw 0xffff
+    db  0, 0x00        ; 273
+    dw 0xffff
+    db  0, 0x00        ; 274
+    dw 0x0aa8
+    db 44, 0x2b        ; 275
+    dw 0xffff
+    db  0, 0x00        ; 276
+    dw 0xffff
+    db  0, 0x00        ; 277
+    dw 0xffff
+    db  0, 0x00        ; 278
+    dw 0x0ab5
+    db 44, 0x2d        ; 279
+    dw 0xffff
+    db  0, 0x00        ; 27a
+    dw 0xffff
+    db  0, 0x00        ; 27b
+    dw 0xffff
+    db  0, 0x00        ; 27c
+    dw 0x0ac2
+    db 44, 0x2b        ; 27d
+    dw 0xffff
+    db  0, 0x00        ; 27e
+    dw 0xffff
+    db  0, 0x00        ; 27f
+    dw 0xffff
+    db  0, 0x00        ; 280
+    dw 0xffff
+    db  0, 0x00        ; 281
+    dw 0xffff
+    db  0, 0x00        ; 282
+    dw 0xffff
+    db  0, 0x00        ; 283
+    dw 0xffff
+    db  0, 0x00        ; 284
+    dw 0xffff
+    db  0, 0x00        ; 285
+    dw 0xffff
+    db  0, 0x00        ; 286
+    dw 0xffff
+    db  0, 0x00        ; 287
+    dw 0xffff
+    db  0, 0x00        ; 288
+    dw 0xffff
+    db  0, 0x00        ; 289
+    dw 0xffff
+    db  0, 0x00        ; 28a
+    dw 0xffff
+    db  0, 0x00        ; 28b
+    dw 0xffff
+    db  0, 0x00        ; 28c
+    dw 0xffff
+    db  0, 0x00        ; 28d
+    dw 0xffff
+    db  0, 0x00        ; 28e
+    dw 0xffff
+    db  0, 0x00        ; 28f
+    dw 0xffff
+    db  0, 0x00        ; 290
+    dw 0xffff
+    db  0, 0x00        ; 291
+    dw 0xffff
+    db  0, 0x00        ; 292
+    dw 0xffff
+    db  0, 0x00        ; 293
+    dw 0xffff
+    db  0, 0x00        ; 294
+    dw 0xffff
+    db  0, 0x00        ; 295
+    dw 0xffff
+    db  0, 0x00        ; 296
+    dw 0xffff
+    db  0, 0x00        ; 297
+    dw 0xffff
+    db  0, 0x00        ; 298
+    dw 0x0acf
+    db 44, 0x2d        ; 299
+    dw 0xffff
+    db  0, 0x00        ; 29a
+    dw 0xffff
+    db  0, 0x00        ; 29b
+    dw 0xffff
+    db  0, 0x00        ; 29c
+    dw 0x0ade
+    db 44, 0x2d        ; 29d
+    dw 0xffff
+    db  0, 0x00        ; 29e
+    dw 0xffff
+    db  0, 0x00        ; 29f
+    dw 0xffff
+    db  0, 0x00        ; 2a0
+    dw 0x0aed
+    db 44, 0x2d        ; 2a1
+    dw 0xffff
+    db  0, 0x00        ; 2a2
+    dw 0xffff
+    db  0, 0x00        ; 2a3
+    dw 0xffff
+    db  0, 0x00        ; 2a4
+    dw 0x0af9
+    db 44, 0x2b        ; 2a5
+    dw 0xffff
+    db  0, 0x00        ; 2a6
+    dw 0xffff
+    db  0, 0x00        ; 2a7
+    dw 0xffff
+    db  0, 0x00        ; 2a8
+    dw 0x0b05
+    db 44, 0x2d        ; 2a9
+    dw 0xffff
+    db  0, 0x00        ; 2aa
+    dw 0xffff
+    db  0, 0x00        ; 2ab
+    dw 0xffff
+    db  0, 0x00        ; 2ac
+    dw 0x0b11
+    db 44, 0x2b        ; 2ad
+    dw 0xffff
+    db  0, 0x00        ; 2ae
+    dw 0xffff
+    db  0, 0x00        ; 2af
+    dw 0xffff
+    db  0, 0x00        ; 2b0
+    dw 0x0b1d
+    db 44, 0x2d        ; 2b1
+    dw 0xffff
+    db  0, 0x00        ; 2b2
+    dw 0xffff
+    db  0, 0x00        ; 2b3
+    dw 0xffff
+    db  0, 0x00        ; 2b4
+    dw 0x0b2a
+    db 44, 0x2b        ; 2b5
+    dw 0xffff
+    db  0, 0x00        ; 2b6
+    dw 0xffff
+    db  0, 0x00        ; 2b7
+    dw 0xffff
+    db  0, 0x00        ; 2b8
+    dw 0x0b37
+    db 44, 0x2d        ; 2b9
+    dw 0xffff
+    db  0, 0x00        ; 2ba
+    dw 0xffff
+    db  0, 0x00        ; 2bb
+    dw 0xffff
+    db  0, 0x00        ; 2bc
+    dw 0x0b44
+    db 44, 0x2b        ; 2bd
+    dw 0xffff
+    db  0, 0x00        ; 2be
+    dw 0xffff
+    db  0, 0x00        ; 2bf
+    dw 0xffff
+    db  0, 0x00        ; 2c0
+    dw 0xffff
+    db  0, 0x00        ; 2c1
+    dw 0xffff
+    db  0, 0x00        ; 2c2
+    dw 0xffff
+    db  0, 0x00        ; 2c3
+    dw 0xffff
+    db  0, 0x00        ; 2c4
+    dw 0xffff
+    db  0, 0x00        ; 2c5
+    dw 0xffff
+    db  0, 0x00        ; 2c6
+    dw 0xffff
+    db  0, 0x00        ; 2c7
+    dw 0xffff
+    db  0, 0x00        ; 2c8
+    dw 0xffff
+    db  0, 0x00        ; 2c9
+    dw 0xffff
+    db  0, 0x00        ; 2ca
+    dw 0xffff
+    db  0, 0x00        ; 2cb
+    dw 0xffff
+    db  0, 0x00        ; 2cc
+    dw 0xffff
+    db  0, 0x00        ; 2cd
+    dw 0xffff
+    db  0, 0x00        ; 2ce
+    dw 0xffff
+    db  0, 0x00        ; 2cf
+    dw 0xffff
+    db  0, 0x00        ; 2d0
+    dw 0xffff
+    db  0, 0x00        ; 2d1
+    dw 0xffff
+    db  0, 0x00        ; 2d2
+    dw 0xffff
+    db  0, 0x00        ; 2d3
+    dw 0xffff
+    db  0, 0x00        ; 2d4
+    dw 0xffff
+    db  0, 0x00        ; 2d5
+    dw 0xffff
+    db  0, 0x00        ; 2d6
+    dw 0xffff
+    db  0, 0x00        ; 2d7
+    dw 0xffff
+    db  0, 0x00        ; 2d8
+    dw 0x0b51
+    db 44, 0x2d        ; 2d9
+    dw 0xffff
+    db  0, 0x00        ; 2da
+    dw 0xffff
+    db  0, 0x00        ; 2db
+    dw 0xffff
+    db  0, 0x00        ; 2dc
+    dw 0x0b60
+    db 44, 0x2d        ; 2dd
+    dw 0xffff
+    db  0, 0x00        ; 2de
+    dw 0xffff
+    db  0, 0x00        ; 2df
+    dw 0xffff
+    db  0, 0x00        ; 2e0
+    dw 0x0b6f
+    db 44, 0x2d        ; 2e1
+    dw 0xffff
+    db  0, 0x00        ; 2e2
+    dw 0xffff
+    db  0, 0x00        ; 2e3
+    dw 0xffff
+    db  0, 0x00        ; 2e4
+    dw 0x0b7b
+    db 44, 0x2b        ; 2e5
+    dw 0xffff
+    db  0, 0x00        ; 2e6
+    dw 0xffff
+    db  0, 0x00        ; 2e7
+    dw 0xffff
+    db  0, 0x00        ; 2e8
+    dw 0x0b87
+    db 44, 0x2d        ; 2e9
+    dw 0xffff
+    db  0, 0x00        ; 2ea
+    dw 0xffff
+    db  0, 0x00        ; 2eb
+    dw 0xffff
+    db  0, 0x00        ; 2ec
+    dw 0x0b93
+    db 44, 0x2b        ; 2ed
+    dw 0xffff
+    db  0, 0x00        ; 2ee
+    dw 0xffff
+    db  0, 0x00        ; 2ef
+    dw 0xffff
+    db  0, 0x00        ; 2f0
+    dw 0x0b9f
+    db 44, 0x2d        ; 2f1
+    dw 0xffff
+    db  0, 0x00        ; 2f2
+    dw 0xffff
+    db  0, 0x00        ; 2f3
+    dw 0xffff
+    db  0, 0x00        ; 2f4
+    dw 0x0bac
+    db 44, 0x2b        ; 2f5
+    dw 0xffff
+    db  0, 0x00        ; 2f6
+    dw 0xffff
+    db  0, 0x00        ; 2f7
+    dw 0xffff
+    db  0, 0x00        ; 2f8
+    dw 0x0bb9
+    db 44, 0x2d        ; 2f9
+    dw 0xffff
+    db  0, 0x00        ; 2fa
+    dw 0xffff
+    db  0, 0x00        ; 2fb
+    dw 0xffff
+    db  0, 0x00        ; 2fc
+    dw 0x0bc6
+    db 44, 0x2b        ; 2fd
+    dw 0xffff
+    db  0, 0x00        ; 2fe
+    dw 0xffff
+    db  0, 0x00        ; 2ff
+    dw 0xffff
+    db  0, 0x00        ; 300
+    dw 0xffff
+    db  0, 0x00        ; 301
+    dw 0xffff
+    db  0, 0x00        ; 302
+    dw 0xffff
+    db  0, 0x00        ; 303
+    dw 0xffff
+    db  0, 0x00        ; 304
+    dw 0xffff
+    db  0, 0x00        ; 305
+    dw 0xffff
+    db  0, 0x00        ; 306
+    dw 0xffff
+    db  0, 0x00        ; 307
+    dw 0xffff
+    db  0, 0x00        ; 308
+    dw 0xffff
+    db  0, 0x00        ; 309
+    dw 0xffff
+    db  0, 0x00        ; 30a
+    dw 0xffff
+    db  0, 0x00        ; 30b
+    dw 0xffff
+    db  0, 0x00        ; 30c
+    dw 0xffff
+    db  0, 0x00        ; 30d
+    dw 0xffff
+    db  0, 0x00        ; 30e
+    dw 0xffff
+    db  0, 0x00        ; 30f
+    dw 0xffff
+    db  0, 0x00        ; 310
+    dw 0xffff
+    db  0, 0x00        ; 311
+    dw 0xffff
+    db  0, 0x00        ; 312
+    dw 0xffff
+    db  0, 0x00        ; 313
+    dw 0xffff
+    db  0, 0x00        ; 314
+    dw 0xffff
+    db  0, 0x00        ; 315
+    dw 0xffff
+    db  0, 0x00        ; 316
+    dw 0xffff
+    db  0, 0x00        ; 317
+    dw 0xffff
+    db  0, 0x00        ; 318
+    dw 0xffff
+    db  0, 0x00        ; 319
+    dw 0xffff
+    db  0, 0x00        ; 31a
+    dw 0xffff
+    db  0, 0x00        ; 31b
+    dw 0xffff
+    db  0, 0x00        ; 31c
+    dw 0xffff
+    db  0, 0x00        ; 31d
+    dw 0xffff
+    db  0, 0x00        ; 31e
+    dw 0xffff
+    db  0, 0x00        ; 31f
+    dw 0xffff
+    db  0, 0x00        ; 320
+    dw 0xffff
+    db  0, 0x00        ; 321
+    dw 0xffff
+    db  0, 0x00        ; 322
+    dw 0xffff
+    db  0, 0x00        ; 323
+    dw 0xffff
+    db  0, 0x00        ; 324
+    dw 0xffff
+    db  0, 0x00        ; 325
+    dw 0xffff
+    db  0, 0x00        ; 326
+    dw 0xffff
+    db  0, 0x00        ; 327
+    dw 0xffff
+    db  0, 0x00        ; 328
+    dw 0xffff
+    db  0, 0x00        ; 329
+    dw 0xffff
+    db  0, 0x00        ; 32a
+    dw 0xffff
+    db  0, 0x00        ; 32b
+    dw 0xffff
+    db  0, 0x00        ; 32c
+    dw 0xffff
+    db  0, 0x00        ; 32d
+    dw 0xffff
+    db  0, 0x00        ; 32e
+    dw 0xffff
+    db  0, 0x00        ; 32f
+    dw 0xffff
+    db  0, 0x00        ; 330
+    dw 0xffff
+    db  0, 0x00        ; 331
+    dw 0xffff
+    db  0, 0x00        ; 332
+    dw 0xffff
+    db  0, 0x00        ; 333
+    dw 0xffff
+    db  0, 0x00        ; 334
+    dw 0xffff
+    db  0, 0x00        ; 335
+    dw 0xffff
+    db  0, 0x00        ; 336
+    dw 0xffff
+    db  0, 0x00        ; 337
+    dw 0xffff
+    db  0, 0x00        ; 338
+    dw 0xffff
+    db  0, 0x00        ; 339
+    dw 0xffff
+    db  0, 0x00        ; 33a
+    dw 0xffff
+    db  0, 0x00        ; 33b
+    dw 0xffff
+    db  0, 0x00        ; 33c
+    dw 0xffff
+    db  0, 0x00        ; 33d
+    dw 0xffff
+    db  0, 0x00        ; 33e
+    dw 0xffff
+    db  0, 0x00        ; 33f
+    dw 0xffff
+    db  0, 0x00        ; 340
+    dw 0xffff
+    db  0, 0x00        ; 341
+    dw 0xffff
+    db  0, 0x00        ; 342
+    dw 0xffff
+    db  0, 0x00        ; 343
+    dw 0xffff
+    db  0, 0x00        ; 344
+    dw 0xffff
+    db  0, 0x00        ; 345
+    dw 0xffff
+    db  0, 0x00        ; 346
+    dw 0xffff
+    db  0, 0x00        ; 347
+    dw 0xffff
+    db  0, 0x00        ; 348
+    dw 0xffff
+    db  0, 0x00        ; 349
+    dw 0xffff
+    db  0, 0x00        ; 34a
+    dw 0xffff
+    db  0, 0x00        ; 34b
+    dw 0xffff
+    db  0, 0x00        ; 34c
+    dw 0xffff
+    db  0, 0x00        ; 34d
+    dw 0xffff
+    db  0, 0x00        ; 34e
+    dw 0xffff
+    db  0, 0x00        ; 34f
+    dw 0xffff
+    db  0, 0x00        ; 350
+    dw 0xffff
+    db  0, 0x00        ; 351
+    dw 0xffff
+    db  0, 0x00        ; 352
+    dw 0xffff
+    db  0, 0x00        ; 353
+    dw 0xffff
+    db  0, 0x00        ; 354
+    dw 0xffff
+    db  0, 0x00        ; 355
+    dw 0xffff
+    db  0, 0x00        ; 356
+    dw 0xffff
+    db  0, 0x00        ; 357
+    dw 0xffff
+    db  0, 0x00        ; 358
+    dw 0xffff
+    db  0, 0x00        ; 359
+    dw 0xffff
+    db  0, 0x00        ; 35a
+    dw 0xffff
+    db  0, 0x00        ; 35b
+    dw 0xffff
+    db  0, 0x00        ; 35c
+    dw 0xffff
+    db  0, 0x00        ; 35d
+    dw 0xffff
+    db  0, 0x00        ; 35e
+    dw 0xffff
+    db  0, 0x00        ; 35f
+    dw 0xffff
+    db  0, 0x00        ; 360
+    dw 0xffff
+    db  0, 0x00        ; 361
+    dw 0xffff
+    db  0, 0x00        ; 362
+    dw 0xffff
+    db  0, 0x00        ; 363
+    dw 0xffff
+    db  0, 0x00        ; 364
+    dw 0xffff
+    db  0, 0x00        ; 365
+    dw 0xffff
+    db  0, 0x00        ; 366
+    dw 0xffff
+    db  0, 0x00        ; 367
+    dw 0xffff
+    db  0, 0x00        ; 368
+    dw 0xffff
+    db  0, 0x00        ; 369
+    dw 0xffff
+    db  0, 0x00        ; 36a
+    dw 0xffff
+    db  0, 0x00        ; 36b
+    dw 0xffff
+    db  0, 0x00        ; 36c
+    dw 0xffff
+    db  0, 0x00        ; 36d
+    dw 0xffff
+    db  0, 0x00        ; 36e
+    dw 0xffff
+    db  0, 0x00        ; 36f
+    dw 0xffff
+    db  0, 0x00        ; 370
+    dw 0xffff
+    db  0, 0x00        ; 371
+    dw 0xffff
+    db  0, 0x00        ; 372
+    dw 0xffff
+    db  0, 0x00        ; 373
+    dw 0xffff
+    db  0, 0x00        ; 374
+    dw 0xffff
+    db  0, 0x00        ; 375
+    dw 0xffff
+    db  0, 0x00        ; 376
+    dw 0xffff
+    db  0, 0x00        ; 377
+    dw 0xffff
+    db  0, 0x00        ; 378
+    dw 0xffff
+    db  0, 0x00        ; 379
+    dw 0xffff
+    db  0, 0x00        ; 37a
+    dw 0xffff
+    db  0, 0x00        ; 37b
+    dw 0xffff
+    db  0, 0x00        ; 37c
+    dw 0xffff
+    db  0, 0x00        ; 37d
+    dw 0xffff
+    db  0, 0x00        ; 37e
+    dw 0xffff
+    db  0, 0x00        ; 37f
+    dw 0xffff
+    db  0, 0x00        ; 380
+    dw 0xffff
+    db  0, 0x00        ; 381
+    dw 0xffff
+    db  0, 0x00        ; 382
+    dw 0xffff
+    db  0, 0x00        ; 383
+    dw 0xffff
+    db  0, 0x00        ; 384
+    dw 0xffff
+    db  0, 0x00        ; 385
+    dw 0xffff
+    db  0, 0x00        ; 386
+    dw 0xffff
+    db  0, 0x00        ; 387
+    dw 0xffff
+    db  0, 0x00        ; 388
+    dw 0xffff
+    db  0, 0x00        ; 389
+    dw 0xffff
+    db  0, 0x00        ; 38a
+    dw 0xffff
+    db  0, 0x00        ; 38b
+    dw 0xffff
+    db  0, 0x00        ; 38c
+    dw 0xffff
+    db  0, 0x00        ; 38d
+    dw 0xffff
+    db  0, 0x00        ; 38e
+    dw 0xffff
+    db  0, 0x00        ; 38f
+    dw 0xffff
+    db  0, 0x00        ; 390
+    dw 0xffff
+    db  0, 0x00        ; 391
+    dw 0xffff
+    db  0, 0x00        ; 392
+    dw 0xffff
+    db  0, 0x00        ; 393
+    dw 0xffff
+    db  0, 0x00        ; 394
+    dw 0xffff
+    db  0, 0x00        ; 395
+    dw 0xffff
+    db  0, 0x00        ; 396
+    dw 0xffff
+    db  0, 0x00        ; 397
+    dw 0xffff
+    db  0, 0x00        ; 398
+    dw 0xffff
+    db  0, 0x00        ; 399
+    dw 0xffff
+    db  0, 0x00        ; 39a
+    dw 0xffff
+    db  0, 0x00        ; 39b
+    dw 0xffff
+    db  0, 0x00        ; 39c
+    dw 0xffff
+    db  0, 0x00        ; 39d
+    dw 0xffff
+    db  0, 0x00        ; 39e
+    dw 0xffff
+    db  0, 0x00        ; 39f
+    dw 0xffff
+    db  0, 0x00        ; 3a0
+    dw 0xffff
+    db  0, 0x00        ; 3a1
+    dw 0xffff
+    db  0, 0x00        ; 3a2
+    dw 0xffff
+    db  0, 0x00        ; 3a3
+    dw 0xffff
+    db  0, 0x00        ; 3a4
+    dw 0xffff
+    db  0, 0x00        ; 3a5
+    dw 0xffff
+    db  0, 0x00        ; 3a6
+    dw 0xffff
+    db  0, 0x00        ; 3a7
+    dw 0xffff
+    db  0, 0x00        ; 3a8
+    dw 0xffff
+    db  0, 0x00        ; 3a9
+    dw 0xffff
+    db  0, 0x00        ; 3aa
+    dw 0xffff
+    db  0, 0x00        ; 3ab
+    dw 0xffff
+    db  0, 0x00        ; 3ac
+    dw 0xffff
+    db  0, 0x00        ; 3ad
+    dw 0xffff
+    db  0, 0x00        ; 3ae
+    dw 0xffff
+    db  0, 0x00        ; 3af
+    dw 0xffff
+    db  0, 0x00        ; 3b0
+    dw 0xffff
+    db  0, 0x00        ; 3b1
+    dw 0xffff
+    db  0, 0x00        ; 3b2
+    dw 0xffff
+    db  0, 0x00        ; 3b3
+    dw 0xffff
+    db  0, 0x00        ; 3b4
+    dw 0xffff
+    db  0, 0x00        ; 3b5
+    dw 0xffff
+    db  0, 0x00        ; 3b6
+    dw 0xffff
+    db  0, 0x00        ; 3b7
+    dw 0xffff
+    db  0, 0x00        ; 3b8
+    dw 0xffff
+    db  0, 0x00        ; 3b9
+    dw 0xffff
+    db  0, 0x00        ; 3ba
+    dw 0xffff
+    db  0, 0x00        ; 3bb
+    dw 0xffff
+    db  0, 0x00        ; 3bc
+    dw 0xffff
+    db  0, 0x00        ; 3bd
+    dw 0xffff
+    db  0, 0x00        ; 3be
+    dw 0xffff
+    db  0, 0x00        ; 3bf
+    dw 0xffff
+    db  0, 0x00        ; 3c0
+    dw 0xffff
+    db  0, 0x00        ; 3c1
+    dw 0xffff
+    db  0, 0x00        ; 3c2
+    dw 0xffff
+    db  0, 0x00        ; 3c3
+    dw 0xffff
+    db  0, 0x00        ; 3c4
+    dw 0xffff
+    db  0, 0x00        ; 3c5
+    dw 0xffff
+    db  0, 0x00        ; 3c6
+    dw 0xffff
+    db  0, 0x00        ; 3c7
+    dw 0x0bd3
+    db 66, 0x00        ; 3c8
+    dw 0xffff
+    db  0, 0x00        ; 3c9
+    dw 0xffff
+    db  0, 0x00        ; 3ca
+    dw 0xffff
+    db  0, 0x00        ; 3cb
+    dw 0x000f
+    db 68, 0x00        ; 3cc
+    dw 0xffff
+    db  0, 0x00        ; 3cd
+    dw 0xffff
+    db  0, 0x00        ; 3ce
+    dw 0xffff
+    db  0, 0x00        ; 3cf
+    dw 0xffff
+    db  0, 0x00        ; 3d0
+    dw 0xffff
+    db  0, 0x00        ; 3d1
+    dw 0xffff
+    db  0, 0x00        ; 3d2
+    dw 0xffff
+    db  0, 0x00        ; 3d3
+    dw 0x0bd8
+    db 67, 0x00        ; 3d4
+    dw 0xffff
+    db  0, 0x00        ; 3d5
+    dw 0x0bdd
+    db 66, 0x00        ; 3d6
+    dw 0x0be2
+    db 66, 0x00        ; 3d7
+    dw 0xffff
+    db  0, 0x00        ; 3d8
+    dw 0xffff
+    db  0, 0x00        ; 3d9
+    dw 0xffff
+    db  0, 0x00        ; 3da
+    dw 0x0be7
+    db 66, 0x00        ; 3db
+    dw 0x0bec
+    db 67, 0x00        ; 3dc
+    dw 0x0bf2
+    db 67, 0x00        ; 3dd
+    dw 0x0bf7
+    db 67, 0x00        ; 3de
+    dw 0x0bfc
+    db 67, 0x00        ; 3df
+    dw 0xffff
+    db  0, 0x00        ; 3e0
+    dw 0xffff
+    db  0, 0x00        ; 3e1
+    dw 0xffff
+    db  0, 0x00        ; 3e2
+    dw 0xffff
+    db  0, 0x00        ; 3e3
+    dw 0xffff
+    db  0, 0x00        ; 3e4
+    dw 0xffff
+    db  0, 0x00        ; 3e5
+    dw 0xffff
+    db  0, 0x00        ; 3e6
+    dw 0xffff
+    db  0, 0x00        ; 3e7
+    dw 0xffff
+    db  0, 0x00        ; 3e8
+    dw 0xffff
+    db  0, 0x00        ; 3e9
+    dw 0xffff
+    db  0, 0x00        ; 3ea
+    dw 0xffff
+    db  0, 0x00        ; 3eb
+    dw 0xffff
+    db  0, 0x00        ; 3ec
+    dw 0xffff
+    db  0, 0x00        ; 3ed
+    dw 0xffff
+    db  0, 0x00        ; 3ee
+    dw 0xffff
+    db  0, 0x00        ; 3ef
+    dw 0xffff
+    db  0, 0x00        ; 3f0
+    dw 0xffff
+    db  0, 0x00        ; 3f1
+    dw 0xffff
+    db  0, 0x00        ; 3f2
+    dw 0xffff
+    db  0, 0x00        ; 3f3
+    dw 0xffff
+    db  0, 0x00        ; 3f4
+    dw 0xffff
+    db  0, 0x00        ; 3f5
+    dw 0xffff
+    db  0, 0x00        ; 3f6
+    dw 0xffff
+    db  0, 0x00        ; 3f7
+    dw 0xffff
+    db  0, 0x00        ; 3f8
+    dw 0xffff
+    db  0, 0x00        ; 3f9
+    dw 0xffff
+    db  0, 0x00        ; 3fa
+    dw 0xffff
+    db  0, 0x00        ; 3fb
+    dw 0xffff
+    db  0, 0x00        ; 3fc
+    dw 0xffff
+    db  0, 0x00        ; 3fd
+    dw 0xffff
+    db  0, 0x00        ; 3fe
+    dw 0xffff
+    db  0, 0x00        ; 3ff
+
+x86_vex3a:
+    dw 0xffff
+    db  0, 0x00        ; 00
+    dw 0x0c01
+    db 46, 0x05        ; 01
+    dw 0xffff
+    db  0, 0x00        ; 02
+    dw 0xffff
+    db  0, 0x00        ; 03
+    dw 0xffff
+    db  0, 0x00        ; 04
+    dw 0x0c08
+    db 46, 0x05        ; 05
+    dw 0xffff
+    db  0, 0x00        ; 06
+    dw 0xffff
+    db  0, 0x00        ; 07
+    dw 0xffff
+    db  0, 0x00        ; 08
+    dw 0x0c10
+    db 46, 0x25        ; 09
+    dw 0xffff
+    db  0, 0x00        ; 0a
+    dw 0xffff
+    db  0, 0x00        ; 0b
+    dw 0xffff
+    db  0, 0x00        ; 0c
+    dw 0xffff
+    db  0, 0x00        ; 0d
+    dw 0xffff
+    db  0, 0x00        ; 0e
+    dw 0xffff
+    db  0, 0x00        ; 0f
+    dw 0xffff
+    db  0, 0x00        ; 10
+    dw 0x0975
+    db 46, 0x05        ; 11
+    dw 0xffff
+    db  0, 0x00        ; 12
+    dw 0xffff
+    db  0, 0x00        ; 13
+    dw 0xffff
+    db  0, 0x00        ; 14
+    dw 0x097f
+    db 46, 0x05        ; 15
+    dw 0xffff
+    db  0, 0x00        ; 16
+    dw 0xffff
+    db  0, 0x00        ; 17
+    dw 0xffff
+    db  0, 0x00        ; 18
+    dw 0x0c19
+    db 46, 0x25        ; 19
+    dw 0xffff
+    db  0, 0x00        ; 1a
+    dw 0xffff
+    db  0, 0x00        ; 1b
+    dw 0xffff
+    db  0, 0x00        ; 1c
+    dw 0xffff
+    db  0, 0x00        ; 1d
+    dw 0xffff
+    db  0, 0x00        ; 1e
+    dw 0xffff
+    db  0, 0x00        ; 1f
+    dw 0xffff
+    db  0, 0x00        ; 20
+    dw 0xffff
+    db  0, 0x00        ; 21
+    dw 0xffff
+    db  0, 0x00        ; 22
+    dw 0xffff
+    db  0, 0x00        ; 23
+    dw 0xffff
+    db  0, 0x00        ; 24
+    dw 0xffff
+    db  0, 0x00        ; 25
+    dw 0xffff
+    db  0, 0x00        ; 26
+    dw 0xffff
+    db  0, 0x00        ; 27
+    dw 0xffff
+    db  0, 0x00        ; 28
+    dw 0xffff
+    db  0, 0x00        ; 29
+    dw 0xffff
+    db  0, 0x00        ; 2a
+    dw 0xffff
+    db  0, 0x00        ; 2b
+    dw 0xffff
+    db  0, 0x00        ; 2c
+    dw 0xffff
+    db  0, 0x00        ; 2d
+    dw 0xffff
+    db  0, 0x00        ; 2e
+    dw 0xffff
+    db  0, 0x00        ; 2f
+    dw 0xffff
+    db  0, 0x00        ; 30
+    dw 0xffff
+    db  0, 0x00        ; 31
+    dw 0xffff
+    db  0, 0x00        ; 32
+    dw 0xffff
+    db  0, 0x00        ; 33
+    dw 0xffff
+    db  0, 0x00        ; 34
+    dw 0xffff
+    db  0, 0x00        ; 35
+    dw 0xffff
+    db  0, 0x00        ; 36
+    dw 0xffff
+    db  0, 0x00        ; 37
+    dw 0xffff
+    db  0, 0x00        ; 38
+    dw 0xffff
+    db  0, 0x00        ; 39
+    dw 0xffff
+    db  0, 0x00        ; 3a
+    dw 0xffff
+    db  0, 0x00        ; 3b
+    dw 0xffff
+    db  0, 0x00        ; 3c
+    dw 0xffff
+    db  0, 0x00        ; 3d
+    dw 0xffff
+    db  0, 0x00        ; 3e
+    dw 0xffff
+    db  0, 0x00        ; 3f
+    dw 0xffff
+    db  0, 0x00        ; 40
+    dw 0xffff
+    db  0, 0x00        ; 41
+    dw 0xffff
+    db  0, 0x00        ; 42
+    dw 0xffff
+    db  0, 0x00        ; 43
+    dw 0xffff
+    db  0, 0x00        ; 44
+    dw 0xffff
+    db  0, 0x00        ; 45
+    dw 0xffff
+    db  0, 0x00        ; 46
+    dw 0xffff
+    db  0, 0x00        ; 47
+    dw 0xffff
+    db  0, 0x00        ; 48
+    dw 0xffff
+    db  0, 0x00        ; 49
+    dw 0xffff
+    db  0, 0x00        ; 4a
+    dw 0xffff
+    db  0, 0x00        ; 4b
+    dw 0xffff
+    db  0, 0x00        ; 4c
+    dw 0xffff
+    db  0, 0x00        ; 4d
+    dw 0xffff
+    db  0, 0x00        ; 4e
+    dw 0xffff
+    db  0, 0x00        ; 4f
+    dw 0xffff
+    db  0, 0x00        ; 50
+    dw 0xffff
+    db  0, 0x00        ; 51
+    dw 0xffff
+    db  0, 0x00        ; 52
+    dw 0xffff
+    db  0, 0x00        ; 53
+    dw 0xffff
+    db  0, 0x00        ; 54
+    dw 0xffff
+    db  0, 0x00        ; 55
+    dw 0xffff
+    db  0, 0x00        ; 56
+    dw 0xffff
+    db  0, 0x00        ; 57
+    dw 0xffff
+    db  0, 0x00        ; 58
+    dw 0xffff
+    db  0, 0x00        ; 59
+    dw 0xffff
+    db  0, 0x00        ; 5a
+    dw 0xffff
+    db  0, 0x00        ; 5b
+    dw 0xffff
+    db  0, 0x00        ; 5c
+    dw 0xffff
+    db  0, 0x00        ; 5d
+    dw 0xffff
+    db  0, 0x00        ; 5e
+    dw 0xffff
+    db  0, 0x00        ; 5f
+    dw 0xffff
+    db  0, 0x00        ; 60
+    dw 0x0c24
+    db 63, 0x05        ; 61
+    dw 0xffff
+    db  0, 0x00        ; 62
+    dw 0xffff
+    db  0, 0x00        ; 63
+    dw 0xffff
+    db  0, 0x00        ; 64
+    dw 0x0c30
+    db 64, 0x05        ; 65
+    dw 0xffff
+    db  0, 0x00        ; 66
+    dw 0xffff
+    db  0, 0x00        ; 67
+    dw 0xffff
+    db  0, 0x00        ; 68
+    dw 0xffff
+    db  0, 0x00        ; 69
+    dw 0xffff
+    db  0, 0x00        ; 6a
+    dw 0xffff
+    db  0, 0x00        ; 6b
+    dw 0xffff
+    db  0, 0x00        ; 6c
+    dw 0xffff
+    db  0, 0x00        ; 6d
+    dw 0xffff
+    db  0, 0x00        ; 6e
+    dw 0xffff
+    db  0, 0x00        ; 6f
+    dw 0xffff
+    db  0, 0x00        ; 70
+    dw 0xffff
+    db  0, 0x00        ; 71
+    dw 0xffff
+    db  0, 0x00        ; 72
+    dw 0xffff
+    db  0, 0x00        ; 73
+    dw 0xffff
+    db  0, 0x00        ; 74
+    dw 0xffff
+    db  0, 0x00        ; 75
+    dw 0xffff
+    db  0, 0x00        ; 76
+    dw 0xffff
+    db  0, 0x00        ; 77
+    dw 0xffff
+    db  0, 0x00        ; 78
+    dw 0xffff
+    db  0, 0x00        ; 79
+    dw 0xffff
+    db  0, 0x00        ; 7a
+    dw 0xffff
+    db  0, 0x00        ; 7b
+    dw 0xffff
+    db  0, 0x00        ; 7c
+    dw 0xffff
+    db  0, 0x00        ; 7d
+    dw 0xffff
+    db  0, 0x00        ; 7e
+    dw 0xffff
+    db  0, 0x00        ; 7f
+    dw 0xffff
+    db  0, 0x00        ; 80
+    dw 0xffff
+    db  0, 0x00        ; 81
+    dw 0xffff
+    db  0, 0x00        ; 82
+    dw 0xffff
+    db  0, 0x00        ; 83
+    dw 0xffff
+    db  0, 0x00        ; 84
+    dw 0xffff
+    db  0, 0x00        ; 85
+    dw 0xffff
+    db  0, 0x00        ; 86
+    dw 0xffff
+    db  0, 0x00        ; 87
+    dw 0xffff
+    db  0, 0x00        ; 88
+    dw 0xffff
+    db  0, 0x00        ; 89
+    dw 0xffff
+    db  0, 0x00        ; 8a
+    dw 0xffff
+    db  0, 0x00        ; 8b
+    dw 0xffff
+    db  0, 0x00        ; 8c
+    dw 0xffff
+    db  0, 0x00        ; 8d
+    dw 0xffff
+    db  0, 0x00        ; 8e
+    dw 0xffff
+    db  0, 0x00        ; 8f
+    dw 0xffff
+    db  0, 0x00        ; 90
+    dw 0xffff
+    db  0, 0x00        ; 91
+    dw 0xffff
+    db  0, 0x00        ; 92
+    dw 0xffff
+    db  0, 0x00        ; 93
+    dw 0xffff
+    db  0, 0x00        ; 94
+    dw 0xffff
+    db  0, 0x00        ; 95
+    dw 0xffff
+    db  0, 0x00        ; 96
+    dw 0xffff
+    db  0, 0x00        ; 97
+    dw 0xffff
+    db  0, 0x00        ; 98
+    dw 0xffff
+    db  0, 0x00        ; 99
+    dw 0xffff
+    db  0, 0x00        ; 9a
+    dw 0xffff
+    db  0, 0x00        ; 9b
+    dw 0xffff
+    db  0, 0x00        ; 9c
+    dw 0xffff
+    db  0, 0x00        ; 9d
+    dw 0xffff
+    db  0, 0x00        ; 9e
+    dw 0xffff
+    db  0, 0x00        ; 9f
+    dw 0xffff
+    db  0, 0x00        ; a0
+    dw 0xffff
+    db  0, 0x00        ; a1
+    dw 0xffff
+    db  0, 0x00        ; a2
+    dw 0xffff
+    db  0, 0x00        ; a3
+    dw 0xffff
+    db  0, 0x00        ; a4
+    dw 0xffff
+    db  0, 0x00        ; a5
+    dw 0xffff
+    db  0, 0x00        ; a6
+    dw 0xffff
+    db  0, 0x00        ; a7
+    dw 0xffff
+    db  0, 0x00        ; a8
+    dw 0xffff
+    db  0, 0x00        ; a9
+    dw 0xffff
+    db  0, 0x00        ; aa
+    dw 0xffff
+    db  0, 0x00        ; ab
+    dw 0xffff
+    db  0, 0x00        ; ac
+    dw 0xffff
+    db  0, 0x00        ; ad
+    dw 0xffff
+    db  0, 0x00        ; ae
+    dw 0xffff
+    db  0, 0x00        ; af
+    dw 0xffff
+    db  0, 0x00        ; b0
+    dw 0xffff
+    db  0, 0x00        ; b1
+    dw 0xffff
+    db  0, 0x00        ; b2
+    dw 0xffff
+    db  0, 0x00        ; b3
+    dw 0xffff
+    db  0, 0x00        ; b4
+    dw 0xffff
+    db  0, 0x00        ; b5
+    dw 0xffff
+    db  0, 0x00        ; b6
+    dw 0xffff
+    db  0, 0x00        ; b7
+    dw 0xffff
+    db  0, 0x00        ; b8
+    dw 0xffff
+    db  0, 0x00        ; b9
+    dw 0xffff
+    db  0, 0x00        ; ba
+    dw 0xffff
+    db  0, 0x00        ; bb
+    dw 0xffff
+    db  0, 0x00        ; bc
+    dw 0xffff
+    db  0, 0x00        ; bd
+    dw 0xffff
+    db  0, 0x00        ; be
+    dw 0xffff
+    db  0, 0x00        ; bf
+    dw 0xffff
+    db  0, 0x00        ; c0
+    dw 0xffff
+    db  0, 0x00        ; c1
+    dw 0xffff
+    db  0, 0x00        ; c2
+    dw 0xffff
+    db  0, 0x00        ; c3
+    dw 0xffff
+    db  0, 0x00        ; c4
+    dw 0xffff
+    db  0, 0x00        ; c5
+    dw 0xffff
+    db  0, 0x00        ; c6
+    dw 0xffff
+    db  0, 0x00        ; c7
+    dw 0xffff
+    db  0, 0x00        ; c8
+    dw 0xffff
+    db  0, 0x00        ; c9
+    dw 0xffff
+    db  0, 0x00        ; ca
+    dw 0xffff
+    db  0, 0x00        ; cb
+    dw 0xffff
+    db  0, 0x00        ; cc
+    dw 0xffff
+    db  0, 0x00        ; cd
+    dw 0xffff
+    db  0, 0x00        ; ce
+    dw 0xffff
+    db  0, 0x00        ; cf
+    dw 0xffff
+    db  0, 0x00        ; d0
+    dw 0xffff
+    db  0, 0x00        ; d1
+    dw 0xffff
+    db  0, 0x00        ; d2
+    dw 0xffff
+    db  0, 0x00        ; d3
+    dw 0xffff
+    db  0, 0x00        ; d4
+    dw 0xffff
+    db  0, 0x00        ; d5
+    dw 0xffff
+    db  0, 0x00        ; d6
+    dw 0xffff
+    db  0, 0x00        ; d7
+    dw 0xffff
+    db  0, 0x00        ; d8
+    dw 0xffff
+    db  0, 0x00        ; d9
+    dw 0xffff
+    db  0, 0x00        ; da
+    dw 0xffff
+    db  0, 0x00        ; db
+    dw 0xffff
+    db  0, 0x00        ; dc
+    dw 0xffff
+    db  0, 0x00        ; dd
+    dw 0xffff
+    db  0, 0x00        ; de
+    dw 0xffff
+    db  0, 0x00        ; df
+    dw 0xffff
+    db  0, 0x00        ; e0
+    dw 0x0c3d
+    db 63, 0x05        ; e1
+    dw 0xffff
+    db  0, 0x00        ; e2
+    dw 0xffff
+    db  0, 0x00        ; e3
+    dw 0xffff
+    db  0, 0x00        ; e4
+    dw 0x0c49
+    db 64, 0x05        ; e5
+    dw 0xffff
+    db  0, 0x00        ; e6
+    dw 0xffff
+    db  0, 0x00        ; e7
+    dw 0xffff
+    db  0, 0x00        ; e8
+    dw 0xffff
+    db  0, 0x00        ; e9
+    dw 0xffff
+    db  0, 0x00        ; ea
+    dw 0xffff
+    db  0, 0x00        ; eb
+    dw 0xffff
+    db  0, 0x00        ; ec
+    dw 0xffff
+    db  0, 0x00        ; ed
+    dw 0xffff
+    db  0, 0x00        ; ee
+    dw 0xffff
+    db  0, 0x00        ; ef
+    dw 0xffff
+    db  0, 0x00        ; f0
+    dw 0xffff
+    db  0, 0x00        ; f1
+    dw 0xffff
+    db  0, 0x00        ; f2
+    dw 0xffff
+    db  0, 0x00        ; f3
+    dw 0xffff
+    db  0, 0x00        ; f4
+    dw 0xffff
+    db  0, 0x00        ; f5
+    dw 0xffff
+    db  0, 0x00        ; f6
+    dw 0xffff
+    db  0, 0x00        ; f7
+    dw 0xffff
+    db  0, 0x00        ; f8
+    dw 0xffff
+    db  0, 0x00        ; f9
+    dw 0xffff
+    db  0, 0x00        ; fa
+    dw 0xffff
+    db  0, 0x00        ; fb
+    dw 0xffff
+    db  0, 0x00        ; fc
+    dw 0xffff
+    db  0, 0x00        ; fd
+    dw 0xffff
+    db  0, 0x00        ; fe
+    dw 0xffff
+    db  0, 0x00        ; ff
+    dw 0xffff
+    db  0, 0x00        ; 100
+    dw 0xffff
+    db  0, 0x00        ; 101
+    dw 0xffff
+    db  0, 0x00        ; 102
+    dw 0xffff
+    db  0, 0x00        ; 103
+    dw 0xffff
+    db  0, 0x00        ; 104
+    dw 0xffff
+    db  0, 0x00        ; 105
+    dw 0xffff
+    db  0, 0x00        ; 106
+    dw 0xffff
+    db  0, 0x00        ; 107
+    dw 0xffff
+    db  0, 0x00        ; 108
+    dw 0xffff
+    db  0, 0x00        ; 109
+    dw 0xffff
+    db  0, 0x00        ; 10a
+    dw 0xffff
+    db  0, 0x00        ; 10b
+    dw 0xffff
+    db  0, 0x00        ; 10c
+    dw 0xffff
+    db  0, 0x00        ; 10d
+    dw 0xffff
+    db  0, 0x00        ; 10e
+    dw 0xffff
+    db  0, 0x00        ; 10f
+    dw 0xffff
+    db  0, 0x00        ; 110
+    dw 0xffff
+    db  0, 0x00        ; 111
+    dw 0xffff
+    db  0, 0x00        ; 112
+    dw 0xffff
+    db  0, 0x00        ; 113
+    dw 0xffff
+    db  0, 0x00        ; 114
+    dw 0xffff
+    db  0, 0x00        ; 115
+    dw 0xffff
+    db  0, 0x00        ; 116
+    dw 0xffff
+    db  0, 0x00        ; 117
+    dw 0xffff
+    db  0, 0x00        ; 118
+    dw 0x0c56
+    db 46, 0x25        ; 119
+    dw 0xffff
+    db  0, 0x00        ; 11a
+    dw 0xffff
+    db  0, 0x00        ; 11b
+    dw 0xffff
+    db  0, 0x00        ; 11c
+    dw 0xffff
+    db  0, 0x00        ; 11d
+    dw 0xffff
+    db  0, 0x00        ; 11e
+    dw 0xffff
+    db  0, 0x00        ; 11f
+    dw 0xffff
+    db  0, 0x00        ; 120
+    dw 0xffff
+    db  0, 0x00        ; 121
+    dw 0xffff
+    db  0, 0x00        ; 122
+    dw 0xffff
+    db  0, 0x00        ; 123
+    dw 0xffff
+    db  0, 0x00        ; 124
+    dw 0xffff
+    db  0, 0x00        ; 125
+    dw 0xffff
+    db  0, 0x00        ; 126
+    dw 0xffff
+    db  0, 0x00        ; 127
+    dw 0xffff
+    db  0, 0x00        ; 128
+    dw 0x0c61
+    db 65, 0x05        ; 129
+    dw 0xffff
+    db  0, 0x00        ; 12a
+    dw 0xffff
+    db  0, 0x00        ; 12b
+    dw 0xffff
+    db  0, 0x00        ; 12c
+    dw 0x0c6b
+    db 65, 0x05        ; 12d
+    dw 0xffff
+    db  0, 0x00        ; 12e
+    dw 0xffff
+    db  0, 0x00        ; 12f
+    dw 0xffff
+    db  0, 0x00        ; 130
+    dw 0x0c75
+    db 65, 0x05        ; 131
+    dw 0xffff
+    db  0, 0x00        ; 132
+    dw 0xffff
+    db  0, 0x00        ; 133
+    dw 0xffff
+    db  0, 0x00        ; 134
+    dw 0xffff
+    db  0, 0x00        ; 135
+    dw 0xffff
+    db  0, 0x00        ; 136
+    dw 0xffff
+    db  0, 0x00        ; 137
+    dw 0xffff
+    db  0, 0x00        ; 138
+    dw 0xffff
+    db  0, 0x00        ; 139
+    dw 0xffff
+    db  0, 0x00        ; 13a
+    dw 0xffff
+    db  0, 0x00        ; 13b
+    dw 0xffff
+    db  0, 0x00        ; 13c
+    dw 0xffff
+    db  0, 0x00        ; 13d
+    dw 0xffff
+    db  0, 0x00        ; 13e
+    dw 0xffff
+    db  0, 0x00        ; 13f
+    dw 0xffff
+    db  0, 0x00        ; 140
+    dw 0xffff
+    db  0, 0x00        ; 141
+    dw 0xffff
+    db  0, 0x00        ; 142
+    dw 0xffff
+    db  0, 0x00        ; 143
+    dw 0xffff
+    db  0, 0x00        ; 144
+    dw 0xffff
+    db  0, 0x00        ; 145
+    dw 0xffff
+    db  0, 0x00        ; 146
+    dw 0xffff
+    db  0, 0x00        ; 147
+    dw 0xffff
+    db  0, 0x00        ; 148
+    dw 0xffff
+    db  0, 0x00        ; 149
+    dw 0xffff
+    db  0, 0x00        ; 14a
+    dw 0xffff
+    db  0, 0x00        ; 14b
+    dw 0xffff
+    db  0, 0x00        ; 14c
+    dw 0xffff
+    db  0, 0x00        ; 14d
+    dw 0xffff
+    db  0, 0x00        ; 14e
+    dw 0xffff
+    db  0, 0x00        ; 14f
+    dw 0xffff
+    db  0, 0x00        ; 150
+    dw 0xffff
+    db  0, 0x00        ; 151
+    dw 0xffff
+    db  0, 0x00        ; 152
+    dw 0xffff
+    db  0, 0x00        ; 153
+    dw 0xffff
+    db  0, 0x00        ; 154
+    dw 0xffff
+    db  0, 0x00        ; 155
+    dw 0xffff
+    db  0, 0x00        ; 156
+    dw 0xffff
+    db  0, 0x00        ; 157
+    dw 0xffff
+    db  0, 0x00        ; 158
+    dw 0xffff
+    db  0, 0x00        ; 159
+    dw 0xffff
+    db  0, 0x00        ; 15a
+    dw 0xffff
+    db  0, 0x00        ; 15b
+    dw 0xffff
+    db  0, 0x00        ; 15c
+    dw 0xffff
+    db  0, 0x00        ; 15d
+    dw 0xffff
+    db  0, 0x00        ; 15e
+    dw 0xffff
+    db  0, 0x00        ; 15f
+    dw 0xffff
+    db  0, 0x00        ; 160
+    dw 0xffff
+    db  0, 0x00        ; 161
+    dw 0xffff
+    db  0, 0x00        ; 162
+    dw 0xffff
+    db  0, 0x00        ; 163
+    dw 0xffff
+    db  0, 0x00        ; 164
+    dw 0xffff
+    db  0, 0x00        ; 165
+    dw 0xffff
+    db  0, 0x00        ; 166
+    dw 0xffff
+    db  0, 0x00        ; 167
+    dw 0xffff
+    db  0, 0x00        ; 168
+    dw 0xffff
+    db  0, 0x00        ; 169
+    dw 0xffff
+    db  0, 0x00        ; 16a
+    dw 0xffff
+    db  0, 0x00        ; 16b
+    dw 0xffff
+    db  0, 0x00        ; 16c
+    dw 0xffff
+    db  0, 0x00        ; 16d
+    dw 0xffff
+    db  0, 0x00        ; 16e
+    dw 0xffff
+    db  0, 0x00        ; 16f
+    dw 0xffff
+    db  0, 0x00        ; 170
+    dw 0xffff
+    db  0, 0x00        ; 171
+    dw 0xffff
+    db  0, 0x00        ; 172
+    dw 0xffff
+    db  0, 0x00        ; 173
+    dw 0xffff
+    db  0, 0x00        ; 174
+    dw 0xffff
+    db  0, 0x00        ; 175
+    dw 0xffff
+    db  0, 0x00        ; 176
+    dw 0xffff
+    db  0, 0x00        ; 177
+    dw 0xffff
+    db  0, 0x00        ; 178
+    dw 0xffff
+    db  0, 0x00        ; 179
+    dw 0xffff
+    db  0, 0x00        ; 17a
+    dw 0xffff
+    db  0, 0x00        ; 17b
+    dw 0xffff
+    db  0, 0x00        ; 17c
+    dw 0xffff
+    db  0, 0x00        ; 17d
+    dw 0xffff
+    db  0, 0x00        ; 17e
+    dw 0xffff
+    db  0, 0x00        ; 17f
+    dw 0xffff
+    db  0, 0x00        ; 180
+    dw 0xffff
+    db  0, 0x00        ; 181
+    dw 0xffff
+    db  0, 0x00        ; 182
+    dw 0xffff
+    db  0, 0x00        ; 183
+    dw 0xffff
+    db  0, 0x00        ; 184
+    dw 0xffff
+    db  0, 0x00        ; 185
+    dw 0xffff
+    db  0, 0x00        ; 186
+    dw 0xffff
+    db  0, 0x00        ; 187
+    dw 0xffff
+    db  0, 0x00        ; 188
+    dw 0xffff
+    db  0, 0x00        ; 189
+    dw 0xffff
+    db  0, 0x00        ; 18a
+    dw 0xffff
+    db  0, 0x00        ; 18b
+    dw 0xffff
+    db  0, 0x00        ; 18c
+    dw 0xffff
+    db  0, 0x00        ; 18d
+    dw 0xffff
+    db  0, 0x00        ; 18e
+    dw 0xffff
+    db  0, 0x00        ; 18f
+    dw 0xffff
+    db  0, 0x00        ; 190
+    dw 0xffff
+    db  0, 0x00        ; 191
+    dw 0xffff
+    db  0, 0x00        ; 192
+    dw 0xffff
+    db  0, 0x00        ; 193
+    dw 0xffff
+    db  0, 0x00        ; 194
+    dw 0xffff
+    db  0, 0x00        ; 195
+    dw 0xffff
+    db  0, 0x00        ; 196
+    dw 0xffff
+    db  0, 0x00        ; 197
+    dw 0xffff
+    db  0, 0x00        ; 198
+    dw 0xffff
+    db  0, 0x00        ; 199
+    dw 0xffff
+    db  0, 0x00        ; 19a
+    dw 0xffff
+    db  0, 0x00        ; 19b
+    dw 0xffff
+    db  0, 0x00        ; 19c
+    dw 0xffff
+    db  0, 0x00        ; 19d
+    dw 0xffff
+    db  0, 0x00        ; 19e
+    dw 0xffff
+    db  0, 0x00        ; 19f
+    dw 0xffff
+    db  0, 0x00        ; 1a0
+    dw 0xffff
+    db  0, 0x00        ; 1a1
+    dw 0xffff
+    db  0, 0x00        ; 1a2
+    dw 0xffff
+    db  0, 0x00        ; 1a3
+    dw 0xffff
+    db  0, 0x00        ; 1a4
+    dw 0xffff
+    db  0, 0x00        ; 1a5
+    dw 0xffff
+    db  0, 0x00        ; 1a6
+    dw 0xffff
+    db  0, 0x00        ; 1a7
+    dw 0xffff
+    db  0, 0x00        ; 1a8
+    dw 0xffff
+    db  0, 0x00        ; 1a9
+    dw 0xffff
+    db  0, 0x00        ; 1aa
+    dw 0xffff
+    db  0, 0x00        ; 1ab
+    dw 0xffff
+    db  0, 0x00        ; 1ac
+    dw 0xffff
+    db  0, 0x00        ; 1ad
+    dw 0xffff
+    db  0, 0x00        ; 1ae
+    dw 0xffff
+    db  0, 0x00        ; 1af
+    dw 0xffff
+    db  0, 0x00        ; 1b0
+    dw 0xffff
+    db  0, 0x00        ; 1b1
+    dw 0xffff
+    db  0, 0x00        ; 1b2
+    dw 0xffff
+    db  0, 0x00        ; 1b3
+    dw 0xffff
+    db  0, 0x00        ; 1b4
+    dw 0xffff
+    db  0, 0x00        ; 1b5
+    dw 0xffff
+    db  0, 0x00        ; 1b6
+    dw 0xffff
+    db  0, 0x00        ; 1b7
+    dw 0xffff
+    db  0, 0x00        ; 1b8
+    dw 0xffff
+    db  0, 0x00        ; 1b9
+    dw 0xffff
+    db  0, 0x00        ; 1ba
+    dw 0xffff
+    db  0, 0x00        ; 1bb
+    dw 0xffff
+    db  0, 0x00        ; 1bc
+    dw 0xffff
+    db  0, 0x00        ; 1bd
+    dw 0xffff
+    db  0, 0x00        ; 1be
+    dw 0xffff
+    db  0, 0x00        ; 1bf
+    dw 0xffff
+    db  0, 0x00        ; 1c0
+    dw 0xffff
+    db  0, 0x00        ; 1c1
+    dw 0xffff
+    db  0, 0x00        ; 1c2
+    dw 0xffff
+    db  0, 0x00        ; 1c3
+    dw 0xffff
+    db  0, 0x00        ; 1c4
+    dw 0xffff
+    db  0, 0x00        ; 1c5
+    dw 0xffff
+    db  0, 0x00        ; 1c6
+    dw 0xffff
+    db  0, 0x00        ; 1c7
+    dw 0xffff
+    db  0, 0x00        ; 1c8
+    dw 0xffff
+    db  0, 0x00        ; 1c9
+    dw 0xffff
+    db  0, 0x00        ; 1ca
+    dw 0xffff
+    db  0, 0x00        ; 1cb
+    dw 0xffff
+    db  0, 0x00        ; 1cc
+    dw 0xffff
+    db  0, 0x00        ; 1cd
+    dw 0xffff
+    db  0, 0x00        ; 1ce
+    dw 0xffff
+    db  0, 0x00        ; 1cf
+    dw 0xffff
+    db  0, 0x00        ; 1d0
+    dw 0xffff
+    db  0, 0x00        ; 1d1
+    dw 0xffff
+    db  0, 0x00        ; 1d2
+    dw 0xffff
+    db  0, 0x00        ; 1d3
+    dw 0xffff
+    db  0, 0x00        ; 1d4
+    dw 0xffff
+    db  0, 0x00        ; 1d5
+    dw 0xffff
+    db  0, 0x00        ; 1d6
+    dw 0xffff
+    db  0, 0x00        ; 1d7
+    dw 0xffff
+    db  0, 0x00        ; 1d8
+    dw 0xffff
+    db  0, 0x00        ; 1d9
+    dw 0xffff
+    db  0, 0x00        ; 1da
+    dw 0xffff
+    db  0, 0x00        ; 1db
+    dw 0xffff
+    db  0, 0x00        ; 1dc
+    dw 0xffff
+    db  0, 0x00        ; 1dd
+    dw 0xffff
+    db  0, 0x00        ; 1de
+    dw 0xffff
+    db  0, 0x00        ; 1df
+    dw 0xffff
+    db  0, 0x00        ; 1e0
+    dw 0xffff
+    db  0, 0x00        ; 1e1
+    dw 0xffff
+    db  0, 0x00        ; 1e2
+    dw 0xffff
+    db  0, 0x00        ; 1e3
+    dw 0xffff
+    db  0, 0x00        ; 1e4
+    dw 0xffff
+    db  0, 0x00        ; 1e5
+    dw 0xffff
+    db  0, 0x00        ; 1e6
+    dw 0xffff
+    db  0, 0x00        ; 1e7
+    dw 0xffff
+    db  0, 0x00        ; 1e8
+    dw 0xffff
+    db  0, 0x00        ; 1e9
+    dw 0xffff
+    db  0, 0x00        ; 1ea
+    dw 0xffff
+    db  0, 0x00        ; 1eb
+    dw 0xffff
+    db  0, 0x00        ; 1ec
+    dw 0xffff
+    db  0, 0x00        ; 1ed
+    dw 0xffff
+    db  0, 0x00        ; 1ee
+    dw 0xffff
+    db  0, 0x00        ; 1ef
+    dw 0xffff
+    db  0, 0x00        ; 1f0
+    dw 0xffff
+    db  0, 0x00        ; 1f1
+    dw 0xffff
+    db  0, 0x00        ; 1f2
+    dw 0xffff
+    db  0, 0x00        ; 1f3
+    dw 0xffff
+    db  0, 0x00        ; 1f4
+    dw 0xffff
+    db  0, 0x00        ; 1f5
+    dw 0xffff
+    db  0, 0x00        ; 1f6
+    dw 0xffff
+    db  0, 0x00        ; 1f7
+    dw 0xffff
+    db  0, 0x00        ; 1f8
+    dw 0xffff
+    db  0, 0x00        ; 1f9
+    dw 0xffff
+    db  0, 0x00        ; 1fa
+    dw 0xffff
+    db  0, 0x00        ; 1fb
+    dw 0xffff
+    db  0, 0x00        ; 1fc
+    dw 0xffff
+    db  0, 0x00        ; 1fd
+    dw 0xffff
+    db  0, 0x00        ; 1fe
+    dw 0xffff
+    db  0, 0x00        ; 1ff
+    dw 0xffff
+    db  0, 0x00        ; 200
+    dw 0xffff
+    db  0, 0x00        ; 201
+    dw 0xffff
+    db  0, 0x00        ; 202
+    dw 0xffff
+    db  0, 0x00        ; 203
+    dw 0xffff
+    db  0, 0x00        ; 204
+    dw 0xffff
+    db  0, 0x00        ; 205
+    dw 0xffff
+    db  0, 0x00        ; 206
+    dw 0xffff
+    db  0, 0x00        ; 207
+    dw 0xffff
+    db  0, 0x00        ; 208
+    dw 0xffff
+    db  0, 0x00        ; 209
+    dw 0xffff
+    db  0, 0x00        ; 20a
+    dw 0xffff
+    db  0, 0x00        ; 20b
+    dw 0xffff
+    db  0, 0x00        ; 20c
+    dw 0xffff
+    db  0, 0x00        ; 20d
+    dw 0xffff
+    db  0, 0x00        ; 20e
+    dw 0xffff
+    db  0, 0x00        ; 20f
+    dw 0xffff
+    db  0, 0x00        ; 210
+    dw 0xffff
+    db  0, 0x00        ; 211
+    dw 0xffff
+    db  0, 0x00        ; 212
+    dw 0xffff
+    db  0, 0x00        ; 213
+    dw 0xffff
+    db  0, 0x00        ; 214
+    dw 0xffff
+    db  0, 0x00        ; 215
+    dw 0xffff
+    db  0, 0x00        ; 216
+    dw 0xffff
+    db  0, 0x00        ; 217
+    dw 0xffff
+    db  0, 0x00        ; 218
+    dw 0xffff
+    db  0, 0x00        ; 219
+    dw 0xffff
+    db  0, 0x00        ; 21a
+    dw 0xffff
+    db  0, 0x00        ; 21b
+    dw 0xffff
+    db  0, 0x00        ; 21c
+    dw 0xffff
+    db  0, 0x00        ; 21d
+    dw 0xffff
+    db  0, 0x00        ; 21e
+    dw 0xffff
+    db  0, 0x00        ; 21f
+    dw 0xffff
+    db  0, 0x00        ; 220
+    dw 0xffff
+    db  0, 0x00        ; 221
+    dw 0xffff
+    db  0, 0x00        ; 222
+    dw 0xffff
+    db  0, 0x00        ; 223
+    dw 0xffff
+    db  0, 0x00        ; 224
+    dw 0xffff
+    db  0, 0x00        ; 225
+    dw 0xffff
+    db  0, 0x00        ; 226
+    dw 0xffff
+    db  0, 0x00        ; 227
+    dw 0xffff
+    db  0, 0x00        ; 228
+    dw 0xffff
+    db  0, 0x00        ; 229
+    dw 0xffff
+    db  0, 0x00        ; 22a
+    dw 0xffff
+    db  0, 0x00        ; 22b
+    dw 0xffff
+    db  0, 0x00        ; 22c
+    dw 0xffff
+    db  0, 0x00        ; 22d
+    dw 0xffff
+    db  0, 0x00        ; 22e
+    dw 0xffff
+    db  0, 0x00        ; 22f
+    dw 0xffff
+    db  0, 0x00        ; 230
+    dw 0xffff
+    db  0, 0x00        ; 231
+    dw 0xffff
+    db  0, 0x00        ; 232
+    dw 0xffff
+    db  0, 0x00        ; 233
+    dw 0xffff
+    db  0, 0x00        ; 234
+    dw 0xffff
+    db  0, 0x00        ; 235
+    dw 0xffff
+    db  0, 0x00        ; 236
+    dw 0xffff
+    db  0, 0x00        ; 237
+    dw 0xffff
+    db  0, 0x00        ; 238
+    dw 0xffff
+    db  0, 0x00        ; 239
+    dw 0xffff
+    db  0, 0x00        ; 23a
+    dw 0xffff
+    db  0, 0x00        ; 23b
+    dw 0xffff
+    db  0, 0x00        ; 23c
+    dw 0xffff
+    db  0, 0x00        ; 23d
+    dw 0xffff
+    db  0, 0x00        ; 23e
+    dw 0xffff
+    db  0, 0x00        ; 23f
+    dw 0xffff
+    db  0, 0x00        ; 240
+    dw 0xffff
+    db  0, 0x00        ; 241
+    dw 0xffff
+    db  0, 0x00        ; 242
+    dw 0xffff
+    db  0, 0x00        ; 243
+    dw 0xffff
+    db  0, 0x00        ; 244
+    dw 0xffff
+    db  0, 0x00        ; 245
+    dw 0xffff
+    db  0, 0x00        ; 246
+    dw 0xffff
+    db  0, 0x00        ; 247
+    dw 0xffff
+    db  0, 0x00        ; 248
+    dw 0xffff
+    db  0, 0x00        ; 249
+    dw 0xffff
+    db  0, 0x00        ; 24a
+    dw 0xffff
+    db  0, 0x00        ; 24b
+    dw 0xffff
+    db  0, 0x00        ; 24c
+    dw 0xffff
+    db  0, 0x00        ; 24d
+    dw 0xffff
+    db  0, 0x00        ; 24e
+    dw 0xffff
+    db  0, 0x00        ; 24f
+    dw 0xffff
+    db  0, 0x00        ; 250
+    dw 0xffff
+    db  0, 0x00        ; 251
+    dw 0xffff
+    db  0, 0x00        ; 252
+    dw 0xffff
+    db  0, 0x00        ; 253
+    dw 0xffff
+    db  0, 0x00        ; 254
+    dw 0xffff
+    db  0, 0x00        ; 255
+    dw 0xffff
+    db  0, 0x00        ; 256
+    dw 0xffff
+    db  0, 0x00        ; 257
+    dw 0xffff
+    db  0, 0x00        ; 258
+    dw 0xffff
+    db  0, 0x00        ; 259
+    dw 0xffff
+    db  0, 0x00        ; 25a
+    dw 0xffff
+    db  0, 0x00        ; 25b
+    dw 0xffff
+    db  0, 0x00        ; 25c
+    dw 0xffff
+    db  0, 0x00        ; 25d
+    dw 0xffff
+    db  0, 0x00        ; 25e
+    dw 0xffff
+    db  0, 0x00        ; 25f
+    dw 0xffff
+    db  0, 0x00        ; 260
+    dw 0xffff
+    db  0, 0x00        ; 261
+    dw 0xffff
+    db  0, 0x00        ; 262
+    dw 0xffff
+    db  0, 0x00        ; 263
+    dw 0xffff
+    db  0, 0x00        ; 264
+    dw 0xffff
+    db  0, 0x00        ; 265
+    dw 0xffff
+    db  0, 0x00        ; 266
+    dw 0xffff
+    db  0, 0x00        ; 267
+    dw 0xffff
+    db  0, 0x00        ; 268
+    dw 0xffff
+    db  0, 0x00        ; 269
+    dw 0xffff
+    db  0, 0x00        ; 26a
+    dw 0xffff
+    db  0, 0x00        ; 26b
+    dw 0xffff
+    db  0, 0x00        ; 26c
+    dw 0xffff
+    db  0, 0x00        ; 26d
+    dw 0xffff
+    db  0, 0x00        ; 26e
+    dw 0xffff
+    db  0, 0x00        ; 26f
+    dw 0xffff
+    db  0, 0x00        ; 270
+    dw 0xffff
+    db  0, 0x00        ; 271
+    dw 0xffff
+    db  0, 0x00        ; 272
+    dw 0xffff
+    db  0, 0x00        ; 273
+    dw 0xffff
+    db  0, 0x00        ; 274
+    dw 0xffff
+    db  0, 0x00        ; 275
+    dw 0xffff
+    db  0, 0x00        ; 276
+    dw 0xffff
+    db  0, 0x00        ; 277
+    dw 0xffff
+    db  0, 0x00        ; 278
+    dw 0xffff
+    db  0, 0x00        ; 279
+    dw 0xffff
+    db  0, 0x00        ; 27a
+    dw 0xffff
+    db  0, 0x00        ; 27b
+    dw 0xffff
+    db  0, 0x00        ; 27c
+    dw 0xffff
+    db  0, 0x00        ; 27d
+    dw 0xffff
+    db  0, 0x00        ; 27e
+    dw 0xffff
+    db  0, 0x00        ; 27f
+    dw 0xffff
+    db  0, 0x00        ; 280
+    dw 0xffff
+    db  0, 0x00        ; 281
+    dw 0xffff
+    db  0, 0x00        ; 282
+    dw 0xffff
+    db  0, 0x00        ; 283
+    dw 0xffff
+    db  0, 0x00        ; 284
+    dw 0xffff
+    db  0, 0x00        ; 285
+    dw 0xffff
+    db  0, 0x00        ; 286
+    dw 0xffff
+    db  0, 0x00        ; 287
+    dw 0xffff
+    db  0, 0x00        ; 288
+    dw 0xffff
+    db  0, 0x00        ; 289
+    dw 0xffff
+    db  0, 0x00        ; 28a
+    dw 0xffff
+    db  0, 0x00        ; 28b
+    dw 0xffff
+    db  0, 0x00        ; 28c
+    dw 0xffff
+    db  0, 0x00        ; 28d
+    dw 0xffff
+    db  0, 0x00        ; 28e
+    dw 0xffff
+    db  0, 0x00        ; 28f
+    dw 0xffff
+    db  0, 0x00        ; 290
+    dw 0xffff
+    db  0, 0x00        ; 291
+    dw 0xffff
+    db  0, 0x00        ; 292
+    dw 0xffff
+    db  0, 0x00        ; 293
+    dw 0xffff
+    db  0, 0x00        ; 294
+    dw 0xffff
+    db  0, 0x00        ; 295
+    dw 0xffff
+    db  0, 0x00        ; 296
+    dw 0xffff
+    db  0, 0x00        ; 297
+    dw 0xffff
+    db  0, 0x00        ; 298
+    dw 0xffff
+    db  0, 0x00        ; 299
+    dw 0xffff
+    db  0, 0x00        ; 29a
+    dw 0xffff
+    db  0, 0x00        ; 29b
+    dw 0xffff
+    db  0, 0x00        ; 29c
+    dw 0xffff
+    db  0, 0x00        ; 29d
+    dw 0xffff
+    db  0, 0x00        ; 29e
+    dw 0xffff
+    db  0, 0x00        ; 29f
+    dw 0xffff
+    db  0, 0x00        ; 2a0
+    dw 0xffff
+    db  0, 0x00        ; 2a1
+    dw 0xffff
+    db  0, 0x00        ; 2a2
+    dw 0xffff
+    db  0, 0x00        ; 2a3
+    dw 0xffff
+    db  0, 0x00        ; 2a4
+    dw 0xffff
+    db  0, 0x00        ; 2a5
+    dw 0xffff
+    db  0, 0x00        ; 2a6
+    dw 0xffff
+    db  0, 0x00        ; 2a7
+    dw 0xffff
+    db  0, 0x00        ; 2a8
+    dw 0xffff
+    db  0, 0x00        ; 2a9
+    dw 0xffff
+    db  0, 0x00        ; 2aa
+    dw 0xffff
+    db  0, 0x00        ; 2ab
+    dw 0xffff
+    db  0, 0x00        ; 2ac
+    dw 0xffff
+    db  0, 0x00        ; 2ad
+    dw 0xffff
+    db  0, 0x00        ; 2ae
+    dw 0xffff
+    db  0, 0x00        ; 2af
+    dw 0xffff
+    db  0, 0x00        ; 2b0
+    dw 0xffff
+    db  0, 0x00        ; 2b1
+    dw 0xffff
+    db  0, 0x00        ; 2b2
+    dw 0xffff
+    db  0, 0x00        ; 2b3
+    dw 0xffff
+    db  0, 0x00        ; 2b4
+    dw 0xffff
+    db  0, 0x00        ; 2b5
+    dw 0xffff
+    db  0, 0x00        ; 2b6
+    dw 0xffff
+    db  0, 0x00        ; 2b7
+    dw 0xffff
+    db  0, 0x00        ; 2b8
+    dw 0xffff
+    db  0, 0x00        ; 2b9
+    dw 0xffff
+    db  0, 0x00        ; 2ba
+    dw 0xffff
+    db  0, 0x00        ; 2bb
+    dw 0xffff
+    db  0, 0x00        ; 2bc
+    dw 0xffff
+    db  0, 0x00        ; 2bd
+    dw 0xffff
+    db  0, 0x00        ; 2be
+    dw 0xffff
+    db  0, 0x00        ; 2bf
+    dw 0xffff
+    db  0, 0x00        ; 2c0
+    dw 0xffff
+    db  0, 0x00        ; 2c1
+    dw 0xffff
+    db  0, 0x00        ; 2c2
+    dw 0xffff
+    db  0, 0x00        ; 2c3
+    dw 0xffff
+    db  0, 0x00        ; 2c4
+    dw 0xffff
+    db  0, 0x00        ; 2c5
+    dw 0xffff
+    db  0, 0x00        ; 2c6
+    dw 0xffff
+    db  0, 0x00        ; 2c7
+    dw 0xffff
+    db  0, 0x00        ; 2c8
+    dw 0xffff
+    db  0, 0x00        ; 2c9
+    dw 0xffff
+    db  0, 0x00        ; 2ca
+    dw 0xffff
+    db  0, 0x00        ; 2cb
+    dw 0xffff
+    db  0, 0x00        ; 2cc
+    dw 0xffff
+    db  0, 0x00        ; 2cd
+    dw 0xffff
+    db  0, 0x00        ; 2ce
+    dw 0xffff
+    db  0, 0x00        ; 2cf
+    dw 0xffff
+    db  0, 0x00        ; 2d0
+    dw 0xffff
+    db  0, 0x00        ; 2d1
+    dw 0xffff
+    db  0, 0x00        ; 2d2
+    dw 0xffff
+    db  0, 0x00        ; 2d3
+    dw 0xffff
+    db  0, 0x00        ; 2d4
+    dw 0xffff
+    db  0, 0x00        ; 2d5
+    dw 0xffff
+    db  0, 0x00        ; 2d6
+    dw 0xffff
+    db  0, 0x00        ; 2d7
+    dw 0xffff
+    db  0, 0x00        ; 2d8
+    dw 0xffff
+    db  0, 0x00        ; 2d9
+    dw 0xffff
+    db  0, 0x00        ; 2da
+    dw 0xffff
+    db  0, 0x00        ; 2db
+    dw 0xffff
+    db  0, 0x00        ; 2dc
+    dw 0xffff
+    db  0, 0x00        ; 2dd
+    dw 0xffff
+    db  0, 0x00        ; 2de
+    dw 0xffff
+    db  0, 0x00        ; 2df
+    dw 0xffff
+    db  0, 0x00        ; 2e0
+    dw 0xffff
+    db  0, 0x00        ; 2e1
+    dw 0xffff
+    db  0, 0x00        ; 2e2
+    dw 0xffff
+    db  0, 0x00        ; 2e3
+    dw 0xffff
+    db  0, 0x00        ; 2e4
+    dw 0xffff
+    db  0, 0x00        ; 2e5
+    dw 0xffff
+    db  0, 0x00        ; 2e6
+    dw 0xffff
+    db  0, 0x00        ; 2e7
+    dw 0xffff
+    db  0, 0x00        ; 2e8
+    dw 0xffff
+    db  0, 0x00        ; 2e9
+    dw 0xffff
+    db  0, 0x00        ; 2ea
+    dw 0xffff
+    db  0, 0x00        ; 2eb
+    dw 0xffff
+    db  0, 0x00        ; 2ec
+    dw 0xffff
+    db  0, 0x00        ; 2ed
+    dw 0xffff
+    db  0, 0x00        ; 2ee
+    dw 0xffff
+    db  0, 0x00        ; 2ef
+    dw 0xffff
+    db  0, 0x00        ; 2f0
+    dw 0xffff
+    db  0, 0x00        ; 2f1
+    dw 0xffff
+    db  0, 0x00        ; 2f2
+    dw 0xffff
+    db  0, 0x00        ; 2f3
+    dw 0xffff
+    db  0, 0x00        ; 2f4
+    dw 0xffff
+    db  0, 0x00        ; 2f5
+    dw 0xffff
+    db  0, 0x00        ; 2f6
+    dw 0xffff
+    db  0, 0x00        ; 2f7
+    dw 0xffff
+    db  0, 0x00        ; 2f8
+    dw 0xffff
+    db  0, 0x00        ; 2f9
+    dw 0xffff
+    db  0, 0x00        ; 2fa
+    dw 0xffff
+    db  0, 0x00        ; 2fb
+    dw 0xffff
+    db  0, 0x00        ; 2fc
+    dw 0xffff
+    db  0, 0x00        ; 2fd
+    dw 0xffff
+    db  0, 0x00        ; 2fe
+    dw 0xffff
+    db  0, 0x00        ; 2ff
+    dw 0xffff
+    db  0, 0x00        ; 300
+    dw 0xffff
+    db  0, 0x00        ; 301
+    dw 0xffff
+    db  0, 0x00        ; 302
+    dw 0xffff
+    db  0, 0x00        ; 303
+    dw 0xffff
+    db  0, 0x00        ; 304
+    dw 0xffff
+    db  0, 0x00        ; 305
+    dw 0xffff
+    db  0, 0x00        ; 306
+    dw 0xffff
+    db  0, 0x00        ; 307
+    dw 0xffff
+    db  0, 0x00        ; 308
+    dw 0xffff
+    db  0, 0x00        ; 309
+    dw 0xffff
+    db  0, 0x00        ; 30a
+    dw 0xffff
+    db  0, 0x00        ; 30b
+    dw 0xffff
+    db  0, 0x00        ; 30c
+    dw 0xffff
+    db  0, 0x00        ; 30d
+    dw 0xffff
+    db  0, 0x00        ; 30e
+    dw 0xffff
+    db  0, 0x00        ; 30f
+    dw 0xffff
+    db  0, 0x00        ; 310
+    dw 0xffff
+    db  0, 0x00        ; 311
+    dw 0xffff
+    db  0, 0x00        ; 312
+    dw 0xffff
+    db  0, 0x00        ; 313
+    dw 0xffff
+    db  0, 0x00        ; 314
+    dw 0xffff
+    db  0, 0x00        ; 315
+    dw 0xffff
+    db  0, 0x00        ; 316
+    dw 0xffff
+    db  0, 0x00        ; 317
+    dw 0xffff
+    db  0, 0x00        ; 318
+    dw 0xffff
+    db  0, 0x00        ; 319
+    dw 0xffff
+    db  0, 0x00        ; 31a
+    dw 0xffff
+    db  0, 0x00        ; 31b
+    dw 0xffff
+    db  0, 0x00        ; 31c
+    dw 0xffff
+    db  0, 0x00        ; 31d
+    dw 0xffff
+    db  0, 0x00        ; 31e
+    dw 0xffff
+    db  0, 0x00        ; 31f
+    dw 0xffff
+    db  0, 0x00        ; 320
+    dw 0xffff
+    db  0, 0x00        ; 321
+    dw 0xffff
+    db  0, 0x00        ; 322
+    dw 0xffff
+    db  0, 0x00        ; 323
+    dw 0xffff
+    db  0, 0x00        ; 324
+    dw 0xffff
+    db  0, 0x00        ; 325
+    dw 0xffff
+    db  0, 0x00        ; 326
+    dw 0xffff
+    db  0, 0x00        ; 327
+    dw 0xffff
+    db  0, 0x00        ; 328
+    dw 0xffff
+    db  0, 0x00        ; 329
+    dw 0xffff
+    db  0, 0x00        ; 32a
+    dw 0xffff
+    db  0, 0x00        ; 32b
+    dw 0xffff
+    db  0, 0x00        ; 32c
+    dw 0xffff
+    db  0, 0x00        ; 32d
+    dw 0xffff
+    db  0, 0x00        ; 32e
+    dw 0xffff
+    db  0, 0x00        ; 32f
+    dw 0xffff
+    db  0, 0x00        ; 330
+    dw 0xffff
+    db  0, 0x00        ; 331
+    dw 0xffff
+    db  0, 0x00        ; 332
+    dw 0xffff
+    db  0, 0x00        ; 333
+    dw 0xffff
+    db  0, 0x00        ; 334
+    dw 0xffff
+    db  0, 0x00        ; 335
+    dw 0xffff
+    db  0, 0x00        ; 336
+    dw 0xffff
+    db  0, 0x00        ; 337
+    dw 0xffff
+    db  0, 0x00        ; 338
+    dw 0xffff
+    db  0, 0x00        ; 339
+    dw 0xffff
+    db  0, 0x00        ; 33a
+    dw 0xffff
+    db  0, 0x00        ; 33b
+    dw 0xffff
+    db  0, 0x00        ; 33c
+    dw 0xffff
+    db  0, 0x00        ; 33d
+    dw 0xffff
+    db  0, 0x00        ; 33e
+    dw 0xffff
+    db  0, 0x00        ; 33f
+    dw 0xffff
+    db  0, 0x00        ; 340
+    dw 0xffff
+    db  0, 0x00        ; 341
+    dw 0xffff
+    db  0, 0x00        ; 342
+    dw 0xffff
+    db  0, 0x00        ; 343
+    dw 0xffff
+    db  0, 0x00        ; 344
+    dw 0xffff
+    db  0, 0x00        ; 345
+    dw 0xffff
+    db  0, 0x00        ; 346
+    dw 0xffff
+    db  0, 0x00        ; 347
+    dw 0xffff
+    db  0, 0x00        ; 348
+    dw 0xffff
+    db  0, 0x00        ; 349
+    dw 0xffff
+    db  0, 0x00        ; 34a
+    dw 0xffff
+    db  0, 0x00        ; 34b
+    dw 0xffff
+    db  0, 0x00        ; 34c
+    dw 0xffff
+    db  0, 0x00        ; 34d
+    dw 0xffff
+    db  0, 0x00        ; 34e
+    dw 0xffff
+    db  0, 0x00        ; 34f
+    dw 0xffff
+    db  0, 0x00        ; 350
+    dw 0xffff
+    db  0, 0x00        ; 351
+    dw 0xffff
+    db  0, 0x00        ; 352
+    dw 0xffff
+    db  0, 0x00        ; 353
+    dw 0xffff
+    db  0, 0x00        ; 354
+    dw 0xffff
+    db  0, 0x00        ; 355
+    dw 0xffff
+    db  0, 0x00        ; 356
+    dw 0xffff
+    db  0, 0x00        ; 357
+    dw 0xffff
+    db  0, 0x00        ; 358
+    dw 0xffff
+    db  0, 0x00        ; 359
+    dw 0xffff
+    db  0, 0x00        ; 35a
+    dw 0xffff
+    db  0, 0x00        ; 35b
+    dw 0xffff
+    db  0, 0x00        ; 35c
+    dw 0xffff
+    db  0, 0x00        ; 35d
+    dw 0xffff
+    db  0, 0x00        ; 35e
+    dw 0xffff
+    db  0, 0x00        ; 35f
+    dw 0xffff
+    db  0, 0x00        ; 360
+    dw 0xffff
+    db  0, 0x00        ; 361
+    dw 0xffff
+    db  0, 0x00        ; 362
+    dw 0xffff
+    db  0, 0x00        ; 363
+    dw 0xffff
+    db  0, 0x00        ; 364
+    dw 0xffff
+    db  0, 0x00        ; 365
+    dw 0xffff
+    db  0, 0x00        ; 366
+    dw 0xffff
+    db  0, 0x00        ; 367
+    dw 0xffff
+    db  0, 0x00        ; 368
+    dw 0xffff
+    db  0, 0x00        ; 369
+    dw 0xffff
+    db  0, 0x00        ; 36a
+    dw 0xffff
+    db  0, 0x00        ; 36b
+    dw 0xffff
+    db  0, 0x00        ; 36c
+    dw 0xffff
+    db  0, 0x00        ; 36d
+    dw 0xffff
+    db  0, 0x00        ; 36e
+    dw 0xffff
+    db  0, 0x00        ; 36f
+    dw 0xffff
+    db  0, 0x00        ; 370
+    dw 0xffff
+    db  0, 0x00        ; 371
+    dw 0xffff
+    db  0, 0x00        ; 372
+    dw 0xffff
+    db  0, 0x00        ; 373
+    dw 0xffff
+    db  0, 0x00        ; 374
+    dw 0xffff
+    db  0, 0x00        ; 375
+    dw 0xffff
+    db  0, 0x00        ; 376
+    dw 0xffff
+    db  0, 0x00        ; 377
+    dw 0xffff
+    db  0, 0x00        ; 378
+    dw 0xffff
+    db  0, 0x00        ; 379
+    dw 0xffff
+    db  0, 0x00        ; 37a
+    dw 0xffff
+    db  0, 0x00        ; 37b
+    dw 0xffff
+    db  0, 0x00        ; 37c
+    dw 0xffff
+    db  0, 0x00        ; 37d
+    dw 0xffff
+    db  0, 0x00        ; 37e
+    dw 0xffff
+    db  0, 0x00        ; 37f
+    dw 0xffff
+    db  0, 0x00        ; 380
+    dw 0xffff
+    db  0, 0x00        ; 381
+    dw 0xffff
+    db  0, 0x00        ; 382
+    dw 0xffff
+    db  0, 0x00        ; 383
+    dw 0xffff
+    db  0, 0x00        ; 384
+    dw 0xffff
+    db  0, 0x00        ; 385
+    dw 0xffff
+    db  0, 0x00        ; 386
+    dw 0xffff
+    db  0, 0x00        ; 387
+    dw 0xffff
+    db  0, 0x00        ; 388
+    dw 0xffff
+    db  0, 0x00        ; 389
+    dw 0xffff
+    db  0, 0x00        ; 38a
+    dw 0xffff
+    db  0, 0x00        ; 38b
+    dw 0xffff
+    db  0, 0x00        ; 38c
+    dw 0xffff
+    db  0, 0x00        ; 38d
+    dw 0xffff
+    db  0, 0x00        ; 38e
+    dw 0xffff
+    db  0, 0x00        ; 38f
+    dw 0xffff
+    db  0, 0x00        ; 390
+    dw 0xffff
+    db  0, 0x00        ; 391
+    dw 0xffff
+    db  0, 0x00        ; 392
+    dw 0xffff
+    db  0, 0x00        ; 393
+    dw 0xffff
+    db  0, 0x00        ; 394
+    dw 0xffff
+    db  0, 0x00        ; 395
+    dw 0xffff
+    db  0, 0x00        ; 396
+    dw 0xffff
+    db  0, 0x00        ; 397
+    dw 0xffff
+    db  0, 0x00        ; 398
+    dw 0xffff
+    db  0, 0x00        ; 399
+    dw 0xffff
+    db  0, 0x00        ; 39a
+    dw 0xffff
+    db  0, 0x00        ; 39b
+    dw 0xffff
+    db  0, 0x00        ; 39c
+    dw 0xffff
+    db  0, 0x00        ; 39d
+    dw 0xffff
+    db  0, 0x00        ; 39e
+    dw 0xffff
+    db  0, 0x00        ; 39f
+    dw 0xffff
+    db  0, 0x00        ; 3a0
+    dw 0xffff
+    db  0, 0x00        ; 3a1
+    dw 0xffff
+    db  0, 0x00        ; 3a2
+    dw 0xffff
+    db  0, 0x00        ; 3a3
+    dw 0xffff
+    db  0, 0x00        ; 3a4
+    dw 0xffff
+    db  0, 0x00        ; 3a5
+    dw 0xffff
+    db  0, 0x00        ; 3a6
+    dw 0xffff
+    db  0, 0x00        ; 3a7
+    dw 0xffff
+    db  0, 0x00        ; 3a8
+    dw 0xffff
+    db  0, 0x00        ; 3a9
+    dw 0xffff
+    db  0, 0x00        ; 3aa
+    dw 0xffff
+    db  0, 0x00        ; 3ab
+    dw 0xffff
+    db  0, 0x00        ; 3ac
+    dw 0xffff
+    db  0, 0x00        ; 3ad
+    dw 0xffff
+    db  0, 0x00        ; 3ae
+    dw 0xffff
+    db  0, 0x00        ; 3af
+    dw 0xffff
+    db  0, 0x00        ; 3b0
+    dw 0xffff
+    db  0, 0x00        ; 3b1
+    dw 0xffff
+    db  0, 0x00        ; 3b2
+    dw 0xffff
+    db  0, 0x00        ; 3b3
+    dw 0xffff
+    db  0, 0x00        ; 3b4
+    dw 0xffff
+    db  0, 0x00        ; 3b5
+    dw 0xffff
+    db  0, 0x00        ; 3b6
+    dw 0xffff
+    db  0, 0x00        ; 3b7
+    dw 0xffff
+    db  0, 0x00        ; 3b8
+    dw 0xffff
+    db  0, 0x00        ; 3b9
+    dw 0xffff
+    db  0, 0x00        ; 3ba
+    dw 0xffff
+    db  0, 0x00        ; 3bb
+    dw 0xffff
+    db  0, 0x00        ; 3bc
+    dw 0xffff
+    db  0, 0x00        ; 3bd
+    dw 0xffff
+    db  0, 0x00        ; 3be
+    dw 0xffff
+    db  0, 0x00        ; 3bf
+    dw 0xffff
+    db  0, 0x00        ; 3c0
+    dw 0xffff
+    db  0, 0x00        ; 3c1
+    dw 0xffff
+    db  0, 0x00        ; 3c2
+    dw 0x0c7f
+    db 71, 0x00        ; 3c3
+    dw 0xffff
+    db  0, 0x00        ; 3c4
+    dw 0xffff
+    db  0, 0x00        ; 3c5
+    dw 0xffff
+    db  0, 0x00        ; 3c6
+    dw 0xffff
+    db  0, 0x00        ; 3c7
+    dw 0xffff
+    db  0, 0x00        ; 3c8
+    dw 0xffff
+    db  0, 0x00        ; 3c9
+    dw 0xffff
+    db  0, 0x00        ; 3ca
+    dw 0xffff
+    db  0, 0x00        ; 3cb
+    dw 0xffff
+    db  0, 0x00        ; 3cc
+    dw 0xffff
+    db  0, 0x00        ; 3cd
+    dw 0xffff
+    db  0, 0x00        ; 3ce
+    dw 0xffff
+    db  0, 0x00        ; 3cf
+    dw 0xffff
+    db  0, 0x00        ; 3d0
+    dw 0xffff
+    db  0, 0x00        ; 3d1
+    dw 0xffff
+    db  0, 0x00        ; 3d2
+    dw 0xffff
+    db  0, 0x00        ; 3d3
+    dw 0xffff
+    db  0, 0x00        ; 3d4
+    dw 0xffff
+    db  0, 0x00        ; 3d5
+    dw 0xffff
+    db  0, 0x00        ; 3d6
+    dw 0xffff
+    db  0, 0x00        ; 3d7
+    dw 0xffff
+    db  0, 0x00        ; 3d8
+    dw 0xffff
+    db  0, 0x00        ; 3d9
+    dw 0xffff
+    db  0, 0x00        ; 3da
+    dw 0xffff
+    db  0, 0x00        ; 3db
+    dw 0xffff
+    db  0, 0x00        ; 3dc
+    dw 0xffff
+    db  0, 0x00        ; 3dd
+    dw 0xffff
+    db  0, 0x00        ; 3de
+    dw 0xffff
+    db  0, 0x00        ; 3df
+    dw 0xffff
+    db  0, 0x00        ; 3e0
+    dw 0xffff
+    db  0, 0x00        ; 3e1
+    dw 0xffff
+    db  0, 0x00        ; 3e2
+    dw 0xffff
+    db  0, 0x00        ; 3e3
+    dw 0xffff
+    db  0, 0x00        ; 3e4
+    dw 0xffff
+    db  0, 0x00        ; 3e5
+    dw 0xffff
+    db  0, 0x00        ; 3e6
+    dw 0xffff
+    db  0, 0x00        ; 3e7
+    dw 0xffff
+    db  0, 0x00        ; 3e8
+    dw 0xffff
+    db  0, 0x00        ; 3e9
+    dw 0xffff
+    db  0, 0x00        ; 3ea
+    dw 0xffff
+    db  0, 0x00        ; 3eb
+    dw 0xffff
+    db  0, 0x00        ; 3ec
+    dw 0xffff
+    db  0, 0x00        ; 3ed
+    dw 0xffff
+    db  0, 0x00        ; 3ee
+    dw 0xffff
+    db  0, 0x00        ; 3ef
+    dw 0xffff
+    db  0, 0x00        ; 3f0
+    dw 0xffff
+    db  0, 0x00        ; 3f1
+    dw 0xffff
+    db  0, 0x00        ; 3f2
+    dw 0xffff
+    db  0, 0x00        ; 3f3
+    dw 0xffff
+    db  0, 0x00        ; 3f4
+    dw 0xffff
+    db  0, 0x00        ; 3f5
+    dw 0xffff
+    db  0, 0x00        ; 3f6
+    dw 0xffff
+    db  0, 0x00        ; 3f7
+    dw 0xffff
+    db  0, 0x00        ; 3f8
+    dw 0xffff
+    db  0, 0x00        ; 3f9
+    dw 0xffff
+    db  0, 0x00        ; 3fa
+    dw 0xffff
+    db  0, 0x00        ; 3fb
+    dw 0xffff
+    db  0, 0x00        ; 3fc
+    dw 0xffff
+    db  0, 0x00        ; 3fd
+    dw 0xffff
+    db  0, 0x00        ; 3fe
+    dw 0xffff
+    db  0, 0x00        ; 3ff
+
 x86_groups:
     dw 0x0006
     db  0, 0x00        ; 00
@@ -7265,57 +13425,57 @@ x86_groups:
     db  0, 0x00        ; 0e
     dw 0xffff
     db  0, 0x00        ; 0f
-    dw 0x096a
+    dw 0x0c84
     db  0, 0x00        ; 10
-    dw 0x096e
+    dw 0x0c88
     db  0, 0x00        ; 11
-    dw 0x0972
+    dw 0x0c8c
     db  0, 0x00        ; 12
-    dw 0x0976
+    dw 0x0c90
     db  0, 0x00        ; 13
-    dw 0x097a
+    dw 0x0c94
     db  0, 0x00        ; 14
-    dw 0x097e
+    dw 0x0c98
     db  0, 0x00        ; 15
     dw 0xffff
     db  0, 0x00        ; 16
-    dw 0x0982
+    dw 0x0c9c
     db  0, 0x00        ; 17
     dw 0x0072
     db 14, 0x00        ; 18
     dw 0xffff
     db  0, 0x00        ; 19
-    dw 0x0986
+    dw 0x0ca0
     db 12, 0x00        ; 1a
-    dw 0x098a
+    dw 0x0ca4
     db 12, 0x00        ; 1b
-    dw 0x098e
+    dw 0x0ca8
     db 12, 0x00        ; 1c
     dw 0x0035
     db 12, 0x00        ; 1d
-    dw 0x0992
+    dw 0x0cac
     db 12, 0x00        ; 1e
-    dw 0x0996
+    dw 0x0cb0
     db 12, 0x00        ; 1f
     dw 0x0072
     db 15, 0x00        ; 20
     dw 0xffff
     db  0, 0x00        ; 21
-    dw 0x0986
+    dw 0x0ca0
     db 13, 0x00        ; 22
-    dw 0x098a
+    dw 0x0ca4
     db 13, 0x00        ; 23
-    dw 0x098e
+    dw 0x0ca8
     db 13, 0x00        ; 24
     dw 0x0035
     db 13, 0x00        ; 25
-    dw 0x0992
+    dw 0x0cac
     db 13, 0x00        ; 26
-    dw 0x0996
+    dw 0x0cb0
     db 13, 0x00        ; 27
-    dw 0x099b
+    dw 0x0cb5
     db  0, 0x00        ; 28
-    dw 0x099f
+    dw 0x0cb9
     db  0, 0x00        ; 29
     dw 0xffff
     db  0, 0x00        ; 2a
@@ -7329,9 +13489,9 @@ x86_groups:
     db  0, 0x00        ; 2e
     dw 0xffff
     db  0, 0x00        ; 2f
-    dw 0x099b
+    dw 0x0cb5
     db 13, 0x00        ; 30
-    dw 0x099f
+    dw 0x0cb9
     db 13, 0x00        ; 31
     dw 0x00d5
     db 13, 0x10        ; 32
@@ -7393,17 +13553,17 @@ x86_groups:
     db  0, 0x00        ; 4e
     dw 0xffff
     db  0, 0x00        ; 4f
-    dw 0x09a3
+    dw 0x0cbd
     db  0, 0x00        ; 50
-    dw 0x09a8
+    dw 0x0cc2
     db  0, 0x00        ; 51
-    dw 0x09ac
+    dw 0x0cc6
     db  0, 0x00        ; 52
-    dw 0x09b1
+    dw 0x0ccb
     db  0, 0x00        ; 53
-    dw 0x09b5
+    dw 0x0ccf
     db  0, 0x00        ; 54
-    dw 0x09ba
+    dw 0x0cd4
     db  0, 0x00        ; 55
     dw 0xffff
     db  0, 0x00        ; 56
@@ -7463,7 +13623,7 @@ x86_groups:
     db  0, 0x00        ; 71
     dw 0x05c5
     db  0, 0x00        ; 72
-    dw 0x09bf
+    dw 0x0cd9
     db  0, 0x00        ; 73
     dw 0xffff
     db  0, 0x00        ; 74
@@ -7471,16 +13631,16 @@ x86_groups:
     db  0, 0x00        ; 75
     dw 0x06b1
     db  0, 0x00        ; 76
-    dw 0x09c6
+    dw 0x0ce0
     db  0, 0x00        ; 77
-    dw 0x09cd
-    db 12, 0x00        ; 78
-    dw 0x09d9
-    db 12, 0x00        ; 79
-    dw 0x09e4
-    db 12, 0x00        ; 7a
-    dw 0x09ef
-    db 12, 0x00        ; 7b
+    dw 0xffff
+    db  0, 0x00        ; 78
+    dw 0x0ce7
+    db  0, 0x00        ; 79
+    dw 0x0cec
+    db  0, 0x00        ; 7a
+    dw 0x0cf3
+    db  0, 0x00        ; 7b
     dw 0xffff
     db  0, 0x00        ; 7c
     dw 0xffff
@@ -7489,3 +13649,19 @@ x86_groups:
     db  0, 0x00        ; 7e
     dw 0xffff
     db  0, 0x00        ; 7f
+    dw 0x0cf8
+    db 12, 0x00        ; 80
+    dw 0x0d04
+    db 12, 0x00        ; 81
+    dw 0x0d0f
+    db 12, 0x00        ; 82
+    dw 0x0d1a
+    db 12, 0x00        ; 83
+    dw 0xffff
+    db  0, 0x00        ; 84
+    dw 0xffff
+    db  0, 0x00        ; 85
+    dw 0xffff
+    db  0, 0x00        ; 86
+    dw 0xffff
+    db  0, 0x00        ; 87
