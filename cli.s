@@ -11,6 +11,7 @@
 %include "include/constant.inc"
 %include "include/type.inc"
 %include "include/macro.inc"
+%include "include/inspect.inc"
 
 DEFAULT REL
 
@@ -177,6 +178,19 @@ cli_parse:
     test    rax, rax
     jz      .handle_profile
 
+    ; check for --inspect / --inspect-only <parts>
+    mov     rdi, r14
+    lea     rsi, [rel .flag_inspect]
+    call    str_cmp
+    test    rax, rax
+    jz      .handle_inspect
+
+    mov     rdi, r14
+    lea     rsi, [rel .flag_inspect_only]
+    call    str_cmp
+    test    rax, rax
+    jz      .handle_inspect_only
+
     ; If it starts with '-', it's an unknown flag
     cmp     byte [r14], '-'
     je      .unknown_flag
@@ -309,7 +323,30 @@ cli_parse:
     dec     r12
     jmp     .loop
 
+.handle_inspect:
+    ; Keep a part list chosen by an earlier --inspect-only.
+    cmp     byte [rbx + ASMCTX_inspect], 0
+    jne     .next_arg
+    mov     byte [rbx + ASMCTX_inspect], INSPECT_ALL
+    jmp     .next_arg
+
+.handle_inspect_only:
+    dec     r12
+    jle     .missing_val
+    add     r13, 8
+    mov     r14, [r13]
+    mov     rdi, r14
+    call    cli_parse_inspect_parts
+    test    rax, rax
+    jnz     .unknown_val
+    mov     [rbx + ASMCTX_inspect], dl
+    jmp     .next_arg
+
 .done:
+    ; Inspecting reads an existing file and writes nothing.
+    cmp     byte [rbx + ASMCTX_inspect], 0
+    jne     .success
+
     ; Derive a useful object/binary filename only when the caller did not
     ; provide -o. Standalone ELF deliberately keeps the conventional a.out.
     cmp     qword [rbx + ASMCTX_input], 0
@@ -430,6 +467,83 @@ cli_derive_output:
     pop     rbx
     ret
 
+; cli_parse_inspect_parts
+; Parses a comma-separated part list for --inspect-only, e.g.
+; "header,symbols". Names: header, sections, segments, symbols, relocs,
+; all. Empty items and unknown names are rejected.
+; Input : rdi = NUL-terminated list
+; Output: rax = EXIT_OK or EXIT_USAGE, rdx = INSPECT_* mask
+cli_parse_inspect_parts:
+    push    rbx
+    push    r12
+    push    r13
+    mov     rbx, rdi                ; rbx = start of current item
+    xor     r12d, r12d              ; r12 = mask
+
+.item:
+    mov     rcx, rbx                ; find the end of the item
+.item_end:
+    mov     al, [rcx]
+    test    al, al
+    jz      .have_item
+    cmp     al, ','
+    je      .have_item
+    inc     rcx
+    jmp     .item_end
+.have_item:
+    mov     r13, rcx                ; r13 = item end (',' or NUL)
+    mov     rdx, rcx
+    sub     rdx, rbx                ; rdx = item length
+    jz      .bad                    ; empty item ("", "a,,b", "a,")
+
+    lea     r8, [rel cli_inspect_part_table]
+.entry:
+    movzx   r9d, byte [r8]          ; part mask; 0 ends the table
+    test    r9d, r9d
+    jz      .bad
+    lea     r10, [r8 + 1]           ; r10 = part name
+    xor     ecx, ecx
+.compare:
+    cmp     rcx, rdx
+    je      .compared
+    mov     al, [rbx + rcx]
+    cmp     al, [r10 + rcx]
+    jne     .next_entry
+    inc     rcx
+    jmp     .compare
+.compared:
+    cmp     byte [r10 + rcx], 0     ; name must end exactly here
+    jne     .next_entry
+    or      r12d, r9d
+    cmp     byte [r13], 0
+    je      .ok
+    lea     rbx, [r13 + 1]          ; skip the ','
+    jmp     .item
+
+.next_entry:
+    mov     r8, r10
+.skip_name:
+    cmp     byte [r8], 0
+    je      .skipped
+    inc     r8
+    jmp     .skip_name
+.skipped:
+    inc     r8                      ; past the NUL
+    jmp     .entry
+
+.ok:
+    xor     eax, eax
+    mov     edx, r12d
+    jmp     .ret
+.bad:
+    mov     eax, EXIT_USAGE
+    xor     edx, edx
+.ret:
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
 cli_parse.exit:
     pop     r14
     pop     r13
@@ -469,3 +583,15 @@ cli_parse.msg_unknown_value: db "utasm: unknown option value: ", 0
 cli_parse.msg_missing_value: db "utasm: missing value for option: ", 0
 cli_parse.msg_second_input: db "utasm: only one input file is supported; second input: ", 0
 cli_parse.msg_newline: db 10, 0
+cli_parse.flag_inspect: db "--inspect", 0
+cli_parse.flag_inspect_only: db "--inspect-only", 0
+
+; --inspect-only part names: mask byte, then NUL-terminated name
+cli_inspect_part_table:
+    db INSPECT_HEADER,   "header", 0
+    db INSPECT_SECTIONS, "sections", 0
+    db INSPECT_SEGMENTS, "segments", 0
+    db INSPECT_SYMBOLS,  "symbols", 0
+    db INSPECT_RELOCS,   "relocs", 0
+    db INSPECT_ALL,      "all", 0
+    db 0
