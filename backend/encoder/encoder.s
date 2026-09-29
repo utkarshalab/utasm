@@ -3145,23 +3145,24 @@ amd64_encode_cmovcc:
     
     lea     r10, [r12 + INST_op0]
     lea     r11, [r12 + INST_op1]
-    
-    ; REX.W
-    mov     al, 0x48
-    IF byte [r10 + OPERAND_reg], ge, 8
-        or  al, 0x04
-        ENDIF
-    IF byte [r11 + OPERAND_reg], ge, 8
-        or  al, 0x01
-        ENDIF
-    call    amd64_emit_byte
-    
+
+    ; Operand-size and REX prefixes from the operands, as for BT/SETcc:
+    ; 0x66 for 16-bit, REX.W only for 64-bit, REX.R/X/B as needed. (A
+    ; hard-coded 0x48 made every CMOVcc 64-bit: cmovne eax, ecx was
+    ; emitted as cmovne rax, rcx.)
+    mov     al, [r10 + OPERAND_size]
+    mov     rsi, r10                   ; ModRM.reg operand (destination)
+    mov     rdx, r11                   ; ModRM.rm operand (source)
+    call    amd64_emit_prefixes
+
     mov     al, 0x0F
     call    amd64_emit_byte
     mov     al, 0x40
     add     al, r14b
     call    amd64_emit_byte
-    
+
+    lea     r10, [r12 + INST_op0]      ; the calls above clobber r10/r11
+    lea     r11, [r12 + INST_op1]
     mov     al, [r10 + OPERAND_reg]
     mov     rdi, r11
     call    amd64_emit_modrm_sib
@@ -3997,6 +3998,8 @@ amd64_encode_bt:
         call amd64_emit_byte
         mov     al, r13b
         call amd64_emit_byte
+        lea     r10, [r12 + INST_op0]  ; the calls above clobber r10/r11
+        lea     r11, [r12 + INST_op1]
         mov     al, [r11 + OPERAND_reg]
         mov rdi, r10
         call amd64_emit_modrm_sib
@@ -4010,9 +4013,11 @@ amd64_encode_bt:
         call amd64_emit_byte
         mov     al, 0xBA
         call amd64_emit_byte
+        lea     r10, [r12 + INST_op0]  ; the calls above clobber r10/r11
         mov     al, r14b
         mov rdi, r10
         call amd64_emit_modrm_sib
+        lea     r11, [r12 + INST_op1]  ; ...and so does emit_modrm_sib
         mov     rax, [r11 + OPERAND_imm]
         call amd64_emit_byte
         ENDIF
@@ -4765,19 +4770,41 @@ amd64_emit_dword:
 amd64_encode_jmp:
     prologue
     lea     r10, [r12 + INST_op0]
-    IF qword [r10 + OPERAND_sym], ne, 0
-        mov     al, 0xE9
-        call amd64_emit_byte
-        lea     r10, [r12 + INST_op0]
-        mov     rsi, [r10 + OPERAND_sym]
-        mov     rcx, 4
-        mov     al, RELOC_REL32
-        call    amd64_emit_branch_disp
-        ELSE
-        mov     r13, 0xFF
-        mov r14, 4
-        call amd64_encode_unary
-        ENDIF
+    ; A register or memory operand is always the indirect form (FF /4),
+    ; even when its displacement names a symbol: in `jmp [rbx + FIELD]`
+    ; OPERAND_sym is FIELD, but it is not a jump target.
+    cmp     byte [r10 + OPERAND_kind], OP_MEM
+    je      .indirect
+    cmp     byte [r10 + OPERAND_kind], OP_REG
+    je      .indirect
+    cmp     qword [r10 + OPERAND_sym], 0
+    je      .indirect
+
+    mov     al, 0xE9                       ; jmp rel32 <label>
+    call amd64_emit_byte
+    lea     r10, [r12 + INST_op0]
+    mov     rsi, [r10 + OPERAND_sym]
+    mov     rcx, 4
+    mov     al, RELOC_REL32
+    call    amd64_emit_branch_disp
+    jmp     .done
+
+.indirect:
+    ; FF /4 with ModRM for the register or memory operand. Encoded here
+    ; directly: amd64_encode_unary ignores the opcode in r13 and always
+    ; emits F7, which turned `jmp rax` into `mul rax`.
+    ; Size 32 = no REX.W and no 0x66 (the operand is always 64-bit in long
+    ; mode); REX.B/X are still added for r8-r15.
+    mov     al, 32
+    xor     rsi, rsi                       ; no ModRM.reg operand
+    mov     rdx, r10                       ; ModRM.rm operand
+    call    amd64_emit_prefixes
+    mov     al, 0xFF
+    call    amd64_emit_byte
+    lea     rdi, [r12 + INST_op0]          ; the calls above clobber r10
+    mov     al, 4
+    call    amd64_emit_modrm_sib
+.done:
     epilogue
 
 ;*
@@ -4786,19 +4813,42 @@ amd64_encode_jmp:
 amd64_encode_call:
     prologue
     lea     r10, [r12 + INST_op0]
-    IF qword [r10 + OPERAND_sym], ne, 0
-        mov     al, 0xE8
-        call amd64_emit_byte
-        lea     r10, [r12 + INST_op0]
-        mov     rsi, [r10 + OPERAND_sym]
-        mov     rcx, 4
-        mov     al, RELOC_REL32
-        call    amd64_emit_branch_disp
-        ELSE
-        mov     r13, 0xFF
-        mov r14, 2
-        call amd64_encode_unary
-        ENDIF
+    ; A register or memory operand is always the indirect form (FF /2),
+    ; even when its displacement names a symbol: in `call [rbx + FIELD]`
+    ; OPERAND_sym is FIELD, but it is not a call target. Treating it as
+    ; one emitted `call FIELD` - a direct call to a small constant.
+    cmp     byte [r10 + OPERAND_kind], OP_MEM
+    je      .indirect
+    cmp     byte [r10 + OPERAND_kind], OP_REG
+    je      .indirect
+    cmp     qword [r10 + OPERAND_sym], 0
+    je      .indirect
+
+    mov     al, 0xE8                       ; call rel32 <label>
+    call amd64_emit_byte
+    lea     r10, [r12 + INST_op0]
+    mov     rsi, [r10 + OPERAND_sym]
+    mov     rcx, 4
+    mov     al, RELOC_REL32
+    call    amd64_emit_branch_disp
+    jmp     .done
+
+.indirect:
+    ; FF /2 with ModRM for the register or memory operand. Encoded here
+    ; directly: amd64_encode_unary ignores the opcode in r13 and always
+    ; emits F7, which turned `call rax` into `not rax`.
+    ; Size 32 = no REX.W and no 0x66 (the operand is always 64-bit in long
+    ; mode); REX.B/X are still added for r8-r15.
+    mov     al, 32
+    xor     rsi, rsi                       ; no ModRM.reg operand
+    mov     rdx, r10                       ; ModRM.rm operand
+    call    amd64_emit_prefixes
+    mov     al, 0xFF
+    call    amd64_emit_byte
+    lea     rdi, [r12 + INST_op0]          ; the calls above clobber r10
+    mov     al, 2
+    call    amd64_emit_modrm_sib
+.done:
     epilogue
 
 ;*
