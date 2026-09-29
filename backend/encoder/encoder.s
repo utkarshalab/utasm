@@ -43,6 +43,7 @@ amd64_encode_instruction:
     ; Reset length counter and the pending RIP-relative relocation
     mov     dword [rbx + ASMCTX_inst_len], 0
     mov     dword [rel amd64_rip_pending], 0
+    mov     byte [rel amd64_relax_kind], 0
 
     ; 0. VALIDATION: Check operand size consistency (A87: Hardened)
     ; MOVSX/MOVSXD/MOVZX widen their source, so their operands differ by design
@@ -1779,7 +1780,11 @@ amd64_fix_rip_addend:
 align 8
 amd64_rip_disp:    resq 1          ; displacement of this instruction's RIP operand
 amd64_rip_pending: resd 1          ; index + 1 of this instruction's RIP reloc
+amd64_relax_kind:  resb 1          ; RELAX_JMP/JCC: this branch may be shortened
+amd64_relax_cc:    resb 1          ; its condition code (jcc)
 [SECTION .text]
+
+extern relax_note
 
 ;*
 ; * [amd64_encode_mov]
@@ -2704,12 +2709,19 @@ amd64_encode_jcc:
     jmp     .done
 
 .near:
+    ; A rel32 jcc to a label not yet defined may be shortened later by
+    ; optimizer/jump.s - unless the user wrote near/strict.
+    test    byte [r10 + OPERAND_flags], OP_FLAG_STRICT
+    jnz     .near_emit
+    mov     byte [rel amd64_relax_kind], RELAX_JCC
+.near_emit:
     mov     ax, [r12 + INST_op_id]
 
     ; Extract condition code from ID (3000-3031)
     sub     ax, 3000
     and     rax, 0x0F          ; Get CC bits
     mov     r14, rax
+    mov     [rel amd64_relax_cc], al
     
     mov     al, 0x0F
     call amd64_emit_byte
@@ -4208,6 +4220,13 @@ amd64_encode_rm_r:
 ; *   RCX = displacement width in bytes (1 or 4)
 ; *   AL  = relocation type to record when it cannot be resolved here
 ; ;
+;*
+; * [amd64_emit_branch_disp.note_fixed] (see below)
+; * Records a displacement resolved in place - its offset, width and the
+; * target's offset - so optimizer/jump.s can rewrite it if code between
+; * the branch and its target moves. Preserves every register.
+; * Expects: r8 = current section, r14 = width, r15 = target SYMBOL*.
+; ;
 amd64_emit_branch_disp:
     prologue
     push    r13
@@ -4249,10 +4268,12 @@ amd64_emit_branch_disp:
         IF rdi, g, 127
             jmp .relocate
             ENDIF
+        call    .note_fixed
         mov     rax, rdi
         call    amd64_emit_byte
         jmp     .ok
         ENDIF
+    call    .note_fixed
     call    amd64_emit_dword
     jmp     .ok
 
@@ -4263,6 +4284,38 @@ amd64_emit_branch_disp:
     call    amd64_emit_reloc
     test    rax, rax
     jnz     .done                  ; propagate a real relocation failure
+
+    ; A jmp/jcc rel32 whose target is not defined yet: note it, so
+    ; optimizer/jump.s can shorten it once all code is emitted.
+    cmp     byte [rel amd64_relax_kind], 0
+    je      .placeholder
+    cmp     r14, 4
+    jne     .placeholder
+    mov     rax, [rbx + ASMCTX_curr_sec]
+    test    rax, rax
+    jz      .placeholder
+    push    rdi
+    push    rsi
+    push    rdx
+    push    rcx
+    push    r8
+    movzx   edi, byte [rel amd64_relax_kind]
+    mov     rsi, [rax + SECTION_size]      ; offset of the displacement
+    dec     rsi                            ; jmp: E9 before it
+    cmp     edi, RELAX_JMP
+    je      .cand_start
+    dec     rsi                            ; jcc: 0F 8x before it
+.cand_start:
+    xor     edx, edx
+    mov     ecx, [rbx + ASMCTX_nrelocs]
+    dec     ecx                            ; the relocation just emitted
+    movzx   r8d, byte [rel amd64_relax_cc]
+    call    relax_note
+    pop     r8
+    pop     rcx
+    pop     rdx
+    pop     rsi
+    pop     rdi
 
 .placeholder:
     IF r14, e, 1
@@ -4277,12 +4330,32 @@ amd64_emit_branch_disp:
     ; The emit helpers preserve RAX, so it still holds the caller's stale
     ; value here; the dispatcher reads it as the encoder's status.
     xor     rax, rax
+    mov     byte [rel amd64_relax_kind], 0
 
 .done:
     pop     r15
     pop     r14
     pop     r13
     epilogue
+
+.note_fixed:
+    push    rdi
+    push    rsi
+    push    rdx
+    push    rcx
+    push    r8
+    mov     rsi, [r8 + SECTION_size]       ; the displacement goes here
+    mov     rdx, [r15 + SYMBOL_value]      ; the target's offset
+    xor     ecx, ecx
+    mov     r8, r14                        ; width: 1 or 4
+    mov     edi, RELAX_FIXED
+    call    relax_note
+    pop     r8
+    pop     rcx
+    pop     rdx
+    pop     rsi
+    pop     rdi
+    ret
 
 amd64_emit_reloc:
     prologue
@@ -4927,6 +5000,12 @@ amd64_encode_jmp:
     jmp     .done
 
 .near:
+    ; A rel32 jmp to a label not yet defined may be shortened later by
+    ; optimizer/jump.s - unless the user wrote near/strict.
+    test    byte [r10 + OPERAND_flags], OP_FLAG_STRICT
+    jnz     .near_emit
+    mov     byte [rel amd64_relax_kind], RELAX_JMP
+.near_emit:
     mov     al, 0xE9                       ; jmp rel32 <label>
     call amd64_emit_byte
     lea     r10, [r12 + INST_op0]
