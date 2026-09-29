@@ -93,6 +93,11 @@ _start:
     test    rax, rax
     jnz     .show_usage
 
+    test    dword [rbx + ASMCTX_flags], CTX_FLAG_SHOW_HELP
+    jnz     .show_help
+    test    dword [rbx + ASMCTX_flags], CTX_FLAG_SHOW_VERSION
+    jnz     .show_version
+
     cmp     qword [rbx + ASMCTX_input], 0
     je      .show_usage
 
@@ -265,6 +270,20 @@ _start:
     lea     rsi, [rel msg_usage]
     call    print_str
     mov     rax, 1
+    jmp     .exit
+
+.show_help:
+    mov     rdi, 1
+    lea     rsi, [rel msg_help]
+    call    print_str
+    xor     eax, eax
+    jmp     .exit
+
+.show_version:
+    mov     rdi, 1
+    lea     rsi, [rel msg_version]
+    call    print_str
+    xor     eax, eax
     jmp     .exit
 
 .exit_oom:
@@ -476,7 +495,21 @@ print_num:
     ret
 
 [SECTION .data]
-    msg_usage:     db "Usage: utasm -f <fmt> <input> -o <output>", 10, 0
+    msg_usage:     db "Usage: utasm [options] <source.s>", 10, "Try 'utasm --help' for usage.", 10, 0
+    msg_help:      db "utasm 0.1.0 — multi-architecture assembler and linker", 10, 10, \
+                       "Usage: utasm [options] <source.s>", 10, 10, \
+                       "Options:", 10, \
+                       "  -f <format>              elf64 (default), bin", 10, \
+                       "  -o <file>                output path (default: source.o / source.bin)", 10, \
+                       "  -a, -arch, --arch <arch> amd64 (default), aarch64, riscv64", 10, \
+                       "  --standalone              produce a standalone executable", 10, \
+                       "  --profile, -P             print internal compiler profile", 10, \
+                       "  --verbose                 enable verbose diagnostics", 10, \
+                       "  --color | --no-color      control diagnostic color", 10, \
+                       "  -Werror                   treat warnings as errors", 10, \
+                       "  -h, --help                show this help", 10, \
+                       "  -v, --version             show version", 10, 0
+    msg_version:   db "utasm 0.1.0", 10, 0
     msg_crit_init: db "CRITICAL: Initialization failed", 10, 0
     msg_parser_err:   db "Parser error: ", 0
     msg_encoder_err:  db "Encoder error: ", 0
