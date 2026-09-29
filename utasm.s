@@ -557,6 +557,8 @@ print_num:
                    db "  --verbose                 enable verbose diagnostics", 10
                    db "  --color | --no-color      control diagnostic color", 10
                    db "  -Werror                   treat warnings as errors", 10
+                   db "  -O0 | -O1 | -O2           jumps: as written | shortest, like NASM", 10
+                   db "                            (default) | also remove and merge jumps", 10
                    db "  --inspect                 inspect an ELF file instead of assembling", 10
                    db "  --inspect-only <parts>    inspect only: header,sections,segments,", 10
                    db "                            symbols,relocs,all (comma-separated)", 10
