@@ -19,6 +19,7 @@ after the source file (for example, `source.s` becomes `source.o`).
 | `--verbose` | Enable verbose diagnostics. |
 | `--color`, `--no-color` | Explicitly enable or disable ANSI diagnostic color. |
 | `-Werror` | Treat warnings as errors. |
+| `-O0`, `-O1`, `-O2` (`-Ox`) | Jump optimization level; `-O1` is the default (see below). |
 | `--inspect` | Print an existing ELF file instead of assembling (see below). |
 | `--inspect-only <parts>` | Inspect only the listed parts; implies `--inspect`. |
 | `-h`, `--help` | Print help and exit successfully. |
@@ -79,3 +80,30 @@ with a specific code:
 | 11 | permission denied |
 | 14 | not a valid ELF64 little-endian file (including empty files) |
 | 13 | error writing output |
+
+## Optimization levels
+
+utasm assembles in a single pass, then optimizes jumps once every label
+is known:
+
+| Level | What it does |
+| --- | --- |
+| `-O0` | Nothing: every jump keeps the long form it was emitted with (5 bytes for `jmp`, 6 for `jcc`). |
+| `-O1` (default) | Uses the 2-byte form for every `jmp`/`jcc` whose target is within reach, backward and forward, and moves the following code up. The result matches NASM's. |
+| `-O2` / `-Ox` | Also rewrites jumps, which NASM does not do: `jcc L1` / `jmp L2` / `L1:` becomes one inverted `jcc L2`; a jump to a `jmp` goes straight to that jump's target; a jump to the very next instruction is removed. |
+
+`-O2` keeps the program's behaviour - jumps never change flags, and a jump
+is only removed when no label and no other branch points at it - but the
+code no longer matches the source instruction for instruction, which can
+surprise you when reading a disassembly. That is why it is opt-in.
+
+Jumps written `jmp short`, `jmp near` or `strict` keep the size you wrote.
+Code in a section that turns a position into a number (`$`, a difference
+of two labels, or `equ` of a label) is never moved, since that number
+could not be updated. Jumps to exported (`global`) labels stay long and
+are left to the linker.
+
+On utasm's own 276 source files, `-O1` produces 7.3% less code than no
+optimization (within 0.3% of NASM), and a utasm built with `-O2` has 68
+fewer jumps and 126 fewer bytes than one built with `-O1` while producing
+byte-for-byte identical output.
