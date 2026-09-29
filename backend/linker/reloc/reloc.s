@@ -304,6 +304,9 @@ reloc_apply_one:
     cmp     r11d, R_RISCV_PCREL_LO12_S
     je      .riscv_lo12_s
 
+    cmp     r11d, R_X86_64_PC8
+    je      .pc8
+
     ; Default: PC-relative (x86_64 PC32, etc)
     ; The addend already carries -pc_adjust (see amd64_emit_reloc).
     sub     rax, r9                ; Target - Patch_VA
@@ -322,6 +325,18 @@ reloc_apply_one:
 .range_err:
     mov     rax, EXIT_OFFSET_RANGE
     jmp     .ret
+
+.pc8:
+    ; `jmp/jcc short` to a forward label: a 1-byte PC-relative field.
+    ; Previously this fell into the PC32 path, which wrote 4 bytes (over
+    ; the next instruction) and never range-checked the value.
+    sub     rax, r9                ; Target - Patch_VA
+    add     rax, r10               ; + addend (-1: the field ends the jump)
+    movsx   rcx, al
+    cmp     rcx, rax
+    jne     .range_err             ; target out of short-jump reach
+    mov     [r8], al
+    jmp     .done_patch
 
 .abs64:
     add     rax, r10
