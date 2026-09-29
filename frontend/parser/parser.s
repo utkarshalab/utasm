@@ -432,20 +432,22 @@ parser_parse_operand:
     call    preprocessor_next_token
     mov     r13, rdx
 
-    ; Skip branch-distance modifiers: "strict" and "near" do not change the
-    ; encodings utasm emits (rel32 is already the default), and "short"
-    ; is recorded on the operand for the encoder.
+    ; Branch-distance modifiers, recorded on the operand for the encoder:
+    ; "short" forces the rel8 form; "near" and "strict" force rel32, so the
+    ; encoder never shortens a branch the user sized explicitly.
     IF byte [r13 + TOKEN_kind], e, TOK_IDENT
         mov     rdi, [r13 + TOKEN_value]
         lea     rsi, [rel str_strict]
         call    str_cmp
         IF rax, e, 0
+            or      byte [r12 + OPERAND_flags], OP_FLAG_STRICT
             jmp .fetch_operand_token
             ENDIF
         mov     rdi, [r13 + TOKEN_value]
         lea     rsi, [rel str_near]
         call    str_cmp
         IF rax, e, 0
+            or      byte [r12 + OPERAND_flags], OP_FLAG_STRICT
             jmp .fetch_operand_token
             ENDIF
         mov     rdi, [r13 + TOKEN_value]
@@ -1374,6 +1376,20 @@ parser_parse_mem_operand:
             ENDIF
             ENDIF
 
+    ; 1b. 'abs' keyword: an absolute address even under DEFAULT REL
+    ;     (r13 still holds the peeked token; after a consumed 'rel' it is
+    ;     "rel", which does not match)
+    IF byte [r13 + TOKEN_kind], e, TOK_IDENT
+        mov     rdi, [r13 + TOKEN_value]
+        lea     rsi, [str_abs]
+        call    str_cmp
+        IF rax, e, 0
+            mov     rdi, rbx
+            call    preprocessor_next_token ; consume 'abs'
+            or      byte [r12 + OPERAND_flags], OP_FLAG_ABS
+            ENDIF
+        ENDIF
+
 .loop:
     mov     rdi, rbx
     call    preprocessor_next_token
@@ -1519,6 +1535,42 @@ parser_parse_mem_operand:
     jmp     .error
 
 .bounds_ok:
+    ; ---- DEFAULT REL ----
+    ; Under DEFAULT REL, a memory operand that names a label and has no
+    ; base or index register is RIP-relative, as if written [rel label].
+    ; Not affected: [abs label], fs:/gs: overrides (never RIP-relative),
+    ; purely numeric addresses, and equ constants / struct fields (plain
+    ; numbers, not relocatable addresses).
+    mov     rax, [rbx + PREP_ctx]
+    test    dword [rax + ASMCTX_flags], CTX_FLAG_DEFAULT_REL
+    jz      .rel_done
+    cmp     byte [r12 + OPERAND_base], 0xFF
+    jne     .rel_done                      ; has a base (or is already rel)
+    cmp     byte [r12 + OPERAND_index], 0xFF
+    jne     .rel_done
+    test    byte [r12 + OPERAND_flags], OP_FLAG_ABS
+    jnz     .rel_done
+    cmp     byte [r12 + OPERAND_segment], 0x64    ; fs:
+    je      .rel_done
+    cmp     byte [r12 + OPERAND_segment], 0x65    ; gs:
+    je      .rel_done
+    mov     rax, [r12 + OPERAND_sym]
+    test    rax, rax
+    jz      .rel_done                      ; no symbol: numeric address
+    cmp     byte [rax], TAG_SYMBOL
+    jne     .make_rel                      ; raw name: a forward label
+    cmp     byte [rax + SYMBOL_kind], SYM_CONSTANT
+    je      .rel_done
+    cmp     byte [rax + SYMBOL_kind], SYM_STRUCT_FIELD
+    je      .rel_done
+    cmp     byte [rax + SYMBOL_kind], SYM_STRUCT
+    je      .rel_done
+    cmp     word [rax + SYMBOL_section], 0xFFF1   ; SHN_ABS: an equ constant
+    je      .rel_done                      ; (equ keeps the label's kind)
+.make_rel:
+    or      byte [r12 + OPERAND_flags], OP_FLAG_REL
+    mov     byte [r12 + OPERAND_base], REG_RIP
+.rel_done:
     mov     rax, OK
 .done:
     epilogue
@@ -1528,6 +1580,7 @@ parser_parse_mem_operand:
 
 [SECTION .rodata]
 str_rel: db "rel", 0
+str_abs: db "abs", 0
 
 [SECTION .text]
 
@@ -2906,10 +2959,14 @@ parser_handle_extern:
 ; * Stub for 'default' directive (e.g. default rel)
 ; ;
 parser_handle_default:
+    ; DEFAULT REL  - [label] with no base/index register is RIP-relative
+    ; DEFAULT ABS  - back to absolute addressing (the initial state)
+    ; Other words on the line (e.g. NASM's BND/NOBND) are accepted and
+    ; ignored. The setting applies to the rest of the file.
     prologue
     push    rbx
+    push    r12
     mov     rbx, rdi               ; rbx = PrepState
-    ; Just consume until end of line for now
 .loop:
     mov     rdi, rbx
     call    preprocessor_peek_token
@@ -2921,10 +2978,52 @@ parser_handle_default:
         ENDIF
     mov     rdi, rbx
     call    preprocessor_next_token
+    mov     r12, rdx               ; r12 = consumed token
+    cmp     byte [r12 + TOKEN_kind], TOK_IDENT
+    jne     .loop
+
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [rel str_default_rel]
+    call    str_cmp
+    test    rax, rax
+    jz      .set_rel
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [rel str_default_rel_upper]
+    call    str_cmp
+    test    rax, rax
+    jz      .set_rel
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [rel str_default_abs]
+    call    str_cmp
+    test    rax, rax
+    jz      .set_abs
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [rel str_default_abs_upper]
+    call    str_cmp
+    test    rax, rax
+    jz      .set_abs
     jmp     .loop
+
+.set_rel:
+    mov     rax, [rbx + PREP_ctx]
+    or      dword [rax + ASMCTX_flags], CTX_FLAG_DEFAULT_REL
+    jmp     .loop
+.set_abs:
+    mov     rax, [rbx + PREP_ctx]
+    and     dword [rax + ASMCTX_flags], ~CTX_FLAG_DEFAULT_REL
+    jmp     .loop
+
 .done:
+    pop     r12
     pop     rbx
     epilogue
+
+[SECTION .rodata]
+str_default_rel:        db "rel", 0
+str_default_rel_upper:  db "REL", 0
+str_default_abs:        db "abs", 0
+str_default_abs_upper:  db "ABS", 0
+[SECTION .text]
 
 ;*
 ; * [parser_handle_section_directive]
