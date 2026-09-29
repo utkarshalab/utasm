@@ -210,6 +210,13 @@ cli_parse:
     test    rax, rax
     jz      .handle_inspect_only
 
+    ; check for --disasm (inspect: disassembly only)
+    mov     rdi, r14
+    lea     rsi, [rel .flag_disasm]
+    call    str_cmp
+    test    rax, rax
+    jz      .handle_disasm
+
     ; If it starts with '-', it's an unknown flag
     cmp     byte [r14], '-'
     je      .unknown_flag
@@ -357,6 +364,10 @@ cli_parse:
     cmp     byte [rbx + ASMCTX_inspect], 0
     jne     .next_arg
     mov     byte [rbx + ASMCTX_inspect], INSPECT_ALL
+    jmp     .next_arg
+
+.handle_disasm:
+    or      byte [rbx + ASMCTX_inspect], INSPECT_DISASM
     jmp     .next_arg
 
 .handle_inspect_only:
@@ -614,6 +625,7 @@ cli_parse.msg_second_input: db "utasm: only one input file is supported; second 
 cli_parse.msg_newline: db 10, 0
 cli_parse.flag_inspect: db "--inspect", 0
 cli_parse.flag_inspect_only: db "--inspect-only", 0
+cli_parse.flag_disasm: db "--disasm", 0
 
 ; --inspect-only part names: mask byte, then NUL-terminated name
 cli_inspect_part_table:
@@ -623,4 +635,5 @@ cli_inspect_part_table:
     db INSPECT_SYMBOLS,  "symbols", 0
     db INSPECT_RELOCS,   "relocs", 0
     db INSPECT_ALL,      "all", 0
+    db INSPECT_DISASM,   "disasm", 0
     db 0
