@@ -547,19 +547,16 @@ ld -o build/gen1/utasm $(find build/gen1 -name "*.o")
 utasm [options] <source.s>
 
 Options:
-  -f <format>       Output format: elf64, pe32plus, bin, upk  (default: elf64)
-  -o <file>         Output file                               (default: a.out)
-  -arch <arch>      Target: amd64, aarch64, riscv64           (default: amd64)
-  -cpu <profile>    CPU profile: GENERIC, SERVER, ZEN4, SPR   (default: GENERIC)
+  -f, --format <format>
+                    Output format: elf64, bin  (default: elf64)
+  -o <file>         Output file                         (default: source.o / source.bin)
+  -a, -arch, --arch <arch>
+                    Target: amd64, aarch64, riscv64           (default: amd64)
   --standalone      Produce standalone executable (_start resolved)
-  --list            Generate assembly listing file
-  --map             Generate symbol map file
-  --dwarf           Emit DWARF v5 debug info
-  --no-dead-strip   Disable dead code elimination
-  -W <warning>      Enable specific warning
-  -Wno-<warning>    Suppress specific warning
+  --verbose         Enable verbose diagnostics
+  --color, --no-color
+                    Control diagnostic color
   -Werror           Treat all warnings as errors
-  --selfpatch       Enable runtime self-patching engine
   --profile         Enable internal profiler output
   -h, --help        Show this help
   -v, --version     Show version
@@ -571,9 +568,6 @@ Options:
 # Standalone AMD64 executable
 utasm -arch amd64 -f elf64 --standalone main.s -o hello
 
-# UEFI bootloader
-utasm -arch amd64 -f pe32plus --standalone bootloader.s -o BOOTX64.EFI
-
 # Relocatable object file
 utasm -arch amd64 -f elf64 src/scheduler.s -o build/scheduler.o
 
@@ -583,11 +577,8 @@ utasm -arch aarch64 -f elf64 --standalone main.s -o hello_arm
 # RISC-V 64 cross-compile
 utasm -arch riscv64 -f elf64 --standalone main.s -o hello_rv64
 
-# Build .upk package
-utasm -arch amd64 -f upk --standalone driver.s -o driver.upk
-
-# With full debug info
-utasm -arch amd64 -f elf64 --dwarf --list --map main.s -o main
+# Produce a standalone executable and an internal compile profile
+utasm -arch amd64 -f elf64 --standalone --profile main.s -o main
 ```
 
 ---
