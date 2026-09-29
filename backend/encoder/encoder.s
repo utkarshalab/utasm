@@ -1713,6 +1713,8 @@ amd64_encode_instruction:
 ; ;
 amd64_branch_fits_rel8:
     xor     eax, eax
+    cmp     byte [rbx + ASMCTX_opt], OPT_NONE
+    je      .ret                           ; -O0: jumps as written (rel32)
     test    rsi, rsi
     jz      .ret
     cmp     byte [rsi], TAG_SYMBOL
