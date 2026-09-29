@@ -33,10 +33,12 @@ DEFAULT REL
 [SECTION .text]
 
 ; ----------------------------------------------------------------------------
-; HEAPSORT_IMPL name, cc
+; HEAPSORT_IMPL name, jlt
 ;   Emits an in-place ascending heapsort over qwords.
-;   cc is the condition code meaning "a < b" after `cmp a, b`:
-;     b (below) for unsigned, l (less) for signed.
+;   jlt is the jump taken when "a < b" after `cmp a, b`:
+;     jb (below) for unsigned, jl (less) for signed.
+;   (A full mnemonic rather than NASM's %+N condition-code parameter,
+;   so utasm's own macro engine can assemble this file.)
 ;
 ; Input    : rdi = pointer to array of qwords
 ;             rsi = element count
@@ -88,7 +90,7 @@ global %1
     jae     .have_child
     mov     r10, [rdi + rdx*8]
     cmp     r10, [rdi + r9*8]
-    j%+2    .take_right                    ; left < right -> use right
+    %2      .take_right                    ; left < right -> use right
     jmp     .have_child
 .take_right:
     mov     rdx, r9
@@ -96,7 +98,7 @@ global %1
     mov     r9,  [rdi + rcx*8]             ; parent
     mov     r10, [rdi + rdx*8]             ; larger child
     cmp     r9, r10
-    j%+2    .swap                          ; parent < child -> swap down
+    %2      .swap                          ; parent < child -> swap down
     ret
 .swap:
     mov     [rdi + rcx*8], r10
@@ -116,7 +118,7 @@ global %1
 ; Output   : none
 ; Clobbers : rax, rcx, rdx, r8, r9, r10, r11
 ;
-HEAPSORT_IMPL sort_u64, b
+HEAPSORT_IMPL sort_u64, jb
 
 ; ---- sort_i64 ---------------------------
 ;
@@ -127,7 +129,7 @@ HEAPSORT_IMPL sort_u64, b
 ; Output   : none
 ; Clobbers : rax, rcx, rdx, r8, r9, r10, r11
 ;
-HEAPSORT_IMPL sort_i64, l
+HEAPSORT_IMPL sort_i64, jl
 
 ; ---- sort_stable ------------------------
 ;
