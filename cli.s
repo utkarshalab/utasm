@@ -48,6 +48,7 @@ cli_parse:
     ;     utasm -f elf64 -a amd64 source.s
     mov     byte [rbx + ASMCTX_fmt], FMT_ELF64
     mov     byte [rbx + ASMCTX_target], TARGET_AMD64
+    mov     byte [rbx + ASMCTX_opt], OPT_BASIC      ; -O1: NASM-equivalent
     and     dword [rbx + ASMCTX_flags], ~(CTX_FLAG_FORMAT_BIN | CTX_FLAG_FORMAT_ELF)
     or      dword [rbx + ASMCTX_flags], CTX_FLAG_FORMAT_ELF
     lea     rax, [rel .default_output]
@@ -177,6 +178,24 @@ cli_parse:
     call    str_cmp
     test    rax, rax
     jz      .handle_profile
+
+    ; check for -O0 / -O1 / -O2 / -Ox
+    cmp     byte [r14], '-'
+    jne     .not_opt
+    cmp     byte [r14 + 1], 'O'
+    jne     .not_opt
+    cmp     byte [r14 + 3], 0
+    jne     .not_opt
+    mov     al, [r14 + 2]
+    cmp     al, '0'
+    je      .opt_none
+    cmp     al, '1'
+    je      .opt_basic
+    cmp     al, '2'
+    je      .opt_size
+    cmp     al, 'x'
+    je      .opt_size
+.not_opt:
 
     ; check for --inspect / --inspect-only <parts>
     mov     rdi, r14
@@ -322,6 +341,16 @@ cli_parse:
     add     r13, 8
     dec     r12
     jmp     .loop
+
+.opt_none:
+    mov     byte [rbx + ASMCTX_opt], OPT_NONE
+    jmp     .next_arg
+.opt_basic:
+    mov     byte [rbx + ASMCTX_opt], OPT_BASIC
+    jmp     .next_arg
+.opt_size:
+    mov     byte [rbx + ASMCTX_opt], OPT_SIZE
+    jmp     .next_arg
 
 .handle_inspect:
     ; Keep a part list chosen by an earlier --inspect-only.
