@@ -467,6 +467,10 @@ _start:
     lea     rsi, [rel msg_newline]
     call    print_str
 
+    ; "hint: did you mean '...'?" if the parser found a close match
+    extern  error_hint_flush
+    call    error_hint_flush
+
     mov     rax, 4
     jmp     .exit
 
