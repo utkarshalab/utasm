@@ -1,6 +1,6 @@
 NASM      := nasm
 LD        := ld
-NASM_FLAGS := -f elf64 -I./
+NASM_FLAGS := -d__NASM__=1 -f elf64 -I./
 GEN0      := build/gen0/utasm
 GEN1      := build/gen1/utasm
 
