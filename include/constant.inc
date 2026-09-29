@@ -413,6 +413,12 @@
 %define CTX_FLAG_SHOW_VERSION  0x400000
 %define CTX_FLAG_DEFAULT_REL   0x800000    ; DEFAULT REL: [label] means [rel label]
 
+; Jump-shortening records (optimizer/jump.s), noted while encoding
+%define RELAX_JMP              1           ; forward jmp emitted as E9 rel32
+%define RELAX_JCC              2           ; forward jcc emitted as 0F 8x rel32
+%define RELAX_FIXED            3           ; branch displacement resolved in place
+%define RELAX_ALIGN            4           ; align padding
+
 ; ============================================================================
 ; CPU FEATURE BITS (AMD64)
 %define FEAT_AVX               (1ULL << 0)
