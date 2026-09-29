@@ -19,6 +19,7 @@ extern io_mmap
 extern io_munmap
 extern arena_alloc_struct
 extern str_cmp
+extern relax_note
 
 [SECTION .text]
 
@@ -446,6 +447,31 @@ asm_ctx_align:
     
     mov     rdx, rax
     and     rdx, rcx               ; offset = size & mask
+
+    ; Note the padding point for optimizer/jump.s - also when no padding
+    ; is needed now, since moving earlier code can make some necessary.
+    push    rax
+    push    rcx
+    push    rdx
+    push    rsi
+    push    rdi
+    push    r8
+    mov     rsi, rax               ; position of the padding
+    mov     rcx, r12
+    sub     rcx, rdx               ; padding = align - offset...
+    test    rdx, rdx
+    cmovz   rcx, rdx               ; ...or 0 when already aligned
+    mov     rdx, r12               ; alignment
+    xor     r8d, r8d
+    mov     edi, RELAX_ALIGN
+    call    relax_note
+    pop     r8
+    pop     rdi
+    pop     rsi
+    pop     rdx
+    pop     rcx
+    pop     rax
+    test    rdx, rdx
     jz      .done                  ; already aligned
     
     sub     r12, rdx               ; padding = align - offset
