@@ -40,9 +40,10 @@ amd64_encode_instruction:
         jmp .error
         ENDIF
     
-    ; Reset length counter
+    ; Reset length counter and the pending RIP-relative relocation
     mov     dword [rbx + ASMCTX_inst_len], 0
-    
+    mov     dword [rel amd64_rip_pending], 0
+
     ; 0. VALIDATION: Check operand size consistency (A87: Hardened)
     ; MOVSX/MOVSXD/MOVZX widen their source, so their operands differ by design
     movzx   eax, word [r12 + INST_op_id]
@@ -1679,6 +1680,7 @@ amd64_encode_instruction:
     je      .done
     cmp     rax, EXIT_INVALID_OPERAND
     je      .done
+    call    amd64_fix_rip_addend   ; the instruction is complete now
     xor     rax, rax
 .done:
     pop     r13
@@ -1692,6 +1694,92 @@ amd64_encode_instruction:
     pop     r12
     pop     rbx
     epilogue
+
+;*
+; * [amd64_branch_fits_rel8]
+; * Purpose: Can this JMP/Jcc use the 2-byte rel8 form?
+; *   utasm assembles in a single pass, so only a target that is already
+; *   defined can be measured: a backward, local label in the current
+; *   section - the same targets amd64_emit_branch_disp resolves without a
+; *   relocation. Choosing the short form then is always safe: everything
+; *   after this instruction (labels, align padding, $-based expressions)
+; *   has not been emitted yet and simply follows the shorter encoding.
+; *   Forward targets are unknown here and keep the rel32 form.
+; * Input : RSI = OPERAND_sym (SYMBOL*, raw name for a forward reference,
+; *         or 0), RBX = AsmCtx; called before any opcode byte is emitted.
+; * Output: EAX = 1 if target - (here + 2) fits in [-128, 127], else 0.
+; * Clobbers: RCX, RDX.
+; ;
+amd64_branch_fits_rel8:
+    xor     eax, eax
+    test    rsi, rsi
+    jz      .ret
+    cmp     byte [rsi], TAG_SYMBOL
+    jne     .ret                           ; raw name: forward reference
+    cmp     byte [rsi + SYMBOL_kind], SYM_LABEL
+    jne     .ret
+    cmp     byte [rsi + SYMBOL_vis], VIS_LOCAL
+    jne     .ret                           ; exported: left to the linker
+    mov     rcx, [rbx + ASMCTX_curr_sec]
+    test    rcx, rcx
+    jz      .ret
+    mov     edx, [rcx + SECTION_index]
+    cmp     edx, [rsi + SYMBOL_section]
+    jne     .ret                           ; other section: needs a reloc
+
+    mov     rdx, [rsi + SYMBOL_value]
+    sub     rdx, [rcx + SECTION_size]      ; target - start of this jump
+    sub     rdx, 2                         ; - length of the short form
+    cmp     rdx, -128
+    jl      .ret
+    cmp     rdx, 127
+    jg      .ret
+    mov     eax, 1
+.ret:
+    ret
+
+;*
+; * [amd64_fix_rip_addend]
+; * Purpose: Finish the RIP-relative relocation emitted for this instruction.
+; *   emit_modrm_sib records it with a provisional pc_adjust of 4, but any
+; *   immediate after the displacement also lies between it and the next
+; *   instruction, which RIP points to. Now that the instruction is complete:
+; *     pc_adjust = end_of_instruction - displacement_offset
+; *     addend    = -pc_adjust
+; *   so `cmp byte [rel x], 5` gets -5 and `mov dword [rel x], imm32` -8,
+; *   exactly as NASM emits (before this, every such operand addressed past
+; *   its variable by the immediate's size).
+; *   The operand's displacement is added too: [rel x + 8] -> addend 8 - 4
+; *   (it used to be dropped, so [rel x + 8] accessed x itself).
+; * Input: RBX = AsmCtx. Clobbers: RAX, RCX, RDX.
+; ;
+amd64_fix_rip_addend:
+    mov     eax, [rel amd64_rip_pending]
+    test    eax, eax
+    jz      .none
+    mov     dword [rel amd64_rip_pending], 0
+    dec     eax
+    imul    rax, rax, RELOC_SIZE
+    add     rax, [rbx + ASMCTX_relocs]     ; RAX = RELOC*
+    cmp     dword [rax + RELOC_type], R_X86_64_PC32
+    jne     .none
+    mov     rdx, [rax + RELOC_section]     ; section holding the instruction
+    test    rdx, rdx
+    jz      .none
+    mov     rcx, [rdx + SECTION_size]      ; = end of this instruction
+    sub     rcx, [rax + RELOC_offset]      ; = 4 + trailing immediate bytes
+    mov     [rax + RELOC_pc_adjust], ecx
+    neg     rcx
+    add     rcx, [rel amd64_rip_disp]      ; + displacement written in the source
+    mov     [rax + RELOC_addend], rcx
+.none:
+    ret
+
+[SECTION .bss]
+align 8
+amd64_rip_disp:    resq 1          ; displacement of this instruction's RIP operand
+amd64_rip_pending: resd 1          ; index + 1 of this instruction's RIP reloc
+[SECTION .text]
 
 ;*
 ; * [amd64_encode_mov]
@@ -2597,8 +2685,27 @@ amd64_encode_ret:
 ; ;
 amd64_encode_jcc:
     prologue
+    ; Pick the 2-byte form (7x rel8) or the 6-byte form (0F 8x rel32):
+    ;   jcc short label       always rel8 (the user asked for it)
+    ;   jcc near/strict label always rel32
+    ;   jcc label             rel8 if the target is a backward local label
+    ;                         already within reach, else rel32
+    lea     r10, [r12 + INST_op0]
+    test    byte [r10 + OPERAND_flags], OP_FLAG_SHORT
+    jnz     .short
+    test    byte [r10 + OPERAND_flags], OP_FLAG_STRICT
+    jnz     .near
+    mov     rsi, [r10 + OPERAND_sym]
+    call    amd64_branch_fits_rel8
+    test    eax, eax
+    jz      .near
+.short:
+    call    amd64_encode_jcc_short
+    jmp     .done
+
+.near:
     mov     ax, [r12 + INST_op_id]
-    
+
     ; Extract condition code from ID (3000-3031)
     sub     ax, 3000
     and     rax, 0x0F          ; Get CC bits
@@ -4239,6 +4346,11 @@ amd64_emit_reloc:
         neg     rax
         mov     [rdx + RELOC_addend], rax
         ENDIF
+    IF r12d, e, R_X86_64_PC8               ; jmp/jcc short to a forward label
+        movsxd  rax, r14d
+        neg     rax
+        mov     [rdx + RELOC_addend], rax
+        ENDIF
     mov     [rdx + RELOC_sym], r13
     mov     [rdx + RELOC_section], r15
     mov     [rdx + RELOC_pc_adjust], r14d
@@ -4499,9 +4611,27 @@ amd64_emit_modrm_sib:
         IF byte [rsi], e, TAG_SYMBOL
             mov     rsi, [rsi + SYMBOL_name]
             ENDIF
-        mov     edx, 4                 ; disp32 ends the instruction
+        mov     edx, 4                 ; provisional: corrected at the end
         mov     al, RELOC_REL32
         call    amd64_emit_reloc
+        ; Remember this relocation. Its addend must be -(distance from the
+        ; displacement to the end of the instruction), which is 4 only when
+        ; no immediate follows (cmp byte [rel x], 5 needs -5). That is only
+        ; known once the whole instruction is out: amd64_fix_rip_addend.
+        IF rax, e, 0
+            mov     eax, [rbx + ASMCTX_nrelocs]      ; = index + 1
+            mov     [rel amd64_rip_pending], eax
+            ; The written offset (the +8 in [rel x + 8]). The parser adds
+            ; the whole expression into OPERAND_imm, which for an already
+            ; defined label includes the label's own value; the relocation
+            ; supplies that, so take it back out.
+            mov     rax, [r13 + OPERAND_imm]
+            mov     rcx, [r13 + OPERAND_sym]
+            IF byte [rcx], e, TAG_SYMBOL
+                sub     rax, [rcx + SYMBOL_value]
+                ENDIF
+            mov     [rel amd64_rip_disp], rax
+            ENDIF
 
         ; Emit 4-byte zero placeholder
         xor     rdi, rdi
@@ -4780,6 +4910,23 @@ amd64_encode_jmp:
     cmp     qword [r10 + OPERAND_sym], 0
     je      .indirect
 
+    ; Pick the 2-byte form (EB rel8) or the 5-byte form (E9 rel32), with
+    ; the same rules as amd64_encode_jcc: explicit short / near / strict
+    ; win; otherwise rel8 when a backward local target is within reach.
+    test    byte [r10 + OPERAND_flags], OP_FLAG_SHORT
+    jnz     .short
+    test    byte [r10 + OPERAND_flags], OP_FLAG_STRICT
+    jnz     .near
+    mov     rsi, [r10 + OPERAND_sym]
+    call    amd64_branch_fits_rel8
+    test    eax, eax
+    jz      .near
+.short:
+    mov     r13, 0xEB
+    call    amd64_encode_branch_short
+    jmp     .done
+
+.near:
     mov     al, 0xE9                       ; jmp rel32 <label>
     call amd64_emit_byte
     lea     r10, [r12 + INST_op0]
