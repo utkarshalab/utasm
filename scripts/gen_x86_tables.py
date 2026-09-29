@@ -28,7 +28,8 @@ DST = os.path.join(ROOT, "tools", "disasm", "x86_tables.inc")
 FORMS = """NONE EbGb EvGv GbEb GvEv ALIb eAXIz Zv ZbIb ZvIv Jb Jz Eb Ev
 EbIb EvIz EvIb Eb1 Ev1 EbCL EvCL EbIbU EvIbU GvM GvEvIz GvEvIb GvEb GvEw
 GvEd IbU IbS Iz Iw ZvXchg EvGv_bt EvGvIb EvGvCL STR XCHG90 CBW CWD
-Ewv G7 GAE""".split()
+Ewv G7 GAE
+VW WV VWI VE EV GW GU UI VM MV V12 EVI VEI GUI VW0 CMPS PCLMUL ENDBR""".split()
 FM = {name: i for i, name in enumerate(FORMS)}
 
 # ---- flags (keep in sync with FL_* in tools/disasm/x86.s) ----
@@ -211,7 +212,21 @@ def render() -> str:
     def table(tab):
         return [entry(tab.get(i)) for i in range(256)]
 
+    def sse_table(tab):
+        out = []
+        for i in range(1024):
+            e = tab.get(i)
+            if e is None:
+                out.append((0xFFFF, 0, 0))
+            else:
+                n, f, fl = e
+                out.append((n if isinstance(n, int) else name_off(n), f, fl))
+        return out
+
+    # Build every table first: that is what fills the name list, which is
+    # written out ahead of the tables.
     t1, t2 = table(map1), table(map2)
+    ts0f, ts38, ts3a = sse_table(sse_tabs["0f"]), sse_table(sse_tabs["38"]), sse_table(sse_tabs["3a"])
     tg = []
     for g in groups:
         for e in g:
@@ -242,8 +257,181 @@ def render() -> str:
     lines.append("")
     lines += rows(t1, "x86_map1") + [""]
     lines += rows(t2, "x86_map2") + [""]
+    lines += rows(ts0f, "x86_sse0f") + [""]
+    lines += rows(ts38, "x86_sse38") + [""]
+    lines += rows(ts3a, "x86_sse3a") + [""]
     lines += rows(tg, "x86_groups")
     return "\n".join(lines) + "\n"
+
+
+# ============================================================================
+# SSE family: 0F / 0F 38 / 0F 3A opcodes selected by a mandatory prefix
+# ============================================================================
+# Three tables of 256 x 4 entries (index = opcode * 4 + prefix, prefix
+# 0 = none, 1 = 66, 2 = F3, 3 = F2). A valid entry here wins over the plain
+# 0F table; the prefix is then part of the opcode, not an operand-size or
+# rep prefix. Entry flags differ from the integer tables:
+S_MEM_B, S_MEM_W, S_MEM_D, S_MEM_Q, S_MEM_X = 1, 2, 3, 4, 5   # bits 0-2: memory size
+S_MMX = 8        # mm registers, QWORD memory (no-prefix MMX forms)
+S_WQ = 16        # REX.W / VEX.W turns a trailing 'd' into 'q' (movd -> movq)
+S_NDS = 32       # the VEX form has an extra source register (vvvv)
+S_NOVEX = 64     # legacy only - no VEX form
+MEM = {"b": S_MEM_B, "w": S_MEM_W, "d": S_MEM_D, "q": S_MEM_Q, "x": S_MEM_X, "": 0}
+PFX = {"np": 0, "66": 1, "F3": 2, "F2": 3}
+sse_tabs = {"0f": {}, "38": {}, "3a": {}}
+
+def sse(tab, code, pfx, name, form, mem, flags=0):
+    sse_tabs[tab][code * 4 + PFX[pfx]] = (name, FM[form], MEM[mem] | flags)
+
+def sse_int(tab, code, pfx, name, form, flags=F_MODRM):
+    """An integer instruction selected by a prefix (popcnt, movbe, ...)."""
+    sse_tabs[tab][code * 4 + PFX[pfx]] = (name, FM[form], flags | 0x80)   # 0x80: integer flags
+
+def sse_grp(tab, code, pfx, gname, flags):
+    sse_tabs[tab][code * 4 + PFX[pfx]] = (group_ids[gname], FM["UI"], flags | 0x80 * 0)
+
+# packed/scalar arithmetic: np=ps, 66=pd, F3=ss, F2=sd
+def arith(code, base, nds=True):
+    f = S_NDS if nds else 0
+    sse("0f", code, "np", base + "ps", "VW", "x", f)
+    sse("0f", code, "66", base + "pd", "VW", "x", f)
+    sse("0f", code, "F3", base + "ss", "VW", "d", f)
+    sse("0f", code, "F2", base + "sd", "VW", "q", f)
+
+sse("0f", 0x10, "np", "movups", "VW", "x"); sse("0f", 0x10, "66", "movupd", "VW", "x")
+sse("0f", 0x10, "F3", "movss", "VW", "d", S_NDS); sse("0f", 0x10, "F2", "movsd", "VW", "q", S_NDS)
+sse("0f", 0x11, "np", "movups", "WV", "x"); sse("0f", 0x11, "66", "movupd", "WV", "x")
+sse("0f", 0x11, "F3", "movss", "WV", "d"); sse("0f", 0x11, "F2", "movsd", "WV", "q")
+sse("0f", 0x12, "np", "movlps", "V12", "q", S_NDS); sse("0f", 0x12, "66", "movlpd", "VM", "q", S_NDS)
+sse("0f", 0x12, "F3", "movsldup", "VW", "x"); sse("0f", 0x12, "F2", "movddup", "VW", "q")
+sse("0f", 0x13, "np", "movlps", "MV", "q"); sse("0f", 0x13, "66", "movlpd", "MV", "q")
+sse("0f", 0x14, "np", "unpcklps", "VW", "x", S_NDS); sse("0f", 0x14, "66", "unpcklpd", "VW", "x", S_NDS)
+sse("0f", 0x15, "np", "unpckhps", "VW", "x", S_NDS); sse("0f", 0x15, "66", "unpckhpd", "VW", "x", S_NDS)
+sse("0f", 0x16, "np", "movhps", "V12", "q", S_NDS); sse("0f", 0x16, "66", "movhpd", "VM", "q", S_NDS)
+sse("0f", 0x16, "F3", "movshdup", "VW", "x")
+sse("0f", 0x17, "np", "movhps", "MV", "q"); sse("0f", 0x17, "66", "movhpd", "MV", "q")
+sse("0f", 0x28, "np", "movaps", "VW", "x"); sse("0f", 0x28, "66", "movapd", "VW", "x")
+sse("0f", 0x29, "np", "movaps", "WV", "x"); sse("0f", 0x29, "66", "movapd", "WV", "x")
+sse("0f", 0x2A, "F3", "cvtsi2ss", "VE", "", S_NDS); sse("0f", 0x2A, "F2", "cvtsi2sd", "VE", "", S_NDS)
+sse("0f", 0x2B, "np", "movntps", "MV", "x"); sse("0f", 0x2B, "66", "movntpd", "MV", "x")
+sse("0f", 0x2C, "F3", "cvttss2si", "GW", "d"); sse("0f", 0x2C, "F2", "cvttsd2si", "GW", "q")
+sse("0f", 0x2D, "F3", "cvtss2si", "GW", "d"); sse("0f", 0x2D, "F2", "cvtsd2si", "GW", "q")
+sse("0f", 0x2E, "np", "ucomiss", "VW", "d"); sse("0f", 0x2E, "66", "ucomisd", "VW", "q")
+sse("0f", 0x2F, "np", "comiss", "VW", "d"); sse("0f", 0x2F, "66", "comisd", "VW", "q")
+sse("0f", 0x50, "np", "movmskps", "GU", ""); sse("0f", 0x50, "66", "movmskpd", "GU", "")
+arith(0x51, "sqrt", nds=False)
+sse("0f", 0x51, "F3", "sqrtss", "VW", "d", S_NDS); sse("0f", 0x51, "F2", "sqrtsd", "VW", "q", S_NDS)
+sse("0f", 0x52, "np", "rsqrtps", "VW", "x"); sse("0f", 0x52, "F3", "rsqrtss", "VW", "d", S_NDS)
+sse("0f", 0x53, "np", "rcpps", "VW", "x"); sse("0f", 0x53, "F3", "rcpss", "VW", "d", S_NDS)
+for code, n in ((0x54, "and"), (0x55, "andn"), (0x56, "or"), (0x57, "xor")):
+    sse("0f", code, "np", n + "ps", "VW", "x", S_NDS); sse("0f", code, "66", n + "pd", "VW", "x", S_NDS)
+for code, n in ((0x58, "add"), (0x59, "mul"), (0x5C, "sub"), (0x5D, "min"), (0x5E, "div"), (0x5F, "max")):
+    arith(code, n)
+sse("0f", 0x5A, "np", "cvtps2pd", "VW", "q"); sse("0f", 0x5A, "66", "cvtpd2ps", "VW", "x")
+sse("0f", 0x5A, "F3", "cvtss2sd", "VW", "d", S_NDS); sse("0f", 0x5A, "F2", "cvtsd2ss", "VW", "q", S_NDS)
+sse("0f", 0x5B, "np", "cvtdq2ps", "VW", "x"); sse("0f", 0x5B, "66", "cvtps2dq", "VW", "x")
+sse("0f", 0x5B, "F3", "cvttps2dq", "VW", "x")
+
+def mmx_sse(code, name, tab="0f", nds=True, mmx=True):
+    """Integer SIMD op: no prefix = MMX (mm, QWORD), 66 = SSE2 (xmm, XMMWORD)."""
+    if mmx:
+        sse(tab, code, "np", name, "VW", "q", S_MMX | S_NOVEX)
+    sse(tab, code, "66", name, "VW", "x", S_NDS if nds else 0)
+
+for i, n in enumerate("punpcklbw punpcklwd punpckldq packsswb pcmpgtb pcmpgtw pcmpgtd packuswb "
+                      "punpckhbw punpckhwd punpckhdq packssdw".split()):
+    mmx_sse(0x60 + i, n)
+mmx_sse(0x6C, "punpcklqdq", mmx=False); mmx_sse(0x6D, "punpckhqdq", mmx=False)
+sse("0f", 0x6E, "np", "movd", "VE", "", S_MMX | S_WQ | S_NOVEX); sse("0f", 0x6E, "66", "movd", "VE", "", S_WQ)
+sse("0f", 0x6F, "np", "movq", "VW", "q", S_MMX | S_NOVEX)
+sse("0f", 0x6F, "66", "movdqa", "VW", "x"); sse("0f", 0x6F, "F3", "movdqu", "VW", "x")
+sse("0f", 0x70, "np", "pshufw", "VWI", "q", S_MMX | S_NOVEX); sse("0f", 0x70, "66", "pshufd", "VWI", "x")
+sse("0f", 0x70, "F3", "pshufhw", "VWI", "x"); sse("0f", 0x70, "F2", "pshuflw", "VWI", "x")
+group("s71", [None, None, ("psrlw", None, 0), None, ("psraw", None, 0), None, ("psllw", None, 0), None])
+group("s72", [None, None, ("psrld", None, 0), None, ("psrad", None, 0), None, ("pslld", None, 0), None])
+group("s73m", [None, None, ("psrlq", None, 0), None, None, None, ("psllq", None, 0), None])
+group("s73x", [None, None, ("psrlq", None, 0), ("psrldq", None, 0), None, None, ("psllq", None, 0), ("pslldq", None, 0)])
+for code, g in ((0x71, "s71"), (0x72, "s72")):
+    sse_grp("0f", code, "np", g, S_MMX | S_NOVEX); sse_grp("0f", code, "66", g, S_NDS)
+sse_grp("0f", 0x73, "np", "s73m", S_MMX | S_NOVEX); sse_grp("0f", 0x73, "66", "s73x", S_NDS)
+mmx_sse(0x74, "pcmpeqb"); mmx_sse(0x75, "pcmpeqw"); mmx_sse(0x76, "pcmpeqd")
+sse("0f", 0x77, "np", "emms", "NONE", "")
+sse("0f", 0x7C, "66", "haddpd", "VW", "x", S_NDS); sse("0f", 0x7C, "F2", "haddps", "VW", "x", S_NDS)
+sse("0f", 0x7D, "66", "hsubpd", "VW", "x", S_NDS); sse("0f", 0x7D, "F2", "hsubps", "VW", "x", S_NDS)
+sse("0f", 0x7E, "np", "movd", "EV", "", S_MMX | S_WQ | S_NOVEX); sse("0f", 0x7E, "66", "movd", "EV", "", S_WQ)
+sse("0f", 0x7E, "F3", "movq", "VW", "q")
+sse("0f", 0x7F, "np", "movq", "WV", "q", S_MMX | S_NOVEX)
+sse("0f", 0x7F, "66", "movdqa", "WV", "x"); sse("0f", 0x7F, "F3", "movdqu", "WV", "x")
+for p, suf, m in (("np", "ps", "x"), ("66", "pd", "x"), ("F3", "ss", "d"), ("F2", "sd", "q")):
+    sse("0f", 0xC2, p, "cmp" + suf, "CMPS", m, S_NDS)
+sse_int("0f", 0xC3, "np", "movnti", "EvGv")
+sse("0f", 0xC4, "np", "pinsrw", "VEI", "w", S_MMX | S_NOVEX); sse("0f", 0xC4, "66", "pinsrw", "VEI", "w", S_NDS)
+sse("0f", 0xC5, "np", "pextrw", "GUI", "", S_MMX | S_NOVEX); sse("0f", 0xC5, "66", "pextrw", "GUI", "")
+sse("0f", 0xC6, "np", "shufps", "VWI", "x", S_NDS); sse("0f", 0xC6, "66", "shufpd", "VWI", "x", S_NDS)
+sse("0f", 0xD0, "66", "addsubpd", "VW", "x", S_NDS); sse("0f", 0xD0, "F2", "addsubps", "VW", "x", S_NDS)
+for code, n in ((0xD1, "psrlw"), (0xD2, "psrld"), (0xD3, "psrlq"), (0xD4, "paddq"), (0xD5, "pmullw"),
+                (0xD8, "psubusb"), (0xD9, "psubusw"), (0xDA, "pminub"), (0xDB, "pand"), (0xDC, "paddusb"),
+                (0xDD, "paddusw"), (0xDE, "pmaxub"), (0xDF, "pandn"), (0xE0, "pavgb"), (0xE1, "psraw"),
+                (0xE2, "psrad"), (0xE3, "pavgw"), (0xE4, "pmulhuw"), (0xE5, "pmulhw"), (0xE8, "psubsb"),
+                (0xE9, "psubsw"), (0xEA, "pminsw"), (0xEB, "por"), (0xEC, "paddsb"), (0xED, "paddsw"),
+                (0xEE, "pmaxsw"), (0xEF, "pxor"), (0xF1, "psllw"), (0xF2, "pslld"), (0xF3, "psllq"),
+                (0xF4, "pmuludq"), (0xF5, "pmaddwd"), (0xF6, "psadbw"), (0xF8, "psubb"), (0xF9, "psubw"),
+                (0xFA, "psubd"), (0xFB, "psubq"), (0xFC, "paddb"), (0xFD, "paddw"), (0xFE, "paddd")):
+    mmx_sse(code, n)
+sse("0f", 0xD6, "66", "movq", "WV", "q")
+sse("0f", 0xD7, "np", "pmovmskb", "GU", "", S_MMX | S_NOVEX); sse("0f", 0xD7, "66", "pmovmskb", "GU", "")
+sse("0f", 0xE6, "66", "cvttpd2dq", "VW", "x"); sse("0f", 0xE6, "F3", "cvtdq2pd", "VW", "q")
+sse("0f", 0xE6, "F2", "cvtpd2dq", "VW", "x")
+sse("0f", 0xE7, "np", "movntq", "MV", "q", S_MMX | S_NOVEX); sse("0f", 0xE7, "66", "movntdq", "MV", "x")
+sse("0f", 0xF0, "F2", "lddqu", "VM", "")
+sse("0f", 0xF7, "66", "maskmovdqu", "VW", "x")
+sse("0f", 0x1E, "F3", "endbr64", "ENDBR", "", S_NOVEX)
+sse_int("0f", 0xB8, "F3", "popcnt", "GvEv")
+sse_int("0f", 0xBC, "F3", "tzcnt", "GvEv")
+sse_int("0f", 0xBD, "F3", "lzcnt", "GvEv")
+
+# ---- 0F 38 ----
+for i, n in enumerate("pshufb phaddw phaddd phaddsw pmaddubsw phsubw phsubd phsubsw "
+                      "psignb psignw psignd pmulhrsw".split()):
+    mmx_sse(i, n, tab="38")
+for code, n in ((0x1C, "pabsb"), (0x1D, "pabsw"), (0x1E, "pabsd")):
+    mmx_sse(code, n, tab="38", nds=False)
+sse("38", 0x10, "66", "pblendvb", "VW0", "x"); sse("38", 0x14, "66", "blendvps", "VW0", "x")
+sse("38", 0x15, "66", "blendvpd", "VW0", "x"); sse("38", 0x17, "66", "ptest", "VW", "x")
+for code, n, m in ((0x20, "pmovsxbw", "q"), (0x21, "pmovsxbd", "d"), (0x22, "pmovsxbq", "w"),
+                   (0x23, "pmovsxwd", "q"), (0x24, "pmovsxwq", "d"), (0x25, "pmovsxdq", "q"),
+                   (0x30, "pmovzxbw", "q"), (0x31, "pmovzxbd", "d"), (0x32, "pmovzxbq", "w"),
+                   (0x33, "pmovzxwd", "q"), (0x34, "pmovzxwq", "d"), (0x35, "pmovzxdq", "q")):
+    sse("38", code, "66", n, "VW", m)
+for code, n in ((0x28, "pmuldq"), (0x29, "pcmpeqq"), (0x2B, "packusdw"), (0x37, "pcmpgtq"),
+                (0x38, "pminsb"), (0x39, "pminsd"), (0x3A, "pminuw"), (0x3B, "pminud"),
+                (0x3C, "pmaxsb"), (0x3D, "pmaxsd"), (0x3E, "pmaxuw"), (0x3F, "pmaxud"),
+                (0x40, "pmulld"), (0xDC, "aesenc"), (0xDD, "aesenclast"), (0xDE, "aesdec"),
+                (0xDF, "aesdeclast")):
+    sse("38", code, "66", n, "VW", "x", S_NDS)
+sse("38", 0x2A, "66", "movntdqa", "VM", "x")
+sse("38", 0x41, "66", "phminposuw", "VW", "x"); sse("38", 0xDB, "66", "aesimc", "VW", "x")
+sse_int("38", 0xF0, "np", "movbe", "GvEv"); sse_int("38", 0xF1, "np", "movbe", "EvGv")
+sse_int("38", 0xF0, "F2", "crc32", "GvEb"); sse_int("38", 0xF1, "F2", "crc32", "GvEv")
+
+# ---- 0F 3A ----
+for code, n, m, nds in ((0x08, "roundps", "x", 0), (0x09, "roundpd", "x", 0), (0x0A, "roundss", "d", S_NDS),
+                        (0x0B, "roundsd", "q", S_NDS), (0x0C, "blendps", "x", S_NDS), (0x0D, "blendpd", "x", S_NDS),
+                        (0x0E, "pblendw", "x", S_NDS), (0x0F, "palignr", "x", S_NDS), (0x21, "insertps", "d", S_NDS),
+                        (0x40, "dpps", "x", S_NDS), (0x41, "dppd", "x", S_NDS), (0x42, "mpsadbw", "x", S_NDS),
+                        (0x60, "pcmpestrm", "x", 0), (0x61, "pcmpestri", "x", 0), (0x62, "pcmpistrm", "x", 0),
+                        (0x63, "pcmpistri", "x", 0), (0xDF, "aeskeygenassist", "x", 0)):
+    sse("3a", code, "66", n, "VWI", m, nds)
+sse("3a", 0x0F, "np", "palignr", "VWI", "q", S_MMX | S_NOVEX)
+sse("3a", 0x14, "66", "pextrb", "EVI", "b"); sse("3a", 0x15, "66", "pextrw", "EVI", "w")
+sse("3a", 0x16, "66", "pextrd", "EVI", "d", S_WQ); sse("3a", 0x17, "66", "extractps", "EVI", "d")
+sse("3a", 0x20, "66", "pinsrb", "VEI", "b", S_NDS); sse("3a", 0x22, "66", "pinsrd", "VEI", "d", S_NDS | S_WQ)
+sse("3a", 0x44, "66", "pclmulqdq", "PCLMUL", "x", S_NDS)
+
+# ---- integer extras in the 0F map ----
+group("g16", [("prefetchnta", "Eb", 0), ("prefetcht0", "Eb", 0), ("prefetcht1", "Eb", 0), ("prefetcht2", "Eb", 0),
+              None, None, None, None])
+grp_op(map2, 0x18, "g16", "Eb", F_BYTE)
 
 
 def main():
