@@ -407,6 +407,10 @@
 %define CTX_FLAG_NO_COLOR      0x040000    ; explicitly disable ANSI colors (bypasses automatic checks)
 %define CTX_FLAG_PASS2         0x080000    ; assembler is currently executing Pass 2
 %define CTX_FLAG_RELOCATABLE   0x100000    ; output object is relocatable (ET_REL) rather than linked
+; CLI-only actions. These are consumed by _start before an input file is
+; required; they deliberately do not affect assembly semantics.
+%define CTX_FLAG_SHOW_HELP     0x200000
+%define CTX_FLAG_SHOW_VERSION  0x400000
 
 ; ============================================================================
 ; CPU FEATURE BITS (AMD64)

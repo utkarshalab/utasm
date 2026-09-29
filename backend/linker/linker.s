@@ -74,16 +74,16 @@ linker_run:
     check_err
     mov     r12, rdx               ; r12 = FD
 
-    ; 2. Determine Output Format
-    mov     rax, [rbx + ASMCTX_flags]
-    test    rax, CTX_FLAG_FORMAT_BIN
-    jnz     .emit_binary
-
-    test    rax, CTX_FLAG_FORMAT_ELF
-    jnz     .emit_elf
-
-    ; Default to ELF if nothing specified
-    jmp     .emit_elf
+    ; 2. Determine output format.  The CLI stores the authoritative FMT_*
+    ; enum in ASMCTX_fmt; the old CTX_FLAG_FORMAT_* bits are compatibility
+    ; state only.  Reading the flags here made `-f bin` silently emit ELF.
+    movzx   eax, byte [rbx + ASMCTX_fmt]
+    cmp     eax, FMT_BIN
+    je      .emit_binary
+    cmp     eax, FMT_ELF64
+    je      .emit_elf
+    mov     rax, EXIT_USAGE
+    jmp     .close_and_done
 
 .emit_binary:
     lea     rdi, [rel global_profstate]
