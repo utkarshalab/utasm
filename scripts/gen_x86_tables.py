@@ -29,7 +29,8 @@ FORMS = """NONE EbGb EvGv GbEb GvEv ALIb eAXIz Zv ZbIb ZvIv Jb Jz Eb Ev
 EbIb EvIz EvIb Eb1 Ev1 EbCL EvCL EbIbU EvIbU GvM GvEvIz GvEvIb GvEb GvEw
 GvEd IbU IbS Iz Iw ZvXchg EvGv_bt EvGvIb EvGvCL STR XCHG90 CBW CWD
 Ewv G7 GAE
-VW WV VWI VE EV GW GU UI VM MV V12 EVI VEI GUI VW0 CMPS PCLMUL ENDBR""".split()
+VW WV VWI VE EV GW GU UI VM MV V12 EVI VEI GUI VW0 CMPS PCLMUL ENDBR
+XBCAST XINS XEXT XIS4 BGBE BGEB BBE XMLD XMST BRORX XZERO""".split()
 FM = {name: i for i, name in enumerate(FORMS)}
 
 # ---- flags (keep in sync with FL_* in tools/disasm/x86.s) ----
@@ -227,6 +228,7 @@ def render() -> str:
     # written out ahead of the tables.
     t1, t2 = table(map1), table(map2)
     ts0f, ts38, ts3a = sse_table(sse_tabs["0f"]), sse_table(sse_tabs["38"]), sse_table(sse_tabs["3a"])
+    tv0f, tv38, tv3a = sse_table(vex_tabs["0f"]), sse_table(vex_tabs["38"]), sse_table(vex_tabs["3a"])
     tg = []
     for g in groups:
         for e in g:
@@ -260,6 +262,9 @@ def render() -> str:
     lines += rows(ts0f, "x86_sse0f") + [""]
     lines += rows(ts38, "x86_sse38") + [""]
     lines += rows(ts3a, "x86_sse3a") + [""]
+    lines += rows(tv0f, "x86_vex0f") + [""]
+    lines += rows(tv38, "x86_vex38") + [""]
+    lines += rows(tv3a, "x86_vex3a") + [""]
     lines += rows(tg, "x86_groups")
     return "\n".join(lines) + "\n"
 
@@ -396,8 +401,8 @@ for i, n in enumerate("pshufb phaddw phaddd phaddsw pmaddubsw phsubw phsubd phsu
     mmx_sse(i, n, tab="38")
 for code, n in ((0x1C, "pabsb"), (0x1D, "pabsw"), (0x1E, "pabsd")):
     mmx_sse(code, n, tab="38", nds=False)
-sse("38", 0x10, "66", "pblendvb", "VW0", "x"); sse("38", 0x14, "66", "blendvps", "VW0", "x")
-sse("38", 0x15, "66", "blendvpd", "VW0", "x"); sse("38", 0x17, "66", "ptest", "VW", "x")
+sse("38", 0x10, "66", "pblendvb", "VW0", "x", S_NOVEX); sse("38", 0x14, "66", "blendvps", "VW0", "x", S_NOVEX)
+sse("38", 0x15, "66", "blendvpd", "VW0", "x", S_NOVEX); sse("38", 0x17, "66", "ptest", "VW", "x")
 for code, n, m in ((0x20, "pmovsxbw", "q"), (0x21, "pmovsxbd", "d"), (0x22, "pmovsxbq", "w"),
                    (0x23, "pmovsxwd", "q"), (0x24, "pmovsxwq", "d"), (0x25, "pmovsxdq", "q"),
                    (0x30, "pmovzxbw", "q"), (0x31, "pmovzxbd", "d"), (0x32, "pmovzxbq", "w"),
@@ -427,6 +432,64 @@ sse("3a", 0x14, "66", "pextrb", "EVI", "b"); sse("3a", 0x15, "66", "pextrw", "EV
 sse("3a", 0x16, "66", "pextrd", "EVI", "d", S_WQ); sse("3a", 0x17, "66", "extractps", "EVI", "d")
 sse("3a", 0x20, "66", "pinsrb", "VEI", "b", S_NDS); sse("3a", 0x22, "66", "pinsrd", "VEI", "d", S_NDS | S_WQ)
 sse("3a", 0x44, "66", "pclmulqdq", "PCLMUL", "x", S_NDS)
+
+# ============================================================================
+# VEX-only instructions (AVX/AVX2/FMA/BMI without a legacy SSE form)
+# ============================================================================
+# Same layout as the SSE tables (opcode * 4 + VEX.pp) and the same flag bits,
+# except bit 3, which here means "VEX.W turns the last 's' into 'd'"
+# (vfmadd132ps -> vfmadd132pd). A VEX instruction is looked up here first,
+# then in the SSE tables (with a "v" prefix added to the name).
+V_WSD = 8
+vex_tabs = {"0f": {}, "38": {}, "3a": {}}
+
+def vex(tab, code, pfx, name, form, mem, flags=0):
+    vex_tabs[tab][code * 4 + PFX[pfx]] = (name, FM[form], MEM[mem] | flags)
+
+def vex_grp(tab, code, pfx, gname, form):
+    vex_tabs[tab][code * 4 + PFX[pfx]] = (group_ids[gname], FM[form], 0)
+
+vex("0f", 0x77, "np", "vzeroupper", "XZERO", "")
+for code, n, form, m, f in (
+        (0x0C, "vpermilps", "VW", "x", S_NDS), (0x0D, "vpermilpd", "VW", "x", S_NDS),
+        (0x0E, "vtestps", "VW", "x", 0), (0x0F, "vtestpd", "VW", "x", 0),
+        (0x16, "vpermps", "VW", "x", S_NDS), (0x36, "vpermd", "VW", "x", S_NDS),
+        (0x18, "vbroadcastss", "XBCAST", "d", 0), (0x19, "vbroadcastsd", "XBCAST", "q", 0),
+        (0x1A, "vbroadcastf128", "XBCAST", "x", 0), (0x5A, "vbroadcasti128", "XBCAST", "x", 0),
+        (0x58, "vpbroadcastd", "XBCAST", "d", 0), (0x59, "vpbroadcastq", "XBCAST", "q", 0),
+        (0x78, "vpbroadcastb", "XBCAST", "b", 0), (0x79, "vpbroadcastw", "XBCAST", "w", 0),
+        (0x2C, "vmaskmovps", "XMLD", "x", 0), (0x2D, "vmaskmovpd", "XMLD", "x", 0),
+        (0x2E, "vmaskmovps", "XMST", "x", 0), (0x2F, "vmaskmovpd", "XMST", "x", 0),
+        (0x8C, "vpmaskmovd", "XMLD", "x", S_WQ), (0x8E, "vpmaskmovd", "XMST", "x", S_WQ),
+        (0x45, "vpsrlvd", "VW", "x", S_NDS | S_WQ), (0x46, "vpsravd", "VW", "x", S_NDS),
+        (0x47, "vpsllvd", "VW", "x", S_NDS | S_WQ)):
+    vex("38", code, "66", n, form, m, f)
+# FMA: 132 / 213 / 231 forms; VEX.W picks ps/pd (ss/sd)
+for base, op in (("vfmaddsub", 0x96), ("vfmsubadd", 0x97), ("vfmadd", 0x98), ("vfmsub", 0x9A),
+                 ("vfnmadd", 0x9C), ("vfnmsub", 0x9E)):
+    for k, order in ((0, "132"), (0x10, "213"), (0x20, "231")):
+        vex("38", op + k, "66", base + order + "ps", "VW", "x", S_NDS | V_WSD)
+        if base not in ("vfmaddsub", "vfmsubadd"):
+            vex("38", op + k + 1, "66", base + order + "ss", "VW", "d", S_NDS | V_WSD)
+# BMI1 / BMI2 (general registers, size by VEX.W)
+group("vbmi", [None, ("blsr", None, 0), ("blsmsk", None, 0), ("blsi", None, 0), None, None, None, None])
+vex("38", 0xF2, "np", "andn", "BGBE", "")
+vex_grp("38", 0xF3, "np", "vbmi", "BBE")
+vex("38", 0xF5, "np", "bzhi", "BGEB", ""); vex("38", 0xF5, "F3", "pext", "BGBE", "")
+vex("38", 0xF5, "F2", "pdep", "BGBE", ""); vex("38", 0xF6, "F2", "mulx", "BGBE", "")
+vex("38", 0xF7, "np", "bextr", "BGEB", ""); vex("38", 0xF7, "66", "shlx", "BGEB", "")
+vex("38", 0xF7, "F3", "sarx", "BGEB", ""); vex("38", 0xF7, "F2", "shrx", "BGEB", "")
+vex("3a", 0xF0, "F2", "rorx", "BRORX", "")
+for code, n, form, m, f in (
+        (0x00, "vpermq", "VWI", "x", 0), (0x01, "vpermpd", "VWI", "x", 0),
+        (0x02, "vpblendd", "VWI", "x", S_NDS), (0x04, "vpermilps", "VWI", "x", 0),
+        (0x05, "vpermilpd", "VWI", "x", 0), (0x06, "vperm2f128", "VWI", "x", S_NDS),
+        (0x46, "vperm2i128", "VWI", "x", S_NDS),
+        (0x18, "vinsertf128", "XINS", "x", 0), (0x38, "vinserti128", "XINS", "x", 0),
+        (0x19, "vextractf128", "XEXT", "x", 0), (0x39, "vextracti128", "XEXT", "x", 0),
+        (0x4A, "vblendvps", "XIS4", "x", 0), (0x4B, "vblendvpd", "XIS4", "x", 0),
+        (0x4C, "vpblendvb", "XIS4", "x", 0)):
+    vex("3a", code, "66", n, form, m, f)
 
 # ---- integer extras in the 0F map ----
 group("g16", [("prefetchnta", "Eb", 0), ("prefetcht0", "Eb", 0), ("prefetcht1", "Eb", 0), ("prefetcht2", "Eb", 0),
