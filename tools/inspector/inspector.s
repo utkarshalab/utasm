@@ -44,6 +44,11 @@ DEFAULT REL
 ;   return: rax = EXIT_OK or error code
 ;   callee saved: rbx, r12-r15, rbp
 
+; Entries in shflag_table below. A plain constant rather than
+; ($ - shflag_table) / 2: utasm cannot use that forward-computed value in
+; `cmp r13, SHFLAG_COUNT` before the table has been seen.
+%define SHFLAG_COUNT    11
+
 ; InspCtx lives on inspect_run's stack; round its size up to 16.
 %define INSPCTX_FRAME   ((INSPCTX_SIZE + 15) & ~15)
 
@@ -841,4 +846,4 @@ shflag_table:
     db  9, 'G'          ; SHF_GROUP
     db 10, 'T'          ; SHF_TLS
     db 11, 'C'          ; SHF_COMPRESSED
-SHFLAG_COUNT equ ($ - shflag_table) / 2
+                        ; (keep SHFLAG_COUNT at the top in sync)
