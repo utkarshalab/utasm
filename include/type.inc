@@ -233,7 +233,8 @@ struc ASMCTX
     field debug_file,  4       ; current source file index for DWARF
     field debug_col,   4       ; current source column for DWARF
     field standalone,  1       ; 1 if generating standalone executable
-    field pad_sove,    3       ; alignment padding to naturally align entry_point to 8-byte boundary
+    field inspect,     1       ; INSPECT_* parts for --inspect (0 = assemble normally)
+    field pad_sove,    2       ; alignment padding to naturally align entry_point to 8-byte boundary
     field entry_point, 8       ; virtual address of entry point
     field inc_ctx,     8       ; current IncludeCtx pointer
     field mac_exp,     8       ; current MacroExpansion pointer
