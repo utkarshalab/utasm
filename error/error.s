@@ -15,6 +15,8 @@ DEFAULT REL
 
 extern str_len
 extern global_ctx
+extern error_hint_symbol
+extern error_hint_flush
 
 ; ============================================================================
 ; ERROR REPORTER
@@ -184,6 +186,38 @@ error_emit:
     mov     rax, EXIT_INTERNAL
     pop     r15
     pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+; ---- error_emit_undefined_symbol --------
+;
+; error_emit_undefined_symbol
+; Reports an undefined symbol exactly like error_emit, then, if a defined
+; symbol has a similar name, prints "hint: did you mean '<name>'?" on
+; the following line.
+; Input    : same as error_emit; r8 = the undefined symbol's name
+; Output   : rax = error_emit's result
+; Clobbers : rcx, rdx, rsi, rdi, r8-r11
+;
+global error_emit_undefined_symbol
+error_emit_undefined_symbol:
+    push    rbx
+    push    r12
+    push    r13
+    mov     rbx, rdi                        ; rbx = AsmCtx
+    mov     r12, r8                         ; r12 = symbol name
+
+    call    error_emit                      ; the error line comes first
+    mov     r13, rax
+
+    mov     rdi, rbx
+    mov     rsi, r12
+    call    error_hint_symbol
+    call    error_hint_flush
+
+    mov     rax, r13
     pop     r13
     pop     r12
     pop     rbx
