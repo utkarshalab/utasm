@@ -543,23 +543,25 @@ print_num:
 
 [SECTION .data]
     msg_usage:     db "Usage: utasm [options] <source.s>", 10, "Try 'utasm --help' for usage.", 10, 0
-    msg_help:      db "utasm 0.1.0 — multi-architecture assembler and linker", 10, 10, \
-                       "Usage: utasm [options] <source.s>", 10, \
-                       "       utasm --inspect [--inspect-only <parts>] <file>", 10, 10, \
-                       "Options:", 10, \
-                       "  -f, --format <format>     elf64 (default), bin", 10, \
-                       "  -o <file>                 output path (default: source.o / source.bin)", 10, \
-                       "  -a, -arch, --arch <arch>  amd64 (default), aarch64, riscv64", 10, \
-                       "  --standalone              produce a standalone executable", 10, \
-                       "  --profile, -P             print internal compiler profile", 10, \
-                       "  --verbose                 enable verbose diagnostics", 10, \
-                       "  --color | --no-color      control diagnostic color", 10, \
-                       "  -Werror                   treat warnings as errors", 10, \
-                       "  --inspect                 inspect an ELF file instead of assembling", 10, \
-                       "  --inspect-only <parts>    inspect only: header,sections,segments,", 10, \
-                       "                            symbols,relocs,all (comma-separated)", 10, \
-                       "  -h, --help                show this help", 10, \
-                       "  -v, --version             show version", 10, 0
+    ; One db line per help line: utasm's own assembler does not support
+    ; backslash line continuation, so this text must not use it.
+    msg_help:      db "utasm 0.1.0 - multi-architecture assembler and linker", 10, 10
+                   db "Usage: utasm [options] <source.s>", 10
+                   db "       utasm --inspect [--inspect-only <parts>] <file>", 10, 10
+                   db "Options:", 10
+                   db "  -f, --format <format>     elf64 (default), bin", 10
+                   db "  -o <file>                 output path (default: source.o / source.bin)", 10
+                   db "  -a, -arch, --arch <arch>  amd64 (default), aarch64, riscv64", 10
+                   db "  --standalone              produce a standalone executable", 10
+                   db "  --profile, -P             print internal compiler profile", 10
+                   db "  --verbose                 enable verbose diagnostics", 10
+                   db "  --color | --no-color      control diagnostic color", 10
+                   db "  -Werror                   treat warnings as errors", 10
+                   db "  --inspect                 inspect an ELF file instead of assembling", 10
+                   db "  --inspect-only <parts>    inspect only: header,sections,segments,", 10
+                   db "                            symbols,relocs,all (comma-separated)", 10
+                   db "  -h, --help                show this help", 10
+                   db "  -v, --version             show version", 10, 0
     msg_insp_pre:   db "utasm: cannot inspect '", 0
     msg_insp_mid:   db "': ", 0
     msg_insp_nofile: db "no such file", 10, 0
