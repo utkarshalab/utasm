@@ -30,7 +30,8 @@ EbIb EvIz EvIb Eb1 Ev1 EbCL EvCL EbIbU EvIbU GvM GvEvIz GvEvIb GvEb GvEw
 GvEd IbU IbS Iz Iw ZvXchg EvGv_bt EvGvIb EvGvCL STR XCHG90 CBW CWD
 Ewv G7 GAE
 VW WV VWI VE EV GW GU UI VM MV V12 EVI VEI GUI VW0 CMPS PCLMUL ENDBR
-XBCAST XINS XEXT XIS4 BGBE BGEB BBE XMLD XMST BRORX XZERO""".split()
+XBCAST XINS XEXT XIS4 BGBE BGEB BBE XMLD XMST BRORX XZERO
+X87""".split()
 FM = {name: i for i, name in enumerate(FORMS)}
 
 # ---- flags (keep in sync with FL_* in tools/disasm/x86.s) ----
@@ -265,7 +266,8 @@ def render() -> str:
     lines += rows(tv0f, "x86_vex0f") + [""]
     lines += rows(tv38, "x86_vex38") + [""]
     lines += rows(tv3a, "x86_vex3a") + [""]
-    lines += rows(tg, "x86_groups")
+    lines += rows(tg, "x86_groups") + [""]
+    lines += x87_tables()
     return "\n".join(lines) + "\n"
 
 
@@ -465,12 +467,12 @@ for code, n, form, m, f in (
         (0x47, "vpsllvd", "VW", "x", S_NDS | S_WQ)):
     vex("38", code, "66", n, form, m, f)
 # FMA: 132 / 213 / 231 forms; VEX.W picks ps/pd (ss/sd)
-for base, op in (("vfmaddsub", 0x96), ("vfmsubadd", 0x97), ("vfmadd", 0x98), ("vfmsub", 0x9A),
+for base, fop in (("vfmaddsub", 0x96), ("vfmsubadd", 0x97), ("vfmadd", 0x98), ("vfmsub", 0x9A),
                  ("vfnmadd", 0x9C), ("vfnmsub", 0x9E)):
     for k, order in ((0, "132"), (0x10, "213"), (0x20, "231")):
-        vex("38", op + k, "66", base + order + "ps", "VW", "x", S_NDS | V_WSD)
+        vex("38", fop + k, "66", base + order + "ps", "VW", "x", S_NDS | V_WSD)
         if base not in ("vfmaddsub", "vfmsubadd"):
-            vex("38", op + k + 1, "66", base + order + "ss", "VW", "d", S_NDS | V_WSD)
+            vex("38", fop + k + 1, "66", base + order + "ss", "VW", "d", S_NDS | V_WSD)
 # BMI1 / BMI2 (general registers, size by VEX.W)
 group("vbmi", [None, ("blsr", None, 0), ("blsmsk", None, 0), ("blsi", None, 0), None, None, None, None])
 vex("38", 0xF2, "np", "andn", "BGBE", "")
@@ -490,6 +492,65 @@ for code, n, form, m, f in (
         (0x4A, "vblendvps", "XIS4", "x", 0), (0x4B, "vblendvpd", "XIS4", "x", 0),
         (0x4C, "vpblendvb", "XIS4", "x", 0)):
     vex("3a", code, "66", n, form, m, f)
+
+# ============================================================================
+# x87 floating point (D8-DF)
+# ============================================================================
+# x86.s decodes these itself (form X87) from three tables written below:
+#   x87_mem   64 x 16 bytes: memory form by (opcode - D8) * 8 + ModRM.reg:
+#             name (NUL-padded to 15) + size code (0 none, 2 WORD, 4 DWORD,
+#             8 QWORD, 10 TBYTE; 0xFF = invalid)
+#   x87_reg   64 x 16 bytes: register form by the same index: name + operand
+#             shape (0 = see x87_fix, 1 "st,st(i)", 2 "st(i),st", 3 "st(i)")
+#   x87_fix   fixed register encodings, 16 bytes each: opcode, ModRM byte,
+#             name (NUL-padded to 13), operand (0 none, 1 "ax"); ends with 0
+for code in range(0xD8, 0xE0):
+    op(map1, code, "(x87)", "X87", F_MODRM)
+op(map1, 0x9B, "fwait", "NONE")
+
+X87_MEM = {
+    0xD8: [(n, 4) for n in "fadd fmul fcom fcomp fsub fsubr fdiv fdivr".split()],
+    0xD9: [("fld", 4), None, ("fst", 4), ("fstp", 4), ("fldenv", 0), ("fldcw", 2), ("fnstenv", 0), ("fnstcw", 2)],
+    0xDA: [(n, 4) for n in "fiadd fimul ficom ficomp fisub fisubr fidiv fidivr".split()],
+    0xDB: [("fild", 4), ("fisttp", 4), ("fist", 4), ("fistp", 4), None, ("fld", 10), None, ("fstp", 10)],
+    0xDC: [(n, 8) for n in "fadd fmul fcom fcomp fsub fsubr fdiv fdivr".split()],
+    0xDD: [("fld", 8), ("fisttp", 8), ("fst", 8), ("fstp", 8), ("frstor", 0), None, ("fnsave", 0), ("fnstsw", 2)],
+    0xDE: [(n, 2) for n in "fiadd fimul ficom ficomp fisub fisubr fidiv fidivr".split()],
+    0xDF: [("fild", 2), ("fisttp", 2), ("fist", 2), ("fistp", 2), ("fbld", 10), ("fild", 8), ("fbstp", 10), ("fistp", 8)],
+}
+X87_REG = {
+    0xD8: [("fadd", 1), ("fmul", 1), ("fcom", 3), ("fcomp", 3), ("fsub", 1), ("fsubr", 1), ("fdiv", 1), ("fdivr", 1)],
+    0xD9: [("fld", 3), ("fxch", 3), None, ("fstp1", 3), None, None, None, None],
+    0xDA: [("fcmovb", 1), ("fcmove", 1), ("fcmovbe", 1), ("fcmovu", 1), None, None, None, None],
+    0xDB: [("fcmovnb", 1), ("fcmovne", 1), ("fcmovnbe", 1), ("fcmovnu", 1), None, ("fucomi", 1), ("fcomi", 1), None],
+    0xDC: [("fadd", 2), ("fmul", 2), ("fcom2", 3), ("fcomp3", 3), ("fsubr", 2), ("fsub", 2), ("fdivr", 2), ("fdiv", 2)],
+    0xDD: [("ffree", 3), ("fxch4", 3), ("fst", 3), ("fstp", 3), ("fucom", 3), ("fucomp", 3), None, None],
+    0xDE: [("faddp", 2), ("fmulp", 2), ("fcomp5", 3), None, ("fsubrp", 2), ("fsubp", 2), ("fdivrp", 2), ("fdivp", 2)],
+    0xDF: [("ffreep", 3), ("fxch7", 3), ("fstp8", 3), ("fstp9", 3), None, ("fucomip", 1), ("fcomip", 1), None],
+}
+X87_FIX = [(0xD9, 0xD0, "fnop", 0)] + [(0xD9, 0xE0 + i, n, 0) for i, n in enumerate(
+    "fchs fabs - - ftst fxam - - fld1 fldl2t fldl2e fldpi fldlg2 fldln2 fldz - "
+    "f2xm1 fyl2x fptan fpatan fxtract fprem1 fdecstp fincstp fprem fyl2xp1 fsqrt fsincos "
+    "frndint fscale fsin fcos".split()) if n != "-"] + [
+    (0xDA, 0xE9, "fucompp", 0), (0xDB, 0xE2, "fnclex", 0), (0xDB, 0xE3, "fninit", 0),
+    (0xDE, 0xD9, "fcompp", 0), (0xDF, 0xE0, "fnstsw", 1)]
+
+def x87_tables():
+    out = ["x87_mem:"]
+    for code in range(0xD8, 0xE0):
+        for e in X87_MEM[code]:
+            n, size = e if e else ("(bad)", 0xFF)
+            out.append('    db "%s"%s, %d' % (n, ", 0" * (15 - len(n)), size))
+    out.append("x87_reg:")
+    for code in range(0xD8, 0xE0):
+        for e in X87_REG[code]:
+            n, shape = e if e else ("", 0)
+            out.append('    db %s%s, %d' % (('"%s", ' % n) if n else "", ", ".join(["0"] * (15 - len(n))), shape))
+    out.append("x87_fix:")
+    for code, modrm, n, opnd in X87_FIX:
+        out.append('    db 0x%02X, 0x%02X, "%s"%s, %d' % (code, modrm, n, ", 0" * (13 - len(n)), opnd))
+    out.append("    db 0")
+    return out
 
 # ---- integer extras in the 0F map ----
 group("g16", [("prefetchnta", "Eb", 0), ("prefetcht0", "Eb", 0), ("prefetcht1", "Eb", 0), ("prefetcht2", "Eb", 0),
