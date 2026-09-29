@@ -9,60 +9,60 @@ x86_names:
     db "cmp", 0, "push", 0, "pop", 0, "movsxd", 0, "imul", 0, "jo", 0, "jno", 0, "jb", 0
     db "jae", 0, "je", 0, "jne", 0, "jbe", 0, "ja", 0, "js", 0, "jns", 0, "jp", 0
     db "jnp", 0, "jl", 0, "jge", 0, "jle", 0, "jg", 0, "test", 0, "xchg", 0, "mov", 0
-    db "lea", 0, "nop", 0, "cwde", 0, "cdq", 0, "movs", 0, "cmps", 0, "stos", 0, "lods", 0
-    db "scas", 0, "ret", 0, "leave", 0, "int3", 0, "int", 0, "loopne", 0, "loope", 0, "loop", 0
-    db "jrcxz", 0, "call", 0, "jmp", 0, "hlt", 0, "cmc", 0, "clc", 0, "stc", 0, "cli", 0
-    db "sti", 0, "cld", 0, "std", 0, "(0f01)", 0, "syscall", 0, "sysret", 0, "ud2", 0, "rdtsc", 0
-    db "cmovo", 0, "cmovno", 0, "cmovb", 0, "cmovae", 0, "cmove", 0, "cmovne", 0, "cmovbe", 0, "cmova", 0
-    db "cmovs", 0, "cmovns", 0, "cmovp", 0, "cmovnp", 0, "cmovl", 0, "cmovge", 0, "cmovle", 0, "cmovg", 0
-    db "seto", 0, "setno", 0, "setb", 0, "setae", 0, "sete", 0, "setne", 0, "setbe", 0, "seta", 0
-    db "sets", 0, "setns", 0, "setp", 0, "setnp", 0, "setl", 0, "setge", 0, "setle", 0, "setg", 0
-    db "cpuid", 0, "bt", 0, "shld", 0, "bts", 0, "shrd", 0, "(0fae)", 0, "cmpxchg", 0, "btr", 0
-    db "movzx", 0, "btc", 0, "bsf", 0, "bsr", 0, "movsx", 0, "xadd", 0, "bswap", 0, "movups", 0
-    db "movupd", 0, "movss", 0, "movsd", 0, "movlps", 0, "movlpd", 0, "movsldup", 0, "movddup", 0, "unpcklps", 0
-    db "unpcklpd", 0, "unpckhps", 0, "unpckhpd", 0, "movhps", 0, "movhpd", 0, "movshdup", 0, "endbr64", 0, "movaps", 0
-    db "movapd", 0, "cvtsi2ss", 0, "cvtsi2sd", 0, "movntps", 0, "movntpd", 0, "cvttss2si", 0, "cvttsd2si", 0, "cvtss2si", 0
-    db "cvtsd2si", 0, "ucomiss", 0, "ucomisd", 0, "comiss", 0, "comisd", 0, "movmskps", 0, "movmskpd", 0, "sqrtps", 0
-    db "sqrtpd", 0, "sqrtss", 0, "sqrtsd", 0, "rsqrtps", 0, "rsqrtss", 0, "rcpps", 0, "rcpss", 0, "andps", 0
-    db "andpd", 0, "andnps", 0, "andnpd", 0, "orps", 0, "orpd", 0, "xorps", 0, "xorpd", 0, "addps", 0
-    db "addpd", 0, "addss", 0, "addsd", 0, "mulps", 0, "mulpd", 0, "mulss", 0, "mulsd", 0, "cvtps2pd", 0
-    db "cvtpd2ps", 0, "cvtss2sd", 0, "cvtsd2ss", 0, "cvtdq2ps", 0, "cvtps2dq", 0, "cvttps2dq", 0, "subps", 0, "subpd", 0
-    db "subss", 0, "subsd", 0, "minps", 0, "minpd", 0, "minss", 0, "minsd", 0, "divps", 0, "divpd", 0
-    db "divss", 0, "divsd", 0, "maxps", 0, "maxpd", 0, "maxss", 0, "maxsd", 0, "punpcklbw", 0, "punpcklwd", 0
-    db "punpckldq", 0, "packsswb", 0, "pcmpgtb", 0, "pcmpgtw", 0, "pcmpgtd", 0, "packuswb", 0, "punpckhbw", 0, "punpckhwd", 0
-    db "punpckhdq", 0, "packssdw", 0, "punpcklqdq", 0, "punpckhqdq", 0, "movd", 0, "movq", 0, "movdqa", 0, "movdqu", 0
-    db "pshufw", 0, "pshufd", 0, "pshufhw", 0, "pshuflw", 0, "pcmpeqb", 0, "pcmpeqw", 0, "pcmpeqd", 0, "emms", 0
-    db "haddpd", 0, "haddps", 0, "hsubpd", 0, "hsubps", 0, "popcnt", 0, "tzcnt", 0, "lzcnt", 0, "cmpps", 0
-    db "cmppd", 0, "cmpss", 0, "cmpsd", 0, "movnti", 0, "pinsrw", 0, "pextrw", 0, "shufps", 0, "shufpd", 0
-    db "addsubpd", 0, "addsubps", 0, "psrlw", 0, "psrld", 0, "psrlq", 0, "paddq", 0, "pmullw", 0, "pmovmskb", 0
-    db "psubusb", 0, "psubusw", 0, "pminub", 0, "pand", 0, "paddusb", 0, "paddusw", 0, "pmaxub", 0, "pandn", 0
-    db "pavgb", 0, "psraw", 0, "psrad", 0, "pavgw", 0, "pmulhuw", 0, "pmulhw", 0, "cvttpd2dq", 0, "cvtdq2pd", 0
-    db "cvtpd2dq", 0, "movntq", 0, "movntdq", 0, "psubsb", 0, "psubsw", 0, "pminsw", 0, "por", 0, "paddsb", 0
-    db "paddsw", 0, "pmaxsw", 0, "pxor", 0, "lddqu", 0, "psllw", 0, "pslld", 0, "psllq", 0, "pmuludq", 0
-    db "pmaddwd", 0, "psadbw", 0, "maskmovdqu", 0, "psubb", 0, "psubw", 0, "psubd", 0, "psubq", 0, "paddb", 0
-    db "paddw", 0, "paddd", 0, "pshufb", 0, "phaddw", 0, "phaddd", 0, "phaddsw", 0, "pmaddubsw", 0, "phsubw", 0
-    db "phsubd", 0, "phsubsw", 0, "psignb", 0, "psignw", 0, "psignd", 0, "pmulhrsw", 0, "pblendvb", 0, "blendvps", 0
-    db "blendvpd", 0, "ptest", 0, "pabsb", 0, "pabsw", 0, "pabsd", 0, "pmovsxbw", 0, "pmovsxbd", 0, "pmovsxbq", 0
-    db "pmovsxwd", 0, "pmovsxwq", 0, "pmovsxdq", 0, "pmuldq", 0, "pcmpeqq", 0, "movntdqa", 0, "packusdw", 0, "pmovzxbw", 0
-    db "pmovzxbd", 0, "pmovzxbq", 0, "pmovzxwd", 0, "pmovzxwq", 0, "pmovzxdq", 0, "pcmpgtq", 0, "pminsb", 0, "pminsd", 0
-    db "pminuw", 0, "pminud", 0, "pmaxsb", 0, "pmaxsd", 0, "pmaxuw", 0, "pmaxud", 0, "pmulld", 0, "phminposuw", 0
-    db "aesimc", 0, "aesenc", 0, "aesenclast", 0, "aesdec", 0, "aesdeclast", 0, "movbe", 0, "crc32", 0, "roundps", 0
-    db "roundpd", 0, "roundss", 0, "roundsd", 0, "blendps", 0, "blendpd", 0, "pblendw", 0, "palignr", 0, "pextrb", 0
-    db "pextrd", 0, "extractps", 0, "pinsrb", 0, "insertps", 0, "pinsrd", 0, "dpps", 0, "dppd", 0, "mpsadbw", 0
-    db "pclmulqdq", 0, "pcmpestrm", 0, "pcmpestri", 0, "pcmpistrm", 0, "pcmpistri", 0, "aeskeygenassist", 0, "vzeroupper", 0, "vpermilps", 0
-    db "vpermilpd", 0, "vtestps", 0, "vtestpd", 0, "vpermps", 0, "vbroadcastss", 0, "vbroadcastsd", 0, "vbroadcastf128", 0, "vmaskmovps", 0
-    db "vmaskmovpd", 0, "vpermd", 0, "vpsrlvd", 0, "vpsravd", 0, "vpsllvd", 0, "vpbroadcastd", 0, "vpbroadcastq", 0, "vbroadcasti128", 0
-    db "vpbroadcastb", 0, "vpbroadcastw", 0, "vpmaskmovd", 0, "vfmaddsub132ps", 0, "vfmsubadd132ps", 0, "vfmadd132ps", 0, "vfmadd132ss", 0, "vfmsub132ps", 0
-    db "vfmsub132ss", 0, "vfnmadd132ps", 0, "vfnmadd132ss", 0, "vfnmsub132ps", 0, "vfnmsub132ss", 0, "vfmaddsub213ps", 0, "vfmsubadd213ps", 0, "vfmadd213ps", 0
-    db "vfmadd213ss", 0, "vfmsub213ps", 0, "vfmsub213ss", 0, "vfnmadd213ps", 0, "vfnmadd213ss", 0, "vfnmsub213ps", 0, "vfnmsub213ss", 0, "vfmaddsub231ps", 0
-    db "vfmsubadd231ps", 0, "vfmadd231ps", 0, "vfmadd231ss", 0, "vfmsub231ps", 0, "vfmsub231ss", 0, "vfnmadd231ps", 0, "vfnmadd231ss", 0, "vfnmsub231ps", 0
-    db "vfnmsub231ss", 0, "andn", 0, "bzhi", 0, "pext", 0, "pdep", 0, "mulx", 0, "bextr", 0, "shlx", 0
-    db "sarx", 0, "shrx", 0, "vpermq", 0, "vpermpd", 0, "vpblendd", 0, "vperm2f128", 0, "vinsertf128", 0, "vextractf128", 0
-    db "vinserti128", 0, "vextracti128", 0, "vperm2i128", 0, "vblendvps", 0, "vblendvpd", 0, "vpblendvb", 0, "rorx", 0, "rol", 0
-    db "ror", 0, "rcl", 0, "rcr", 0, "shl", 0, "shr", 0, "sar", 0, "not", 0, "neg", 0
-    db "mul", 0, "div", 0, "idiv", 0, "inc", 0, "dec", 0, "sldt", 0, "str", 0, "lldt", 0
-    db "ltr", 0, "verr", 0, "verw", 0, "psrldq", 0, "pslldq", 0, "blsr", 0, "blsmsk", 0, "blsi", 0
-    db "prefetchnta", 0, "prefetcht0", 0, "prefetcht1", 0, "prefetcht2", 0
+    db "lea", 0, "nop", 0, "cwde", 0, "cdq", 0, "fwait", 0, "movs", 0, "cmps", 0, "stos", 0
+    db "lods", 0, "scas", 0, "ret", 0, "leave", 0, "int3", 0, "int", 0, "(x87)", 0, "loopne", 0
+    db "loope", 0, "loop", 0, "jrcxz", 0, "call", 0, "jmp", 0, "hlt", 0, "cmc", 0, "clc", 0
+    db "stc", 0, "cli", 0, "sti", 0, "cld", 0, "std", 0, "(0f01)", 0, "syscall", 0, "sysret", 0
+    db "ud2", 0, "rdtsc", 0, "cmovo", 0, "cmovno", 0, "cmovb", 0, "cmovae", 0, "cmove", 0, "cmovne", 0
+    db "cmovbe", 0, "cmova", 0, "cmovs", 0, "cmovns", 0, "cmovp", 0, "cmovnp", 0, "cmovl", 0, "cmovge", 0
+    db "cmovle", 0, "cmovg", 0, "seto", 0, "setno", 0, "setb", 0, "setae", 0, "sete", 0, "setne", 0
+    db "setbe", 0, "seta", 0, "sets", 0, "setns", 0, "setp", 0, "setnp", 0, "setl", 0, "setge", 0
+    db "setle", 0, "setg", 0, "cpuid", 0, "bt", 0, "shld", 0, "bts", 0, "shrd", 0, "(0fae)", 0
+    db "cmpxchg", 0, "btr", 0, "movzx", 0, "btc", 0, "bsf", 0, "bsr", 0, "movsx", 0, "xadd", 0
+    db "bswap", 0, "movups", 0, "movupd", 0, "movss", 0, "movsd", 0, "movlps", 0, "movlpd", 0, "movsldup", 0
+    db "movddup", 0, "unpcklps", 0, "unpcklpd", 0, "unpckhps", 0, "unpckhpd", 0, "movhps", 0, "movhpd", 0, "movshdup", 0
+    db "endbr64", 0, "movaps", 0, "movapd", 0, "cvtsi2ss", 0, "cvtsi2sd", 0, "movntps", 0, "movntpd", 0, "cvttss2si", 0
+    db "cvttsd2si", 0, "cvtss2si", 0, "cvtsd2si", 0, "ucomiss", 0, "ucomisd", 0, "comiss", 0, "comisd", 0, "movmskps", 0
+    db "movmskpd", 0, "sqrtps", 0, "sqrtpd", 0, "sqrtss", 0, "sqrtsd", 0, "rsqrtps", 0, "rsqrtss", 0, "rcpps", 0
+    db "rcpss", 0, "andps", 0, "andpd", 0, "andnps", 0, "andnpd", 0, "orps", 0, "orpd", 0, "xorps", 0
+    db "xorpd", 0, "addps", 0, "addpd", 0, "addss", 0, "addsd", 0, "mulps", 0, "mulpd", 0, "mulss", 0
+    db "mulsd", 0, "cvtps2pd", 0, "cvtpd2ps", 0, "cvtss2sd", 0, "cvtsd2ss", 0, "cvtdq2ps", 0, "cvtps2dq", 0, "cvttps2dq", 0
+    db "subps", 0, "subpd", 0, "subss", 0, "subsd", 0, "minps", 0, "minpd", 0, "minss", 0, "minsd", 0
+    db "divps", 0, "divpd", 0, "divss", 0, "divsd", 0, "maxps", 0, "maxpd", 0, "maxss", 0, "maxsd", 0
+    db "punpcklbw", 0, "punpcklwd", 0, "punpckldq", 0, "packsswb", 0, "pcmpgtb", 0, "pcmpgtw", 0, "pcmpgtd", 0, "packuswb", 0
+    db "punpckhbw", 0, "punpckhwd", 0, "punpckhdq", 0, "packssdw", 0, "punpcklqdq", 0, "punpckhqdq", 0, "movd", 0, "movq", 0
+    db "movdqa", 0, "movdqu", 0, "pshufw", 0, "pshufd", 0, "pshufhw", 0, "pshuflw", 0, "pcmpeqb", 0, "pcmpeqw", 0
+    db "pcmpeqd", 0, "emms", 0, "haddpd", 0, "haddps", 0, "hsubpd", 0, "hsubps", 0, "popcnt", 0, "tzcnt", 0
+    db "lzcnt", 0, "cmpps", 0, "cmppd", 0, "cmpss", 0, "cmpsd", 0, "movnti", 0, "pinsrw", 0, "pextrw", 0
+    db "shufps", 0, "shufpd", 0, "addsubpd", 0, "addsubps", 0, "psrlw", 0, "psrld", 0, "psrlq", 0, "paddq", 0
+    db "pmullw", 0, "pmovmskb", 0, "psubusb", 0, "psubusw", 0, "pminub", 0, "pand", 0, "paddusb", 0, "paddusw", 0
+    db "pmaxub", 0, "pandn", 0, "pavgb", 0, "psraw", 0, "psrad", 0, "pavgw", 0, "pmulhuw", 0, "pmulhw", 0
+    db "cvttpd2dq", 0, "cvtdq2pd", 0, "cvtpd2dq", 0, "movntq", 0, "movntdq", 0, "psubsb", 0, "psubsw", 0, "pminsw", 0
+    db "por", 0, "paddsb", 0, "paddsw", 0, "pmaxsw", 0, "pxor", 0, "lddqu", 0, "psllw", 0, "pslld", 0
+    db "psllq", 0, "pmuludq", 0, "pmaddwd", 0, "psadbw", 0, "maskmovdqu", 0, "psubb", 0, "psubw", 0, "psubd", 0
+    db "psubq", 0, "paddb", 0, "paddw", 0, "paddd", 0, "pshufb", 0, "phaddw", 0, "phaddd", 0, "phaddsw", 0
+    db "pmaddubsw", 0, "phsubw", 0, "phsubd", 0, "phsubsw", 0, "psignb", 0, "psignw", 0, "psignd", 0, "pmulhrsw", 0
+    db "pblendvb", 0, "blendvps", 0, "blendvpd", 0, "ptest", 0, "pabsb", 0, "pabsw", 0, "pabsd", 0, "pmovsxbw", 0
+    db "pmovsxbd", 0, "pmovsxbq", 0, "pmovsxwd", 0, "pmovsxwq", 0, "pmovsxdq", 0, "pmuldq", 0, "pcmpeqq", 0, "movntdqa", 0
+    db "packusdw", 0, "pmovzxbw", 0, "pmovzxbd", 0, "pmovzxbq", 0, "pmovzxwd", 0, "pmovzxwq", 0, "pmovzxdq", 0, "pcmpgtq", 0
+    db "pminsb", 0, "pminsd", 0, "pminuw", 0, "pminud", 0, "pmaxsb", 0, "pmaxsd", 0, "pmaxuw", 0, "pmaxud", 0
+    db "pmulld", 0, "phminposuw", 0, "aesimc", 0, "aesenc", 0, "aesenclast", 0, "aesdec", 0, "aesdeclast", 0, "movbe", 0
+    db "crc32", 0, "roundps", 0, "roundpd", 0, "roundss", 0, "roundsd", 0, "blendps", 0, "blendpd", 0, "pblendw", 0
+    db "palignr", 0, "pextrb", 0, "pextrd", 0, "extractps", 0, "pinsrb", 0, "insertps", 0, "pinsrd", 0, "dpps", 0
+    db "dppd", 0, "mpsadbw", 0, "pclmulqdq", 0, "pcmpestrm", 0, "pcmpestri", 0, "pcmpistrm", 0, "pcmpistri", 0, "aeskeygenassist", 0
+    db "vzeroupper", 0, "vpermilps", 0, "vpermilpd", 0, "vtestps", 0, "vtestpd", 0, "vpermps", 0, "vbroadcastss", 0, "vbroadcastsd", 0
+    db "vbroadcastf128", 0, "vmaskmovps", 0, "vmaskmovpd", 0, "vpermd", 0, "vpsrlvd", 0, "vpsravd", 0, "vpsllvd", 0, "vpbroadcastd", 0
+    db "vpbroadcastq", 0, "vbroadcasti128", 0, "vpbroadcastb", 0, "vpbroadcastw", 0, "vpmaskmovd", 0, "vfmaddsub132ps", 0, "vfmsubadd132ps", 0, "vfmadd132ps", 0
+    db "vfmadd132ss", 0, "vfmsub132ps", 0, "vfmsub132ss", 0, "vfnmadd132ps", 0, "vfnmadd132ss", 0, "vfnmsub132ps", 0, "vfnmsub132ss", 0, "vfmaddsub213ps", 0
+    db "vfmsubadd213ps", 0, "vfmadd213ps", 0, "vfmadd213ss", 0, "vfmsub213ps", 0, "vfmsub213ss", 0, "vfnmadd213ps", 0, "vfnmadd213ss", 0, "vfnmsub213ps", 0
+    db "vfnmsub213ss", 0, "vfmaddsub231ps", 0, "vfmsubadd231ps", 0, "vfmadd231ps", 0, "vfmadd231ss", 0, "vfmsub231ps", 0, "vfmsub231ss", 0, "vfnmadd231ps", 0
+    db "vfnmadd231ss", 0, "vfnmsub231ps", 0, "vfnmsub231ss", 0, "andn", 0, "bzhi", 0, "pext", 0, "pdep", 0, "mulx", 0
+    db "bextr", 0, "shlx", 0, "sarx", 0, "shrx", 0, "vpermq", 0, "vpermpd", 0, "vpblendd", 0, "vperm2f128", 0
+    db "vinsertf128", 0, "vextractf128", 0, "vinserti128", 0, "vextracti128", 0, "vperm2i128", 0, "vblendvps", 0, "vblendvpd", 0, "vpblendvb", 0
+    db "rorx", 0, "rol", 0, "ror", 0, "rcl", 0, "rcr", 0, "shl", 0, "shr", 0, "sar", 0
+    db "not", 0, "neg", 0, "mul", 0, "div", 0, "idiv", 0, "inc", 0, "dec", 0, "sldt", 0
+    db "str", 0, "lldt", 0, "ltr", 0, "verr", 0, "verw", 0, "psrldq", 0, "pslldq", 0, "blsr", 0
+    db "blsmsk", 0, "blsi", 0, "prefetchnta", 0, "prefetcht0", 0, "prefetcht1", 0, "prefetcht2", 0
 
 x86_map1:
     dw 0x0006
@@ -375,7 +375,7 @@ x86_map1:
     db 40, 0x00        ; 99
     dw 0xffff
     db  0, 0x00        ; 9a
-    dw 0xffff
+    dw 0x0091
     db  0, 0x00        ; 9b
     dw 0xffff
     db  0, 0x00        ; 9c
@@ -393,29 +393,29 @@ x86_map1:
     db  0, 0x00        ; a2
     dw 0xffff
     db  0, 0x00        ; a3
-    dw 0x0091
+    dw 0x0097
     db 37, 0x04        ; a4
-    dw 0x0091
+    dw 0x0097
     db 37, 0x00        ; a5
-    dw 0x0096
+    dw 0x009c
     db 37, 0x04        ; a6
-    dw 0x0096
+    dw 0x009c
     db 37, 0x00        ; a7
     dw 0x0072
     db  5, 0x04        ; a8
     dw 0x0072
     db  6, 0x00        ; a9
-    dw 0x009b
+    dw 0x00a1
     db 37, 0x04        ; aa
-    dw 0x009b
+    dw 0x00a1
     db 37, 0x00        ; ab
-    dw 0x00a0
+    dw 0x00a6
     db 37, 0x04        ; ac
-    dw 0x00a0
+    dw 0x00a6
     db 37, 0x00        ; ad
-    dw 0x00a5
+    dw 0x00ab
     db 37, 0x04        ; ae
-    dw 0x00a5
+    dw 0x00ab
     db 37, 0x00        ; af
     dw 0x007c
     db  8, 0x04        ; b0
@@ -453,9 +453,9 @@ x86_map1:
     db 21, 0x07        ; c0
     dw 0x0002
     db 22, 0x03        ; c1
-    dw 0x00aa
+    dw 0x00b0
     db 32, 0x00        ; c2
-    dw 0x00aa
+    dw 0x00b0
     db  0, 0x00        ; c3
     dw 0xffff
     db  0, 0x00        ; c4
@@ -467,15 +467,15 @@ x86_map1:
     db 15, 0x03        ; c7
     dw 0xffff
     db  0, 0x00        ; c8
-    dw 0x00ae
+    dw 0x00b4
     db  0, 0x00        ; c9
     dw 0xffff
     db  0, 0x00        ; ca
     dw 0xffff
     db  0, 0x00        ; cb
-    dw 0x00b4
+    dw 0x00ba
     db  0, 0x00        ; cc
-    dw 0x00b9
+    dw 0x00bf
     db 29, 0x00        ; cd
     dw 0xffff
     db  0, 0x00        ; ce
@@ -497,29 +497,29 @@ x86_map1:
     db  0, 0x00        ; d6
     dw 0xffff
     db  0, 0x00        ; d7
-    dw 0xffff
-    db  0, 0x00        ; d8
-    dw 0xffff
-    db  0, 0x00        ; d9
-    dw 0xffff
-    db  0, 0x00        ; da
-    dw 0xffff
-    db  0, 0x00        ; db
-    dw 0xffff
-    db  0, 0x00        ; dc
-    dw 0xffff
-    db  0, 0x00        ; dd
-    dw 0xffff
-    db  0, 0x00        ; de
-    dw 0xffff
-    db  0, 0x00        ; df
-    dw 0x00bd
+    dw 0x00c3
+    db 73, 0x01        ; d8
+    dw 0x00c3
+    db 73, 0x01        ; d9
+    dw 0x00c3
+    db 73, 0x01        ; da
+    dw 0x00c3
+    db 73, 0x01        ; db
+    dw 0x00c3
+    db 73, 0x01        ; dc
+    dw 0x00c3
+    db 73, 0x01        ; dd
+    dw 0x00c3
+    db 73, 0x01        ; de
+    dw 0x00c3
+    db 73, 0x01        ; df
+    dw 0x00c9
     db 10, 0x00        ; e0
-    dw 0x00c4
+    dw 0x00d0
     db 10, 0x00        ; e1
-    dw 0x00ca
+    dw 0x00d6
     db 10, 0x00        ; e2
-    dw 0x00cf
+    dw 0x00db
     db 10, 0x00        ; e3
     dw 0xffff
     db  0, 0x00        ; e4
@@ -529,13 +529,13 @@ x86_map1:
     db  0, 0x00        ; e6
     dw 0xffff
     db  0, 0x00        ; e7
-    dw 0x00d5
+    dw 0x00e1
     db 11, 0x10        ; e8
-    dw 0x00da
+    dw 0x00e6
     db 11, 0x10        ; e9
     dw 0xffff
     db  0, 0x00        ; ea
-    dw 0x00da
+    dw 0x00e6
     db 10, 0x00        ; eb
     dw 0xffff
     db  0, 0x00        ; ec
@@ -553,25 +553,25 @@ x86_map1:
     db  0, 0x00        ; f2
     dw 0xffff
     db  0, 0x00        ; f3
-    dw 0x00de
+    dw 0x00ea
     db  0, 0x00        ; f4
-    dw 0x00e2
+    dw 0x00ee
     db  0, 0x00        ; f5
     dw 0x0003
     db 12, 0x07        ; f6
     dw 0x0004
     db 13, 0x03        ; f7
-    dw 0x00e6
-    db  0, 0x00        ; f8
-    dw 0x00ea
-    db  0, 0x00        ; f9
-    dw 0x00ee
-    db  0, 0x00        ; fa
     dw 0x00f2
-    db  0, 0x00        ; fb
+    db  0, 0x00        ; f8
     dw 0x00f6
-    db  0, 0x00        ; fc
+    db  0, 0x00        ; f9
     dw 0x00fa
+    db  0, 0x00        ; fa
+    dw 0x00fe
+    db  0, 0x00        ; fb
+    dw 0x0102
+    db  0, 0x00        ; fc
+    dw 0x0106
     db  0, 0x00        ; fd
     dw 0x0005
     db 12, 0x07        ; fe
@@ -581,7 +581,7 @@ x86_map1:
 x86_map2:
     dw 0x000a
     db 41, 0x03        ; 00
-    dw 0x00fe
+    dw 0x010a
     db 42, 0x01        ; 01
     dw 0xffff
     db  0, 0x00        ; 02
@@ -589,11 +589,11 @@ x86_map2:
     db  0, 0x00        ; 03
     dw 0xffff
     db  0, 0x00        ; 04
-    dw 0x0105
+    dw 0x0111
     db  0, 0x00        ; 05
     dw 0xffff
     db  0, 0x00        ; 06
-    dw 0x010d
+    dw 0x0119
     db  0, 0x00        ; 07
     dw 0xffff
     db  0, 0x00        ; 08
@@ -601,7 +601,7 @@ x86_map2:
     db  0, 0x00        ; 09
     dw 0xffff
     db  0, 0x00        ; 0a
-    dw 0x0114
+    dw 0x0120
     db  0, 0x00        ; 0b
     dw 0xffff
     db  0, 0x00        ; 0c
@@ -677,7 +677,7 @@ x86_map2:
     db  0, 0x00        ; 2f
     dw 0xffff
     db  0, 0x00        ; 30
-    dw 0x0118
+    dw 0x0124
     db  0, 0x00        ; 31
     dw 0xffff
     db  0, 0x00        ; 32
@@ -707,37 +707,37 @@ x86_map2:
     db  0, 0x00        ; 3e
     dw 0xffff
     db  0, 0x00        ; 3f
-    dw 0x011e
+    dw 0x012a
     db  4, 0x01        ; 40
-    dw 0x0124
+    dw 0x0130
     db  4, 0x01        ; 41
-    dw 0x012b
+    dw 0x0137
     db  4, 0x01        ; 42
-    dw 0x0131
+    dw 0x013d
     db  4, 0x01        ; 43
-    dw 0x0138
+    dw 0x0144
     db  4, 0x01        ; 44
-    dw 0x013e
+    dw 0x014a
     db  4, 0x01        ; 45
-    dw 0x0145
+    dw 0x0151
     db  4, 0x01        ; 46
-    dw 0x014c
-    db  4, 0x01        ; 47
-    dw 0x0152
-    db  4, 0x01        ; 48
     dw 0x0158
+    db  4, 0x01        ; 47
+    dw 0x015e
+    db  4, 0x01        ; 48
+    dw 0x0164
     db  4, 0x01        ; 49
-    dw 0x015f
+    dw 0x016b
     db  4, 0x01        ; 4a
-    dw 0x0165
+    dw 0x0171
     db  4, 0x01        ; 4b
-    dw 0x016c
+    dw 0x0178
     db  4, 0x01        ; 4c
-    dw 0x0172
+    dw 0x017e
     db  4, 0x01        ; 4d
-    dw 0x0179
+    dw 0x0185
     db  4, 0x01        ; 4e
-    dw 0x0180
+    dw 0x018c
     db  4, 0x01        ; 4f
     dw 0xffff
     db  0, 0x00        ; 50
@@ -867,49 +867,49 @@ x86_map2:
     db 11, 0x10        ; 8e
     dw 0x006f
     db 11, 0x10        ; 8f
-    dw 0x0186
+    dw 0x0192
     db 12, 0x05        ; 90
-    dw 0x018b
+    dw 0x0197
     db 12, 0x05        ; 91
-    dw 0x0191
+    dw 0x019d
     db 12, 0x05        ; 92
-    dw 0x0196
+    dw 0x01a2
     db 12, 0x05        ; 93
-    dw 0x019c
+    dw 0x01a8
     db 12, 0x05        ; 94
-    dw 0x01a1
-    db 12, 0x05        ; 95
-    dw 0x01a7
-    db 12, 0x05        ; 96
     dw 0x01ad
+    db 12, 0x05        ; 95
+    dw 0x01b3
+    db 12, 0x05        ; 96
+    dw 0x01b9
     db 12, 0x05        ; 97
-    dw 0x01b2
+    dw 0x01be
     db 12, 0x05        ; 98
-    dw 0x01b7
+    dw 0x01c3
     db 12, 0x05        ; 99
-    dw 0x01bd
+    dw 0x01c9
     db 12, 0x05        ; 9a
-    dw 0x01c2
+    dw 0x01ce
     db 12, 0x05        ; 9b
-    dw 0x01c8
+    dw 0x01d4
     db 12, 0x05        ; 9c
-    dw 0x01cd
-    db 12, 0x05        ; 9d
-    dw 0x01d3
-    db 12, 0x05        ; 9e
     dw 0x01d9
+    db 12, 0x05        ; 9d
+    dw 0x01df
+    db 12, 0x05        ; 9e
+    dw 0x01e5
     db 12, 0x05        ; 9f
     dw 0xffff
     db  0, 0x00        ; a0
     dw 0xffff
     db  0, 0x00        ; a1
-    dw 0x01de
+    dw 0x01ea
     db  0, 0x00        ; a2
-    dw 0x01e4
+    dw 0x01f0
     db 34, 0x01        ; a3
-    dw 0x01e7
+    dw 0x01f3
     db 35, 0x01        ; a4
-    dw 0x01e7
+    dw 0x01f3
     db 36, 0x01        ; a5
     dw 0xffff
     db  0, 0x00        ; a6
@@ -921,31 +921,31 @@ x86_map2:
     db  0, 0x00        ; a9
     dw 0xffff
     db  0, 0x00        ; aa
-    dw 0x01ec
+    dw 0x01f8
     db 34, 0x01        ; ab
-    dw 0x01f0
+    dw 0x01fc
     db 35, 0x01        ; ac
-    dw 0x01f0
+    dw 0x01fc
     db 36, 0x01        ; ad
-    dw 0x01f5
+    dw 0x0201
     db 43, 0x01        ; ae
     dw 0x0035
     db  4, 0x01        ; af
-    dw 0x01fc
+    dw 0x0208
     db  1, 0x05        ; b0
-    dw 0x01fc
+    dw 0x0208
     db  2, 0x01        ; b1
     dw 0xffff
     db  0, 0x00        ; b2
-    dw 0x0204
+    dw 0x0210
     db 34, 0x01        ; b3
     dw 0xffff
     db  0, 0x00        ; b4
     dw 0xffff
     db  0, 0x00        ; b5
-    dw 0x0208
+    dw 0x0214
     db 26, 0x01        ; b6
-    dw 0x0208
+    dw 0x0214
     db 27, 0x01        ; b7
     dw 0xffff
     db  0, 0x00        ; b8
@@ -953,19 +953,19 @@ x86_map2:
     db  0, 0x00        ; b9
     dw 0x0007
     db 22, 0x03        ; ba
-    dw 0x020e
+    dw 0x021a
     db 34, 0x01        ; bb
-    dw 0x0212
+    dw 0x021e
     db  4, 0x01        ; bc
-    dw 0x0216
+    dw 0x0222
     db  4, 0x01        ; bd
-    dw 0x021a
+    dw 0x0226
     db 26, 0x01        ; be
-    dw 0x021a
+    dw 0x0226
     db 27, 0x01        ; bf
-    dw 0x0220
+    dw 0x022c
     db  1, 0x05        ; c0
-    dw 0x0220
+    dw 0x022c
     db  2, 0x01        ; c1
     dw 0xffff
     db  0, 0x00        ; c2
@@ -979,21 +979,21 @@ x86_map2:
     db  0, 0x00        ; c6
     dw 0xffff
     db  0, 0x00        ; c7
-    dw 0x0225
+    dw 0x0231
     db  7, 0x00        ; c8
-    dw 0x0225
+    dw 0x0231
     db  7, 0x00        ; c9
-    dw 0x0225
+    dw 0x0231
     db  7, 0x00        ; ca
-    dw 0x0225
+    dw 0x0231
     db  7, 0x00        ; cb
-    dw 0x0225
+    dw 0x0231
     db  7, 0x00        ; cc
-    dw 0x0225
+    dw 0x0231
     db  7, 0x00        ; cd
-    dw 0x0225
+    dw 0x0231
     db  7, 0x00        ; ce
-    dw 0x0225
+    dw 0x0231
     db  7, 0x00        ; cf
     dw 0xffff
     db  0, 0x00        ; d0
@@ -1221,65 +1221,65 @@ x86_sse0f:
     db  0, 0x00        ; 3e
     dw 0xffff
     db  0, 0x00        ; 3f
-    dw 0x022b
+    dw 0x0237
     db 44, 0x05        ; 40
-    dw 0x0232
+    dw 0x023e
     db 44, 0x05        ; 41
-    dw 0x0239
+    dw 0x0245
     db 44, 0x23        ; 42
-    dw 0x023f
+    dw 0x024b
     db 44, 0x24        ; 43
-    dw 0x022b
+    dw 0x0237
     db 45, 0x05        ; 44
-    dw 0x0232
+    dw 0x023e
     db 45, 0x05        ; 45
-    dw 0x0239
+    dw 0x0245
     db 45, 0x03        ; 46
-    dw 0x023f
+    dw 0x024b
     db 45, 0x04        ; 47
-    dw 0x0245
+    dw 0x0251
     db 54, 0x24        ; 48
-    dw 0x024c
+    dw 0x0258
     db 52, 0x24        ; 49
-    dw 0x0253
+    dw 0x025f
     db 44, 0x05        ; 4a
-    dw 0x025c
+    dw 0x0268
     db 44, 0x04        ; 4b
-    dw 0x0245
+    dw 0x0251
     db 53, 0x04        ; 4c
-    dw 0x024c
+    dw 0x0258
     db 53, 0x04        ; 4d
     dw 0xffff
     db  0, 0x00        ; 4e
     dw 0xffff
     db  0, 0x00        ; 4f
-    dw 0x0264
+    dw 0x0270
     db 44, 0x25        ; 50
-    dw 0x026d
+    dw 0x0279
     db 44, 0x25        ; 51
     dw 0xffff
     db  0, 0x00        ; 52
     dw 0xffff
     db  0, 0x00        ; 53
-    dw 0x0276
+    dw 0x0282
     db 44, 0x25        ; 54
-    dw 0x027f
+    dw 0x028b
     db 44, 0x25        ; 55
     dw 0xffff
     db  0, 0x00        ; 56
     dw 0xffff
     db  0, 0x00        ; 57
-    dw 0x0288
+    dw 0x0294
     db 54, 0x24        ; 58
-    dw 0x028f
+    dw 0x029b
     db 52, 0x24        ; 59
-    dw 0x0296
+    dw 0x02a2
     db 44, 0x05        ; 5a
     dw 0xffff
     db  0, 0x00        ; 5b
-    dw 0x0288
+    dw 0x0294
     db 53, 0x04        ; 5c
-    dw 0x028f
+    dw 0x029b
     db 53, 0x04        ; 5d
     dw 0xffff
     db  0, 0x00        ; 5e
@@ -1337,7 +1337,7 @@ x86_sse0f:
     db  0, 0x00        ; 78
     dw 0xffff
     db  0, 0x00        ; 79
-    dw 0x029f
+    dw 0x02ab
     db 61, 0x40        ; 7a
     dw 0xffff
     db  0, 0x00        ; 7b
@@ -1413,17 +1413,17 @@ x86_sse0f:
     db  0, 0x00        ; 9e
     dw 0xffff
     db  0, 0x00        ; 9f
-    dw 0x02a7
+    dw 0x02b3
     db 44, 0x05        ; a0
-    dw 0x02ae
+    dw 0x02ba
     db 44, 0x05        ; a1
     dw 0xffff
     db  0, 0x00        ; a2
     dw 0xffff
     db  0, 0x00        ; a3
-    dw 0x02a7
+    dw 0x02b3
     db 45, 0x05        ; a4
-    dw 0x02ae
+    dw 0x02ba
     db 45, 0x05        ; a5
     dw 0xffff
     db  0, 0x00        ; a6
@@ -1433,13 +1433,13 @@ x86_sse0f:
     db  0, 0x00        ; a8
     dw 0xffff
     db  0, 0x00        ; a9
-    dw 0x02b5
+    dw 0x02c1
     db 47, 0x20        ; aa
-    dw 0x02be
+    dw 0x02ca
     db 47, 0x20        ; ab
-    dw 0x02c7
+    dw 0x02d3
     db 53, 0x05        ; ac
-    dw 0x02cf
+    dw 0x02db
     db 53, 0x05        ; ad
     dw 0xffff
     db  0, 0x00        ; ae
@@ -1449,29 +1449,29 @@ x86_sse0f:
     db  0, 0x00        ; b0
     dw 0xffff
     db  0, 0x00        ; b1
-    dw 0x02d7
+    dw 0x02e3
     db 49, 0x03        ; b2
-    dw 0x02e1
+    dw 0x02ed
     db 49, 0x04        ; b3
     dw 0xffff
     db  0, 0x00        ; b4
     dw 0xffff
     db  0, 0x00        ; b5
-    dw 0x02eb
+    dw 0x02f7
     db 49, 0x03        ; b6
-    dw 0x02f4
+    dw 0x0300
     db 49, 0x04        ; b7
-    dw 0x02fd
+    dw 0x0309
     db 44, 0x03        ; b8
-    dw 0x0305
+    dw 0x0311
     db 44, 0x04        ; b9
     dw 0xffff
     db  0, 0x00        ; ba
     dw 0xffff
     db  0, 0x00        ; bb
-    dw 0x030d
+    dw 0x0319
     db 44, 0x03        ; bc
-    dw 0x0314
+    dw 0x0320
     db 44, 0x04        ; bd
     dw 0xffff
     db  0, 0x00        ; be
@@ -1733,225 +1733,225 @@ x86_sse0f:
     db  0, 0x00        ; 13e
     dw 0xffff
     db  0, 0x00        ; 13f
-    dw 0x031b
+    dw 0x0327
     db 50, 0x00        ; 140
-    dw 0x0324
+    dw 0x0330
     db 50, 0x00        ; 141
     dw 0xffff
     db  0, 0x00        ; 142
     dw 0xffff
     db  0, 0x00        ; 143
-    dw 0x032d
+    dw 0x0339
     db 44, 0x05        ; 144
-    dw 0x0334
+    dw 0x0340
     db 44, 0x05        ; 145
-    dw 0x033b
+    dw 0x0347
     db 44, 0x23        ; 146
-    dw 0x0342
+    dw 0x034e
     db 44, 0x24        ; 147
-    dw 0x0349
+    dw 0x0355
     db 44, 0x05        ; 148
     dw 0xffff
     db  0, 0x00        ; 149
-    dw 0x0351
+    dw 0x035d
     db 44, 0x23        ; 14a
     dw 0xffff
     db  0, 0x00        ; 14b
-    dw 0x0359
+    dw 0x0365
     db 44, 0x05        ; 14c
     dw 0xffff
     db  0, 0x00        ; 14d
-    dw 0x035f
+    dw 0x036b
     db 44, 0x23        ; 14e
     dw 0xffff
     db  0, 0x00        ; 14f
-    dw 0x0365
+    dw 0x0371
     db 44, 0x25        ; 150
-    dw 0x036b
+    dw 0x0377
     db 44, 0x25        ; 151
     dw 0xffff
     db  0, 0x00        ; 152
     dw 0xffff
     db  0, 0x00        ; 153
-    dw 0x0371
+    dw 0x037d
     db 44, 0x25        ; 154
-    dw 0x0378
+    dw 0x0384
     db 44, 0x25        ; 155
     dw 0xffff
     db  0, 0x00        ; 156
     dw 0xffff
     db  0, 0x00        ; 157
-    dw 0x037f
+    dw 0x038b
     db 44, 0x25        ; 158
-    dw 0x0384
+    dw 0x0390
     db 44, 0x25        ; 159
     dw 0xffff
     db  0, 0x00        ; 15a
     dw 0xffff
     db  0, 0x00        ; 15b
-    dw 0x0389
+    dw 0x0395
     db 44, 0x25        ; 15c
-    dw 0x038f
+    dw 0x039b
     db 44, 0x25        ; 15d
     dw 0xffff
     db  0, 0x00        ; 15e
     dw 0xffff
     db  0, 0x00        ; 15f
-    dw 0x0395
-    db 44, 0x25        ; 160
-    dw 0x039b
-    db 44, 0x25        ; 161
     dw 0x03a1
-    db 44, 0x23        ; 162
+    db 44, 0x25        ; 160
     dw 0x03a7
-    db 44, 0x24        ; 163
+    db 44, 0x25        ; 161
     dw 0x03ad
-    db 44, 0x25        ; 164
+    db 44, 0x23        ; 162
     dw 0x03b3
-    db 44, 0x25        ; 165
+    db 44, 0x24        ; 163
     dw 0x03b9
-    db 44, 0x23        ; 166
+    db 44, 0x25        ; 164
     dw 0x03bf
-    db 44, 0x24        ; 167
+    db 44, 0x25        ; 165
     dw 0x03c5
+    db 44, 0x23        ; 166
+    dw 0x03cb
+    db 44, 0x24        ; 167
+    dw 0x03d1
     db 44, 0x04        ; 168
-    dw 0x03ce
+    dw 0x03da
     db 44, 0x05        ; 169
-    dw 0x03d7
+    dw 0x03e3
     db 44, 0x23        ; 16a
-    dw 0x03e0
+    dw 0x03ec
     db 44, 0x24        ; 16b
-    dw 0x03e9
+    dw 0x03f5
     db 44, 0x05        ; 16c
-    dw 0x03f2
+    dw 0x03fe
     db 44, 0x05        ; 16d
-    dw 0x03fb
+    dw 0x0407
     db 44, 0x05        ; 16e
     dw 0xffff
     db  0, 0x00        ; 16f
-    dw 0x0405
-    db 44, 0x25        ; 170
-    dw 0x040b
-    db 44, 0x25        ; 171
     dw 0x0411
-    db 44, 0x23        ; 172
+    db 44, 0x25        ; 170
     dw 0x0417
-    db 44, 0x24        ; 173
+    db 44, 0x25        ; 171
     dw 0x041d
-    db 44, 0x25        ; 174
+    db 44, 0x23        ; 172
     dw 0x0423
-    db 44, 0x25        ; 175
+    db 44, 0x24        ; 173
     dw 0x0429
-    db 44, 0x23        ; 176
+    db 44, 0x25        ; 174
     dw 0x042f
-    db 44, 0x24        ; 177
+    db 44, 0x25        ; 175
     dw 0x0435
-    db 44, 0x25        ; 178
+    db 44, 0x23        ; 176
     dw 0x043b
-    db 44, 0x25        ; 179
+    db 44, 0x24        ; 177
     dw 0x0441
-    db 44, 0x23        ; 17a
+    db 44, 0x25        ; 178
     dw 0x0447
-    db 44, 0x24        ; 17b
+    db 44, 0x25        ; 179
     dw 0x044d
-    db 44, 0x25        ; 17c
+    db 44, 0x23        ; 17a
     dw 0x0453
-    db 44, 0x25        ; 17d
+    db 44, 0x24        ; 17b
     dw 0x0459
-    db 44, 0x23        ; 17e
+    db 44, 0x25        ; 17c
     dw 0x045f
+    db 44, 0x25        ; 17d
+    dw 0x0465
+    db 44, 0x23        ; 17e
+    dw 0x046b
     db 44, 0x24        ; 17f
-    dw 0x0465
+    dw 0x0471
     db 44, 0x4c        ; 180
-    dw 0x0465
+    dw 0x0471
     db 44, 0x25        ; 181
     dw 0xffff
     db  0, 0x00        ; 182
     dw 0xffff
     db  0, 0x00        ; 183
-    dw 0x046f
+    dw 0x047b
     db 44, 0x4c        ; 184
-    dw 0x046f
+    dw 0x047b
     db 44, 0x25        ; 185
     dw 0xffff
     db  0, 0x00        ; 186
     dw 0xffff
     db  0, 0x00        ; 187
-    dw 0x0479
+    dw 0x0485
     db 44, 0x4c        ; 188
-    dw 0x0479
+    dw 0x0485
     db 44, 0x25        ; 189
     dw 0xffff
     db  0, 0x00        ; 18a
     dw 0xffff
     db  0, 0x00        ; 18b
-    dw 0x0483
+    dw 0x048f
     db 44, 0x4c        ; 18c
-    dw 0x0483
+    dw 0x048f
     db 44, 0x25        ; 18d
     dw 0xffff
     db  0, 0x00        ; 18e
     dw 0xffff
     db  0, 0x00        ; 18f
-    dw 0x048c
+    dw 0x0498
     db 44, 0x4c        ; 190
-    dw 0x048c
+    dw 0x0498
     db 44, 0x25        ; 191
     dw 0xffff
     db  0, 0x00        ; 192
     dw 0xffff
     db  0, 0x00        ; 193
-    dw 0x0494
+    dw 0x04a0
     db 44, 0x4c        ; 194
-    dw 0x0494
+    dw 0x04a0
     db 44, 0x25        ; 195
     dw 0xffff
     db  0, 0x00        ; 196
     dw 0xffff
     db  0, 0x00        ; 197
-    dw 0x049c
+    dw 0x04a8
     db 44, 0x4c        ; 198
-    dw 0x049c
+    dw 0x04a8
     db 44, 0x25        ; 199
     dw 0xffff
     db  0, 0x00        ; 19a
     dw 0xffff
     db  0, 0x00        ; 19b
-    dw 0x04a4
+    dw 0x04b0
     db 44, 0x4c        ; 19c
-    dw 0x04a4
+    dw 0x04b0
     db 44, 0x25        ; 19d
     dw 0xffff
     db  0, 0x00        ; 19e
     dw 0xffff
     db  0, 0x00        ; 19f
-    dw 0x04ad
+    dw 0x04b9
     db 44, 0x4c        ; 1a0
-    dw 0x04ad
+    dw 0x04b9
     db 44, 0x25        ; 1a1
     dw 0xffff
     db  0, 0x00        ; 1a2
     dw 0xffff
     db  0, 0x00        ; 1a3
-    dw 0x04b7
+    dw 0x04c3
     db 44, 0x4c        ; 1a4
-    dw 0x04b7
+    dw 0x04c3
     db 44, 0x25        ; 1a5
     dw 0xffff
     db  0, 0x00        ; 1a6
     dw 0xffff
     db  0, 0x00        ; 1a7
-    dw 0x04c1
+    dw 0x04cd
     db 44, 0x4c        ; 1a8
-    dw 0x04c1
+    dw 0x04cd
     db 44, 0x25        ; 1a9
     dw 0xffff
     db  0, 0x00        ; 1aa
     dw 0xffff
     db  0, 0x00        ; 1ab
-    dw 0x04cb
+    dw 0x04d7
     db 44, 0x4c        ; 1ac
-    dw 0x04cb
+    dw 0x04d7
     db 44, 0x25        ; 1ad
     dw 0xffff
     db  0, 0x00        ; 1ae
@@ -1959,7 +1959,7 @@ x86_sse0f:
     db  0, 0x00        ; 1af
     dw 0xffff
     db  0, 0x00        ; 1b0
-    dw 0x04d4
+    dw 0x04e0
     db 44, 0x25        ; 1b1
     dw 0xffff
     db  0, 0x00        ; 1b2
@@ -1967,35 +1967,35 @@ x86_sse0f:
     db  0, 0x00        ; 1b3
     dw 0xffff
     db  0, 0x00        ; 1b4
-    dw 0x04df
+    dw 0x04eb
     db 44, 0x25        ; 1b5
     dw 0xffff
     db  0, 0x00        ; 1b6
     dw 0xffff
     db  0, 0x00        ; 1b7
-    dw 0x04ea
+    dw 0x04f6
     db 47, 0x58        ; 1b8
-    dw 0x04ea
+    dw 0x04f6
     db 47, 0x10        ; 1b9
     dw 0xffff
     db  0, 0x00        ; 1ba
     dw 0xffff
     db  0, 0x00        ; 1bb
-    dw 0x04ef
-    db 44, 0x4c        ; 1bc
-    dw 0x04f4
-    db 44, 0x05        ; 1bd
     dw 0x04fb
+    db 44, 0x4c        ; 1bc
+    dw 0x0500
+    db 44, 0x05        ; 1bd
+    dw 0x0507
     db 44, 0x05        ; 1be
     dw 0xffff
     db  0, 0x00        ; 1bf
-    dw 0x0502
+    dw 0x050e
     db 46, 0x4c        ; 1c0
-    dw 0x0509
+    dw 0x0515
     db 46, 0x05        ; 1c1
-    dw 0x0510
+    dw 0x051c
     db 46, 0x05        ; 1c2
-    dw 0x0518
+    dw 0x0524
     db 46, 0x05        ; 1c3
     dw 0x000b
     db 51, 0x48        ; 1c4
@@ -2021,31 +2021,31 @@ x86_sse0f:
     db  0, 0x00        ; 1ce
     dw 0xffff
     db  0, 0x00        ; 1cf
-    dw 0x0520
+    dw 0x052c
     db 44, 0x4c        ; 1d0
-    dw 0x0520
+    dw 0x052c
     db 44, 0x25        ; 1d1
     dw 0xffff
     db  0, 0x00        ; 1d2
     dw 0xffff
     db  0, 0x00        ; 1d3
-    dw 0x0528
+    dw 0x0534
     db 44, 0x4c        ; 1d4
-    dw 0x0528
+    dw 0x0534
     db 44, 0x25        ; 1d5
     dw 0xffff
     db  0, 0x00        ; 1d6
     dw 0xffff
     db  0, 0x00        ; 1d7
-    dw 0x0530
+    dw 0x053c
     db 44, 0x4c        ; 1d8
-    dw 0x0530
+    dw 0x053c
     db 44, 0x25        ; 1d9
     dw 0xffff
     db  0, 0x00        ; 1da
     dw 0xffff
     db  0, 0x00        ; 1db
-    dw 0x0538
+    dw 0x0544
     db  0, 0x00        ; 1dc
     dw 0xffff
     db  0, 0x00        ; 1dd
@@ -2087,33 +2087,33 @@ x86_sse0f:
     db  0, 0x00        ; 1ef
     dw 0xffff
     db  0, 0x00        ; 1f0
-    dw 0x053d
+    dw 0x0549
     db 44, 0x25        ; 1f1
     dw 0xffff
     db  0, 0x00        ; 1f2
-    dw 0x0544
+    dw 0x0550
     db 44, 0x25        ; 1f3
     dw 0xffff
     db  0, 0x00        ; 1f4
-    dw 0x054b
+    dw 0x0557
     db 44, 0x25        ; 1f5
     dw 0xffff
     db  0, 0x00        ; 1f6
-    dw 0x0552
+    dw 0x055e
     db 44, 0x25        ; 1f7
-    dw 0x04ea
+    dw 0x04f6
     db 48, 0x58        ; 1f8
-    dw 0x04ea
+    dw 0x04f6
     db 48, 0x10        ; 1f9
-    dw 0x04ef
+    dw 0x04fb
     db 44, 0x04        ; 1fa
     dw 0xffff
     db  0, 0x00        ; 1fb
-    dw 0x04ef
-    db 45, 0x4c        ; 1fc
-    dw 0x04f4
-    db 45, 0x05        ; 1fd
     dw 0x04fb
+    db 45, 0x4c        ; 1fc
+    dw 0x0500
+    db 45, 0x05        ; 1fd
+    dw 0x0507
     db 45, 0x05        ; 1fe
     dw 0xffff
     db  0, 0x00        ; 1ff
@@ -2569,7 +2569,7 @@ x86_sse0f:
     db  0, 0x00        ; 2e0
     dw 0xffff
     db  0, 0x00        ; 2e1
-    dw 0x0559
+    dw 0x0565
     db  4, 0x81        ; 2e2
     dw 0xffff
     db  0, 0x00        ; 2e3
@@ -2601,7 +2601,7 @@ x86_sse0f:
     db  0, 0x00        ; 2f0
     dw 0xffff
     db  0, 0x00        ; 2f1
-    dw 0x0560
+    dw 0x056c
     db  4, 0x81        ; 2f2
     dw 0xffff
     db  0, 0x00        ; 2f3
@@ -2609,7 +2609,7 @@ x86_sse0f:
     db  0, 0x00        ; 2f4
     dw 0xffff
     db  0, 0x00        ; 2f5
-    dw 0x0566
+    dw 0x0572
     db  4, 0x81        ; 2f6
     dw 0xffff
     db  0, 0x00        ; 2f7
@@ -2645,15 +2645,15 @@ x86_sse0f:
     db  0, 0x00        ; 306
     dw 0xffff
     db  0, 0x00        ; 307
-    dw 0x056c
-    db 59, 0x25        ; 308
-    dw 0x0572
-    db 59, 0x25        ; 309
     dw 0x0578
-    db 59, 0x23        ; 30a
+    db 59, 0x25        ; 308
     dw 0x057e
-    db 59, 0x24        ; 30b
+    db 59, 0x25        ; 309
     dw 0x0584
+    db 59, 0x23        ; 30a
+    dw 0x058a
+    db 59, 0x24        ; 30b
+    dw 0x0590
     db  2, 0x81        ; 30c
     dw 0xffff
     db  0, 0x00        ; 30d
@@ -2661,25 +2661,25 @@ x86_sse0f:
     db  0, 0x00        ; 30e
     dw 0xffff
     db  0, 0x00        ; 30f
-    dw 0x058b
+    dw 0x0597
     db 56, 0x4a        ; 310
-    dw 0x058b
+    dw 0x0597
     db 56, 0x22        ; 311
     dw 0xffff
     db  0, 0x00        ; 312
     dw 0xffff
     db  0, 0x00        ; 313
-    dw 0x0592
+    dw 0x059e
     db 57, 0x48        ; 314
-    dw 0x0592
+    dw 0x059e
     db 57, 0x00        ; 315
     dw 0xffff
     db  0, 0x00        ; 316
     dw 0xffff
     db  0, 0x00        ; 317
-    dw 0x0599
+    dw 0x05a5
     db 46, 0x25        ; 318
-    dw 0x05a0
+    dw 0x05ac
     db 46, 0x25        ; 319
     dw 0xffff
     db  0, 0x00        ; 31a
@@ -2759,47 +2759,47 @@ x86_sse0f:
     db  0, 0x00        ; 33f
     dw 0xffff
     db  0, 0x00        ; 340
-    dw 0x05a7
+    dw 0x05b3
     db 44, 0x25        ; 341
     dw 0xffff
     db  0, 0x00        ; 342
-    dw 0x05b0
+    dw 0x05bc
     db 44, 0x25        ; 343
-    dw 0x05b9
+    dw 0x05c5
     db 44, 0x4c        ; 344
-    dw 0x05b9
+    dw 0x05c5
     db 44, 0x25        ; 345
     dw 0xffff
     db  0, 0x00        ; 346
     dw 0xffff
     db  0, 0x00        ; 347
-    dw 0x05bf
+    dw 0x05cb
     db 44, 0x4c        ; 348
-    dw 0x05bf
+    dw 0x05cb
     db 44, 0x25        ; 349
     dw 0xffff
     db  0, 0x00        ; 34a
     dw 0xffff
     db  0, 0x00        ; 34b
-    dw 0x05c5
+    dw 0x05d1
     db 44, 0x4c        ; 34c
-    dw 0x05c5
+    dw 0x05d1
     db 44, 0x25        ; 34d
     dw 0xffff
     db  0, 0x00        ; 34e
     dw 0xffff
     db  0, 0x00        ; 34f
-    dw 0x05cb
+    dw 0x05d7
     db 44, 0x4c        ; 350
-    dw 0x05cb
+    dw 0x05d7
     db 44, 0x25        ; 351
     dw 0xffff
     db  0, 0x00        ; 352
     dw 0xffff
     db  0, 0x00        ; 353
-    dw 0x05d1
+    dw 0x05dd
     db 44, 0x4c        ; 354
-    dw 0x05d1
+    dw 0x05dd
     db 44, 0x25        ; 355
     dw 0xffff
     db  0, 0x00        ; 356
@@ -2807,127 +2807,127 @@ x86_sse0f:
     db  0, 0x00        ; 357
     dw 0xffff
     db  0, 0x00        ; 358
-    dw 0x04ef
+    dw 0x04fb
     db 45, 0x04        ; 359
     dw 0xffff
     db  0, 0x00        ; 35a
     dw 0xffff
     db  0, 0x00        ; 35b
-    dw 0x05d8
+    dw 0x05e4
     db 50, 0x48        ; 35c
-    dw 0x05d8
+    dw 0x05e4
     db 50, 0x00        ; 35d
     dw 0xffff
     db  0, 0x00        ; 35e
     dw 0xffff
     db  0, 0x00        ; 35f
-    dw 0x05e1
+    dw 0x05ed
     db 44, 0x4c        ; 360
-    dw 0x05e1
+    dw 0x05ed
     db 44, 0x25        ; 361
     dw 0xffff
     db  0, 0x00        ; 362
     dw 0xffff
     db  0, 0x00        ; 363
-    dw 0x05e9
+    dw 0x05f5
     db 44, 0x4c        ; 364
-    dw 0x05e9
+    dw 0x05f5
     db 44, 0x25        ; 365
     dw 0xffff
     db  0, 0x00        ; 366
     dw 0xffff
     db  0, 0x00        ; 367
-    dw 0x05f1
+    dw 0x05fd
     db 44, 0x4c        ; 368
-    dw 0x05f1
+    dw 0x05fd
     db 44, 0x25        ; 369
     dw 0xffff
     db  0, 0x00        ; 36a
     dw 0xffff
     db  0, 0x00        ; 36b
-    dw 0x05f8
+    dw 0x0604
     db 44, 0x4c        ; 36c
-    dw 0x05f8
+    dw 0x0604
     db 44, 0x25        ; 36d
     dw 0xffff
     db  0, 0x00        ; 36e
     dw 0xffff
     db  0, 0x00        ; 36f
-    dw 0x05fd
+    dw 0x0609
     db 44, 0x4c        ; 370
-    dw 0x05fd
+    dw 0x0609
     db 44, 0x25        ; 371
     dw 0xffff
     db  0, 0x00        ; 372
     dw 0xffff
     db  0, 0x00        ; 373
-    dw 0x0605
+    dw 0x0611
     db 44, 0x4c        ; 374
-    dw 0x0605
+    dw 0x0611
     db 44, 0x25        ; 375
     dw 0xffff
     db  0, 0x00        ; 376
     dw 0xffff
     db  0, 0x00        ; 377
-    dw 0x060d
+    dw 0x0619
     db 44, 0x4c        ; 378
-    dw 0x060d
+    dw 0x0619
     db 44, 0x25        ; 379
     dw 0xffff
     db  0, 0x00        ; 37a
     dw 0xffff
     db  0, 0x00        ; 37b
-    dw 0x0614
+    dw 0x0620
     db 44, 0x4c        ; 37c
-    dw 0x0614
+    dw 0x0620
     db 44, 0x25        ; 37d
     dw 0xffff
     db  0, 0x00        ; 37e
     dw 0xffff
     db  0, 0x00        ; 37f
-    dw 0x061a
+    dw 0x0626
     db 44, 0x4c        ; 380
-    dw 0x061a
+    dw 0x0626
     db 44, 0x25        ; 381
     dw 0xffff
     db  0, 0x00        ; 382
     dw 0xffff
     db  0, 0x00        ; 383
-    dw 0x0620
+    dw 0x062c
     db 44, 0x4c        ; 384
-    dw 0x0620
+    dw 0x062c
     db 44, 0x25        ; 385
     dw 0xffff
     db  0, 0x00        ; 386
     dw 0xffff
     db  0, 0x00        ; 387
-    dw 0x0626
+    dw 0x0632
     db 44, 0x4c        ; 388
-    dw 0x0626
+    dw 0x0632
     db 44, 0x25        ; 389
     dw 0xffff
     db  0, 0x00        ; 38a
     dw 0xffff
     db  0, 0x00        ; 38b
-    dw 0x062c
+    dw 0x0638
     db 44, 0x4c        ; 38c
-    dw 0x062c
+    dw 0x0638
     db 44, 0x25        ; 38d
     dw 0xffff
     db  0, 0x00        ; 38e
     dw 0xffff
     db  0, 0x00        ; 38f
-    dw 0x0632
+    dw 0x063e
     db 44, 0x4c        ; 390
-    dw 0x0632
+    dw 0x063e
     db 44, 0x25        ; 391
     dw 0xffff
     db  0, 0x00        ; 392
     dw 0xffff
     db  0, 0x00        ; 393
-    dw 0x063a
+    dw 0x0646
     db 44, 0x4c        ; 394
-    dw 0x063a
+    dw 0x0646
     db 44, 0x25        ; 395
     dw 0xffff
     db  0, 0x00        ; 396
@@ -2935,79 +2935,79 @@ x86_sse0f:
     db  0, 0x00        ; 397
     dw 0xffff
     db  0, 0x00        ; 398
-    dw 0x0641
+    dw 0x064d
     db 44, 0x05        ; 399
-    dw 0x064b
+    dw 0x0657
     db 44, 0x04        ; 39a
-    dw 0x0654
+    dw 0x0660
     db 44, 0x05        ; 39b
-    dw 0x065d
+    dw 0x0669
     db 53, 0x4c        ; 39c
-    dw 0x0664
+    dw 0x0670
     db 53, 0x05        ; 39d
     dw 0xffff
     db  0, 0x00        ; 39e
     dw 0xffff
     db  0, 0x00        ; 39f
-    dw 0x066c
+    dw 0x0678
     db 44, 0x4c        ; 3a0
-    dw 0x066c
+    dw 0x0678
     db 44, 0x25        ; 3a1
     dw 0xffff
     db  0, 0x00        ; 3a2
     dw 0xffff
     db  0, 0x00        ; 3a3
-    dw 0x0673
+    dw 0x067f
     db 44, 0x4c        ; 3a4
-    dw 0x0673
+    dw 0x067f
     db 44, 0x25        ; 3a5
     dw 0xffff
     db  0, 0x00        ; 3a6
     dw 0xffff
     db  0, 0x00        ; 3a7
-    dw 0x067a
+    dw 0x0686
     db 44, 0x4c        ; 3a8
-    dw 0x067a
+    dw 0x0686
     db 44, 0x25        ; 3a9
     dw 0xffff
     db  0, 0x00        ; 3aa
     dw 0xffff
     db  0, 0x00        ; 3ab
-    dw 0x0681
+    dw 0x068d
     db 44, 0x4c        ; 3ac
-    dw 0x0681
+    dw 0x068d
     db 44, 0x25        ; 3ad
     dw 0xffff
     db  0, 0x00        ; 3ae
     dw 0xffff
     db  0, 0x00        ; 3af
-    dw 0x0685
+    dw 0x0691
     db 44, 0x4c        ; 3b0
-    dw 0x0685
+    dw 0x0691
     db 44, 0x25        ; 3b1
     dw 0xffff
     db  0, 0x00        ; 3b2
     dw 0xffff
     db  0, 0x00        ; 3b3
-    dw 0x068c
+    dw 0x0698
     db 44, 0x4c        ; 3b4
-    dw 0x068c
+    dw 0x0698
     db 44, 0x25        ; 3b5
     dw 0xffff
     db  0, 0x00        ; 3b6
     dw 0xffff
     db  0, 0x00        ; 3b7
-    dw 0x0693
+    dw 0x069f
     db 44, 0x4c        ; 3b8
-    dw 0x0693
+    dw 0x069f
     db 44, 0x25        ; 3b9
     dw 0xffff
     db  0, 0x00        ; 3ba
     dw 0xffff
     db  0, 0x00        ; 3bb
-    dw 0x069a
+    dw 0x06a6
     db 44, 0x4c        ; 3bc
-    dw 0x069a
+    dw 0x06a6
     db 44, 0x25        ; 3bd
     dw 0xffff
     db  0, 0x00        ; 3be
@@ -3019,51 +3019,51 @@ x86_sse0f:
     db  0, 0x00        ; 3c1
     dw 0xffff
     db  0, 0x00        ; 3c2
-    dw 0x069f
+    dw 0x06ab
     db 52, 0x00        ; 3c3
-    dw 0x06a5
+    dw 0x06b1
     db 44, 0x4c        ; 3c4
-    dw 0x06a5
+    dw 0x06b1
     db 44, 0x25        ; 3c5
     dw 0xffff
     db  0, 0x00        ; 3c6
     dw 0xffff
     db  0, 0x00        ; 3c7
-    dw 0x06ab
+    dw 0x06b7
     db 44, 0x4c        ; 3c8
-    dw 0x06ab
+    dw 0x06b7
     db 44, 0x25        ; 3c9
     dw 0xffff
     db  0, 0x00        ; 3ca
     dw 0xffff
     db  0, 0x00        ; 3cb
-    dw 0x06b1
+    dw 0x06bd
     db 44, 0x4c        ; 3cc
-    dw 0x06b1
+    dw 0x06bd
     db 44, 0x25        ; 3cd
     dw 0xffff
     db  0, 0x00        ; 3ce
     dw 0xffff
     db  0, 0x00        ; 3cf
-    dw 0x06b7
+    dw 0x06c3
     db 44, 0x4c        ; 3d0
-    dw 0x06b7
+    dw 0x06c3
     db 44, 0x25        ; 3d1
     dw 0xffff
     db  0, 0x00        ; 3d2
     dw 0xffff
     db  0, 0x00        ; 3d3
-    dw 0x06bf
+    dw 0x06cb
     db 44, 0x4c        ; 3d4
-    dw 0x06bf
+    dw 0x06cb
     db 44, 0x25        ; 3d5
     dw 0xffff
     db  0, 0x00        ; 3d6
     dw 0xffff
     db  0, 0x00        ; 3d7
-    dw 0x06c7
+    dw 0x06d3
     db 44, 0x4c        ; 3d8
-    dw 0x06c7
+    dw 0x06d3
     db 44, 0x25        ; 3d9
     dw 0xffff
     db  0, 0x00        ; 3da
@@ -3071,63 +3071,63 @@ x86_sse0f:
     db  0, 0x00        ; 3db
     dw 0xffff
     db  0, 0x00        ; 3dc
-    dw 0x06ce
+    dw 0x06da
     db 44, 0x05        ; 3dd
     dw 0xffff
     db  0, 0x00        ; 3de
     dw 0xffff
     db  0, 0x00        ; 3df
-    dw 0x06d9
+    dw 0x06e5
     db 44, 0x4c        ; 3e0
-    dw 0x06d9
+    dw 0x06e5
     db 44, 0x25        ; 3e1
     dw 0xffff
     db  0, 0x00        ; 3e2
     dw 0xffff
     db  0, 0x00        ; 3e3
-    dw 0x06df
+    dw 0x06eb
     db 44, 0x4c        ; 3e4
-    dw 0x06df
+    dw 0x06eb
     db 44, 0x25        ; 3e5
     dw 0xffff
     db  0, 0x00        ; 3e6
     dw 0xffff
     db  0, 0x00        ; 3e7
-    dw 0x06e5
+    dw 0x06f1
     db 44, 0x4c        ; 3e8
-    dw 0x06e5
+    dw 0x06f1
     db 44, 0x25        ; 3e9
     dw 0xffff
     db  0, 0x00        ; 3ea
     dw 0xffff
     db  0, 0x00        ; 3eb
-    dw 0x06eb
+    dw 0x06f7
     db 44, 0x4c        ; 3ec
-    dw 0x06eb
+    dw 0x06f7
     db 44, 0x25        ; 3ed
     dw 0xffff
     db  0, 0x00        ; 3ee
     dw 0xffff
     db  0, 0x00        ; 3ef
-    dw 0x06f1
+    dw 0x06fd
     db 44, 0x4c        ; 3f0
-    dw 0x06f1
+    dw 0x06fd
     db 44, 0x25        ; 3f1
     dw 0xffff
     db  0, 0x00        ; 3f2
     dw 0xffff
     db  0, 0x00        ; 3f3
-    dw 0x06f7
+    dw 0x0703
     db 44, 0x4c        ; 3f4
-    dw 0x06f7
+    dw 0x0703
     db 44, 0x25        ; 3f5
     dw 0xffff
     db  0, 0x00        ; 3f6
     dw 0xffff
     db  0, 0x00        ; 3f7
-    dw 0x06fd
+    dw 0x0709
     db 44, 0x4c        ; 3f8
-    dw 0x06fd
+    dw 0x0709
     db 44, 0x25        ; 3f9
     dw 0xffff
     db  0, 0x00        ; 3fa
@@ -3143,97 +3143,97 @@ x86_sse0f:
     db  0, 0x00        ; 3ff
 
 x86_sse38:
-    dw 0x0703
+    dw 0x070f
     db 44, 0x4c        ; 00
-    dw 0x0703
+    dw 0x070f
     db 44, 0x25        ; 01
     dw 0xffff
     db  0, 0x00        ; 02
     dw 0xffff
     db  0, 0x00        ; 03
-    dw 0x070a
+    dw 0x0716
     db 44, 0x4c        ; 04
-    dw 0x070a
+    dw 0x0716
     db 44, 0x25        ; 05
     dw 0xffff
     db  0, 0x00        ; 06
     dw 0xffff
     db  0, 0x00        ; 07
-    dw 0x0711
+    dw 0x071d
     db 44, 0x4c        ; 08
-    dw 0x0711
+    dw 0x071d
     db 44, 0x25        ; 09
     dw 0xffff
     db  0, 0x00        ; 0a
     dw 0xffff
     db  0, 0x00        ; 0b
-    dw 0x0718
+    dw 0x0724
     db 44, 0x4c        ; 0c
-    dw 0x0718
+    dw 0x0724
     db 44, 0x25        ; 0d
     dw 0xffff
     db  0, 0x00        ; 0e
     dw 0xffff
     db  0, 0x00        ; 0f
-    dw 0x0720
+    dw 0x072c
     db 44, 0x4c        ; 10
-    dw 0x0720
+    dw 0x072c
     db 44, 0x25        ; 11
     dw 0xffff
     db  0, 0x00        ; 12
     dw 0xffff
     db  0, 0x00        ; 13
-    dw 0x072a
+    dw 0x0736
     db 44, 0x4c        ; 14
-    dw 0x072a
+    dw 0x0736
     db 44, 0x25        ; 15
     dw 0xffff
     db  0, 0x00        ; 16
     dw 0xffff
     db  0, 0x00        ; 17
-    dw 0x0731
+    dw 0x073d
     db 44, 0x4c        ; 18
-    dw 0x0731
+    dw 0x073d
     db 44, 0x25        ; 19
     dw 0xffff
     db  0, 0x00        ; 1a
     dw 0xffff
     db  0, 0x00        ; 1b
-    dw 0x0738
+    dw 0x0744
     db 44, 0x4c        ; 1c
-    dw 0x0738
+    dw 0x0744
     db 44, 0x25        ; 1d
     dw 0xffff
     db  0, 0x00        ; 1e
     dw 0xffff
     db  0, 0x00        ; 1f
-    dw 0x0740
+    dw 0x074c
     db 44, 0x4c        ; 20
-    dw 0x0740
+    dw 0x074c
     db 44, 0x25        ; 21
     dw 0xffff
     db  0, 0x00        ; 22
     dw 0xffff
     db  0, 0x00        ; 23
-    dw 0x0747
+    dw 0x0753
     db 44, 0x4c        ; 24
-    dw 0x0747
+    dw 0x0753
     db 44, 0x25        ; 25
     dw 0xffff
     db  0, 0x00        ; 26
     dw 0xffff
     db  0, 0x00        ; 27
-    dw 0x074e
+    dw 0x075a
     db 44, 0x4c        ; 28
-    dw 0x074e
+    dw 0x075a
     db 44, 0x25        ; 29
     dw 0xffff
     db  0, 0x00        ; 2a
     dw 0xffff
     db  0, 0x00        ; 2b
-    dw 0x0755
+    dw 0x0761
     db 44, 0x4c        ; 2c
-    dw 0x0755
+    dw 0x0761
     db 44, 0x25        ; 2d
     dw 0xffff
     db  0, 0x00        ; 2e
@@ -3273,7 +3273,7 @@ x86_sse38:
     db  0, 0x00        ; 3f
     dw 0xffff
     db  0, 0x00        ; 40
-    dw 0x075e
+    dw 0x076a
     db 58, 0x45        ; 41
     dw 0xffff
     db  0, 0x00        ; 42
@@ -3305,7 +3305,7 @@ x86_sse38:
     db  0, 0x00        ; 4f
     dw 0xffff
     db  0, 0x00        ; 50
-    dw 0x0767
+    dw 0x0773
     db 58, 0x45        ; 51
     dw 0xffff
     db  0, 0x00        ; 52
@@ -3313,7 +3313,7 @@ x86_sse38:
     db  0, 0x00        ; 53
     dw 0xffff
     db  0, 0x00        ; 54
-    dw 0x0770
+    dw 0x077c
     db 58, 0x45        ; 55
     dw 0xffff
     db  0, 0x00        ; 56
@@ -3329,7 +3329,7 @@ x86_sse38:
     db  0, 0x00        ; 5b
     dw 0xffff
     db  0, 0x00        ; 5c
-    dw 0x0779
+    dw 0x0785
     db 44, 0x05        ; 5d
     dw 0xffff
     db  0, 0x00        ; 5e
@@ -3367,25 +3367,25 @@ x86_sse38:
     db  0, 0x00        ; 6e
     dw 0xffff
     db  0, 0x00        ; 6f
-    dw 0x077f
+    dw 0x078b
     db 44, 0x4c        ; 70
-    dw 0x077f
+    dw 0x078b
     db 44, 0x05        ; 71
     dw 0xffff
     db  0, 0x00        ; 72
     dw 0xffff
     db  0, 0x00        ; 73
-    dw 0x0785
+    dw 0x0791
     db 44, 0x4c        ; 74
-    dw 0x0785
+    dw 0x0791
     db 44, 0x05        ; 75
     dw 0xffff
     db  0, 0x00        ; 76
     dw 0xffff
     db  0, 0x00        ; 77
-    dw 0x078b
+    dw 0x0797
     db 44, 0x4c        ; 78
-    dw 0x078b
+    dw 0x0797
     db 44, 0x05        ; 79
     dw 0xffff
     db  0, 0x00        ; 7a
@@ -3401,7 +3401,7 @@ x86_sse38:
     db  0, 0x00        ; 7f
     dw 0xffff
     db  0, 0x00        ; 80
-    dw 0x0791
+    dw 0x079d
     db 44, 0x04        ; 81
     dw 0xffff
     db  0, 0x00        ; 82
@@ -3409,7 +3409,7 @@ x86_sse38:
     db  0, 0x00        ; 83
     dw 0xffff
     db  0, 0x00        ; 84
-    dw 0x079a
+    dw 0x07a6
     db 44, 0x03        ; 85
     dw 0xffff
     db  0, 0x00        ; 86
@@ -3417,7 +3417,7 @@ x86_sse38:
     db  0, 0x00        ; 87
     dw 0xffff
     db  0, 0x00        ; 88
-    dw 0x07a3
+    dw 0x07af
     db 44, 0x02        ; 89
     dw 0xffff
     db  0, 0x00        ; 8a
@@ -3425,7 +3425,7 @@ x86_sse38:
     db  0, 0x00        ; 8b
     dw 0xffff
     db  0, 0x00        ; 8c
-    dw 0x07ac
+    dw 0x07b8
     db 44, 0x04        ; 8d
     dw 0xffff
     db  0, 0x00        ; 8e
@@ -3433,7 +3433,7 @@ x86_sse38:
     db  0, 0x00        ; 8f
     dw 0xffff
     db  0, 0x00        ; 90
-    dw 0x07b5
+    dw 0x07c1
     db 44, 0x03        ; 91
     dw 0xffff
     db  0, 0x00        ; 92
@@ -3441,7 +3441,7 @@ x86_sse38:
     db  0, 0x00        ; 93
     dw 0xffff
     db  0, 0x00        ; 94
-    dw 0x07be
+    dw 0x07ca
     db 44, 0x04        ; 95
     dw 0xffff
     db  0, 0x00        ; 96
@@ -3465,7 +3465,7 @@ x86_sse38:
     db  0, 0x00        ; 9f
     dw 0xffff
     db  0, 0x00        ; a0
-    dw 0x07c7
+    dw 0x07d3
     db 44, 0x25        ; a1
     dw 0xffff
     db  0, 0x00        ; a2
@@ -3473,7 +3473,7 @@ x86_sse38:
     db  0, 0x00        ; a3
     dw 0xffff
     db  0, 0x00        ; a4
-    dw 0x07ce
+    dw 0x07da
     db 44, 0x25        ; a5
     dw 0xffff
     db  0, 0x00        ; a6
@@ -3481,7 +3481,7 @@ x86_sse38:
     db  0, 0x00        ; a7
     dw 0xffff
     db  0, 0x00        ; a8
-    dw 0x07d6
+    dw 0x07e2
     db 52, 0x05        ; a9
     dw 0xffff
     db  0, 0x00        ; aa
@@ -3489,7 +3489,7 @@ x86_sse38:
     db  0, 0x00        ; ab
     dw 0xffff
     db  0, 0x00        ; ac
-    dw 0x07df
+    dw 0x07eb
     db 44, 0x25        ; ad
     dw 0xffff
     db  0, 0x00        ; ae
@@ -3529,7 +3529,7 @@ x86_sse38:
     db  0, 0x00        ; bf
     dw 0xffff
     db  0, 0x00        ; c0
-    dw 0x07e8
+    dw 0x07f4
     db 44, 0x04        ; c1
     dw 0xffff
     db  0, 0x00        ; c2
@@ -3537,7 +3537,7 @@ x86_sse38:
     db  0, 0x00        ; c3
     dw 0xffff
     db  0, 0x00        ; c4
-    dw 0x07f1
+    dw 0x07fd
     db 44, 0x03        ; c5
     dw 0xffff
     db  0, 0x00        ; c6
@@ -3545,7 +3545,7 @@ x86_sse38:
     db  0, 0x00        ; c7
     dw 0xffff
     db  0, 0x00        ; c8
-    dw 0x07fa
+    dw 0x0806
     db 44, 0x02        ; c9
     dw 0xffff
     db  0, 0x00        ; ca
@@ -3553,7 +3553,7 @@ x86_sse38:
     db  0, 0x00        ; cb
     dw 0xffff
     db  0, 0x00        ; cc
-    dw 0x0803
+    dw 0x080f
     db 44, 0x04        ; cd
     dw 0xffff
     db  0, 0x00        ; ce
@@ -3561,7 +3561,7 @@ x86_sse38:
     db  0, 0x00        ; cf
     dw 0xffff
     db  0, 0x00        ; d0
-    dw 0x080c
+    dw 0x0818
     db 44, 0x03        ; d1
     dw 0xffff
     db  0, 0x00        ; d2
@@ -3569,7 +3569,7 @@ x86_sse38:
     db  0, 0x00        ; d3
     dw 0xffff
     db  0, 0x00        ; d4
-    dw 0x0815
+    dw 0x0821
     db 44, 0x04        ; d5
     dw 0xffff
     db  0, 0x00        ; d6
@@ -3585,7 +3585,7 @@ x86_sse38:
     db  0, 0x00        ; db
     dw 0xffff
     db  0, 0x00        ; dc
-    dw 0x081e
+    dw 0x082a
     db 44, 0x25        ; dd
     dw 0xffff
     db  0, 0x00        ; de
@@ -3593,7 +3593,7 @@ x86_sse38:
     db  0, 0x00        ; df
     dw 0xffff
     db  0, 0x00        ; e0
-    dw 0x0826
+    dw 0x0832
     db 44, 0x25        ; e1
     dw 0xffff
     db  0, 0x00        ; e2
@@ -3601,7 +3601,7 @@ x86_sse38:
     db  0, 0x00        ; e3
     dw 0xffff
     db  0, 0x00        ; e4
-    dw 0x082d
+    dw 0x0839
     db 44, 0x25        ; e5
     dw 0xffff
     db  0, 0x00        ; e6
@@ -3609,7 +3609,7 @@ x86_sse38:
     db  0, 0x00        ; e7
     dw 0xffff
     db  0, 0x00        ; e8
-    dw 0x0834
+    dw 0x0840
     db 44, 0x25        ; e9
     dw 0xffff
     db  0, 0x00        ; ea
@@ -3617,7 +3617,7 @@ x86_sse38:
     db  0, 0x00        ; eb
     dw 0xffff
     db  0, 0x00        ; ec
-    dw 0x083b
+    dw 0x0847
     db 44, 0x25        ; ed
     dw 0xffff
     db  0, 0x00        ; ee
@@ -3625,7 +3625,7 @@ x86_sse38:
     db  0, 0x00        ; ef
     dw 0xffff
     db  0, 0x00        ; f0
-    dw 0x0842
+    dw 0x084e
     db 44, 0x25        ; f1
     dw 0xffff
     db  0, 0x00        ; f2
@@ -3633,7 +3633,7 @@ x86_sse38:
     db  0, 0x00        ; f3
     dw 0xffff
     db  0, 0x00        ; f4
-    dw 0x0849
+    dw 0x0855
     db 44, 0x25        ; f5
     dw 0xffff
     db  0, 0x00        ; f6
@@ -3641,7 +3641,7 @@ x86_sse38:
     db  0, 0x00        ; f7
     dw 0xffff
     db  0, 0x00        ; f8
-    dw 0x0850
+    dw 0x085c
     db 44, 0x25        ; f9
     dw 0xffff
     db  0, 0x00        ; fa
@@ -3649,7 +3649,7 @@ x86_sse38:
     db  0, 0x00        ; fb
     dw 0xffff
     db  0, 0x00        ; fc
-    dw 0x0857
+    dw 0x0863
     db 44, 0x25        ; fd
     dw 0xffff
     db  0, 0x00        ; fe
@@ -3657,7 +3657,7 @@ x86_sse38:
     db  0, 0x00        ; ff
     dw 0xffff
     db  0, 0x00        ; 100
-    dw 0x085e
+    dw 0x086a
     db 44, 0x25        ; 101
     dw 0xffff
     db  0, 0x00        ; 102
@@ -3665,7 +3665,7 @@ x86_sse38:
     db  0, 0x00        ; 103
     dw 0xffff
     db  0, 0x00        ; 104
-    dw 0x0865
+    dw 0x0871
     db 44, 0x05        ; 105
     dw 0xffff
     db  0, 0x00        ; 106
@@ -4897,7 +4897,7 @@ x86_sse38:
     db  0, 0x00        ; 36b
     dw 0xffff
     db  0, 0x00        ; 36c
-    dw 0x0870
+    dw 0x087c
     db 44, 0x05        ; 36d
     dw 0xffff
     db  0, 0x00        ; 36e
@@ -4905,7 +4905,7 @@ x86_sse38:
     db  0, 0x00        ; 36f
     dw 0xffff
     db  0, 0x00        ; 370
-    dw 0x0877
+    dw 0x0883
     db 44, 0x25        ; 371
     dw 0xffff
     db  0, 0x00        ; 372
@@ -4913,7 +4913,7 @@ x86_sse38:
     db  0, 0x00        ; 373
     dw 0xffff
     db  0, 0x00        ; 374
-    dw 0x087e
+    dw 0x088a
     db 44, 0x25        ; 375
     dw 0xffff
     db  0, 0x00        ; 376
@@ -4921,7 +4921,7 @@ x86_sse38:
     db  0, 0x00        ; 377
     dw 0xffff
     db  0, 0x00        ; 378
-    dw 0x0889
+    dw 0x0895
     db 44, 0x25        ; 379
     dw 0xffff
     db  0, 0x00        ; 37a
@@ -4929,7 +4929,7 @@ x86_sse38:
     db  0, 0x00        ; 37b
     dw 0xffff
     db  0, 0x00        ; 37c
-    dw 0x0890
+    dw 0x089c
     db 44, 0x25        ; 37d
     dw 0xffff
     db  0, 0x00        ; 37e
@@ -5063,21 +5063,21 @@ x86_sse38:
     db  0, 0x00        ; 3be
     dw 0xffff
     db  0, 0x00        ; 3bf
-    dw 0x089b
+    dw 0x08a7
     db  4, 0x81        ; 3c0
     dw 0xffff
     db  0, 0x00        ; 3c1
     dw 0xffff
     db  0, 0x00        ; 3c2
-    dw 0x08a1
+    dw 0x08ad
     db 26, 0x81        ; 3c3
-    dw 0x089b
+    dw 0x08a7
     db  2, 0x81        ; 3c4
     dw 0xffff
     db  0, 0x00        ; 3c5
     dw 0xffff
     db  0, 0x00        ; 3c6
-    dw 0x08a1
+    dw 0x08ad
     db  4, 0x81        ; 3c7
     dw 0xffff
     db  0, 0x00        ; 3c8
@@ -5259,7 +5259,7 @@ x86_sse3a:
     db  0, 0x00        ; 1f
     dw 0xffff
     db  0, 0x00        ; 20
-    dw 0x08a7
+    dw 0x08b3
     db 46, 0x05        ; 21
     dw 0xffff
     db  0, 0x00        ; 22
@@ -5267,7 +5267,7 @@ x86_sse3a:
     db  0, 0x00        ; 23
     dw 0xffff
     db  0, 0x00        ; 24
-    dw 0x08af
+    dw 0x08bb
     db 46, 0x05        ; 25
     dw 0xffff
     db  0, 0x00        ; 26
@@ -5275,7 +5275,7 @@ x86_sse3a:
     db  0, 0x00        ; 27
     dw 0xffff
     db  0, 0x00        ; 28
-    dw 0x08b7
+    dw 0x08c3
     db 46, 0x23        ; 29
     dw 0xffff
     db  0, 0x00        ; 2a
@@ -5283,7 +5283,7 @@ x86_sse3a:
     db  0, 0x00        ; 2b
     dw 0xffff
     db  0, 0x00        ; 2c
-    dw 0x08bf
+    dw 0x08cb
     db 46, 0x24        ; 2d
     dw 0xffff
     db  0, 0x00        ; 2e
@@ -5291,7 +5291,7 @@ x86_sse3a:
     db  0, 0x00        ; 2f
     dw 0xffff
     db  0, 0x00        ; 30
-    dw 0x08c7
+    dw 0x08d3
     db 46, 0x25        ; 31
     dw 0xffff
     db  0, 0x00        ; 32
@@ -5299,7 +5299,7 @@ x86_sse3a:
     db  0, 0x00        ; 33
     dw 0xffff
     db  0, 0x00        ; 34
-    dw 0x08cf
+    dw 0x08db
     db 46, 0x25        ; 35
     dw 0xffff
     db  0, 0x00        ; 36
@@ -5307,15 +5307,15 @@ x86_sse3a:
     db  0, 0x00        ; 37
     dw 0xffff
     db  0, 0x00        ; 38
-    dw 0x08d7
+    dw 0x08e3
     db 46, 0x25        ; 39
     dw 0xffff
     db  0, 0x00        ; 3a
     dw 0xffff
     db  0, 0x00        ; 3b
-    dw 0x08df
+    dw 0x08eb
     db 46, 0x4c        ; 3c
-    dw 0x08df
+    dw 0x08eb
     db 46, 0x25        ; 3d
     dw 0xffff
     db  0, 0x00        ; 3e
@@ -5355,7 +5355,7 @@ x86_sse3a:
     db  0, 0x00        ; 4f
     dw 0xffff
     db  0, 0x00        ; 50
-    dw 0x08e7
+    dw 0x08f3
     db 55, 0x01        ; 51
     dw 0xffff
     db  0, 0x00        ; 52
@@ -5363,7 +5363,7 @@ x86_sse3a:
     db  0, 0x00        ; 53
     dw 0xffff
     db  0, 0x00        ; 54
-    dw 0x0592
+    dw 0x059e
     db 55, 0x02        ; 55
     dw 0xffff
     db  0, 0x00        ; 56
@@ -5371,7 +5371,7 @@ x86_sse3a:
     db  0, 0x00        ; 57
     dw 0xffff
     db  0, 0x00        ; 58
-    dw 0x08ee
+    dw 0x08fa
     db 55, 0x13        ; 59
     dw 0xffff
     db  0, 0x00        ; 5a
@@ -5379,7 +5379,7 @@ x86_sse3a:
     db  0, 0x00        ; 5b
     dw 0xffff
     db  0, 0x00        ; 5c
-    dw 0x08f5
+    dw 0x0901
     db 55, 0x03        ; 5d
     dw 0xffff
     db  0, 0x00        ; 5e
@@ -5451,7 +5451,7 @@ x86_sse3a:
     db  0, 0x00        ; 7f
     dw 0xffff
     db  0, 0x00        ; 80
-    dw 0x08ff
+    dw 0x090b
     db 56, 0x21        ; 81
     dw 0xffff
     db  0, 0x00        ; 82
@@ -5459,7 +5459,7 @@ x86_sse3a:
     db  0, 0x00        ; 83
     dw 0xffff
     db  0, 0x00        ; 84
-    dw 0x0906
+    dw 0x0912
     db 46, 0x23        ; 85
     dw 0xffff
     db  0, 0x00        ; 86
@@ -5467,7 +5467,7 @@ x86_sse3a:
     db  0, 0x00        ; 87
     dw 0xffff
     db  0, 0x00        ; 88
-    dw 0x090f
+    dw 0x091b
     db 56, 0x33        ; 89
     dw 0xffff
     db  0, 0x00        ; 8a
@@ -5707,7 +5707,7 @@ x86_sse3a:
     db  0, 0x00        ; ff
     dw 0xffff
     db  0, 0x00        ; 100
-    dw 0x0916
+    dw 0x0922
     db 46, 0x25        ; 101
     dw 0xffff
     db  0, 0x00        ; 102
@@ -5715,7 +5715,7 @@ x86_sse3a:
     db  0, 0x00        ; 103
     dw 0xffff
     db  0, 0x00        ; 104
-    dw 0x091b
+    dw 0x0927
     db 46, 0x25        ; 105
     dw 0xffff
     db  0, 0x00        ; 106
@@ -5723,7 +5723,7 @@ x86_sse3a:
     db  0, 0x00        ; 107
     dw 0xffff
     db  0, 0x00        ; 108
-    dw 0x0920
+    dw 0x092c
     db 46, 0x25        ; 109
     dw 0xffff
     db  0, 0x00        ; 10a
@@ -5739,7 +5739,7 @@ x86_sse3a:
     db  0, 0x00        ; 10f
     dw 0xffff
     db  0, 0x00        ; 110
-    dw 0x0928
+    dw 0x0934
     db 60, 0x25        ; 111
     dw 0xffff
     db  0, 0x00        ; 112
@@ -5963,7 +5963,7 @@ x86_sse3a:
     db  0, 0x00        ; 17f
     dw 0xffff
     db  0, 0x00        ; 180
-    dw 0x0932
+    dw 0x093e
     db 46, 0x05        ; 181
     dw 0xffff
     db  0, 0x00        ; 182
@@ -5971,7 +5971,7 @@ x86_sse3a:
     db  0, 0x00        ; 183
     dw 0xffff
     db  0, 0x00        ; 184
-    dw 0x093c
+    dw 0x0948
     db 46, 0x05        ; 185
     dw 0xffff
     db  0, 0x00        ; 186
@@ -5979,7 +5979,7 @@ x86_sse3a:
     db  0, 0x00        ; 187
     dw 0xffff
     db  0, 0x00        ; 188
-    dw 0x0946
+    dw 0x0952
     db 46, 0x05        ; 189
     dw 0xffff
     db  0, 0x00        ; 18a
@@ -5987,7 +5987,7 @@ x86_sse3a:
     db  0, 0x00        ; 18b
     dw 0xffff
     db  0, 0x00        ; 18c
-    dw 0x0950
+    dw 0x095c
     db 46, 0x05        ; 18d
     dw 0xffff
     db  0, 0x00        ; 18e
@@ -6979,7 +6979,7 @@ x86_sse3a:
     db  0, 0x00        ; 37b
     dw 0xffff
     db  0, 0x00        ; 37c
-    dw 0x095a
+    dw 0x0966
     db 46, 0x05        ; 37d
     dw 0xffff
     db  0, 0x00        ; 37e
@@ -8195,7 +8195,7 @@ x86_vex0f:
     db  0, 0x00        ; 1da
     dw 0xffff
     db  0, 0x00        ; 1db
-    dw 0x096a
+    dw 0x0976
     db 72, 0x00        ; 1dc
     dw 0xffff
     db  0, 0x00        ; 1dd
@@ -9391,7 +9391,7 @@ x86_vex38:
     db  0, 0x00        ; 2f
     dw 0xffff
     db  0, 0x00        ; 30
-    dw 0x0975
+    dw 0x0981
     db 44, 0x25        ; 31
     dw 0xffff
     db  0, 0x00        ; 32
@@ -9399,7 +9399,7 @@ x86_vex38:
     db  0, 0x00        ; 33
     dw 0xffff
     db  0, 0x00        ; 34
-    dw 0x097f
+    dw 0x098b
     db 44, 0x25        ; 35
     dw 0xffff
     db  0, 0x00        ; 36
@@ -9407,7 +9407,7 @@ x86_vex38:
     db  0, 0x00        ; 37
     dw 0xffff
     db  0, 0x00        ; 38
-    dw 0x0989
+    dw 0x0995
     db 44, 0x05        ; 39
     dw 0xffff
     db  0, 0x00        ; 3a
@@ -9415,7 +9415,7 @@ x86_vex38:
     db  0, 0x00        ; 3b
     dw 0xffff
     db  0, 0x00        ; 3c
-    dw 0x0991
+    dw 0x099d
     db 44, 0x05        ; 3d
     dw 0xffff
     db  0, 0x00        ; 3e
@@ -9471,7 +9471,7 @@ x86_vex38:
     db  0, 0x00        ; 57
     dw 0xffff
     db  0, 0x00        ; 58
-    dw 0x0999
+    dw 0x09a5
     db 44, 0x25        ; 59
     dw 0xffff
     db  0, 0x00        ; 5a
@@ -9487,7 +9487,7 @@ x86_vex38:
     db  0, 0x00        ; 5f
     dw 0xffff
     db  0, 0x00        ; 60
-    dw 0x09a1
+    dw 0x09ad
     db 62, 0x03        ; 61
     dw 0xffff
     db  0, 0x00        ; 62
@@ -9495,7 +9495,7 @@ x86_vex38:
     db  0, 0x00        ; 63
     dw 0xffff
     db  0, 0x00        ; 64
-    dw 0x09ae
+    dw 0x09ba
     db 62, 0x04        ; 65
     dw 0xffff
     db  0, 0x00        ; 66
@@ -9503,7 +9503,7 @@ x86_vex38:
     db  0, 0x00        ; 67
     dw 0xffff
     db  0, 0x00        ; 68
-    dw 0x09bb
+    dw 0x09c7
     db 62, 0x05        ; 69
     dw 0xffff
     db  0, 0x00        ; 6a
@@ -9647,7 +9647,7 @@ x86_vex38:
     db  0, 0x00        ; af
     dw 0xffff
     db  0, 0x00        ; b0
-    dw 0x09ca
+    dw 0x09d6
     db 69, 0x05        ; b1
     dw 0xffff
     db  0, 0x00        ; b2
@@ -9655,7 +9655,7 @@ x86_vex38:
     db  0, 0x00        ; b3
     dw 0xffff
     db  0, 0x00        ; b4
-    dw 0x09d5
+    dw 0x09e1
     db 69, 0x05        ; b5
     dw 0xffff
     db  0, 0x00        ; b6
@@ -9663,7 +9663,7 @@ x86_vex38:
     db  0, 0x00        ; b7
     dw 0xffff
     db  0, 0x00        ; b8
-    dw 0x09ca
+    dw 0x09d6
     db 70, 0x05        ; b9
     dw 0xffff
     db  0, 0x00        ; ba
@@ -9671,7 +9671,7 @@ x86_vex38:
     db  0, 0x00        ; bb
     dw 0xffff
     db  0, 0x00        ; bc
-    dw 0x09d5
+    dw 0x09e1
     db 70, 0x05        ; bd
     dw 0xffff
     db  0, 0x00        ; be
@@ -9727,7 +9727,7 @@ x86_vex38:
     db  0, 0x00        ; d7
     dw 0xffff
     db  0, 0x00        ; d8
-    dw 0x09e0
+    dw 0x09ec
     db 44, 0x25        ; d9
     dw 0xffff
     db  0, 0x00        ; da
@@ -9847,7 +9847,7 @@ x86_vex38:
     db  0, 0x00        ; 113
     dw 0xffff
     db  0, 0x00        ; 114
-    dw 0x09e7
+    dw 0x09f3
     db 44, 0x35        ; 115
     dw 0xffff
     db  0, 0x00        ; 116
@@ -9855,7 +9855,7 @@ x86_vex38:
     db  0, 0x00        ; 117
     dw 0xffff
     db  0, 0x00        ; 118
-    dw 0x09ef
+    dw 0x09fb
     db 44, 0x25        ; 119
     dw 0xffff
     db  0, 0x00        ; 11a
@@ -9863,7 +9863,7 @@ x86_vex38:
     db  0, 0x00        ; 11b
     dw 0xffff
     db  0, 0x00        ; 11c
-    dw 0x09f7
+    dw 0x0a03
     db 44, 0x35        ; 11d
     dw 0xffff
     db  0, 0x00        ; 11e
@@ -9999,7 +9999,7 @@ x86_vex38:
     db  0, 0x00        ; 15f
     dw 0xffff
     db  0, 0x00        ; 160
-    dw 0x09ff
+    dw 0x0a0b
     db 62, 0x03        ; 161
     dw 0xffff
     db  0, 0x00        ; 162
@@ -10007,7 +10007,7 @@ x86_vex38:
     db  0, 0x00        ; 163
     dw 0xffff
     db  0, 0x00        ; 164
-    dw 0x0a0c
+    dw 0x0a18
     db 62, 0x04        ; 165
     dw 0xffff
     db  0, 0x00        ; 166
@@ -10015,7 +10015,7 @@ x86_vex38:
     db  0, 0x00        ; 167
     dw 0xffff
     db  0, 0x00        ; 168
-    dw 0x0a19
+    dw 0x0a25
     db 62, 0x05        ; 169
     dw 0xffff
     db  0, 0x00        ; 16a
@@ -10255,7 +10255,7 @@ x86_vex38:
     db  0, 0x00        ; 1df
     dw 0xffff
     db  0, 0x00        ; 1e0
-    dw 0x0a28
+    dw 0x0a34
     db 62, 0x01        ; 1e1
     dw 0xffff
     db  0, 0x00        ; 1e2
@@ -10263,7 +10263,7 @@ x86_vex38:
     db  0, 0x00        ; 1e3
     dw 0xffff
     db  0, 0x00        ; 1e4
-    dw 0x0a35
+    dw 0x0a41
     db 62, 0x02        ; 1e5
     dw 0xffff
     db  0, 0x00        ; 1e6
@@ -10415,7 +10415,7 @@ x86_vex38:
     db  0, 0x00        ; 22f
     dw 0xffff
     db  0, 0x00        ; 230
-    dw 0x0a42
+    dw 0x0a4e
     db 69, 0x15        ; 231
     dw 0xffff
     db  0, 0x00        ; 232
@@ -10431,7 +10431,7 @@ x86_vex38:
     db  0, 0x00        ; 237
     dw 0xffff
     db  0, 0x00        ; 238
-    dw 0x0a42
+    dw 0x0a4e
     db 70, 0x15        ; 239
     dw 0xffff
     db  0, 0x00        ; 23a
@@ -10495,7 +10495,7 @@ x86_vex38:
     db  0, 0x00        ; 257
     dw 0xffff
     db  0, 0x00        ; 258
-    dw 0x0a4d
+    dw 0x0a59
     db 44, 0x2d        ; 259
     dw 0xffff
     db  0, 0x00        ; 25a
@@ -10503,7 +10503,7 @@ x86_vex38:
     db  0, 0x00        ; 25b
     dw 0xffff
     db  0, 0x00        ; 25c
-    dw 0x0a5c
+    dw 0x0a68
     db 44, 0x2d        ; 25d
     dw 0xffff
     db  0, 0x00        ; 25e
@@ -10511,7 +10511,7 @@ x86_vex38:
     db  0, 0x00        ; 25f
     dw 0xffff
     db  0, 0x00        ; 260
-    dw 0x0a6b
+    dw 0x0a77
     db 44, 0x2d        ; 261
     dw 0xffff
     db  0, 0x00        ; 262
@@ -10519,7 +10519,7 @@ x86_vex38:
     db  0, 0x00        ; 263
     dw 0xffff
     db  0, 0x00        ; 264
-    dw 0x0a77
+    dw 0x0a83
     db 44, 0x2b        ; 265
     dw 0xffff
     db  0, 0x00        ; 266
@@ -10527,7 +10527,7 @@ x86_vex38:
     db  0, 0x00        ; 267
     dw 0xffff
     db  0, 0x00        ; 268
-    dw 0x0a83
+    dw 0x0a8f
     db 44, 0x2d        ; 269
     dw 0xffff
     db  0, 0x00        ; 26a
@@ -10535,7 +10535,7 @@ x86_vex38:
     db  0, 0x00        ; 26b
     dw 0xffff
     db  0, 0x00        ; 26c
-    dw 0x0a8f
+    dw 0x0a9b
     db 44, 0x2b        ; 26d
     dw 0xffff
     db  0, 0x00        ; 26e
@@ -10543,7 +10543,7 @@ x86_vex38:
     db  0, 0x00        ; 26f
     dw 0xffff
     db  0, 0x00        ; 270
-    dw 0x0a9b
+    dw 0x0aa7
     db 44, 0x2d        ; 271
     dw 0xffff
     db  0, 0x00        ; 272
@@ -10551,7 +10551,7 @@ x86_vex38:
     db  0, 0x00        ; 273
     dw 0xffff
     db  0, 0x00        ; 274
-    dw 0x0aa8
+    dw 0x0ab4
     db 44, 0x2b        ; 275
     dw 0xffff
     db  0, 0x00        ; 276
@@ -10559,7 +10559,7 @@ x86_vex38:
     db  0, 0x00        ; 277
     dw 0xffff
     db  0, 0x00        ; 278
-    dw 0x0ab5
+    dw 0x0ac1
     db 44, 0x2d        ; 279
     dw 0xffff
     db  0, 0x00        ; 27a
@@ -10567,7 +10567,7 @@ x86_vex38:
     db  0, 0x00        ; 27b
     dw 0xffff
     db  0, 0x00        ; 27c
-    dw 0x0ac2
+    dw 0x0ace
     db 44, 0x2b        ; 27d
     dw 0xffff
     db  0, 0x00        ; 27e
@@ -10623,7 +10623,7 @@ x86_vex38:
     db  0, 0x00        ; 297
     dw 0xffff
     db  0, 0x00        ; 298
-    dw 0x0acf
+    dw 0x0adb
     db 44, 0x2d        ; 299
     dw 0xffff
     db  0, 0x00        ; 29a
@@ -10631,7 +10631,7 @@ x86_vex38:
     db  0, 0x00        ; 29b
     dw 0xffff
     db  0, 0x00        ; 29c
-    dw 0x0ade
+    dw 0x0aea
     db 44, 0x2d        ; 29d
     dw 0xffff
     db  0, 0x00        ; 29e
@@ -10639,7 +10639,7 @@ x86_vex38:
     db  0, 0x00        ; 29f
     dw 0xffff
     db  0, 0x00        ; 2a0
-    dw 0x0aed
+    dw 0x0af9
     db 44, 0x2d        ; 2a1
     dw 0xffff
     db  0, 0x00        ; 2a2
@@ -10647,7 +10647,7 @@ x86_vex38:
     db  0, 0x00        ; 2a3
     dw 0xffff
     db  0, 0x00        ; 2a4
-    dw 0x0af9
+    dw 0x0b05
     db 44, 0x2b        ; 2a5
     dw 0xffff
     db  0, 0x00        ; 2a6
@@ -10655,7 +10655,7 @@ x86_vex38:
     db  0, 0x00        ; 2a7
     dw 0xffff
     db  0, 0x00        ; 2a8
-    dw 0x0b05
+    dw 0x0b11
     db 44, 0x2d        ; 2a9
     dw 0xffff
     db  0, 0x00        ; 2aa
@@ -10663,7 +10663,7 @@ x86_vex38:
     db  0, 0x00        ; 2ab
     dw 0xffff
     db  0, 0x00        ; 2ac
-    dw 0x0b11
+    dw 0x0b1d
     db 44, 0x2b        ; 2ad
     dw 0xffff
     db  0, 0x00        ; 2ae
@@ -10671,7 +10671,7 @@ x86_vex38:
     db  0, 0x00        ; 2af
     dw 0xffff
     db  0, 0x00        ; 2b0
-    dw 0x0b1d
+    dw 0x0b29
     db 44, 0x2d        ; 2b1
     dw 0xffff
     db  0, 0x00        ; 2b2
@@ -10679,7 +10679,7 @@ x86_vex38:
     db  0, 0x00        ; 2b3
     dw 0xffff
     db  0, 0x00        ; 2b4
-    dw 0x0b2a
+    dw 0x0b36
     db 44, 0x2b        ; 2b5
     dw 0xffff
     db  0, 0x00        ; 2b6
@@ -10687,7 +10687,7 @@ x86_vex38:
     db  0, 0x00        ; 2b7
     dw 0xffff
     db  0, 0x00        ; 2b8
-    dw 0x0b37
+    dw 0x0b43
     db 44, 0x2d        ; 2b9
     dw 0xffff
     db  0, 0x00        ; 2ba
@@ -10695,7 +10695,7 @@ x86_vex38:
     db  0, 0x00        ; 2bb
     dw 0xffff
     db  0, 0x00        ; 2bc
-    dw 0x0b44
+    dw 0x0b50
     db 44, 0x2b        ; 2bd
     dw 0xffff
     db  0, 0x00        ; 2be
@@ -10751,7 +10751,7 @@ x86_vex38:
     db  0, 0x00        ; 2d7
     dw 0xffff
     db  0, 0x00        ; 2d8
-    dw 0x0b51
+    dw 0x0b5d
     db 44, 0x2d        ; 2d9
     dw 0xffff
     db  0, 0x00        ; 2da
@@ -10759,7 +10759,7 @@ x86_vex38:
     db  0, 0x00        ; 2db
     dw 0xffff
     db  0, 0x00        ; 2dc
-    dw 0x0b60
+    dw 0x0b6c
     db 44, 0x2d        ; 2dd
     dw 0xffff
     db  0, 0x00        ; 2de
@@ -10767,7 +10767,7 @@ x86_vex38:
     db  0, 0x00        ; 2df
     dw 0xffff
     db  0, 0x00        ; 2e0
-    dw 0x0b6f
+    dw 0x0b7b
     db 44, 0x2d        ; 2e1
     dw 0xffff
     db  0, 0x00        ; 2e2
@@ -10775,7 +10775,7 @@ x86_vex38:
     db  0, 0x00        ; 2e3
     dw 0xffff
     db  0, 0x00        ; 2e4
-    dw 0x0b7b
+    dw 0x0b87
     db 44, 0x2b        ; 2e5
     dw 0xffff
     db  0, 0x00        ; 2e6
@@ -10783,7 +10783,7 @@ x86_vex38:
     db  0, 0x00        ; 2e7
     dw 0xffff
     db  0, 0x00        ; 2e8
-    dw 0x0b87
+    dw 0x0b93
     db 44, 0x2d        ; 2e9
     dw 0xffff
     db  0, 0x00        ; 2ea
@@ -10791,7 +10791,7 @@ x86_vex38:
     db  0, 0x00        ; 2eb
     dw 0xffff
     db  0, 0x00        ; 2ec
-    dw 0x0b93
+    dw 0x0b9f
     db 44, 0x2b        ; 2ed
     dw 0xffff
     db  0, 0x00        ; 2ee
@@ -10799,7 +10799,7 @@ x86_vex38:
     db  0, 0x00        ; 2ef
     dw 0xffff
     db  0, 0x00        ; 2f0
-    dw 0x0b9f
+    dw 0x0bab
     db 44, 0x2d        ; 2f1
     dw 0xffff
     db  0, 0x00        ; 2f2
@@ -10807,7 +10807,7 @@ x86_vex38:
     db  0, 0x00        ; 2f3
     dw 0xffff
     db  0, 0x00        ; 2f4
-    dw 0x0bac
+    dw 0x0bb8
     db 44, 0x2b        ; 2f5
     dw 0xffff
     db  0, 0x00        ; 2f6
@@ -10815,7 +10815,7 @@ x86_vex38:
     db  0, 0x00        ; 2f7
     dw 0xffff
     db  0, 0x00        ; 2f8
-    dw 0x0bb9
+    dw 0x0bc5
     db 44, 0x2d        ; 2f9
     dw 0xffff
     db  0, 0x00        ; 2fa
@@ -10823,7 +10823,7 @@ x86_vex38:
     db  0, 0x00        ; 2fb
     dw 0xffff
     db  0, 0x00        ; 2fc
-    dw 0x0bc6
+    dw 0x0bd2
     db 44, 0x2b        ; 2fd
     dw 0xffff
     db  0, 0x00        ; 2fe
@@ -11229,7 +11229,7 @@ x86_vex38:
     db  0, 0x00        ; 3c6
     dw 0xffff
     db  0, 0x00        ; 3c7
-    dw 0x0bd3
+    dw 0x0bdf
     db 66, 0x00        ; 3c8
     dw 0xffff
     db  0, 0x00        ; 3c9
@@ -11253,13 +11253,13 @@ x86_vex38:
     db  0, 0x00        ; 3d2
     dw 0xffff
     db  0, 0x00        ; 3d3
-    dw 0x0bd8
+    dw 0x0be4
     db 67, 0x00        ; 3d4
     dw 0xffff
     db  0, 0x00        ; 3d5
-    dw 0x0bdd
+    dw 0x0be9
     db 66, 0x00        ; 3d6
-    dw 0x0be2
+    dw 0x0bee
     db 66, 0x00        ; 3d7
     dw 0xffff
     db  0, 0x00        ; 3d8
@@ -11267,15 +11267,15 @@ x86_vex38:
     db  0, 0x00        ; 3d9
     dw 0xffff
     db  0, 0x00        ; 3da
-    dw 0x0be7
+    dw 0x0bf3
     db 66, 0x00        ; 3db
-    dw 0x0bec
+    dw 0x0bf8
     db 67, 0x00        ; 3dc
-    dw 0x0bf2
+    dw 0x0bfe
     db 67, 0x00        ; 3dd
-    dw 0x0bf7
+    dw 0x0c03
     db 67, 0x00        ; 3de
-    dw 0x0bfc
+    dw 0x0c08
     db 67, 0x00        ; 3df
     dw 0xffff
     db  0, 0x00        ; 3e0
@@ -11345,7 +11345,7 @@ x86_vex38:
 x86_vex3a:
     dw 0xffff
     db  0, 0x00        ; 00
-    dw 0x0c01
+    dw 0x0c0d
     db 46, 0x05        ; 01
     dw 0xffff
     db  0, 0x00        ; 02
@@ -11353,7 +11353,7 @@ x86_vex3a:
     db  0, 0x00        ; 03
     dw 0xffff
     db  0, 0x00        ; 04
-    dw 0x0c08
+    dw 0x0c14
     db 46, 0x05        ; 05
     dw 0xffff
     db  0, 0x00        ; 06
@@ -11361,7 +11361,7 @@ x86_vex3a:
     db  0, 0x00        ; 07
     dw 0xffff
     db  0, 0x00        ; 08
-    dw 0x0c10
+    dw 0x0c1c
     db 46, 0x25        ; 09
     dw 0xffff
     db  0, 0x00        ; 0a
@@ -11377,7 +11377,7 @@ x86_vex3a:
     db  0, 0x00        ; 0f
     dw 0xffff
     db  0, 0x00        ; 10
-    dw 0x0975
+    dw 0x0981
     db 46, 0x05        ; 11
     dw 0xffff
     db  0, 0x00        ; 12
@@ -11385,7 +11385,7 @@ x86_vex3a:
     db  0, 0x00        ; 13
     dw 0xffff
     db  0, 0x00        ; 14
-    dw 0x097f
+    dw 0x098b
     db 46, 0x05        ; 15
     dw 0xffff
     db  0, 0x00        ; 16
@@ -11393,7 +11393,7 @@ x86_vex3a:
     db  0, 0x00        ; 17
     dw 0xffff
     db  0, 0x00        ; 18
-    dw 0x0c19
+    dw 0x0c25
     db 46, 0x25        ; 19
     dw 0xffff
     db  0, 0x00        ; 1a
@@ -11537,7 +11537,7 @@ x86_vex3a:
     db  0, 0x00        ; 5f
     dw 0xffff
     db  0, 0x00        ; 60
-    dw 0x0c24
+    dw 0x0c30
     db 63, 0x05        ; 61
     dw 0xffff
     db  0, 0x00        ; 62
@@ -11545,7 +11545,7 @@ x86_vex3a:
     db  0, 0x00        ; 63
     dw 0xffff
     db  0, 0x00        ; 64
-    dw 0x0c30
+    dw 0x0c3c
     db 64, 0x05        ; 65
     dw 0xffff
     db  0, 0x00        ; 66
@@ -11793,7 +11793,7 @@ x86_vex3a:
     db  0, 0x00        ; df
     dw 0xffff
     db  0, 0x00        ; e0
-    dw 0x0c3d
+    dw 0x0c49
     db 63, 0x05        ; e1
     dw 0xffff
     db  0, 0x00        ; e2
@@ -11801,7 +11801,7 @@ x86_vex3a:
     db  0, 0x00        ; e3
     dw 0xffff
     db  0, 0x00        ; e4
-    dw 0x0c49
+    dw 0x0c55
     db 64, 0x05        ; e5
     dw 0xffff
     db  0, 0x00        ; e6
@@ -11905,7 +11905,7 @@ x86_vex3a:
     db  0, 0x00        ; 117
     dw 0xffff
     db  0, 0x00        ; 118
-    dw 0x0c56
+    dw 0x0c62
     db 46, 0x25        ; 119
     dw 0xffff
     db  0, 0x00        ; 11a
@@ -11937,7 +11937,7 @@ x86_vex3a:
     db  0, 0x00        ; 127
     dw 0xffff
     db  0, 0x00        ; 128
-    dw 0x0c61
+    dw 0x0c6d
     db 65, 0x05        ; 129
     dw 0xffff
     db  0, 0x00        ; 12a
@@ -11945,7 +11945,7 @@ x86_vex3a:
     db  0, 0x00        ; 12b
     dw 0xffff
     db  0, 0x00        ; 12c
-    dw 0x0c6b
+    dw 0x0c77
     db 65, 0x05        ; 12d
     dw 0xffff
     db  0, 0x00        ; 12e
@@ -11953,7 +11953,7 @@ x86_vex3a:
     db  0, 0x00        ; 12f
     dw 0xffff
     db  0, 0x00        ; 130
-    dw 0x0c75
+    dw 0x0c81
     db 65, 0x05        ; 131
     dw 0xffff
     db  0, 0x00        ; 132
@@ -13269,7 +13269,7 @@ x86_vex3a:
     db  0, 0x00        ; 3c1
     dw 0xffff
     db  0, 0x00        ; 3c2
-    dw 0x0c7f
+    dw 0x0c8b
     db 71, 0x00        ; 3c3
     dw 0xffff
     db  0, 0x00        ; 3c4
@@ -13425,57 +13425,57 @@ x86_groups:
     db  0, 0x00        ; 0e
     dw 0xffff
     db  0, 0x00        ; 0f
-    dw 0x0c84
-    db  0, 0x00        ; 10
-    dw 0x0c88
-    db  0, 0x00        ; 11
-    dw 0x0c8c
-    db  0, 0x00        ; 12
     dw 0x0c90
-    db  0, 0x00        ; 13
+    db  0, 0x00        ; 10
     dw 0x0c94
-    db  0, 0x00        ; 14
+    db  0, 0x00        ; 11
     dw 0x0c98
+    db  0, 0x00        ; 12
+    dw 0x0c9c
+    db  0, 0x00        ; 13
+    dw 0x0ca0
+    db  0, 0x00        ; 14
+    dw 0x0ca4
     db  0, 0x00        ; 15
     dw 0xffff
     db  0, 0x00        ; 16
-    dw 0x0c9c
+    dw 0x0ca8
     db  0, 0x00        ; 17
     dw 0x0072
     db 14, 0x00        ; 18
     dw 0xffff
     db  0, 0x00        ; 19
-    dw 0x0ca0
+    dw 0x0cac
     db 12, 0x00        ; 1a
-    dw 0x0ca4
+    dw 0x0cb0
     db 12, 0x00        ; 1b
-    dw 0x0ca8
+    dw 0x0cb4
     db 12, 0x00        ; 1c
     dw 0x0035
     db 12, 0x00        ; 1d
-    dw 0x0cac
+    dw 0x0cb8
     db 12, 0x00        ; 1e
-    dw 0x0cb0
+    dw 0x0cbc
     db 12, 0x00        ; 1f
     dw 0x0072
     db 15, 0x00        ; 20
     dw 0xffff
     db  0, 0x00        ; 21
-    dw 0x0ca0
+    dw 0x0cac
     db 13, 0x00        ; 22
-    dw 0x0ca4
+    dw 0x0cb0
     db 13, 0x00        ; 23
-    dw 0x0ca8
+    dw 0x0cb4
     db 13, 0x00        ; 24
     dw 0x0035
     db 13, 0x00        ; 25
-    dw 0x0cac
+    dw 0x0cb8
     db 13, 0x00        ; 26
-    dw 0x0cb0
+    dw 0x0cbc
     db 13, 0x00        ; 27
-    dw 0x0cb5
+    dw 0x0cc1
     db  0, 0x00        ; 28
-    dw 0x0cb9
+    dw 0x0cc5
     db  0, 0x00        ; 29
     dw 0xffff
     db  0, 0x00        ; 2a
@@ -13489,15 +13489,15 @@ x86_groups:
     db  0, 0x00        ; 2e
     dw 0xffff
     db  0, 0x00        ; 2f
-    dw 0x0cb5
+    dw 0x0cc1
     db 13, 0x00        ; 30
-    dw 0x0cb9
+    dw 0x0cc5
     db 13, 0x00        ; 31
-    dw 0x00d5
+    dw 0x00e1
     db 13, 0x10        ; 32
     dw 0xffff
     db  0, 0x00        ; 33
-    dw 0x00da
+    dw 0x00e6
     db 13, 0x10        ; 34
     dw 0xffff
     db  0, 0x00        ; 35
@@ -13513,13 +13513,13 @@ x86_groups:
     db  0, 0x00        ; 3a
     dw 0xffff
     db  0, 0x00        ; 3b
-    dw 0x01e4
+    dw 0x01f0
     db  0, 0x00        ; 3c
-    dw 0x01ec
+    dw 0x01f8
     db  0, 0x00        ; 3d
-    dw 0x0204
+    dw 0x0210
     db  0, 0x00        ; 3e
-    dw 0x020e
+    dw 0x021a
     db  0, 0x00        ; 3f
     dw 0x007c
     db  0, 0x00        ; 40
@@ -13553,17 +13553,17 @@ x86_groups:
     db  0, 0x00        ; 4e
     dw 0xffff
     db  0, 0x00        ; 4f
-    dw 0x0cbd
+    dw 0x0cc9
     db  0, 0x00        ; 50
-    dw 0x0cc2
+    dw 0x0cce
     db  0, 0x00        ; 51
-    dw 0x0cc6
+    dw 0x0cd2
     db  0, 0x00        ; 52
-    dw 0x0ccb
+    dw 0x0cd7
     db  0, 0x00        ; 53
-    dw 0x0ccf
+    dw 0x0cdb
     db  0, 0x00        ; 54
-    dw 0x0cd4
+    dw 0x0ce0
     db  0, 0x00        ; 55
     dw 0xffff
     db  0, 0x00        ; 56
@@ -13573,15 +13573,15 @@ x86_groups:
     db  0, 0x00        ; 58
     dw 0xffff
     db  0, 0x00        ; 59
-    dw 0x05b9
+    dw 0x05c5
     db  0, 0x00        ; 5a
     dw 0xffff
     db  0, 0x00        ; 5b
-    dw 0x0620
+    dw 0x062c
     db  0, 0x00        ; 5c
     dw 0xffff
     db  0, 0x00        ; 5d
-    dw 0x06a5
+    dw 0x06b1
     db  0, 0x00        ; 5e
     dw 0xffff
     db  0, 0x00        ; 5f
@@ -13589,15 +13589,15 @@ x86_groups:
     db  0, 0x00        ; 60
     dw 0xffff
     db  0, 0x00        ; 61
-    dw 0x05bf
+    dw 0x05cb
     db  0, 0x00        ; 62
     dw 0xffff
     db  0, 0x00        ; 63
-    dw 0x0626
+    dw 0x0632
     db  0, 0x00        ; 64
     dw 0xffff
     db  0, 0x00        ; 65
-    dw 0x06ab
+    dw 0x06b7
     db  0, 0x00        ; 66
     dw 0xffff
     db  0, 0x00        ; 67
@@ -13605,7 +13605,7 @@ x86_groups:
     db  0, 0x00        ; 68
     dw 0xffff
     db  0, 0x00        ; 69
-    dw 0x05c5
+    dw 0x05d1
     db  0, 0x00        ; 6a
     dw 0xffff
     db  0, 0x00        ; 6b
@@ -13613,7 +13613,7 @@ x86_groups:
     db  0, 0x00        ; 6c
     dw 0xffff
     db  0, 0x00        ; 6d
-    dw 0x06b1
+    dw 0x06bd
     db  0, 0x00        ; 6e
     dw 0xffff
     db  0, 0x00        ; 6f
@@ -13621,25 +13621,25 @@ x86_groups:
     db  0, 0x00        ; 70
     dw 0xffff
     db  0, 0x00        ; 71
-    dw 0x05c5
+    dw 0x05d1
     db  0, 0x00        ; 72
-    dw 0x0cd9
+    dw 0x0ce5
     db  0, 0x00        ; 73
     dw 0xffff
     db  0, 0x00        ; 74
     dw 0xffff
     db  0, 0x00        ; 75
-    dw 0x06b1
+    dw 0x06bd
     db  0, 0x00        ; 76
-    dw 0x0ce0
+    dw 0x0cec
     db  0, 0x00        ; 77
     dw 0xffff
     db  0, 0x00        ; 78
-    dw 0x0ce7
-    db  0, 0x00        ; 79
-    dw 0x0cec
-    db  0, 0x00        ; 7a
     dw 0x0cf3
+    db  0, 0x00        ; 79
+    dw 0x0cf8
+    db  0, 0x00        ; 7a
+    dw 0x0cff
     db  0, 0x00        ; 7b
     dw 0xffff
     db  0, 0x00        ; 7c
@@ -13649,13 +13649,13 @@ x86_groups:
     db  0, 0x00        ; 7e
     dw 0xffff
     db  0, 0x00        ; 7f
-    dw 0x0cf8
-    db 12, 0x00        ; 80
     dw 0x0d04
+    db 12, 0x00        ; 80
+    dw 0x0d10
     db 12, 0x00        ; 81
-    dw 0x0d0f
+    dw 0x0d1b
     db 12, 0x00        ; 82
-    dw 0x0d1a
+    dw 0x0d26
     db 12, 0x00        ; 83
     dw 0xffff
     db  0, 0x00        ; 84
@@ -13665,3 +13665,169 @@ x86_groups:
     db  0, 0x00        ; 86
     dw 0xffff
     db  0, 0x00        ; 87
+
+x87_mem:
+    db "fadd", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fmul", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fcom", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fcomp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fsub", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fsubr", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fdiv", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fdivr", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fld", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "(bad)", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255
+    db "fst", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fstp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fldenv", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db "fldcw", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fnstenv", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db "fnstcw", 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fiadd", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fimul", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "ficom", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "ficomp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fisub", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fisubr", 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fidiv", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fidivr", 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fild", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fisttp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fist", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "fistp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4
+    db "(bad)", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255
+    db "fld", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10
+    db "(bad)", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255
+    db "fstp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10
+    db "fadd", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8
+    db "fmul", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8
+    db "fcom", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8
+    db "fcomp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8
+    db "fsub", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8
+    db "fsubr", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8
+    db "fdiv", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8
+    db "fdivr", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8
+    db "fld", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8
+    db "fisttp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 8
+    db "fst", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8
+    db "fstp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8
+    db "frstor", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db "(bad)", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255
+    db "fnsave", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db "fnstsw", 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fiadd", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fimul", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "ficom", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "ficomp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fisub", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fisubr", 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fidiv", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fidivr", 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fild", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fisttp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fist", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fistp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fbld", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10
+    db "fild", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8
+    db "fbstp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10
+    db "fistp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8
+x87_reg:
+    db "fadd", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    db "fmul", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    db "fcom", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3
+    db "fcomp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3
+    db "fsub", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    db "fsubr", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    db "fdiv", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    db "fdivr", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    db "fld", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3
+    db "fxch", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3
+    db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db "fstp1", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3
+    db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db "fcmovb", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    db "fcmove", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    db "fcmovbe", 0, 0, 0, 0, 0, 0, 0, 0, 1
+    db "fcmovu", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db "fcmovnb", 0, 0, 0, 0, 0, 0, 0, 0, 1
+    db "fcmovne", 0, 0, 0, 0, 0, 0, 0, 0, 1
+    db "fcmovnbe", 0, 0, 0, 0, 0, 0, 0, 1
+    db "fcmovnu", 0, 0, 0, 0, 0, 0, 0, 0, 1
+    db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db "fucomi", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    db "fcomi", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db "fadd", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fmul", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fcom2", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3
+    db "fcomp3", 0, 0, 0, 0, 0, 0, 0, 0, 0, 3
+    db "fsubr", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fsub", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fdivr", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fdiv", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "ffree", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3
+    db "fxch4", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3
+    db "fst", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3
+    db "fstp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3
+    db "fucom", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3
+    db "fucomp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 3
+    db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db "faddp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fmulp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fcomp5", 0, 0, 0, 0, 0, 0, 0, 0, 0, 3
+    db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db "fsubrp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fsubp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fdivrp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "fdivp", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+    db "ffreep", 0, 0, 0, 0, 0, 0, 0, 0, 0, 3
+    db "fxch7", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3
+    db "fstp8", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3
+    db "fstp9", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3
+    db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db "fucomip", 0, 0, 0, 0, 0, 0, 0, 0, 1
+    db "fcomip", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+x87_fix:
+    db 0xD9, 0xD0, "fnop", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xE0, "fchs", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xE1, "fabs", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xE4, "ftst", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xE5, "fxam", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xE8, "fld1", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xE9, "fldl2t", 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xEA, "fldl2e", 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xEB, "fldpi", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xEC, "fldlg2", 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xED, "fldln2", 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xEE, "fldz", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xF0, "f2xm1", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xF1, "fyl2x", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xF2, "fptan", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xF3, "fpatan", 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xF4, "fxtract", 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xF5, "fprem1", 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xF6, "fdecstp", 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xF7, "fincstp", 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xF8, "fprem", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xF9, "fyl2xp1", 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xFA, "fsqrt", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xFB, "fsincos", 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xFC, "frndint", 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xFD, "fscale", 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xFE, "fsin", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xD9, 0xFF, "fcos", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xDA, 0xE9, "fucompp", 0, 0, 0, 0, 0, 0, 0
+    db 0xDB, 0xE2, "fnclex", 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xDB, 0xE3, "fninit", 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xDE, 0xD9, "fcompp", 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xDF, 0xE0, "fnstsw", 0, 0, 0, 0, 0, 0, 0, 1
+    db 0
