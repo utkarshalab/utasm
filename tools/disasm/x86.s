@@ -81,6 +81,34 @@ DEFAULT REL
 %define FM_Ewv      41          ; sldt/str/...: register at operand size, memory WORD
 %define FM_G7       42          ; 0F 01: system instructions (sgdt, rdtscp, ...)
 %define FM_GAE      43          ; 0F AE: fences, fxsave, ldmxcsr, clflush, ...
+; SSE-family forms (V = xmm/mm from ModRM.reg, W = xmm/mm or memory from
+; ModRM.rm, U = register-only rm, M = memory-only rm, E/G = general register)
+%define FM_VW       44
+%define FM_WV       45
+%define FM_VWI      46
+%define FM_VE       47
+%define FM_EV       48
+%define FM_GW       49
+%define FM_GU       50
+%define FM_UI       51          ; shift-by-immediate group (0F 71/72/73)
+%define FM_VM       52
+%define FM_MV       53
+%define FM_V12      54          ; movlps/movhps (memory) or movhlps/movlhps
+%define FM_EVI      55
+%define FM_VEI      56
+%define FM_GUI      57
+%define FM_VW0      58          ; blendv*: implicit xmm0 third operand
+%define FM_CMPS     59          ; cmpps & co: imm < 8 becomes cmpltps & co
+%define FM_PCLMUL   60
+%define FM_ENDBR    61
+
+; SSE entry flags (x86_sse0f / x86_sse38 / x86_sse3a)
+%define SF_MEM      7           ; memory size: 1 B, 2 W, 3 D, 4 Q, 5 vector
+%define SF_MMX      8           ; mm registers
+%define SF_WQ       16          ; REX.W: trailing 'd' of the name becomes 'q'
+%define SF_NDS      32          ; VEX: extra source register
+%define SF_NOVEX    64
+%define SF_INT      0x80        ; an integer instruction: flags are FL_*
 
 ; ---- entry flags ----
 %define FL_MODRM     1
@@ -96,6 +124,7 @@ extern fmt_str
 extern fmt_char
 extern fmt_hex
 extern fmt_pad
+extern fmt_udec
 
 [SECTION .bss]
 align 8
@@ -110,6 +139,9 @@ dx_disp:    resq 1              ; memory displacement (sign-extended)
 dx_textpos: resq 1              ; FmtBuf length where this text began
 dx_rex:     resb 1              ; REX byte, or 0
 dx_p66:     resb 1
+dx_n66:     resb 1              ; number of 66 prefixes (extra ones print data16)
+dx_sflags:  resb 1              ; SSE entry flags, 0 for integer instructions
+dx_namebuf: resb 24             ; a mnemonic built at decode time
 dx_p67:     resb 1              ; address-size prefix: 32-bit address registers
 dx_map:     resb 1              ; 1 = one-byte map, 2 = 0F map
 dx_lock:    resb 1
@@ -168,6 +200,8 @@ x86_decode:
     xor     eax, eax
     mov     [rel dx_rex], al
     mov     [rel dx_p66], al
+    mov     [rel dx_n66], al
+    mov     [rel dx_sflags], al
     mov     [rel dx_p67], al
     mov     [rel dx_lock], al
     mov     [rel dx_rep], al
@@ -220,6 +254,7 @@ x86_decode:
     jmp     .p_skip
 .p_66:
     mov     byte [rel dx_p66], 1
+    inc     byte [rel dx_n66]
     jmp     .p_skip
 .p_67:
     mov     byte [rel dx_p67], 1
@@ -253,13 +288,90 @@ x86_decode:
     cmp     byte [rel dx_fail], 0
     jne     .bad
     cmp     al, 0x38
-    je      .bad                           ; three-byte maps: not yet
+    je      .map38
     cmp     al, 0x3A
-    je      .bad
+    je      .map3a
     lea     r12, [rel x86_map2]
+    jmp     .have_op
+.map38:
+    mov     byte [rel dx_map], 3
+    jmp     .map3
+.map3a:
+    mov     byte [rel dx_map], 4
+.map3:
+    call    dx_rd8                         ; the opcode byte after 0F 38 / 0F 3A
+    cmp     byte [rel dx_fail], 0
+    jne     .bad
 .have_op:
     mov     [rel dx_op], al
-    movzx   eax, al
+
+    ; ---- SSE family: 0F / 0F 38 / 0F 3A chosen by the mandatory prefix ----
+    cmp     byte [rel dx_map], 2
+    jb      .integer
+    xor     ecx, ecx                       ; prefix index: none
+    cmp     byte [rel dx_p66], 0
+    je      .pfx_f3
+    mov     ecx, 1                         ; 66
+.pfx_f3:
+    cmp     byte [rel dx_rep], 0
+    je      .pfx_f2
+    mov     ecx, 2                         ; F3
+.pfx_f2:
+    cmp     byte [rel dx_repne], 0
+    je      .pfx_done
+    mov     ecx, 3                         ; F2
+.pfx_done:
+    lea     rdx, [rel x86_sse0f]
+    cmp     byte [rel dx_map], 3
+    jb      .sse_tab
+    lea     rdx, [rel x86_sse38]
+    je      .sse_tab
+    lea     rdx, [rel x86_sse3a]
+.sse_tab:
+    movzx   eax, byte [rel dx_op]
+    lea     eax, [rax*4 + rcx]
+    lea     rdx, [rdx + rax*4]
+    movzx   eax, word [rdx]
+    cmp     eax, 0xFFFF
+    je      .sse_none
+    mov     r12, rdx
+    mov     r13d, eax
+    ; the prefix is part of the opcode now, not operand size / rep
+    cmp     ecx, 1
+    jne     .sse_c2
+    mov     byte [rel dx_p66], 0
+    dec     byte [rel dx_n66]
+.sse_c2:
+    cmp     ecx, 2
+    jne     .sse_c3
+    mov     byte [rel dx_rep], 0
+.sse_c3:
+    cmp     ecx, 3
+    jne     .sse_c4
+    mov     byte [rel dx_repne], 0
+.sse_c4:
+    mov     al, [r12 + 2]
+    mov     [rel dx_form], al
+    mov     al, [r12 + 3]
+    test    al, SF_INT
+    jz      .sse_vec
+    and     al, 0x7F                       ; integer instruction: FL_* flags
+    mov     [rel dx_flags], al
+    jmp     .entry_loaded
+.sse_vec:
+    mov     [rel dx_sflags], al
+    or      byte [rel dx_sflags], 0x80     ; mark "SSE" even with no flags set
+    mov     byte [rel dx_flags], FL_MODRM
+    cmp     byte [rel dx_form], FM_NONE
+    jne     .entry_loaded
+    mov     byte [rel dx_flags], 0         ; emms: no ModRM
+    jmp     .entry_loaded
+.sse_none:
+    cmp     byte [rel dx_map], 2
+    jne     .bad                           ; nothing else in 0F 38 / 0F 3A
+    lea     r12, [rel x86_map2]
+.integer:
+    movzx   eax, byte [rel dx_op]
     lea     r12, [r12 + rax*4]             ; r12 = table entry
     movzx   r13d, word [r12]               ; r13 = name offset / group
     cmp     r13d, 0xFFFF
@@ -268,6 +380,7 @@ x86_decode:
     mov     [rel dx_form], al
     mov     al, [r12 + 3]
     mov     [rel dx_flags], al
+.entry_loaded:
 
     ; ---- ModRM (and SIB / displacement) ----
     test    byte [rel dx_flags], FL_MODRM
@@ -323,6 +436,16 @@ x86_decode:
     mov     al, 16
 .osz:
     mov     [rel dx_osz], al
+
+    ; ---- redundant 66 prefixes: objdump writes "data16 " for each ----
+.data16:
+    cmp     byte [rel dx_n66], 1
+    jbe     .data16_done
+    dec     byte [rel dx_n66]
+    lea     rsi, [rel s_data16]
+    call    dx_puts
+    jmp     .data16
+.data16_done:
 
     ; ---- 0F 1F nop with a segment prefix: objdump writes "cs nop ..." ----
     cmp     byte [rel dx_map], 2
@@ -626,6 +749,12 @@ dx_mem:
     lea     rsi, [rel s_dword]
     cmp     edi, 32
     je      .size
+    lea     rsi, [rel s_xmmword]
+    cmp     edi, 128
+    je      .size
+    lea     rsi, [rel s_ymmword]
+    cmp     edi, 256
+    je      .size
     lea     rsi, [rel s_qword]
 .size:
     call    dx_puts
@@ -858,6 +987,11 @@ dx_operands:
     je      .f_g7
     cmp     eax, FM_GAE
     je      .f_gae
+    cmp     eax, FM_VW
+    jb      .unknown_form
+    call    dx_sse_operands
+    jmp     .done
+.unknown_form:
     mov     byte [rel dx_fail], 1
     jmp     .done
 
@@ -1293,6 +1427,395 @@ dx_operands:
     pop     rbx
     ret
 
+; ============================================================================
+; SSE-family operands
+; ============================================================================
+; Operand kinds:  V = vector register from ModRM.reg
+;                 W = vector register or memory from ModRM.rm
+;                 U = vector register from ModRM.rm (register only)
+;                 M = memory from ModRM.rm (memory only)
+;                 E = general register or memory, G = general register
+; Vector registers are mm0-7 (MMX forms) or xmm0-15. General registers are
+; 64-bit with REX.W, else 32-bit.
+
+dx_sse_operands:
+    push    rbx
+    ; REX.W turns a trailing 'd' into 'q' (movd -> movq, pextrd -> pextrq)
+    test    byte [rel dx_sflags], SF_WQ
+    jz      .named
+    test    byte [rel dx_rex], 8
+    jz      .named
+    call    dx_name_d2q
+.named:
+    movzx   eax, byte [rel dx_form]
+    cmp     eax, FM_VW
+    je      .VW
+    cmp     eax, FM_WV
+    je      .WV
+    cmp     eax, FM_VWI
+    je      .VWI
+    cmp     eax, FM_VE
+    je      .VE
+    cmp     eax, FM_EV
+    je      .EV
+    cmp     eax, FM_GW
+    je      .GW
+    cmp     eax, FM_GU
+    je      .GU
+    cmp     eax, FM_UI
+    je      .UI
+    cmp     eax, FM_VM
+    je      .VM
+    cmp     eax, FM_MV
+    je      .MV
+    cmp     eax, FM_V12
+    je      .V12
+    cmp     eax, FM_EVI
+    je      .EVI
+    cmp     eax, FM_VEI
+    je      .VEI
+    cmp     eax, FM_GUI
+    je      .GUI
+    cmp     eax, FM_VW0
+    je      .VW0
+    cmp     eax, FM_CMPS
+    je      .CMPS
+    cmp     eax, FM_PCLMUL
+    je      .PCLMUL
+    cmp     eax, FM_ENDBR
+    je      .ENDBR
+    jmp     .fail
+
+.VW:
+    call    .mn
+    call    dx_opV
+    call    dx_sep
+    call    dx_opW
+    jmp     .done
+.WV:
+    call    .mn
+    call    dx_opW
+    call    dx_sep
+    call    dx_opV
+    jmp     .done
+.VWI:
+    call    .mn
+    call    dx_opV
+    call    dx_sep
+    call    dx_opW
+    jmp     .imm8
+.VE:
+    call    .mn
+    call    dx_opV
+    call    dx_sep
+    call    dx_opE
+    jmp     .done
+.EV:
+    call    .mn
+    call    dx_opE
+    call    dx_sep
+    call    dx_opV
+    jmp     .done
+.GW:
+    call    .mn
+    call    dx_opG
+    call    dx_sep
+    call    dx_opW
+    jmp     .done
+.GU:
+    cmp     byte [rel dx_mod], 3
+    jne     .fail
+    call    .mn
+    mov     edi, 32
+    call    dx_greg
+    call    dx_sep
+    call    dx_opW
+    jmp     .done
+.UI:                                       ; group: the name comes from ModRM.reg
+    cmp     byte [rel dx_mod], 3
+    jne     .fail
+    lea     rax, [rel x86_groups]
+    movzx   ecx, word [r12]                ; group number (r12 = SSE entry)
+    shl     ecx, 3
+    movzx   edx, byte [rel dx_regno]
+    and     edx, 7
+    add     ecx, edx
+    movzx   ecx, word [rax + rcx*4]
+    cmp     ecx, 0xFFFF
+    je      .fail
+    lea     rax, [rel x86_names]
+    add     rax, rcx
+    mov     [rel dx_mnem], rax
+    call    .mn
+    call    dx_opW
+    jmp     .imm8
+.VM:
+    cmp     byte [rel dx_mod], 3
+    je      .fail
+    call    .mn
+    call    dx_opV
+    call    dx_sep
+    call    dx_opW
+    jmp     .done
+.MV:
+    cmp     byte [rel dx_mod], 3
+    je      .fail
+    call    .mn
+    call    dx_opW
+    call    dx_sep
+    call    dx_opV
+    jmp     .done
+.V12:                                      ; movlps/movhps, or movhlps/movlhps
+    cmp     byte [rel dx_mod], 3
+    jne     .VW
+    lea     rax, [rel s_movhlps]
+    cmp     byte [rel dx_op], 0x12
+    je      .v12_name
+    lea     rax, [rel s_movlhps]
+.v12_name:
+    mov     [rel dx_mnem], rax
+    jmp     .VW
+.EVI:
+    call    .mn
+    call    dx_opE
+    call    dx_sep
+    call    dx_opV
+    jmp     .imm8
+.VEI:
+    call    .mn
+    call    dx_opV
+    call    dx_sep
+    call    dx_opE
+    jmp     .imm8
+.GUI:
+    cmp     byte [rel dx_mod], 3
+    jne     .fail
+    call    .mn
+    mov     edi, 32
+    call    dx_greg
+    call    dx_sep
+    call    dx_opW
+    jmp     .imm8
+.VW0:
+    call    .mn
+    call    dx_opV
+    call    dx_sep
+    call    dx_opW
+    lea     rsi, [rel s_commaxmm0]
+    call    dx_puts
+    jmp     .done
+
+.CMPS:                                     ; cmpps xmm,xmm,imm - or cmpltps xmm,xmm
+    call    .peek_imm
+    cmp     eax, 8
+    jae     .VWI
+    ; "cmp" + predicate + the entry's suffix (ps/pd/ss/sd)
+    lea     rdi, [rel dx_namebuf]
+    mov     byte [rdi], 'c'
+    mov     byte [rdi + 1], 'm'
+    mov     byte [rdi + 2], 'p'
+    add     rdi, 3
+    lea     rsi, [rel cmp_preds]
+    lea     rsi, [rsi + rax*8]
+.cmps_copy:
+    mov     cl, [rsi]
+    test    cl, cl
+    jz      .cmps_suffix
+    mov     [rdi], cl
+    inc     rdi
+    inc     rsi
+    jmp     .cmps_copy
+.cmps_suffix:
+    mov     rsi, [rel dx_mnem]             ; "cmpps": suffix at +3
+    mov     cl, [rsi + 3]
+    mov     [rdi], cl
+    mov     cl, [rsi + 4]
+    mov     [rdi + 1], cl
+    mov     byte [rdi + 2], 0
+    lea     rax, [rel dx_namebuf]
+    mov     [rel dx_mnem], rax
+    call    .mn
+    call    dx_opV
+    call    dx_sep
+    call    dx_opW
+    call    dx_rd8                         ; consume the predicate
+    jmp     .done
+
+.PCLMUL:                                   ; pclmulqdq: known selectors get names
+    call    .peek_imm
+    lea     rsi, [rel s_pclmul_ll]
+    cmp     eax, 0x00
+    je      .pcl_named
+    lea     rsi, [rel s_pclmul_hl]
+    cmp     eax, 0x01
+    je      .pcl_named
+    lea     rsi, [rel s_pclmul_lh]
+    cmp     eax, 0x10
+    je      .pcl_named
+    lea     rsi, [rel s_pclmul_hh]
+    cmp     eax, 0x11
+    jne     .VWI
+.pcl_named:
+    mov     [rel dx_mnem], rsi
+    call    .mn
+    call    dx_opV
+    call    dx_sep
+    call    dx_opW
+    call    dx_rd8
+    jmp     .done
+
+.ENDBR:                                    ; F3 0F 1E FA / FB
+    lea     rax, [rel s_endbr64]
+    cmp     byte [rel dx_modrm], 0xFA
+    je      .endbr_name
+    lea     rax, [rel s_endbr32]
+    cmp     byte [rel dx_modrm], 0xFB
+    jne     .fail
+.endbr_name:
+    mov     [rel dx_mnem], rax
+    xor     esi, esi
+    call    dx_mnemonic
+    jmp     .done
+
+.imm8:
+    call    dx_rd8
+    mov     rsi, rax
+    push    rsi
+    call    dx_sep
+    pop     rsi
+    call    dx_hex
+    jmp     .done
+
+.fail:
+    mov     byte [rel dx_fail], 1
+.done:
+    pop     rbx
+    ret
+
+.mn:
+    mov     esi, 1
+    jmp     dx_mnemonic
+
+; the immediate after the ModRM operand, without consuming it
+.peek_imm:
+    mov     rcx, [rel dx_cur]
+    cmp     rcx, [rel dx_end]
+    jae     .peek_fail
+    movzx   eax, byte [rcx]
+    ret
+.peek_fail:
+    mov     byte [rel dx_fail], 1
+    mov     eax, 0xFF
+    ret
+
+; ---- dx_name_d2q -------------------------
+; Copies the mnemonic to dx_namebuf with its last character turned into 'q'.
+dx_name_d2q:
+    mov     rsi, [rel dx_mnem]
+    lea     rdi, [rel dx_namebuf]
+.copy:
+    mov     al, [rsi]
+    mov     [rdi], al
+    test    al, al
+    jz      .copied
+    inc     rsi
+    inc     rdi
+    jmp     .copy
+.copied:
+    mov     byte [rdi - 1], 'q'
+    lea     rax, [rel dx_namebuf]
+    mov     [rel dx_mnem], rax
+    ret
+
+; ---- vector operand printers ------------
+
+; dx_vecreg: vector register esi ("mm3" / "xmm12")
+dx_vecreg:
+    push    rsi
+    push    rsi
+    lea     rsi, [rel s_mm]
+    test    byte [rel dx_sflags], SF_MMX
+    jnz     .prefix
+    lea     rsi, [rel s_xmm]
+.prefix:
+    call    dx_puts
+    pop     rsi
+    pop     rsi
+    test    byte [rel dx_sflags], SF_MMX
+    jz      .num
+    and     esi, 7
+.num:
+    mov     rdi, [rel dx_fb]
+    jmp     fmt_udec
+
+; dx_memsize: edi = memory operand size in bits for this entry (0 = none)
+dx_memsize:
+    movzx   eax, byte [rel dx_sflags]
+    and     eax, SF_MEM
+    xor     edi, edi
+    cmp     eax, 1
+    jne     .w
+    mov     edi, 8
+.w: cmp     eax, 2
+    jne     .d
+    mov     edi, 16
+.d: cmp     eax, 3
+    jne     .q
+    mov     edi, 32
+.q: cmp     eax, 4
+    jne     .x
+    mov     edi, 64
+.x: cmp     eax, 5
+    jne     .ret
+    mov     edi, 128
+    test    byte [rel dx_sflags], SF_MMX
+    jz      .ret
+    mov     edi, 64
+.ret:
+    ret
+
+dx_opV:
+    movzx   esi, byte [rel dx_regno]
+    jmp     dx_vecreg
+
+dx_opW:
+    cmp     byte [rel dx_mod], 3
+    jne     .mem
+    movzx   esi, byte [rel dx_rmreg]
+    jmp     dx_vecreg
+.mem:
+    call    dx_memsize
+    jmp     dx_mem
+
+; E: general register (32/64 by REX.W) or memory (entry size, else 32/64)
+dx_opE:
+    mov     edi, 32
+    test    byte [rel dx_rex], 8
+    jz      .sized
+    mov     edi, 64
+.sized:
+    cmp     byte [rel dx_mod], 3
+    jne     .mem
+    movzx   esi, byte [rel dx_rmreg]
+    jmp     dx_reg
+.mem:
+    push    rdi
+    call    dx_memsize
+    pop     rax
+    test    edi, edi
+    jnz     .have
+    mov     edi, eax
+.have:
+    jmp     dx_mem
+
+dx_opG:
+    mov     edi, 32
+    test    byte [rel dx_rex], 8
+    jz      .reg
+    mov     edi, 64
+.reg:
+    jmp     dx_greg
+
 ; ---- string instructions ----------------
 ;
 ; objdump spells them with explicit operands, e.g.
@@ -1421,6 +1944,23 @@ s_byte:     db "BYTE PTR ", 0
 s_word:     db "WORD PTR ", 0
 s_dword:    db "DWORD PTR ", 0
 s_qword:    db "QWORD PTR ", 0
+s_xmmword:  db "XMMWORD PTR ", 0
+s_ymmword:  db "YMMWORD PTR ", 0
+s_data16:   db "data16 ", 0
+s_mm:       db "mm", 0
+s_xmm:      db "xmm", 0
+s_commaxmm0: db ",xmm0", 0
+s_movhlps:  db "movhlps", 0
+s_movlhps:  db "movlhps", 0
+s_endbr64:  db "endbr64", 0
+s_endbr32:  db "endbr32", 0
+s_pclmul_ll: db "pclmullqlqdq", 0
+s_pclmul_hl: db "pclmulhqlqdq", 0
+s_pclmul_lh: db "pclmullqhqdq", 0
+s_pclmul_hh: db "pclmulhqhqdq", 0
+; cmpps predicates 0-7, 8-byte slots
+cmp_preds:  db "eq",0,0,0,0,0,0, "lt",0,0,0,0,0,0, "le",0,0,0,0,0,0, "unord",0,0,0
+            db "neq",0,0,0,0,0, "nlt",0,0,0,0,0, "nle",0,0,0,0,0, "ord",0,0,0,0,0
 s_ds:       db "ds:", 0
 s_rip:      db "rip", 0
 s_eip:      db "eip", 0
