@@ -29,9 +29,10 @@ DEFAULT REL
 ;   dump_put_name    name, or "0x<hex>" when the value is not in the table
 ;   dump_put_strtab  bounds-checked read of a name from an ELF string table
 ;
-; Name tables use fixed 32-byte entries (u32 value + 28-byte NUL-padded
-; name) and 32-bit table-relative offsets, so this file needs no
-; relocations for its data.
+; Name tables use fixed 32-byte entries (u32 value + NUL-terminated name,
+; padded to the next 32-byte boundary; names must stay under 28 bytes)
+; and are located with RIP-relative lea in dump_name, so no label
+; arithmetic appears in the data.
 ;
 ; Calling convention (AMD64):
 ;   args  : rdi = FmtBuf (except dump_name), then rsi, rdx, rcx
@@ -163,11 +164,45 @@ dump_name:
     cmp     rsi, rcx
     ja      .done                          ; tables hold 32-bit values
 
-    lea     r8, [rel name_base]
-    mov     ecx, [r8 + rdi*8 + (kind_index - name_base)]      ; table start
-    mov     edx, [r8 + rdi*8 + (kind_index - name_base) + 4]  ; table end
-    add     rcx, r8
-    add     rdx, r8
+    ; rcx = table start, rdx = table end for this kind. Located with
+    ; RIP-relative lea (relocated by the linker) rather than an index of
+    ; label differences in data: utasm's own assembler evaluates forward
+    ; label differences in data (dd end - start) as 0, which made every
+    ; table look empty in a self-built utasm.
+    lea     rcx, [rel tab_etype]
+    lea     rdx, [rel tab_etype_end]
+    cmp     edi, NAME_ETYPE
+    je      .scan
+    lea     rcx, [rel tab_machine]
+    lea     rdx, [rel tab_machine_end]
+    cmp     edi, NAME_MACHINE
+    je      .scan
+    lea     rcx, [rel tab_osabi]
+    lea     rdx, [rel tab_osabi_end]
+    cmp     edi, NAME_OSABI
+    je      .scan
+    lea     rcx, [rel tab_shtype]
+    lea     rdx, [rel tab_shtype_end]
+    cmp     edi, NAME_SHTYPE
+    je      .scan
+    lea     rcx, [rel tab_ptype]
+    lea     rdx, [rel tab_ptype_end]
+    cmp     edi, NAME_PTYPE
+    je      .scan
+    lea     rcx, [rel tab_sttype]
+    lea     rdx, [rel tab_sttype_end]
+    cmp     edi, NAME_STTYPE
+    je      .scan
+    lea     rcx, [rel tab_stbind]
+    lea     rdx, [rel tab_stbind_end]
+    cmp     edi, NAME_STBIND
+    je      .scan
+    lea     rcx, [rel tab_stvis]
+    lea     rdx, [rel tab_stvis_end]
+    cmp     edi, NAME_STVIS
+    je      .scan
+    lea     rcx, [rel tab_rx86]            ; NAME_R_X86_64 (range-checked above)
+    lea     rdx, [rel tab_rx86_end]
 
 .scan:
     cmp     rcx, rdx
@@ -270,32 +305,18 @@ dump_put_strtab:
 ; Name tables
 ; ============================================================================
 
+; One 32-byte entry: value, NUL-terminated name, padding to the next
+; entry. Tables start on a NAMEENT_SIZE boundary, so `align` pads each
+; entry to exactly NAMEENT_SIZE bytes as long as the name is < 28 bytes.
+; (Plain directives only, so utasm's own macro engine can assemble it.)
 %macro NAMEENT 2
-%strlen %%n %2
-%if %%n > NAMEENT_SIZE - 5
-    %error "name too long for a name table entry"
-%endif
     dd      %1
-    db      %2
-    times NAMEENT_SIZE - 4 - %%n db 0
+    db      %2, 0
+    align   NAMEENT_SIZE
 %endmacro
 
 [SECTION .rodata]
-align 8
-name_base:
-
-; (start, end) offsets of each table relative to name_base, by NAME_* kind
-kind_index:
-    dd  tab_etype   - name_base, tab_etype_end   - name_base   ; NAME_ETYPE
-    dd  tab_machine - name_base, tab_machine_end - name_base   ; NAME_MACHINE
-    dd  tab_osabi   - name_base, tab_osabi_end   - name_base   ; NAME_OSABI
-    dd  tab_shtype  - name_base, tab_shtype_end  - name_base   ; NAME_SHTYPE
-    dd  tab_ptype   - name_base, tab_ptype_end   - name_base   ; NAME_PTYPE
-    dd  tab_sttype  - name_base, tab_sttype_end  - name_base   ; NAME_STTYPE
-    dd  tab_stbind  - name_base, tab_stbind_end  - name_base   ; NAME_STBIND
-    dd  tab_stvis   - name_base, tab_stvis_end   - name_base   ; NAME_STVIS
-    dd  tab_rx86    - name_base, tab_rx86_end    - name_base   ; NAME_R_X86_64
-
+align NAMEENT_SIZE
 tab_etype:
     NAMEENT ET_NONE,        "NONE (No file type)"
     NAMEENT ET_REL,         "REL (Relocatable file)"
