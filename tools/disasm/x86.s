@@ -101,6 +101,18 @@ DEFAULT REL
 %define FM_CMPS     59          ; cmpps & co: imm < 8 becomes cmpltps & co
 %define FM_PCLMUL   60
 %define FM_ENDBR    61
+; VEX-only forms (x86_vex0f / x86_vex38 / x86_vex3a)
+%define FM_XBCAST   62          ; broadcast: V (xmm/ymm by L), xmm or memory
+%define FM_XINS     63          ; vinsert*128: ymm, ymm, xmm/m128, imm8
+%define FM_XEXT     64          ; vextract*128: xmm/m128, ymm, imm8
+%define FM_XIS4     65          ; vblendv*: V, vvvv, W, register in imm8[7:4]
+%define FM_BGBE     66          ; BMI: gpr, vvvv gpr, r/m
+%define FM_BGEB     67          ; BMI: gpr, r/m, vvvv gpr
+%define FM_BBE      68          ; BMI group: vvvv gpr, r/m
+%define FM_XMLD     69          ; masked load: V, vvvv, mem
+%define FM_XMST     70          ; masked store: mem, vvvv, V
+%define FM_BRORX    71          ; rorx: gpr, r/m, imm8
+%define FM_XZERO    72          ; vzeroupper / vzeroall
 
 ; SSE entry flags (x86_sse0f / x86_sse38 / x86_sse3a)
 %define SF_MEM      7           ; memory size: 1 B, 2 W, 3 D, 4 Q, 5 vector
@@ -109,6 +121,7 @@ DEFAULT REL
 %define SF_NDS      32          ; VEX: extra source register
 %define SF_NOVEX    64
 %define SF_INT      0x80        ; an integer instruction: flags are FL_*
+%define VF_WSD      8           ; VEX-only tables: VEX.W turns the last 's' into 'd'
 
 ; ---- entry flags ----
 %define FL_MODRM     1
@@ -141,6 +154,12 @@ dx_rex:     resb 1              ; REX byte, or 0
 dx_p66:     resb 1
 dx_n66:     resb 1              ; number of 66 prefixes (extra ones print data16)
 dx_sflags:  resb 1              ; SSE entry flags, 0 for integer instructions
+dx_vex:     resb 1              ; 1 = VEX-encoded
+dx_vl:      resb 1              ; VEX.L
+dx_vvvv:    resb 1              ; VEX.vvvv (already inverted), 0-15
+dx_vpfx:    resb 1              ; print a "v" before the SSE name
+dx_vclass:  resb 1              ; vector registers: 0 mm, 1 xmm, 2 ymm
+dx_half:    resb 1              ; widening op: source is half the destination width
 dx_namebuf: resb 24             ; a mnemonic built at decode time
 dx_p67:     resb 1              ; address-size prefix: 32-bit address registers
 dx_map:     resb 1              ; 1 = one-byte map, 2 = 0F map
@@ -202,6 +221,12 @@ x86_decode:
     mov     [rel dx_p66], al
     mov     [rel dx_n66], al
     mov     [rel dx_sflags], al
+    mov     [rel dx_vex], al
+    mov     [rel dx_vl], al
+    mov     [rel dx_vvvv], al
+    mov     [rel dx_vpfx], al
+    mov     [rel dx_half], al
+    mov     byte [rel dx_vclass], 1
     mov     [rel dx_p67], al
     mov     [rel dx_lock], al
     mov     [rel dx_rep], al
@@ -267,12 +292,171 @@ x86_decode:
 
     ; ---- REX ----
 .rex:
+    cmp     al, 0xC5
+    je      .vex2
+    cmp     al, 0xC4
+    je      .vex3
     mov     ecx, eax
     and     ecx, 0xF0
     cmp     ecx, 0x40
     jne     .opcode
     call    dx_rd8
     mov     [rel dx_rex], al
+    jmp     .opcode
+
+    ; ---- VEX (C5 xx / C4 xx xx): AVX, AVX2, FMA, BMI ----
+; The R/X/B/W bits become a synthetic REX byte, so the ModRM/SIB code and
+; the REX.W checks work unchanged. R, X, B and vvvv are stored inverted.
+.vex2:
+    call    dx_rd8                         ; C5
+    call    dx_rd8                         ; R vvvv L pp
+    mov     byte [rel dx_map], 2           ; implied 0F map
+    mov     edx, 0x40
+    test    al, 0x80
+    jnz     .vex_fields
+    or      edx, 4                         ; R
+    jmp     .vex_fields
+.vex3:
+    call    dx_rd8                         ; C4
+    call    dx_rd8                         ; R X B mmmmm
+    mov     edx, 0x40
+    test    al, 0x80
+    jnz     .v3_x
+    or      edx, 4                         ; R
+.v3_x:
+    test    al, 0x40
+    jnz     .v3_b
+    or      edx, 2                         ; X
+.v3_b:
+    test    al, 0x20
+    jnz     .v3_map
+    or      edx, 1                         ; B
+.v3_map:
+    and     eax, 0x1F
+    cmp     eax, 1
+    jb      .bad
+    cmp     eax, 3
+    ja      .bad
+    inc     eax                            ; 1/2/3 -> maps 2/3/4 (0F, 0F38, 0F3A)
+    mov     [rel dx_map], al
+    call    dx_rd8                         ; W vvvv L pp (rd8 keeps edx)
+    test    al, 0x80
+    jz      .vex_fields
+    or      edx, 8                         ; W
+.vex_fields:
+    ; eax = the byte holding vvvv L pp, edx = synthetic REX
+    mov     [rel dx_rex], dl
+    mov     ecx, eax
+    shr     ecx, 3
+    not     ecx
+    and     ecx, 15
+    mov     [rel dx_vvvv], cl
+    mov     ecx, eax
+    shr     ecx, 2
+    and     ecx, 1
+    mov     [rel dx_vl], cl
+    and     eax, 3                         ; pp: prefix index
+    mov     byte [rel dx_vex], 1
+    push    rax
+    call    dx_rd8                         ; opcode
+    mov     [rel dx_op], al
+    pop     rcx
+    cmp     byte [rel dx_fail], 0
+    jne     .bad
+    ; VEX-only table first
+    lea     rdx, [rel x86_vex0f]
+    cmp     byte [rel dx_map], 3
+    jb      .vex_tab
+    lea     rdx, [rel x86_vex38]
+    je      .vex_tab
+    lea     rdx, [rel x86_vex3a]
+.vex_tab:
+    movzx   eax, byte [rel dx_op]
+    lea     eax, [rax*4 + rcx]
+    lea     r12, [rdx + rax*4]
+    movzx   r13d, word [r12]
+    cmp     r13d, 0xFFFF
+    je      .vex_sse
+    mov     al, [r12 + 3]
+    mov     [rel dx_sflags], al            ; bit 3 = VF_WSD here
+    jmp     .vex_loaded
+.vex_sse:
+    ; otherwise the SSE instruction with a "v" in front
+    lea     rdx, [rel x86_sse0f]
+    cmp     byte [rel dx_map], 3
+    jb      .vex_sse_tab
+    lea     rdx, [rel x86_sse38]
+    je      .vex_sse_tab
+    lea     rdx, [rel x86_sse3a]
+.vex_sse_tab:
+    movzx   eax, byte [rel dx_op]
+    lea     eax, [rax*4 + rcx]
+    lea     r12, [rdx + rax*4]
+    movzx   r13d, word [r12]
+    cmp     r13d, 0xFFFF
+    je      .bad
+    mov     al, [r12 + 3]
+    test    al, SF_INT | SF_NOVEX | SF_MMX
+    jnz     .bad
+    mov     [rel dx_sflags], al
+    mov     byte [rel dx_vpfx], 1
+.vex_loaded:
+    or      byte [rel dx_sflags], 0x80     ; mark "vector"
+    mov     al, [r12 + 2]
+    mov     [rel dx_form], al
+    mov     byte [rel dx_flags], FL_MODRM
+    cmp     al, FM_XZERO
+    jne     .vex_class
+    mov     byte [rel dx_flags], 0
+.vex_class:
+    ; xmm, or ymm with VEX.L for packed operations (scalar ones stay xmm)
+    mov     byte [rel dx_vclass], 1
+    ; widening moves/conversions: xmm/ymm destination, half-width source
+    cmp     byte [rel dx_map], 3
+    jne     .half_0f
+    movzx   eax, byte [rel dx_op]
+    and     eax, 0xEF                      ; 20-25 and 30-35
+    cmp     eax, 0x20
+    jb      .not_half
+    cmp     eax, 0x25
+    ja      .not_half
+    jmp     .is_half
+.half_0f:
+    cmp     byte [rel dx_map], 2
+    jne     .not_half
+    cmp     byte [rel dx_op], 0x5A         ; vcvtps2pd (no prefix)
+    jne     .half_e6
+    cmp     byte [rel dx_vpfx], 0
+    je      .not_half
+    cmp     ecx, 0
+    je      .is_half
+    jmp     .not_half
+.half_e6:
+    cmp     byte [rel dx_op], 0xE6         ; vcvtdq2pd (F3)
+    jne     .not_half
+    cmp     ecx, 2
+    jne     .not_half
+.is_half:
+    mov     byte [rel dx_half], 1
+    jmp     .by_l
+.not_half:
+    cmp     byte [rel dx_form], FM_XBCAST
+    je      .by_l                          ; broadcasts: destination by VEX.L
+    cmp     byte [rel dx_vl], 0
+    je      .entry_loaded
+    movzx   eax, byte [rel dx_sflags]
+    and     eax, SF_MEM
+    jz      .vex_ymm
+    cmp     eax, 5
+    jne     .entry_loaded
+.vex_ymm:
+    mov     byte [rel dx_vclass], 2
+    jmp     .entry_loaded
+.by_l:
+    cmp     byte [rel dx_vl], 0
+    je      .entry_loaded
+    mov     byte [rel dx_vclass], 2
+    jmp     .entry_loaded
 
     ; ---- opcode ----
 .opcode:
@@ -361,6 +545,10 @@ x86_decode:
 .sse_vec:
     mov     [rel dx_sflags], al
     or      byte [rel dx_sflags], 0x80     ; mark "SSE" even with no flags set
+    test    al, SF_MMX
+    jz      .sse_xmm
+    mov     byte [rel dx_vclass], 0
+.sse_xmm:
     mov     byte [rel dx_flags], FL_MODRM
     cmp     byte [rel dx_form], FM_NONE
     jne     .entry_loaded
@@ -691,6 +879,11 @@ dx_mnemonic:
     lea     rsi, [rel s_lock]
     call    dx_puts
 .no_lock:
+    cmp     byte [rel dx_vpfx], 0
+    je      .no_v
+    mov     esi, 'v'
+    call    dx_putc
+.no_v:
     mov     rsi, [rel dx_mnem]
     call    dx_puts
     pop     rsi
@@ -1440,12 +1633,25 @@ dx_operands:
 
 dx_sse_operands:
     push    rbx
-    ; REX.W turns a trailing 'd' into 'q' (movd -> movq, pextrd -> pextrq)
+    ; REX.W / VEX.W turns a trailing 'd' into 'q' (movd -> movq, ...)
     test    byte [rel dx_sflags], SF_WQ
+    jz      .no_wq
+    test    byte [rel dx_rex], 8
+    jz      .no_wq
+    mov     esi, 'q'
+    call    dx_name_last
+.no_wq:
+    ; VEX-only tables: VEX.W turns a trailing 's' into 'd' (ps -> pd)
+    cmp     byte [rel dx_vex], 0
+    je      .named
+    cmp     byte [rel dx_vpfx], 0
+    jne     .named
+    test    byte [rel dx_sflags], VF_WSD
     jz      .named
     test    byte [rel dx_rex], 8
     jz      .named
-    call    dx_name_d2q
+    mov     esi, 'd'
+    call    dx_name_last
 .named:
     movzx   eax, byte [rel dx_form]
     cmp     eax, FM_VW
@@ -1484,29 +1690,55 @@ dx_sse_operands:
     je      .PCLMUL
     cmp     eax, FM_ENDBR
     je      .ENDBR
+    cmp     eax, FM_XBCAST
+    je      .XBCAST
+    cmp     eax, FM_XINS
+    je      .XINS
+    cmp     eax, FM_XEXT
+    je      .XEXT
+    cmp     eax, FM_XIS4
+    je      .XIS4
+    cmp     eax, FM_BGBE
+    je      .BGBE
+    cmp     eax, FM_BGEB
+    je      .BGEB
+    cmp     eax, FM_BBE
+    je      .BBE
+    cmp     eax, FM_XMLD
+    je      .XMLD
+    cmp     eax, FM_XMST
+    je      .XMST
+    cmp     eax, FM_BRORX
+    je      .BRORX
+    cmp     eax, FM_XZERO
+    je      .XZERO
     jmp     .fail
 
 .VW:
     call    .mn
     call    dx_opV
+    call    .nds
     call    dx_sep
     call    dx_opW
     jmp     .done
 .WV:
     call    .mn
     call    dx_opW
+    call    .movs_nds                      ; vmovss/vmovsd register store
     call    dx_sep
     call    dx_opV
     jmp     .done
 .VWI:
     call    .mn
     call    dx_opV
+    call    .nds
     call    dx_sep
     call    dx_opW
     jmp     .imm8
 .VE:
     call    .mn
     call    dx_opV
+    call    .nds
     call    dx_sep
     call    dx_opE
     jmp     .done
@@ -1547,6 +1779,12 @@ dx_sse_operands:
     add     rax, rcx
     mov     [rel dx_mnem], rax
     call    .mn
+    cmp     byte [rel dx_vex], 0
+    je      .ui_src
+    movzx   esi, byte [rel dx_vvvv]        ; VEX: vvvv is the destination
+    call    dx_vecreg
+    call    dx_sep
+.ui_src:
     call    dx_opW
     jmp     .imm8
 .VM:
@@ -1554,6 +1792,7 @@ dx_sse_operands:
     je      .fail
     call    .mn
     call    dx_opV
+    call    .nds
     call    dx_sep
     call    dx_opW
     jmp     .done
@@ -1584,6 +1823,7 @@ dx_sse_operands:
 .VEI:
     call    .mn
     call    dx_opV
+    call    .nds
     call    dx_sep
     call    dx_opE
     jmp     .imm8
@@ -1636,6 +1876,7 @@ dx_sse_operands:
     mov     [rel dx_mnem], rax
     call    .mn
     call    dx_opV
+    call    .nds
     call    dx_sep
     call    dx_opW
     call    dx_rd8                         ; consume the predicate
@@ -1659,9 +1900,177 @@ dx_sse_operands:
     mov     [rel dx_mnem], rsi
     call    .mn
     call    dx_opV
+    call    .nds
     call    dx_sep
     call    dx_opW
     call    dx_rd8
+    jmp     .done
+
+; ---- VEX-only forms ----
+.XZERO:
+    cmp     byte [rel dx_vl], 0
+    je      .zero_named
+    lea     rax, [rel s_vzeroall]
+    mov     [rel dx_mnem], rax
+.zero_named:
+    xor     esi, esi
+    call    dx_mnemonic
+    jmp     .done
+.XBCAST:                                   ; V, xmm register or memory
+    call    .mn
+    call    dx_opV
+    call    dx_sep
+    cmp     byte [rel dx_mod], 3
+    jne     .bcast_mem
+    movzx   esi, byte [rel dx_rmreg]
+    mov     edi, 1
+    call    dx_vecreg_c
+    jmp     .done
+.bcast_mem:
+    call    dx_memsize
+    cmp     edi, 256
+    jne     .mem_done
+    mov     edi, 128
+    jmp     .mem_done
+.XINS:                                     ; ymm, ymm, xmm/m128, imm8
+    call    .mn
+    call    dx_opV
+    call    .vvvv
+    call    dx_sep
+    call    .xmm_or_m128
+    jmp     .imm8
+.XEXT:                                     ; xmm/m128, ymm, imm8
+    call    .mn
+    call    .xmm_or_m128
+    call    dx_sep
+    call    dx_opV
+    jmp     .imm8
+.XIS4:                                     ; V, vvvv, W, register from imm8[7:4]
+    call    .mn
+    call    dx_opV
+    call    .vvvv
+    call    dx_sep
+    call    dx_opW
+    call    dx_sep
+    call    dx_rd8
+    shr     eax, 4
+    mov     esi, eax
+    call    dx_vecreg
+    jmp     .done
+.XMLD:                                     ; V, vvvv, memory
+    cmp     byte [rel dx_mod], 3
+    je      .fail
+    call    .mn
+    call    dx_opV
+    call    .vvvv
+    call    dx_sep
+    call    dx_opW
+    jmp     .done
+.XMST:                                     ; memory, vvvv, V
+    cmp     byte [rel dx_mod], 3
+    je      .fail
+    call    .mn
+    call    dx_opW
+    call    .vvvv
+    call    dx_sep
+    call    dx_opV
+    jmp     .done
+.BGBE:                                     ; gpr, vvvv, r/m
+    call    .mn
+    call    dx_opG
+    call    dx_sep
+    call    .vvvv_gpr
+    call    dx_sep
+    call    dx_opE
+    jmp     .done
+.BGEB:                                     ; gpr, r/m, vvvv
+    call    .mn
+    call    dx_opG
+    call    dx_sep
+    call    dx_opE
+    call    dx_sep
+    call    .vvvv_gpr
+    jmp     .done
+.BBE:                                      ; group: vvvv, r/m
+    lea     rax, [rel x86_groups]
+    movzx   ecx, word [r12]
+    shl     ecx, 3
+    movzx   edx, byte [rel dx_regno]
+    and     edx, 7
+    add     ecx, edx
+    movzx   ecx, word [rax + rcx*4]
+    cmp     ecx, 0xFFFF
+    je      .fail
+    lea     rax, [rel x86_names]
+    add     rax, rcx
+    mov     [rel dx_mnem], rax
+    call    .mn
+    call    .vvvv_gpr
+    call    dx_sep
+    call    dx_opE
+    jmp     .done
+.BRORX:                                    ; gpr, r/m, imm8
+    call    .mn
+    call    dx_opG
+    call    dx_sep
+    call    dx_opE
+    jmp     .imm8
+
+; ",vvvv" when this VEX instruction has an extra source register
+.nds:
+    cmp     byte [rel dx_vex], 0
+    je      .nds_ret
+    test    byte [rel dx_sflags], SF_NDS
+    jz      .nds_ret
+    ; vmovss/vmovsd (0F 10): only the register form has one
+    cmp     byte [rel dx_map], 2
+    jne     .vvvv
+    cmp     byte [rel dx_op], 0x10
+    jne     .vvvv
+    cmp     byte [rel dx_mod], 3
+    jne     .nds_ret
+.vvvv:
+    call    dx_sep
+    movzx   esi, byte [rel dx_vvvv]
+    jmp     dx_vecreg
+.nds_ret:
+    ret
+; vmovss/vmovsd store (0F 11) register form: W, vvvv, V
+.movs_nds:
+    cmp     byte [rel dx_vex], 0
+    je      .nds_ret
+    cmp     byte [rel dx_map], 2
+    jne     .nds_ret
+    cmp     byte [rel dx_op], 0x11
+    jne     .nds_ret
+    cmp     byte [rel dx_mod], 3
+    jne     .nds_ret
+    movzx   eax, byte [rel dx_sflags]
+    and     eax, SF_MEM
+    cmp     eax, 5
+    je      .nds_ret                       ; vmovups & co: no extra source
+    jmp     .vvvv
+; vvvv as a general register (BMI), 32/64 by VEX.W
+.vvvv_gpr:
+    mov     edi, 32
+    test    byte [rel dx_rex], 8
+    jz      .vg
+    mov     edi, 64
+.vg:
+    movzx   esi, byte [rel dx_vvvv]
+    jmp     dx_reg
+; an xmm register or 128-bit memory operand (vinsert/vextract)
+.xmm_or_m128:
+    cmp     byte [rel dx_mod], 3
+    jne     .m128
+    movzx   esi, byte [rel dx_rmreg]
+    mov     edi, 1
+    jmp     dx_vecreg_c
+.m128:
+    mov     edi, 128
+    jmp     dx_mem
+.mem_done:
+    call    dx_mem
     jmp     .done
 
 .ENDBR:                                    ; F3 0F 1E FA / FB
@@ -1708,9 +2117,11 @@ dx_sse_operands:
     mov     eax, 0xFF
     ret
 
-; ---- dx_name_d2q -------------------------
-; Copies the mnemonic to dx_namebuf with its last character turned into 'q'.
-dx_name_d2q:
+; ---- dx_name_last ------------------------
+; Copies the mnemonic to dx_namebuf with its last character replaced by
+; the character in esi ('q' for movd -> movq, 'd' for ...ps -> ...pd).
+dx_name_last:
+    mov     edx, esi
     mov     rsi, [rel dx_mnem]
     lea     rdi, [rel dx_namebuf]
 .copy:
@@ -1722,7 +2133,7 @@ dx_name_d2q:
     inc     rdi
     jmp     .copy
 .copied:
-    mov     byte [rdi - 1], 'q'
+    mov     [rdi - 1], dl
     lea     rax, [rel dx_namebuf]
     mov     [rel dx_mnem], rax
     ret
@@ -1731,18 +2142,24 @@ dx_name_d2q:
 
 ; dx_vecreg: vector register esi ("mm3" / "xmm12")
 dx_vecreg:
+    movzx   edi, byte [rel dx_vclass]
+; dx_vecreg_c: vector register esi of class edi (0 mm, 1 xmm, 2 ymm)
+dx_vecreg_c:
     push    rsi
-    push    rsi
+    push    rdi
     lea     rsi, [rel s_mm]
-    test    byte [rel dx_sflags], SF_MMX
-    jnz     .prefix
+    test    edi, edi
+    jz      .prefix
     lea     rsi, [rel s_xmm]
+    cmp     edi, 1
+    je      .prefix
+    lea     rsi, [rel s_ymm]
 .prefix:
     call    dx_puts
+    pop     rdi
     pop     rsi
-    pop     rsi
-    test    byte [rel dx_sflags], SF_MMX
-    jz      .num
+    test    edi, edi
+    jnz     .num
     and     esi, 7
 .num:
     mov     rdi, [rel dx_fb]
@@ -1767,10 +2184,13 @@ dx_memsize:
     mov     edi, 64
 .x: cmp     eax, 5
     jne     .ret
+    mov     edi, 64                        ; by register class: mm / xmm / ymm
+    cmp     byte [rel dx_vclass], 0
+    je      .ret
     mov     edi, 128
-    test    byte [rel dx_sflags], SF_MMX
-    jz      .ret
-    mov     edi, 64
+    cmp     byte [rel dx_vclass], 1
+    je      .ret
+    mov     edi, 256
 .ret:
     ret
 
@@ -1779,12 +2199,27 @@ dx_opV:
     jmp     dx_vecreg
 
 dx_opW:
+    cmp     byte [rel dx_half], 0
+    jne     .half
     cmp     byte [rel dx_mod], 3
     jne     .mem
     movzx   esi, byte [rel dx_rmreg]
     jmp     dx_vecreg
 .mem:
     call    dx_memsize
+    jmp     dx_mem
+.half:
+    cmp     byte [rel dx_mod], 3
+    jne     .half_mem
+    movzx   esi, byte [rel dx_rmreg]
+    mov     edi, 1                         ; always xmm
+    jmp     dx_vecreg_c
+.half_mem:
+    call    dx_memsize
+    cmp     byte [rel dx_vl], 0
+    je      .half_put
+    add     edi, edi                       ; ymm destination: twice the bytes
+.half_put:
     jmp     dx_mem
 
 ; E: general register (32/64 by REX.W) or memory (entry size, else 32/64)
@@ -1949,6 +2384,8 @@ s_ymmword:  db "YMMWORD PTR ", 0
 s_data16:   db "data16 ", 0
 s_mm:       db "mm", 0
 s_xmm:      db "xmm", 0
+s_ymm:      db "ymm", 0
+s_vzeroall: db "vzeroall", 0
 s_commaxmm0: db ",xmm0", 0
 s_movhlps:  db "movhlps", 0
 s_movlhps:  db "movlhps", 0
