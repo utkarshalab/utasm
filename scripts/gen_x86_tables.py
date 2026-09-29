@@ -11,6 +11,9 @@ decoder reads:
   x86_map1    256 entries for one-byte opcodes
   x86_map2    256 entries for 0F xx opcodes
   x86_groups  8 entries per ModRM.reg group (80/81/83, C0/C1/D0-D3, ...)
+  x86_sse*    SSE family by opcode and mandatory prefix; x86_vex* VEX-only
+  x87_*       x87 floating point (D8-DF)
+  x86_evex    EVEX (AVX-512), a sparse list; x86_kops the k-mask instructions
 
 Each entry is 4 bytes: dw name (or group number when F_GROUP), db form,
 db flags. Forms and flags must match the constants in tools/disasm/x86.s.
@@ -31,7 +34,7 @@ GvEd IbU IbS Iz Iw ZvXchg EvGv_bt EvGvIb EvGvCL STR XCHG90 CBW CWD
 Ewv G7 GAE
 VW WV VWI VE EV GW GU UI VM MV V12 EVI VEI GUI VW0 CMPS PCLMUL ENDBR
 XBCAST XINS XEXT XIS4 BGBE BGEB BBE XMLD XMST BRORX XZERO
-X87""".split()
+X87 EVEX G9""".split()
 FM = {name: i for i, name in enumerate(FORMS)}
 
 # ---- flags (keep in sync with FL_* in tools/disasm/x86.s) ----
@@ -176,6 +179,8 @@ op(map2, 0xAB, "bts", "EvGv_bt", F_MODRM)
 op(map2, 0xAC, "shrd", "EvGvIb", F_MODRM)
 op(map2, 0xAD, "shrd", "EvGvCL", F_MODRM)
 op(map2, 0xAE, "(0fae)", "GAE", F_MODRM)
+# 0F C7: cmpxchg8b/16b (memory), rdrand/rdseed (register); x86.s decodes it (form G9)
+op(map2, 0xC7, "(0fc7)", "G9", F_MODRM)
 op(map2, 0xAF, "imul", "GvEv", F_MODRM)
 op(map2, 0xB0, "cmpxchg", "EbGb", F_MODRM | F_BYTE)
 op(map2, 0xB1, "cmpxchg", "EvGv", F_MODRM)
@@ -239,6 +244,8 @@ def render() -> str:
                 n, form, flags = e
                 tg.append((name_off(n), FM[form] if form else 0, flags))
 
+    tev = evex_rows(name_off)       # registers the EVEX names too
+
     def rows(entries, label):
         # one 4-byte entry per line, with its index as a comment
         out = [label + ":"]
@@ -267,7 +274,9 @@ def render() -> str:
     lines += rows(tv38, "x86_vex38") + [""]
     lines += rows(tv3a, "x86_vex3a") + [""]
     lines += rows(tg, "x86_groups") + [""]
-    lines += x87_tables()
+    lines += x87_tables() + [""]
+    lines += tev + [""]
+    lines += kop_rows()
     return "\n".join(lines) + "\n"
 
 
@@ -420,6 +429,13 @@ sse("38", 0x2A, "66", "movntdqa", "VM", "x")
 sse("38", 0x41, "66", "phminposuw", "VW", "x"); sse("38", 0xDB, "66", "aesimc", "VW", "x")
 sse_int("38", 0xF0, "np", "movbe", "GvEv"); sse_int("38", 0xF1, "np", "movbe", "EvGv")
 sse_int("38", 0xF0, "F2", "crc32", "GvEb"); sse_int("38", 0xF1, "F2", "crc32", "GvEv")
+sse_int("38", 0xF6, "66", "adcx", "GvEv"); sse_int("38", 0xF6, "F3", "adox", "GvEv")
+# SHA extensions (legacy encoding only)
+for code, n in ((0xC8, "sha1nexte"), (0xC9, "sha1msg1"), (0xCA, "sha1msg2"),
+                (0xCC, "sha256msg1"), (0xCD, "sha256msg2")):
+    sse("38", code, "np", n, "VW", "x", S_NOVEX)
+sse("38", 0xCB, "np", "sha256rnds2", "VW0", "x", S_NOVEX)
+sse("3a", 0xCC, "np", "sha1rnds4", "VWI", "x", S_NOVEX)
 
 # ---- 0F 3A ----
 for code, n, m, nds in ((0x08, "roundps", "x", 0), (0x09, "roundpd", "x", 0), (0x0A, "roundss", "d", S_NDS),
@@ -556,6 +572,332 @@ def x87_tables():
 group("g16", [("prefetchnta", "Eb", 0), ("prefetcht0", "Eb", 0), ("prefetcht1", "Eb", 0), ("prefetcht2", "Eb", 0),
               None, None, None, None])
 grp_op(map2, 0x18, "g16", "Eb", F_BYTE)
+
+
+# ============================================================================
+# EVEX (AVX-512)
+# ============================================================================
+# x86_evex is a sparse list of 16-byte entries, ending with a zero key:
+#   dd key     map << 24 | opcode << 16 | pp << 8 | W << 4 | g
+#              (map 2 = 0F, 3 = 0F 38, 4 = 0F 3A; pp 0 none, 1 66, 2 F3,
+#              3 F2; g = 8 + ModRM.reg for a group member, else 0)
+#   dw name    offset in x86_names
+#   db msize   memory operand size (EV_MSIZE), which is also the disp8*N
+#              scale unless the operand is a broadcast
+#   db flags   EV_* below
+#   db shape   operands, one letter each, NUL-padded to 8 bytes:
+#              V vector register from ModRM.reg     H vector register from vvvv
+#              W vector register or memory (ModRM.rm)
+#              Y like V, at half the vector length (vcvtpd2ps ymm, zmm)
+#              E general register (32/64 by W) or memory
+#              G general register from ModRM.reg (32/64 by W)
+#              K mask register from ModRM.reg       k mask register from ModRM.rm
+#              I imm8
+# The {k}{z} mask is printed after the first operand. W as a register takes
+# the width of its memory size (xmm for scalars and 128-bit parts).
+EV_MSIZE = {"v": 0, "b": 1, "w": 2, "d": 3, "q": 4, "h": 5, "qv": 6, "o": 7, "x": 8, "y": 9}
+EV_BCST = 1      # EVEX.b with memory: broadcast one element (4 bytes, 8 with W)
+EV_SCALAR = 2    # V and H are xmm whatever the vector length
+EV_ER = 4        # EVEX.b with registers: rounding control {rn-sae} ...
+EV_SAE = 8       # EVEX.b with registers: {sae}
+EV_PINT = 16     # vpcmp: the predicate immediate becomes part of the name
+EV_PFP = 32      # vcmp: likewise, with the 32 floating-point predicates
+EV_NELEM = 64    # disp8*N scales by one element (compress / expand)
+EV_MOVS = 128    # vmovss/vmovsd: H only in the register form
+EV_MAP = {"0f": 2, "38": 3, "3a": 4}
+evex_tab = {}
+
+def ev(m, code, pfx, w, name, shape, msize="v", flags=0, reg=None):
+    """One EVEX instruction; w = 0, 1 or "ig" (both)."""
+    for wv in ((0, 1) if w == "ig" else (w,)):
+        key = (EV_MAP[m] << 24) | (code << 16) | (PFX[pfx] << 8) | (wv << 4) | (0 if reg is None else 8 + reg)
+        assert key not in evex_tab, (m, hex(code), pfx, wv, name)
+        evex_tab[key] = (name, EV_MSIZE[msize], flags, shape)
+
+def ev2(m, code, pfx, n0, n1, shape, msize="v", flags=0, reg=None):
+    """W0 and W1 name two instructions (vmovdqa32 / vmovdqa64, vpandd / vpandq)."""
+    ev(m, code, pfx, 0, n0, shape, msize, flags, reg)
+    ev(m, code, pfx, 1, n1, shape, msize, flags, reg)
+
+B = EV_BCST
+# ---- 0F: floating point ----
+for code, n, er in ((0x58, "add", EV_ER), (0x59, "mul", EV_ER), (0x5C, "sub", EV_ER),
+                    (0x5D, "min", EV_SAE), (0x5E, "div", EV_ER), (0x5F, "max", EV_SAE)):
+    ev("0f", code, "np", 0, "v%sps" % n, "VHW", "v", B | er)
+    ev("0f", code, "66", 1, "v%spd" % n, "VHW", "v", B | er)
+    ev("0f", code, "F3", 0, "v%sss" % n, "VHW", "d", EV_SCALAR | er)
+    ev("0f", code, "F2", 1, "v%ssd" % n, "VHW", "q", EV_SCALAR | er)
+ev("0f", 0x51, "np", 0, "vsqrtps", "VW", "v", B | EV_ER)
+ev("0f", 0x51, "66", 1, "vsqrtpd", "VW", "v", B | EV_ER)
+ev("0f", 0x51, "F3", 0, "vsqrtss", "VHW", "d", EV_SCALAR | EV_ER)
+ev("0f", 0x51, "F2", 1, "vsqrtsd", "VHW", "q", EV_SCALAR | EV_ER)
+for code, n in ((0x54, "and"), (0x55, "andn"), (0x56, "or"), (0x57, "xor"),
+                (0x14, "unpckl"), (0x15, "unpckh")):
+    ev("0f", code, "np", 0, "v%sps" % n, "VHW", "v", B)
+    ev("0f", code, "66", 1, "v%spd" % n, "VHW", "v", B)
+ev("0f", 0xC6, "np", 0, "vshufps", "VHWI", "v", B)
+ev("0f", 0xC6, "66", 1, "vshufpd", "VHWI", "v", B)
+for code, n in ((0x10, "vmovu"), (0x28, "vmova")):
+    ev("0f", code, "np", 0, n + "ps", "VW")
+    ev("0f", code + 1, "np", 0, n + "ps", "WV")
+    ev("0f", code, "66", 1, n + "pd", "VW")
+    ev("0f", code + 1, "66", 1, n + "pd", "WV")
+ev("0f", 0x10, "F3", 0, "vmovss", "VHW", "d", EV_SCALAR | EV_MOVS)
+ev("0f", 0x11, "F3", 0, "vmovss", "WHV", "d", EV_SCALAR | EV_MOVS)
+ev("0f", 0x10, "F2", 1, "vmovsd", "VHW", "q", EV_SCALAR | EV_MOVS)
+ev("0f", 0x11, "F2", 1, "vmovsd", "WHV", "q", EV_SCALAR | EV_MOVS)
+ev("0f", 0x12, "F3", 0, "vmovsldup", "VW")
+ev("0f", 0x16, "F3", 0, "vmovshdup", "VW")
+ev("0f", 0x2B, "np", 0, "vmovntps", "WV")
+ev("0f", 0x2B, "66", 1, "vmovntpd", "WV")
+for code, n in ((0x2E, "vucomis"), (0x2F, "vcomis")):
+    ev("0f", code, "np", 0, n + "s", "VW", "d", EV_SCALAR | EV_SAE)
+    ev("0f", code, "66", 1, n + "d", "VW", "q", EV_SCALAR | EV_SAE)
+ev("0f", 0x5A, "np", 0, "vcvtps2pd", "VW", "h", B | EV_SAE)
+ev("0f", 0x5A, "66", 1, "vcvtpd2ps", "YW", "v", B | EV_ER)
+ev("0f", 0x5A, "F3", 0, "vcvtss2sd", "VHW", "d", EV_SCALAR | EV_SAE)
+ev("0f", 0x5A, "F2", 1, "vcvtsd2ss", "VHW", "q", EV_SCALAR | EV_ER)
+ev("0f", 0x5B, "np", 0, "vcvtdq2ps", "VW", "v", B | EV_ER)
+ev("0f", 0x5B, "np", 1, "vcvtqq2ps", "YW", "v", B | EV_ER)
+ev("0f", 0x5B, "66", 0, "vcvtps2dq", "VW", "v", B | EV_ER)
+ev("0f", 0x5B, "F3", 0, "vcvttps2dq", "VW", "v", B | EV_SAE)
+ev("0f", 0xE6, "F3", 0, "vcvtdq2pd", "VW", "h", B)
+ev("0f", 0xE6, "F3", 1, "vcvtqq2pd", "VW", "v", B | EV_ER)
+ev("0f", 0xE6, "66", 1, "vcvttpd2dq", "YW", "v", B | EV_SAE)
+ev("0f", 0xE6, "F2", 1, "vcvtpd2dq", "YW", "v", B | EV_ER)
+ev("0f", 0x2A, "F3", 0, "vcvtsi2ss", "VHE", "d", EV_SCALAR | EV_ER)
+ev("0f", 0x2A, "F3", 1, "vcvtsi2ss", "VHE", "q", EV_SCALAR | EV_ER)
+ev("0f", 0x2A, "F2", 0, "vcvtsi2sd", "VHE", "d", EV_SCALAR)
+ev("0f", 0x2A, "F2", 1, "vcvtsi2sd", "VHE", "q", EV_SCALAR | EV_ER)
+for code, n, r in ((0x2C, "vcvtt", EV_SAE), (0x2D, "vcvt", EV_ER)):
+    ev("0f", code, "F3", "ig", n + "ss2si", "GW", "d", EV_SCALAR | r)
+    ev("0f", code, "F2", "ig", n + "sd2si", "GW", "q", EV_SCALAR | r)
+ev("0f", 0xC2, "np", 0, "vcmpps", "KHWI", "v", B | EV_SAE | EV_PFP)
+ev("0f", 0xC2, "66", 1, "vcmppd", "KHWI", "v", B | EV_SAE | EV_PFP)
+ev("0f", 0xC2, "F3", 0, "vcmpss", "KHWI", "d", EV_SCALAR | EV_SAE | EV_PFP)
+ev("0f", 0xC2, "F2", 1, "vcmpsd", "KHWI", "q", EV_SCALAR | EV_SAE | EV_PFP)
+
+# ---- 66 0F: integer ----
+for code, n in ((0x60, "vpunpcklbw"), (0x61, "vpunpcklwd"), (0x63, "vpacksswb"), (0x67, "vpackuswb"),
+                (0x68, "vpunpckhbw"), (0x69, "vpunpckhwd"), (0xD5, "vpmullw"), (0xD8, "vpsubusb"),
+                (0xD9, "vpsubusw"), (0xDA, "vpminub"), (0xDC, "vpaddusb"), (0xDD, "vpaddusw"),
+                (0xDE, "vpmaxub"), (0xE0, "vpavgb"), (0xE3, "vpavgw"), (0xE4, "vpmulhuw"),
+                (0xE5, "vpmulhw"), (0xE8, "vpsubsb"), (0xE9, "vpsubsw"), (0xEA, "vpminsw"),
+                (0xEC, "vpaddsb"), (0xED, "vpaddsw"), (0xEE, "vpmaxsw"), (0xF5, "vpmaddwd"),
+                (0xF6, "vpsadbw"), (0xF8, "vpsubb"), (0xF9, "vpsubw"), (0xFC, "vpaddb"), (0xFD, "vpaddw")):
+    ev("0f", code, "66", "ig", n, "VHW")
+for code, n in ((0x64, "vpcmpgtb"), (0x65, "vpcmpgtw"), (0x74, "vpcmpeqb"), (0x75, "vpcmpeqw")):
+    ev("0f", code, "66", "ig", n, "KHW")
+for code, n in ((0x62, "vpunpckldq"), (0x6A, "vpunpckhdq"), (0x6B, "vpackssdw"), (0xFA, "vpsubd"), (0xFE, "vpaddd")):
+    ev("0f", code, "66", 0, n, "VHW", "v", B)
+for code, n in ((0x6C, "vpunpcklqdq"), (0x6D, "vpunpckhqdq"), (0xD4, "vpaddq"), (0xF4, "vpmuludq"), (0xFB, "vpsubq")):
+    ev("0f", code, "66", 1, n, "VHW", "v", B)
+ev("0f", 0x66, "66", 0, "vpcmpgtd", "KHW", "v", B)
+ev("0f", 0x76, "66", 0, "vpcmpeqd", "KHW", "v", B)
+for code, n in ((0xDB, "vpand"), (0xDF, "vpandn"), (0xEB, "vpor"), (0xEF, "vpxor")):
+    ev2("0f", code, "66", n + "d", n + "q", "VHW", "v", B)
+# shifts by a count in xmm/m128
+for code, n in ((0xD1, "vpsrlw"), (0xE1, "vpsraw"), (0xF1, "vpsllw")):
+    ev("0f", code, "66", "ig", n, "VHW", "x")
+ev("0f", 0xD2, "66", 0, "vpsrld", "VHW", "x")
+ev("0f", 0xF2, "66", 0, "vpslld", "VHW", "x")
+ev2("0f", 0xE2, "66", "vpsrad", "vpsraq", "VHW", "x")
+ev("0f", 0xD3, "66", 1, "vpsrlq", "VHW", "x")
+ev("0f", 0xF3, "66", 1, "vpsllq", "VHW", "x")
+# shifts by an immediate: groups 71 / 72 / 73, destination in vvvv
+for r, n in ((2, "vpsrlw"), (4, "vpsraw"), (6, "vpsllw")):
+    ev("0f", 0x71, "66", "ig", n, "HWI", reg=r)
+ev2("0f", 0x72, "66", "vprord", "vprorq", "HWI", "v", B, reg=0)
+ev2("0f", 0x72, "66", "vprold", "vprolq", "HWI", "v", B, reg=1)
+ev("0f", 0x72, "66", 0, "vpsrld", "HWI", "v", B, reg=2)
+ev2("0f", 0x72, "66", "vpsrad", "vpsraq", "HWI", "v", B, reg=4)
+ev("0f", 0x72, "66", 0, "vpslld", "HWI", "v", B, reg=6)
+ev("0f", 0x73, "66", 1, "vpsrlq", "HWI", "v", B, reg=2)
+ev("0f", 0x73, "66", "ig", "vpsrldq", "HWI", reg=3)
+ev("0f", 0x73, "66", 1, "vpsllq", "HWI", "v", B, reg=6)
+ev("0f", 0x73, "66", "ig", "vpslldq", "HWI", reg=7)
+# moves
+ev("0f", 0x6E, "66", 0, "vmovd", "VE", "d", EV_SCALAR)
+ev("0f", 0x6E, "66", 1, "vmovq", "VE", "q", EV_SCALAR)
+ev("0f", 0x7E, "66", 0, "vmovd", "EV", "d", EV_SCALAR)
+ev("0f", 0x7E, "66", 1, "vmovq", "EV", "q", EV_SCALAR)
+ev("0f", 0x7E, "F3", 1, "vmovq", "VW", "q", EV_SCALAR)
+ev("0f", 0xD6, "66", 1, "vmovq", "WV", "q", EV_SCALAR)
+ev2("0f", 0x6F, "66", "vmovdqa32", "vmovdqa64", "VW")
+ev2("0f", 0x7F, "66", "vmovdqa32", "vmovdqa64", "WV")
+ev2("0f", 0x6F, "F3", "vmovdqu32", "vmovdqu64", "VW")
+ev2("0f", 0x7F, "F3", "vmovdqu32", "vmovdqu64", "WV")
+ev2("0f", 0x6F, "F2", "vmovdqu8", "vmovdqu16", "VW")
+ev2("0f", 0x7F, "F2", "vmovdqu8", "vmovdqu16", "WV")
+ev("0f", 0xE7, "66", 0, "vmovntdq", "WV")
+ev("0f", 0x70, "66", 0, "vpshufd", "VWI", "v", B)
+ev("0f", 0x70, "F3", "ig", "vpshufhw", "VWI")
+ev("0f", 0x70, "F2", "ig", "vpshuflw", "VWI")
+ev("0f", 0xC4, "66", 0, "vpinsrw", "VHEI", "w", EV_SCALAR)
+ev("0f", 0xC5, "66", 0, "vpextrw", "GWI", "w", EV_SCALAR)
+
+# ---- 66 0F 38 ----
+for code, n in ((0x00, "vpshufb"), (0x04, "vpmaddubsw"), (0x0B, "vpmulhrsw"), (0x38, "vpminsb"),
+                (0x3A, "vpminuw"), (0x3C, "vpmaxsb"), (0x3E, "vpmaxuw"), (0xDC, "vaesenc"),
+                (0xDD, "vaesenclast"), (0xDE, "vaesdec"), (0xDF, "vaesdeclast")):
+    ev("38", code, "66", "ig", n, "VHW")
+ev("38", 0x1C, "66", "ig", "vpabsb", "VW")
+ev("38", 0x1D, "66", "ig", "vpabsw", "VW")
+ev("38", 0x1E, "66", 0, "vpabsd", "VW", "v", B)
+ev("38", 0x1F, "66", 1, "vpabsq", "VW", "v", B)
+for code, n in ((0x39, "vpmins"), (0x3B, "vpminu"), (0x3D, "vpmaxs"), (0x3F, "vpmaxu"),
+                (0x45, "vpsrlv"), (0x46, "vpsrav"), (0x47, "vpsllv"), (0x64, "vpblendm"),
+                (0x76, "vpermi2"), (0x7E, "vpermt2"), (0x36, "vperm")):
+    ev2("38", code, "66", n + "d", n + "q", "VHW", "v", B)
+for code, n in ((0x0C, "vpermil"), (0x16, "vperm"), (0x77, "vpermi2"), (0x7F, "vpermt2"), (0x65, "vblendm"),
+                (0x2C, "vscalef")):
+    ev2("38", code, "66", n + "ps", n + "pd", "VHW", "v", B | (EV_ER if code == 0x2C else 0))
+ev2("38", 0x40, "66", "vpmulld", "vpmullq", "VHW", "v", B)
+ev("38", 0x28, "66", 1, "vpmuldq", "VHW", "v", B)
+ev("38", 0x2B, "66", 0, "vpackusdw", "VHW", "v", B)
+for code, n in ((0x66, "vpblendm"), (0x75, "vpermi2"), (0x7D, "vpermt2"), (0x8D, "vperm")):
+    ev2("38", code, "66", n + "b", n + "w", "VHW")
+for code, n in ((0x10, "vpsrlvw"), (0x11, "vpsravw"), (0x12, "vpsllvw")):
+    ev("38", code, "66", 1, n, "VHW")
+ev("38", 0x29, "66", 1, "vpcmpeqq", "KHW", "v", B)
+ev("38", 0x37, "66", 1, "vpcmpgtq", "KHW", "v", B)
+ev2("38", 0x26, "66", "vptestmb", "vptestmw", "KHW")
+ev2("38", 0x27, "66", "vptestmd", "vptestmq", "KHW", "v", B)
+ev2("38", 0x26, "F3", "vptestnmb", "vptestnmw", "KHW")
+ev2("38", 0x27, "F3", "vptestnmd", "vptestnmq", "KHW", "v", B)
+# broadcasts
+ev("38", 0x18, "66", 0, "vbroadcastss", "VW", "d")
+ev("38", 0x19, "66", 0, "vbroadcastf32x2", "VW", "q")
+ev("38", 0x19, "66", 1, "vbroadcastsd", "VW", "q")
+ev2("38", 0x1A, "66", "vbroadcastf32x4", "vbroadcastf64x2", "VW", "x")
+ev2("38", 0x1B, "66", "vbroadcastf32x8", "vbroadcastf64x4", "VW", "y")
+ev("38", 0x58, "66", 0, "vpbroadcastd", "VW", "d")
+ev("38", 0x59, "66", 0, "vbroadcasti32x2", "VW", "q")
+ev("38", 0x59, "66", 1, "vpbroadcastq", "VW", "q")
+ev2("38", 0x5A, "66", "vbroadcasti32x4", "vbroadcasti64x2", "VW", "x")
+ev2("38", 0x5B, "66", "vbroadcasti32x8", "vbroadcasti64x4", "VW", "y")
+ev("38", 0x78, "66", 0, "vpbroadcastb", "VW", "b")
+ev("38", 0x79, "66", 0, "vpbroadcastw", "VW", "w")
+ev("38", 0x7A, "66", 0, "vpbroadcastb", "VE", "b")
+ev("38", 0x7B, "66", 0, "vpbroadcastw", "VE", "w")
+ev("38", 0x7C, "66", 0, "vpbroadcastd", "VE", "d")
+ev("38", 0x7C, "66", 1, "vpbroadcastq", "VE", "q")
+# widening and narrowing moves
+for i, (n, sz) in enumerate((("bw", "h"), ("bd", "qv"), ("bq", "o"), ("wd", "h"), ("wq", "qv"), ("dq", "h"))):
+    w = 0 if n == "dq" else "ig"
+    ev("38", 0x20 + i, "66", w, "vpmovsx" + n, "VW", sz)
+    ev("38", 0x30 + i, "66", w, "vpmovzx" + n, "VW", sz)
+for i, (n, sz) in enumerate((("wb", "h"), ("db", "qv"), ("qb", "o"), ("dw", "h"), ("qw", "qv"), ("qd", "h"))):
+    ev("38", 0x30 + i, "F3", 0, "vpmov" + n, "WV", sz)
+    ev("38", 0x20 + i, "F3", 0, "vpmovs" + n, "WV", sz)
+    ev("38", 0x10 + i, "F3", 0, "vpmovus" + n, "WV", sz)
+ev2("38", 0x28, "F3", "vpmovm2b", "vpmovm2w", "Vk")
+ev2("38", 0x38, "F3", "vpmovm2d", "vpmovm2q", "Vk")
+ev2("38", 0x29, "F3", "vpmovb2m", "vpmovw2m", "KW")
+ev2("38", 0x39, "F3", "vpmovd2m", "vpmovq2m", "KW")
+ev2("38", 0x44, "66", "vplzcntd", "vplzcntq", "VW", "v", B)
+ev2("38", 0xC4, "66", "vpconflictd", "vpconflictq", "VW", "v", B)
+ev2("38", 0x88, "66", "vexpandps", "vexpandpd", "VW", "v", EV_NELEM)
+ev2("38", 0x89, "66", "vpexpandd", "vpexpandq", "VW", "v", EV_NELEM)
+ev2("38", 0x8A, "66", "vcompressps", "vcompresspd", "WV", "v", EV_NELEM)
+ev2("38", 0x8B, "66", "vpcompressd", "vpcompressq", "WV", "v", EV_NELEM)
+ev("38", 0x2A, "66", 0, "vmovntdqa", "VW")
+ev2("38", 0x4C, "66", "vrcp14ps", "vrcp14pd", "VW", "v", B)
+ev2("38", 0x4E, "66", "vrsqrt14ps", "vrsqrt14pd", "VW", "v", B)
+ev("38", 0x4D, "66", 0, "vrcp14ss", "VHW", "d", EV_SCALAR)
+ev("38", 0x4D, "66", 1, "vrcp14sd", "VHW", "q", EV_SCALAR)
+ev("38", 0x4F, "66", 0, "vrsqrt14ss", "VHW", "d", EV_SCALAR)
+ev("38", 0x4F, "66", 1, "vrsqrt14sd", "VHW", "q", EV_SCALAR)
+ev2("38", 0x42, "66", "vgetexpps", "vgetexppd", "VW", "v", B | EV_SAE)
+for code, n in ((0x50, "vpdpbusd"), (0x51, "vpdpbusds"), (0x52, "vpdpwssd"), (0x53, "vpdpwssds")):
+    ev("38", code, "66", 0, n, "VHW", "v", B)
+ev("38", 0xCF, "66", 0, "vgf2p8mulb", "VHW")
+# FMA: 132 / 213 / 231; W picks ps/pd (ss/sd)
+for base, fop in (("vfmaddsub", 0x96), ("vfmsubadd", 0x97), ("vfmadd", 0x98), ("vfmsub", 0x9A),
+                  ("vfnmadd", 0x9C), ("vfnmsub", 0x9E)):
+    for k, order in ((0, "132"), (0x10, "213"), (0x20, "231")):
+        ev2("38", fop + k, "66", base + order + "ps", base + order + "pd", "VHW", "v", B | EV_ER)
+        if base not in ("vfmaddsub", "vfmsubadd"):
+            ev("38", fop + k + 1, "66", 0, base + order + "ss", "VHW", "d", EV_SCALAR | EV_ER)
+            ev("38", fop + k + 1, "66", 1, base + order + "sd", "VHW", "q", EV_SCALAR | EV_ER)
+
+# ---- 66 0F 3A ----
+ev("3a", 0x00, "66", 1, "vpermq", "VWI", "v", B)
+ev("3a", 0x01, "66", 1, "vpermpd", "VWI", "v", B)
+ev2("3a", 0x03, "66", "valignd", "valignq", "VHWI", "v", B)
+ev("3a", 0x04, "66", 0, "vpermilps", "VWI", "v", B)
+ev("3a", 0x05, "66", 1, "vpermilpd", "VWI", "v", B)
+ev("3a", 0x08, "66", 0, "vrndscaleps", "VWI", "v", B | EV_SAE)
+ev("3a", 0x09, "66", 1, "vrndscalepd", "VWI", "v", B | EV_SAE)
+ev("3a", 0x0A, "66", 0, "vrndscaless", "VHWI", "d", EV_SCALAR | EV_SAE)
+ev("3a", 0x0B, "66", 1, "vrndscalesd", "VHWI", "q", EV_SCALAR | EV_SAE)
+ev("3a", 0x0F, "66", "ig", "vpalignr", "VHWI")
+ev("3a", 0x14, "66", 0, "vpextrb", "EVI", "b", EV_SCALAR)
+ev("3a", 0x15, "66", 0, "vpextrw", "EVI", "w", EV_SCALAR)
+ev("3a", 0x16, "66", 0, "vpextrd", "EVI", "d", EV_SCALAR)
+ev("3a", 0x16, "66", 1, "vpextrq", "EVI", "q", EV_SCALAR)
+ev("3a", 0x17, "66", 0, "vextractps", "EVI", "d", EV_SCALAR)
+ev("3a", 0x20, "66", 0, "vpinsrb", "VHEI", "b", EV_SCALAR)
+ev("3a", 0x21, "66", 0, "vinsertps", "VHWI", "d", EV_SCALAR)
+ev("3a", 0x22, "66", 0, "vpinsrd", "VHEI", "d", EV_SCALAR)
+ev("3a", 0x22, "66", 1, "vpinsrq", "VHEI", "q", EV_SCALAR)
+for code, f, sz in ((0x18, "f", "x"), (0x1A, "f", "y"), (0x38, "i", "x"), (0x3A, "i", "y")):
+    a, b = ("32x4", "64x2") if sz == "x" else ("32x8", "64x4")
+    ev2("3a", code, "66", "vinsert%s%s" % (f, a), "vinsert%s%s" % (f, b), "VHWI", sz)
+    ev2("3a", code + 1, "66", "vextract%s%s" % (f, a), "vextract%s%s" % (f, b), "WVI", sz)
+ev2("3a", 0x1E, "66", "vpcmpud", "vpcmpuq", "KHWI", "v", B | EV_PINT)
+ev2("3a", 0x1F, "66", "vpcmpd", "vpcmpq", "KHWI", "v", B | EV_PINT)
+ev2("3a", 0x3E, "66", "vpcmpub", "vpcmpuw", "KHWI", "v", EV_PINT)
+ev2("3a", 0x3F, "66", "vpcmpb", "vpcmpw", "KHWI", "v", EV_PINT)
+ev2("3a", 0x23, "66", "vshuff32x4", "vshuff64x2", "VHWI", "v", B)
+ev2("3a", 0x43, "66", "vshufi32x4", "vshufi64x2", "VHWI", "v", B)
+ev2("3a", 0x25, "66", "vpternlogd", "vpternlogq", "VHWI", "v", B)
+ev("3a", 0x42, "66", 0, "vdbpsadbw", "VHWI")
+ev("3a", 0x44, "66", "ig", "vpclmulqdq", "VHWI")      # x86.s names the known selectors
+ev("38", 0xB4, "66", 1, "vpmadd52luq", "VHW", "v", B)
+ev("38", 0xB5, "66", 1, "vpmadd52huq", "VHW", "v", B)
+ev("3a", 0xCE, "66", 1, "vgf2p8affineqb", "VHWI", "v", B)
+ev("3a", 0xCF, "66", 1, "vgf2p8affineinvqb", "VHWI", "v", B)
+
+def evex_rows(name_off):
+    out = ["x86_evex:"]
+    for key in sorted(evex_tab):
+        name, msize, flags, shape = evex_tab[key]
+        assert len(shape) < 8
+        out.append('    dd 0x%08x\n    dw 0x%04x\n    db %d, 0x%02x, "%s"%s    ; %s'
+                   % (key, name_off(name), msize, flags, shape, ", 0" * (8 - len(shape)), name))
+    out.append("    dd 0")
+    return out
+
+# ---- VEX k-mask instructions (AVX-512 opmask registers) ----
+# x86_kops: 16-byte entries ending with a zero byte:
+#   db map (2 = 0F, 4 = 0F 3A), opcode, pp | W << 2, shape; name (12)
+# Shapes: 1 k,k,k (VEX.L = 1)   2 k,k/mem   3 mem,k   4 k,r32/r64
+#         5 r32/r64,k   6 k,k   7 k,k,imm8   (2-7 need VEX.L = 0)
+# A memory operand is as wide as the name's last letter (b/w/d/q).
+KSUF = {(0, 0): "w", (0, 1): "q", (1, 0): "b", (1, 1): "d"}
+kops = []
+for code, base, shape in ((0x41, "kand", 1), (0x42, "kandn", 1), (0x45, "kor", 1), (0x46, "kxnor", 1),
+                          (0x47, "kxor", 1), (0x4A, "kadd", 1), (0x44, "knot", 6), (0x98, "kortest", 6),
+                          (0x99, "ktest", 6), (0x90, "kmov", 2), (0x91, "kmov", 3)):
+    for (pp, w), s in KSUF.items():
+        kops.append((2, code, pp, w, base + s, shape))
+for code, shape in ((0x92, 4), (0x93, 5)):
+    for pp, w, n in ((0, 0, "kmovw"), (1, 0, "kmovb"), (3, 0, "kmovd"), (3, 1, "kmovq")):
+        kops.append((2, code, pp, w, n, shape))
+for pp, w, n in ((1, 0, "kunpckbw"), (0, 0, "kunpckwd"), (0, 1, "kunpckdq")):
+    kops.append((2, 0x4B, pp, w, n, 1))
+for code, n0, n1 in ((0x30, "kshiftrb", "kshiftrw"), (0x31, "kshiftrd", "kshiftrq"),
+                     (0x32, "kshiftlb", "kshiftlw"), (0x33, "kshiftld", "kshiftlq")):
+    kops.append((4, code, 1, 0, n0, 7))
+    kops.append((4, code, 1, 1, n1, 7))
+
+def kop_rows():
+    out = ["x86_kops:"]
+    for m, code, pp, w, n, shape in kops:
+        out.append('    db %d, 0x%02X, %d, %d, "%s"%s' % (m, code, pp | w << 2, shape, n, ", 0" * (12 - len(n))))
+    out.append("    db 0")
+    return out
 
 
 def main():
