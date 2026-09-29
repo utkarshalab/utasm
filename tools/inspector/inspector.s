@@ -67,6 +67,7 @@ extern dump_put_name
 extern dump_put_strtab
 extern symdump_symbols
 extern symdump_relocs
+extern disasm_sections
 extern io_open
 extern io_close
 extern io_file_size
@@ -148,6 +149,11 @@ inspect_run:
     mov     rdi, rbx
     call    symdump_relocs
 .no_relocs:
+    test    r12, INSPECT_DISASM
+    jz      .no_disasm
+    mov     rdi, rbx
+    call    disasm_sections
+.no_disasm:
     mov     rax, [rbx + INSPCTX_err]
 
 .done:
