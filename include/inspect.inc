@@ -24,6 +24,7 @@
 %define INSPECT_SYMBOLS     0x08    ; every SHT_SYMTAB / SHT_DYNSYM
 %define INSPECT_RELOCS      0x10    ; every SHT_RELA / SHT_REL
 %define INSPECT_ALL         0x1F
+%define INSPECT_DISASM      0x20    ; x86-64 disassembly of code sections (not in ALL)
 
 ; ============================================================================
 ; Name tables  (dump_name / dump_put_name kinds, see tools/symdump/fmt.s)
