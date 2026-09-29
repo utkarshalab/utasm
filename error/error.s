@@ -196,32 +196,44 @@ error_emit:
 ; error_emit_undefined_symbol
 ; Reports an undefined symbol exactly like error_emit, then, if a defined
 ; symbol has a similar name, prints "hint: did you mean '<name>'?" on
-; the following line.
+; the following line, then exits like error_emit.
+;
+; error_emit is a hard abort: it prints the diagnostic and calls exit(1),
+; so it never returns and nothing can be printed after it. This routine
+; therefore runs the same four print steps itself, in the same order and
+; with the same register setup, adds the hint, and then exits the same
+; way - the error output is unchanged, only the hint line is added.
 ; Input    : same as error_emit; r8 = the undefined symbol's name
-; Output   : rax = error_emit's result
-; Clobbers : rcx, rdx, rsi, rdi, r8-r11
+; Output   : does not return (exit status 1)
 ;
 global error_emit_undefined_symbol
 error_emit_undefined_symbol:
     push    rbx
     push    r12
     push    r13
-    mov     rbx, rdi                        ; rbx = AsmCtx
-    mov     r12, r8                         ; r12 = symbol name
+    push    r14
+    push    r15
 
-    call    error_emit                      ; the error line comes first
-    mov     r13, rax
+    mov     rbx, rdi               ; save AsmCtx
+    mov     r12, rsi               ; save filename
+    mov     r13, rdx               ; save line
+    mov     r14, rcx               ; save column
+    mov     r15, r8                ; save message (the symbol name)
+
+    call    error_print_location
+    call    error_print_severity_error
+    call    error_print_message
+    call    error_print_caret_diagnostics
 
     mov     rdi, rbx
-    mov     rsi, r12
+    mov     rsi, r15
     call    error_hint_symbol
     call    error_hint_flush
 
-    mov     rax, r13
-    pop     r13
-    pop     r12
-    pop     rbx
-    ret
+    ; EXIT IMMEDIATELY, as error_emit does
+    mov     rdi, 1                 ; status = 1
+    mov     rax, 60                ; sys_exit
+    syscall
 
 ; ---- error_warn -------------------------
 ;
