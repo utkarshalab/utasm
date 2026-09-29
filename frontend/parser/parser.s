@@ -25,6 +25,7 @@ extern str_compare
 extern asm_ctx_align
 extern str_concat
 extern error_emit
+extern error_hint_mnemonic
 extern asm_ctx_create_section
 extern asmctx_get_section
 extern asmctx_emit_byte
@@ -391,6 +392,10 @@ parser_parse_instruction:
     jmp     .error
 
 .unknown_mnemonic:
+    ; Remember the closest known instruction/directive; utasm.s prints it
+    ; as a hint after the "Parser error" line.
+    mov     rdi, [r12 + TOKEN_value]
+    call    error_hint_mnemonic
     mov     rax, EXIT_UNKNOWN_INSTR
     jmp     .done
 
