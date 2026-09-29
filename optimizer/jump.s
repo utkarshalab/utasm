@@ -49,6 +49,17 @@ DEFAULT REL
 ; labels stay the linker's job, as in amd64_emit_branch_disp), and never
 ; when debug info is requested.
 ;
+; Optimization levels (ASMCTX_opt, set by -O0/-O1/-O2):
+;   -O0  nothing: every jump stays as the encoder wrote it
+;   -O1  shortening only (default) - the same result NASM produces
+;   -O2  also rewrites jumps, beyond what NASM does:
+;          jcc L1 / jmp L2 / L1:    ->  j!cc L2       (one jump fewer)
+;          jmp/jcc A, A: jmp B      ->  jmp/jcc B     (threading)
+;          jmp/jcc to the next instruction  ->  removed
+;        Each keeps the program's behaviour: jumps never touch flags, a
+;        jcc whose both paths meet does nothing, and a jump is only
+;        removed when no label and no other branch points at it.
+;
 ; Calling convention (AMD64): rdi, rsi, rdx, rcx, r8; callee saved
 ; rbx, rbp, r12-r15.
 
@@ -56,6 +67,7 @@ DEFAULT REL
 %define RX_kind       0     ; b  RELAX_* kind
 %define RX_state      1     ; b  candidates: RS_* below
 %define RX_cc         2     ; b  jcc condition code / FIXED width (1 or 4)
+%define RX_flags      3     ; b  RF_* below
 %define RX_aux32      4     ; d  candidate: reloc index; align: old padding
 %define RX_sec        8     ; q  SECTION*
 %define RX_pos       16     ; q  candidate/align: start; fixed: disp offset
@@ -68,6 +80,11 @@ DEFAULT REL
 %define RS_SHORT      1     ; candidate, shortened
 %define RS_FORCED     2     ; shortened once, put back for good
 %define RS_NO         3     ; not eligible
+%define RS_DELETE     4     ; -O2: removed entirely
+
+%define RF_RETARGET   1     ; -O2: target changed; resolve it here, even
+                            ; if it stays rel32 (its relocation is stale)
+%define NO_RELOC      0xFFFFFFFF          ; RX_aux32 of a record with none
 
 %define RELOC_DELETED 0xFFFFFFFF
 
@@ -253,6 +270,8 @@ relax_run:
     jne     .done
     cmp     byte [rbx + ASMCTX_target], TARGET_AMD64
     jne     .done
+    cmp     byte [rbx + ASMCTX_opt], OPT_NONE
+    je      .done                          ; -O0: jumps as written
 
     xor     r12d, r12d                     ; r12 = section slot
 .sections:
@@ -373,6 +392,11 @@ rx_section:
     jmp     .prep
 .prepared:
 
+    ; ---- 2b. -O2: rewrite jumps before choosing sizes ----
+    cmp     byte [rbx + ASMCTX_opt], OPT_SIZE
+    jb      .again
+    call    rx_o2
+
     ; ---- 3. choose the jumps to shorten ----
 .again:
     call    rx_layout
@@ -460,6 +484,10 @@ rx_section:
     ja      .any_next
     cmp     byte [r13 + RX_state], RS_SHORT
     je      .apply
+    cmp     byte [r13 + RX_state], RS_DELETE
+    je      .apply
+    test    byte [r13 + RX_flags], RF_RETARGET
+    jnz     .apply
 .any_next:
     inc     r15
     jmp     .any
@@ -506,6 +534,7 @@ rx_prepare_candidate:
     mov     r12, rdi
     mov     rbx, [rel rw_ctx]
     mov     byte [r12 + RX_state], RS_NO
+    mov     byte [r12 + RX_flags], 0
 
     mov     eax, 5                         ; jmp E9 rel32
     cmp     byte [r12 + RX_kind], RELAX_JMP
@@ -558,6 +587,237 @@ rx_prepare_candidate:
     pop     rbx
     ret
 
+; ---- rx_o2 (internal) -------------------
+;
+; -O2 rewrites, applied to the section's records before sizes are chosen:
+;   1. jcc L1 / jmp L2 / L1:  ->  j!cc L2      (the jmp is removed)
+;   2. a jump to a jmp goes straight to that jmp's target (threading)
+;   3. a jump to the very next instruction is removed
+; Retargeted jumps are resolved here (RF_RETARGET); removed ones become
+; RS_DELETE and lose their bytes and relocation in rx_apply.
+;
+rx_o2:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+
+    ; ---- 1. jcc over a jmp ----
+    xor     r15d, r15d
+.over:
+    cmp     r15, [rel rw_n]
+    jae     .thread
+    mov     rax, [rel rw_recs]
+    mov     r12, [rax + r15*8]             ; r12 = A (the jcc)
+    cmp     byte [r12 + RX_kind], RELAX_JCC
+    jne     .over_next
+    cmp     byte [r12 + RX_state], RS_LONG
+    jne     .over_next
+    mov     rdi, [r12 + RX_end]            ; is a jmp right after it?
+    call    rx_find_jmp_at
+    cmp     rax, -1
+    je      .over_next
+    mov     r13, rdx                       ; r13 = B's record
+    mov     r14, rax                       ; r14 = B's target
+    mov     rcx, [r12 + RX_end]
+    add     rcx, r8                        ; end of B
+    cmp     [r12 + RX_aux], rcx            ; does A jump just past B?
+    jne     .over_next
+    push    r8                             ; B's length (clobbered below)
+    push    r8
+    mov     rdi, [r12 + RX_end]
+    call    rx_is_targeted                 ; is anything pointing at B?
+    pop     r8
+    pop     r8
+    test    eax, eax
+    jnz     .over_next
+
+    xor     byte [r12 + RX_cc], 1          ; invert the condition
+    mov     [r12 + RX_aux], r14            ; ...and jump where B went
+    or      byte [r12 + RX_flags], RF_RETARGET
+    cmp     byte [r13 + RX_kind], RELAX_FIXED
+    jne     .b_is_candidate
+    ; B was resolved in place: turn its record into a removal
+    mov     rax, [r12 + RX_end]
+    mov     [r13 + RX_pos], rax
+    add     rax, r8
+    mov     [r13 + RX_end], rax
+    mov     byte [r13 + RX_kind], RELAX_JMP
+    mov     dword [r13 + RX_aux32], NO_RELOC
+    mov     byte [r13 + RX_flags], 0
+.b_is_candidate:
+    mov     byte [r13 + RX_state], RS_DELETE
+.over_next:
+    inc     r15
+    jmp     .over
+
+    ; ---- 2. threading ----
+.thread:
+    xor     r15d, r15d
+.thread_loop:
+    cmp     r15, [rel rw_n]
+    jae     .next_ins
+    mov     rax, [rel rw_recs]
+    mov     r12, [rax + r15*8]             ; r12 = X
+    cmp     byte [r12 + RX_kind], RELAX_JCC
+    ja      .thread_next
+    cmp     byte [r12 + RX_state], RS_LONG
+    jne     .thread_next
+    mov     r13, [r12 + RX_aux]            ; r13 = current target
+    mov     r14d, 8                        ; follow at most 8 jumps
+.follow:
+    mov     rdi, r13
+    call    rx_find_jmp_at
+    cmp     rax, -1
+    je      .followed
+    cmp     rax, r13
+    je      .followed                      ; a jmp to itself: stop
+    mov     r13, rax
+    dec     r14d
+    jnz     .follow
+.followed:
+    cmp     r13, [r12 + RX_aux]
+    je      .thread_next
+    mov     [r12 + RX_aux], r13
+    or      byte [r12 + RX_flags], RF_RETARGET
+.thread_next:
+    inc     r15
+    jmp     .thread_loop
+
+    ; ---- 3. jumps to the next instruction ----
+.next_ins:
+    xor     r15d, r15d
+.next_loop:
+    cmp     r15, [rel rw_n]
+    jae     .done
+    mov     rax, [rel rw_recs]
+    mov     r12, [rax + r15*8]
+    cmp     byte [r12 + RX_kind], RELAX_JCC
+    ja      .next_next
+    cmp     byte [r12 + RX_state], RS_LONG
+    jne     .next_next
+    mov     rax, [r12 + RX_aux]
+    cmp     rax, [r12 + RX_end]
+    jne     .next_next
+    mov     byte [r12 + RX_state], RS_DELETE
+.next_next:
+    inc     r15
+    jmp     .next_loop
+
+.done:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+; ---- rx_find_jmp_at (internal) ----------
+;
+; Is there an unconditional jmp starting at offset rdi whose target is
+; known here? Either an eligible jmp candidate, or a jmp the encoder
+; resolved in place (EB rel8 / E9 rel32 with a RELAX_FIXED record).
+; Input : rdi = offset
+; Output: rax = its target offset, or -1
+;         rdx = its record, r8 = its length
+; Clobbers: rcx, r9
+;
+rx_find_jmp_at:
+    xor     ecx, ecx
+.loop:
+    cmp     rcx, [rel rw_n]
+    jae     .none
+    mov     rdx, [rel rw_recs]
+    mov     rdx, [rdx + rcx*8]
+    cmp     byte [rdx + RX_kind], RELAX_JMP
+    jne     .fixed
+    cmp     [rdx + RX_pos], rdi
+    jne     .next
+    cmp     byte [rdx + RX_state], RS_LONG
+    jne     .none
+    mov     rax, [rdx + RX_aux]
+    mov     r8d, 5
+    ret
+.fixed:
+    cmp     byte [rdx + RX_kind], RELAX_FIXED
+    jne     .next
+    lea     r9, [rdi + 1]
+    cmp     [rdx + RX_pos], r9             ; displacement right after 1 opcode byte
+    jne     .next
+    mov     r9, [rel rw_sec]
+    mov     r9, [r9 + SECTION_data]
+    movzx   eax, byte [r9 + rdi]           ; the opcode
+    cmp     byte [rdx + RX_cc], 1
+    jne     .fixed32
+    cmp     eax, 0xEB
+    jne     .none
+    mov     rax, [rdx + RX_aux]
+    mov     r8d, 2
+    ret
+.fixed32:
+    cmp     eax, 0xE9
+    jne     .none
+    mov     rax, [rdx + RX_aux]
+    mov     r8d, 5
+    ret
+.next:
+    inc     rcx
+    jmp     .loop
+.none:
+    mov     rax, -1
+    ret
+
+; ---- rx_is_targeted (internal) ----------
+;
+; Does anything point at offset rdi: a label of this section, or a
+; branch (candidate or in-place) whose target it is?
+; Input : rdi = offset.  Output: eax = 1 if so, else 0.
+; Clobbers: rcx, rdx, r8, r9
+;
+rx_is_targeted:
+    mov     r8, [rel rw_ctx]
+    mov     r9, [rel rw_sec]
+    mov     r9d, [r9 + SECTION_index]
+    mov     rdx, [r8 + ASMCTX_symtab]
+    xor     ecx, ecx
+.syms:
+    cmp     ecx, [r8 + ASMCTX_symcount]
+    jae     .recs
+    cmp     [rdx + SYMBOL_section], r9w
+    jne     .syms_next
+    cmp     [rdx + SYMBOL_value], rdi
+    je      .yes
+.syms_next:
+    add     rdx, SYMBOL_SIZE
+    inc     rcx
+    jmp     .syms
+.recs:
+    xor     ecx, ecx
+.recs_loop:
+    cmp     rcx, [rel rw_n]
+    jae     .no
+    mov     rdx, [rel rw_recs]
+    mov     rdx, [rdx + rcx*8]
+    cmp     byte [rdx + RX_kind], RELAX_ALIGN
+    je      .recs_next
+    cmp     byte [rdx + RX_kind], RELAX_FIXED
+    je      .check
+    cmp     byte [rdx + RX_state], RS_NO
+    je      .recs_next                     ; its aux is not a target
+.check:
+    cmp     [rdx + RX_aux], rdi
+    je      .yes
+.recs_next:
+    inc     rcx
+    jmp     .recs_loop
+.no:
+    xor     eax, eax
+    ret
+.yes:
+    mov     eax, 1
+    ret
+
 ; ---- rx_layout (internal) ---------------
 ;
 ; Recomputes, for the current choice of shortened jumps, how many bytes
@@ -578,11 +838,17 @@ rx_layout:
     je      .store
     cmp     eax, RELAX_ALIGN
     je      .align
+    cmp     byte [rbx + RX_state], RS_DELETE
+    je      .deleted
     cmp     byte [rbx + RX_state], RS_SHORT
     jne     .store
     mov     rdx, [rbx + RX_end]
     sub     rdx, [rbx + RX_pos]
     sub     rdx, 2                         ; 3 (jmp) or 4 (jcc) bytes saved
+    jmp     .store
+.deleted:
+    mov     rdx, [rbx + RX_end]
+    sub     rdx, [rbx + RX_pos]            ; the whole jump is removed
     jmp     .store
 .align:
     mov     rax, [rbx + RX_pos]
@@ -682,9 +948,51 @@ rx_apply:
     je      .sweep_align
     cmp     eax, RELAX_JCC
     ja      .sweep_next
+    cmp     byte [rbx + RX_state], RS_DELETE
+    je      .sweep_delete
     cmp     byte [rbx + RX_state], RS_SHORT
-    jne     .sweep_next
+    je      .sweep_short
+    test    byte [rbx + RX_flags], RF_RETARGET
+    jnz     .sweep_long
+    jmp     .sweep_next
 
+.sweep_delete:
+    ; -O2: drop the jump's bytes altogether
+    mov     rdi, [rbx + RX_pos]
+    call    .copy_to
+    mov     r13, [rbx + RX_end]
+    jmp     .drop_reloc
+
+.sweep_long:
+    ; -O2: a retargeted jump that stays rel32 - rewrite it in place
+    mov     rdi, [rbx + RX_pos]
+    call    .copy_to
+    mov     rdi, [rbx + RX_aux]
+    call    rx_new
+    mov     rcx, rax                       ; new target
+    mov     rax, [rbx + RX_end]
+    sub     rax, [rbx + RX_pos]            ; 5 (jmp) or 6 (jcc)
+    add     rax, r14                       ; new end of the jump
+    sub     rcx, rax                       ; rel32
+    cmp     byte [rbx + RX_kind], RELAX_JMP
+    jne     .long_jcc
+    mov     byte [rbp + r14], 0xE9
+    mov     [rbp + r14 + 1], ecx
+    add     r14, 5
+    jmp     .long_done
+.long_jcc:
+    mov     al, [rbx + RX_cc]
+    and     al, 0x0F
+    or      al, 0x80
+    mov     byte [rbp + r14], 0x0F
+    mov     [rbp + r14 + 1], al
+    mov     [rbp + r14 + 2], ecx
+    add     r14, 6
+.long_done:
+    mov     r13, [rbx + RX_end]
+    jmp     .drop_reloc
+
+.sweep_short:
     ; copy up to the jump, then write the 2-byte form
     mov     rdi, [rbx + RX_pos]
     call    .copy_to
@@ -702,8 +1010,11 @@ rx_apply:
     add     r14, 2
     mov     r13, [rbx + RX_end]            ; skip the old 5/6 bytes
 
+.drop_reloc:
     ; its relocation is resolved now
     mov     eax, [rbx + RX_aux32]
+    cmp     eax, NO_RELOC
+    je      .sweep_next
     imul    rax, rax, RELOC_SIZE
     mov     rcx, [rel rw_ctx]
     add     rax, [rcx + ASMCTX_relocs]
