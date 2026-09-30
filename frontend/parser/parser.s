@@ -463,6 +463,23 @@ parser_parse_operand:
 
     mov     al, [r13 + TOKEN_kind]
     
+    ; 0. AVX-512 rounding operand: {rn-sae}, {rd-sae}, {ru-sae}, {rz-sae}, {sae}
+    IF al, e, TOK_LBRACE
+        mov     rax, [rbx + PREP_ctx]
+        cmp     byte [rax + ASMCTX_target], TARGET_AARCH64
+        je      .not_rounding
+        call    parser_parse_decorator
+        check_err
+        cmp     byte [r12 + OPERAND_kind], OP_ROUNDING
+        je      .success
+        cmp     byte [r12 + OPERAND_kind], OP_SAE
+        je      .success
+        mov     rax, EXIT_INVALID_EXPR     ; {k1}/{z}/{1toN} must follow an operand
+        jmp     .error
+.not_rounding:
+        mov     al, [r13 + TOKEN_kind]
+        ENDIF
+
     ; 1. Memory Operands [base + index*scale + disp]
     IF al, e, TOK_LBRACKET
         call    parser_parse_mem_operand
@@ -635,6 +652,21 @@ parser_parse_operand:
     jmp     .error
 
 .success:
+    ; AVX-512 decorators after a register or memory operand: {k1} {z} {1to16}
+    mov     rax, [rbx + PREP_ctx]
+    cmp     byte [rax + ASMCTX_target], TARGET_AARCH64
+    je      .decorated
+.decorator:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_LBRACE
+    jne     .decorated
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; consume '{'
+    call    parser_parse_decorator
+    check_err
+    jmp     .decorator
+.decorated:
     mov     rdx, r12
     mov     rax, OK
     pop     r13
@@ -1643,6 +1675,110 @@ parser_parse_mem_operand:
     epilogue
 
 ;*
+; * [parser_parse_decorator]
+; * Purpose: Parse one AVX-512 decorator; the '{' is already consumed.
+; *   {k1}..{k7}      opmask       -> OPERAND_mask = 1..7
+; *   {z}             zeroing      -> OPERAND_ctrl bit 0
+; *   {1to2}..{1to32} broadcast    -> OPERAND_ctrl bit 1, log2(N) in bits 2-4
+; *   {rn-sae} {rd-sae} {ru-sae} {rz-sae} -> OP_ROUNDING, OPERAND_imm = 0..3
+; *   {sae}           -> OP_SAE
+; *   The text is rebuilt from its tokens: "1to16" lexes as the number 1
+; *   and the identifier to16, and a number token carries its text.
+; * Input  : RBX = PrepState, R12 = OPERAND
+; * Output : RAX = OK or an error code
+; ;
+parser_parse_decorator:
+    push    r13
+    push    r14
+    lea     r14, [rel deco_buf]
+    mov     byte [r14], 0
+.tok:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret
+    mov     r13, rdx
+    movzx   eax, byte [r13 + TOKEN_kind]
+    cmp     eax, TOK_RBRACE
+    je      .match
+    cmp     eax, TOK_IDENT
+    je      .ident
+    cmp     eax, TOK_NUMBER
+    je      .ident
+    cmp     eax, TOK_MINUS
+    je      .minus
+    jmp     .bad
+.ident:
+    mov     rdi, r14
+    mov     rsi, [r13 + TOKEN_value]
+    call    str_concat
+    jmp     .tok
+.minus:
+    mov     rdi, r14
+    lea     rsi, [rel deco_dash]
+    call    str_concat
+    jmp     .tok
+
+.match:
+    ; {k1}..{k7}
+    cmp     byte [r14], 'k'
+    jne     .named
+    cmp     byte [r14 + 2], 0
+    jne     .named
+    movzx   eax, byte [r14 + 1]
+    sub     eax, '1'
+    cmp     eax, 6
+    ja      .named
+    inc     eax
+    mov     [r12 + OPERAND_mask], al
+    jmp     .ok
+.named:
+    xor     r13d, r13d
+.name_loop:
+    mov     rdi, r14
+    lea     rsi, [rel deco_names]
+    mov     eax, r13d
+    shl     eax, 3
+    add     rsi, rax
+    call    str_cmp
+    test    rax, rax
+    jz      .found
+    inc     r13d
+    cmp     r13d, 11
+    jb      .name_loop
+.bad:
+    mov     rax, EXIT_INVALID_EXPR
+    jmp     .ret
+.found:
+    test    r13d, r13d
+    jnz     .not_z
+    or      byte [r12 + OPERAND_ctrl], 1      ; {z}
+    jmp     .ok
+.not_z:
+    cmp     r13d, 5
+    ja      .not_bcst
+    mov     eax, r13d                         ; {1toN}: log2(N) = index
+    shl     eax, 2
+    or      eax, 2
+    or      [r12 + OPERAND_ctrl], al
+    jmp     .ok
+.not_bcst:
+    cmp     r13d, 10
+    je      .sae
+    lea     eax, [r13 - 6]                    ; rn/rd/ru/rz = 0..3
+    mov     byte [r12 + OPERAND_kind], OP_ROUNDING
+    mov     [r12 + OPERAND_imm], rax
+    jmp     .ok
+.sae:
+    mov     byte [r12 + OPERAND_kind], OP_SAE
+.ok:
+    mov     rax, OK
+.ret:
+    pop     r14
+    pop     r13
+    ret
+
+;*
 ; * [parser_seg_override]
 ; * Purpose: Record a segment override written inside brackets ([fs:0x28]).
 ; * Input  : RSI = register name, R12 = OPERAND
@@ -1675,8 +1811,18 @@ parser_seg_override:
     pop     rbx
     ret
 
+[SECTION .bss]
+deco_buf:   resb 64                 ; the decorator text being matched
+
 [SECTION .rodata]
 str_rel: db "rel", 0
+; AVX-512 decorators, 8 bytes each (parser_parse_decorator relies on the order)
+deco_names: db "z", 0, 0, 0, 0, 0, 0, 0
+            db "1to2", 0, 0, 0, 0, "1to4", 0, 0, 0, 0, "1to8", 0, 0, 0, 0
+            db "1to16", 0, 0, 0, "1to32", 0, 0, 0
+            db "rn-sae", 0, 0, "rd-sae", 0, 0, "ru-sae", 0, 0, "rz-sae", 0, 0
+            db "sae", 0, 0, 0, 0, 0
+deco_dash:  db "-", 0
 ; segment registers in REG_CS..REG_SS order, 4 bytes each
 seg_names:  db "cs", 0, 0, "ds", 0, 0, "es", 0, 0, "fs", 0, 0, "gs", 0, 0, "ss", 0, 0
 ; segment override prefixes for REG_CS..REG_SS (cs ds es fs gs ss)
