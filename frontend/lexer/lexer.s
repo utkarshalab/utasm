@@ -217,6 +217,10 @@ lexer_next:
     jmp     .lex_directive
 .not_percent:
 
+    ; a non-ASCII byte starts a UTF-8 identifier (or is malformed UTF-8)
+    cmp     rcx, 0x80
+    jae     .lex_utf8_start
+
     ; identifier, label, or number
     movzx   eax, byte [lexer_char_props + rcx]
     test    al, CHAR_IS_IDENT_START
@@ -1603,6 +1607,29 @@ lexer_next:
     ; skip whitespace (Space, Tab, CR)
     test    byte [lexer_char_props + rcx], CHAR_IS_WHITESPACE
     jnz     .skip_ws
+
+    ; a backslash with only blanks after it continues the line on the next
+    ; one: both become one statement (db "a", \ <newline> "b")
+    cmp     rcx, 0x5C                  ; backslash
+    jne     .not_continuation
+    lea     r11, [r10 + 1]
+.cont_scan:
+    cmp     r11, [rbx + LEXER_end]
+    jge     .not_continuation
+    movzx   eax, byte [r11]
+    cmp     eax, 10
+    je      .cont_join
+    test    byte [lexer_char_props + rax], CHAR_IS_WHITESPACE
+    jz      .not_continuation
+    inc     r11
+    jmp     .cont_scan
+.cont_join:
+    lea     rax, [r11 + 1]
+    mov     [rbx + LEXER_pos], rax
+    inc     dword [rbx + LEXER_line]
+    mov     word [rbx + LEXER_col], 1
+    jmp     .skip_loop
+.not_continuation:
 
     ; check for ; comment
     cmp     rcx, ';'
