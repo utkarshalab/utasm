@@ -42,6 +42,14 @@ linker_run:
     mov     rdi, rbx
     call    relax_run
 
+    ; 0.5 A standalone executable: sections get their addresses now, so the
+    ;     relocations below resolve against them
+    IF byte [rbx + ASMCTX_standalone], e, 1
+        extern  elf64_standalone_layout
+        mov     rdi, rbx
+        call    elf64_standalone_layout
+        ENDIF
+
     ; 1. Resolve all relocations
     extern  global_profstate
     extern  profiler_start_phase
@@ -76,6 +84,9 @@ linker_run:
 
     mov     rsi, AMD64_O_WRONLY | AMD64_O_CREAT | AMD64_O_TRUNC
     mov     rdx, 0o644
+    IF byte [rbx + ASMCTX_standalone], e, 1
+        mov     rdx, 0o755             ; an executable
+        ENDIF
     call    io_open
     check_err
     mov     r12, rdx               ; r12 = FD
