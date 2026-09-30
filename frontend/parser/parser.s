@@ -143,7 +143,7 @@ parser_parse_instruction:
         mov     rdi, [rbx + PREP_ctx]
         mov     r14, [rdi + ASMCTX_last_global]
         test    r14, r14
-        jz      .error_no_global
+        jz      .local_no_global           ; before any global label
 
         mov     rsi, [r12 + TOKEN_value] ; local name (e.g. ".loop")
         call    parser_concat_local_name
@@ -156,6 +156,25 @@ parser_parse_instruction:
         call    parser_define_label
         check_err
         jmp     .get_mnemonic
+        ENDIF
+
+    ; A GNU numeric label ("1:") arrives as NUMBER followed by COLON
+    IF al, e, TOK_NUMBER
+        mov     rdi, rbx
+        call    preprocessor_peek_token
+        check_err
+        IF byte [rdx + TOKEN_kind], e, TOK_COLON
+            mov     rdi, rbx
+            call    preprocessor_next_token    ; consume ':'
+            check_err
+            mov     rdi, [r12 + TOKEN_value]
+            call    parser_numlabel_def
+            check_err
+            call    parser_define_label
+            check_err
+            jmp     .get_mnemonic
+            ENDIF
+        mov     al, [r12 + TOKEN_kind]
         ENDIF
 
     ; A label built by token pasting arrives as IDENT followed by COLON,
@@ -191,7 +210,7 @@ parser_parse_instruction:
             mov     rdi, [rbx + PREP_ctx]
             mov     r14, [rdi + ASMCTX_last_global]
             test    r14, r14
-            jz      .error_no_global
+            jz      .local_no_global           ; before any global label
             call    parser_concat_local_name
             mov     rsi, rdx
             call    parser_define_label
@@ -393,6 +412,13 @@ parser_parse_instruction:
     mov     rax, EXIT_UNDEF_SYMBOL
     jmp     .error
 
+; A local label with no global label before it keeps its own name
+; (".L1"), as in NASM; references to it do the same.
+.local_no_global:
+    call    parser_define_label
+    check_err
+    jmp     .get_mnemonic
+
 .unknown_mnemonic:
     ; Remember the closest known instruction/directive; utasm.s prints it
     ; as a hint after the "Parser error" line.
@@ -513,15 +539,32 @@ parser_parse_operand:
 .no_ptr:
             ENDIF
             
-        ; Next token MUST be '['
         mov     rdi, rbx
         call    preprocessor_next_token
         mov     r13, rdx
-        IF byte [r13 + TOKEN_kind], ne, TOK_LBRACKET
-            mov     rax, 211 ; ERR
-            jmp     .error
-            ENDIF
-            
+        cmp     byte [r13 + TOKEN_kind], TOK_LBRACKET
+        je      .sized_mem
+        ; A register with its size written out ("movzx r9d, byte al"): the
+        ; size must be the register's. Anything else is a sized immediate.
+        cmp     byte [r13 + TOKEN_kind], TOK_IDENT
+        jne     .expression
+        movzx   eax, word [r12 + OPERAND_xsize]
+        push    rax
+        call    parser_get_arch_tables
+        mov     rdi, rdx
+        mov     rsi, [r13 + TOKEN_value]
+        call    parser_parse_reg_info
+        pop     rcx
+        cmp     rax, ERR
+        je      .expression                ; a symbol: "dword SIZE_CONST"
+        cmp     cx, [r12 + OPERAND_xsize]
+        jne     .sized_bad
+        mov     byte [r12 + OPERAND_kind], OP_REG
+        jmp     .success
+.sized_bad:
+        mov     rax, 211                   ; the size does not match the register
+        jmp     .error
+.sized_mem:
         call    parser_parse_mem_operand
         check_err
         jmp     .success
@@ -584,6 +627,7 @@ parser_parse_operand:
         ENDIF
 
     ; 3. Expressions (Numbers, Symbols, Math)
+.expression:
     mov     rdi, rbx
     mov     rsi, r13
     call    preprocessor_putback_token
@@ -1211,6 +1255,11 @@ parser_evaluate_factor:
         ENDIF
 
     IF al, e, TOK_NUMBER
+        ; "1f" / "1b": a numeric label reference, looked up like a symbol
+        mov     rdi, [r12 + TOKEN_value]
+        call    parser_numlabel_ref
+        test    rsi, rsi
+        jnz     .do_sym_lookup
         mov     rdi, [r12 + TOKEN_value]
         call    str_to_int
         check_err
@@ -1500,6 +1549,18 @@ parser_parse_mem_operand:
             jne     .addr64
             or      byte [r12 + OPERAND_flags], OP_FLAG_ADDR32
         .addr64:
+            ; A vector register is the index of a gather/scatter address
+            ; ([rbx + xmm1*4]); record whether it is xmm, ymm or zmm
+            cmp     r8d, 128
+            jb      .not_vsib
+            mov     eax, r8d
+            shr     eax, 7                 ; 128/256/512 -> 1/2/4
+            cmp     eax, 4
+            jne     .vsib_code
+            mov     eax, 3
+        .vsib_code:
+            mov     [r12 + OPERAND_vsib], al
+        .not_vsib:
             ; It's a register. Is it base or index?
             ; (reg_info returns a status; the register id landed in OPERAND_reg)
             mov     al, [r12 + OPERAND_reg]
@@ -1526,7 +1587,12 @@ parser_parse_mem_operand:
         .not_seg:
 
             ; A scaled register is the index even when there is no base yet,
-            ; as in [table + rcx*4].
+            ; as in [table + rcx*4]; a vector register is always the index.
+            cmp     al, 80
+            jb      .gpr_slot
+            cmp     al, 112
+            jb      .set_index
+        .gpr_slot:
             push    rax
             mov     rdi, rbx
             call    preprocessor_peek_token
@@ -1778,6 +1844,128 @@ parser_parse_decorator:
     pop     r13
     ret
 
+; ============================================================================
+; GNU-style numeric local labels
+; ============================================================================
+; "N:" defines a new instance of label N (0 <= N < NUMLBL_MAX); "Nb" is the
+; latest instance before the reference and "Nf" the next one after it. Each
+; instance is an ordinary label named "L@num.N.k" (k counts the definitions
+; of N), which no source text can spell, so forward references take the usual
+; relocation path. "Nb" before any "N:" stays a number (NASM's binary suffix).
+
+%define NUMLBL_MAX  10000
+
+;*
+; * [parser_numlabel_def]
+; * Input : RDI = number text of an "N:" label, RBX = PrepState
+; * Output: RAX = OK and RSI = the instance's label name, or an error
+; ;
+parser_numlabel_def:
+    call    parser_numlabel_n
+    cmp     eax, -1
+    je      .bad
+    cmp     byte [rdi], 0
+    jne     .bad                           ; "1f:" is not a numeric label
+    lea     rcx, [rel numlbl_count]
+    mov     esi, [rcx + rax*4]
+    inc     dword [rcx + rax*4]
+    mov     edi, eax
+    call    parser_numlabel_name
+    mov     rax, OK
+    ret
+.bad:
+    mov     rax, EXIT_INVALID_EXPR
+    ret
+
+;*
+; * [parser_numlabel_ref]
+; * Input : RDI = number token text, RBX = PrepState
+; * Output: RSI = the label name "Nf" / "Nb" refers to, or 0 for a number
+; ;
+parser_numlabel_ref:
+    call    parser_numlabel_n
+    cmp     eax, -1
+    je      .none
+    movzx   ecx, byte [rdi]
+    cmp     byte [rdi + 1], 0
+    jne     .none
+    lea     rdx, [rel numlbl_count]
+    mov     esi, [rdx + rax*4]             ; definitions so far
+    cmp     ecx, 'f'
+    je      .name
+    cmp     ecx, 'b'
+    jne     .none
+    test    esi, esi
+    jz      .none                          ; no "N:" yet: 1b is binary one
+    dec     esi
+.name:
+    mov     edi, eax
+    jmp     parser_numlabel_name
+.none:
+    xor     esi, esi
+    ret
+
+; eax = the decimal number at rdi (rdi left after its digits), or -1 when
+; the text does not start with a digit or the number is NUMLBL_MAX or more
+parser_numlabel_n:
+    xor     eax, eax
+    movzx   ecx, byte [rdi]
+    sub     ecx, '0'
+    cmp     ecx, 9
+    ja      .no
+.digit:
+    movzx   ecx, byte [rdi]
+    sub     ecx, '0'
+    cmp     ecx, 9
+    ja      .end
+    imul    eax, eax, 10
+    add     eax, ecx
+    cmp     eax, NUMLBL_MAX
+    jae     .no
+    inc     rdi
+    jmp     .digit
+.end:
+    ret
+.no:
+    mov     eax, -1
+    ret
+
+; rsi = "L@num.<edi>.<esi>", allocated in the preprocessor arena
+parser_numlabel_name:
+    push    r12
+    push    r13
+    push    r14
+    mov     r12d, edi
+    mov     r13d, esi
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, 40
+    call    arena_alloc
+    mov     r14, rdx
+    mov     rdi, r14
+    lea     rsi, [rel numlbl_prefix]
+    call    str_concat
+    lea     rdi, [rel numlbl_digits]
+    mov     esi, r12d
+    extern  str_int_to_str
+    call    str_int_to_str
+    mov     rdi, r14
+    lea     rsi, [rel numlbl_digits]
+    call    str_concat
+    mov     rdi, r14
+    lea     rsi, [rel numlbl_dot]
+    call    str_concat
+    lea     rdi, [rel numlbl_digits]
+    mov     esi, r13d
+    call    str_int_to_str
+    mov     rdi, r14
+    lea     rsi, [rel numlbl_digits]
+    call    str_concat
+    mov     rsi, r14
+    pop     r14
+    pop     r13
+    pop     r12
+    ret
+
 ;*
 ; * [parser_seg_override]
 ; * Purpose: Record a segment override written inside brackets ([fs:0x28]).
@@ -1813,6 +2001,8 @@ parser_seg_override:
 
 [SECTION .bss]
 deco_buf:   resb 64                 ; the decorator text being matched
+numlbl_count: resd NUMLBL_MAX       ; definitions of each numeric label so far
+numlbl_digits: resb 24
 
 [SECTION .rodata]
 str_rel: db "rel", 0
@@ -1823,6 +2013,8 @@ deco_names: db "z", 0, 0, 0, 0, 0, 0, 0
             db "rn-sae", 0, 0, "rd-sae", 0, 0, "ru-sae", 0, 0, "rz-sae", 0, 0
             db "sae", 0, 0, 0, 0, 0
 deco_dash:  db "-", 0
+numlbl_prefix: db "L@num.", 0
+numlbl_dot: db ".", 0
 ; segment registers in REG_CS..REG_SS order, 4 bytes each
 seg_names:  db "cs", 0, 0, "ds", 0, 0, "es", 0, 0, "fs", 0, 0, "gs", 0, 0, "ss", 0, 0
 ; segment override prefixes for REG_CS..REG_SS (cs ds es fs gs ss)
@@ -3557,24 +3749,26 @@ parser_handle_visibility:
     IF rax, e, OK
         ; A91: Audit symbol binding visibility conflicts
         movzx   eax, byte [rdx + SYMBOL_vis]
-        IF al, ne, r12b
-            ; If already Global/Weak, don't allow demotion to Local if defined
-            IF al, e, VIS_GLOBAL
-            ELSEIF al, e, VIS_WEAK
-                IF r12b, e, VIS_LOCAL
-                    ; Symbol is already visible to the linker; demotion is unsafe
-                    mov     rax, EXIT_SYMBOL_RANGE
-                    jmp     .error
-                    ENDIF
-                    ENDIF
-                    ENDIF
+        ; A global or weak symbol is already visible to the linker: demoting
+        ; it to local is a conflict (the global branch used to be empty, so
+        ; only weak symbols were checked)
+        cmp     r12b, VIS_LOCAL
+        jne     .vis_ok
+        cmp     al, VIS_GLOBAL
+        je      .vis_conflict
+        cmp     al, VIS_WEAK
+        jne     .vis_ok
+.vis_conflict:
+        mov     rax, EXIT_SYMBOL_RANGE
+        jmp     .error
+.vis_ok:
         mov     byte [rdx + SYMBOL_vis], r12b
         ELSE
         ; Symbol doesn't exist, create it as UNDEFINED for now
         sub     rsp, SYMBOL_SIZE
         mov     rdi, rsp
         xor     rax, rax
-        mov     rcx, 6
+        mov     rcx, SYMBOL_SIZE / 8           ; the whole record (was 48 bytes)
         rep stosq
         mov     rdi, [rbx + PREP_ctx]
         mov     rsi, rsp
@@ -3681,7 +3875,7 @@ parser_handle_comm:
         sub     rsp, SYMBOL_SIZE
         mov     rdi, rsp
         xor     rax, rax
-        mov     rcx, 6
+        mov     rcx, SYMBOL_SIZE / 8           ; the whole record (was 48 bytes)
         rep stosq
         mov     rdi, [rbx + PREP_ctx]
         mov     rsi, rsp
@@ -3765,6 +3959,7 @@ str_word:  db "word", 0
 str_dword: db "dword", 0
 str_qword: db "qword", 0
 str_tword: db "tword", 0
+str_tbyte:     db "tbyte", 0
 str_oword: db "oword", 0
 str_yword: db "yword", 0
 str_zword: db "zword", 0
@@ -3811,9 +4006,14 @@ parser_parse_size_specifier_string:
     test    rax, rax
     jz      .is_qword
 
-    ; 5. Check "tword" -> 80
+    ; 5. Check "tword" -> 80 (and "tbyte", the MASM/GAS spelling)
     mov     rdi, rbx
     lea     rsi, [rel str_tword]
+    call    str_cmp
+    test    rax, rax
+    jz      .is_tword
+    mov     rdi, rbx
+    lea     rsi, [rel str_tbyte]
     call    str_cmp
     test    rax, rax
     jz      .is_tword
