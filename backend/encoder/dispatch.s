@@ -55,6 +55,7 @@ extern  amd64_disp8n
 %define SP_V        1               ; size 16/32/64 sets the operand size
 %define SP_DQ       2               ; size 32/64 sets the operand size
 %define SP_IMM      3
+%define SP_VSIB     4               ; memory with a vector index (fixreg = 1/2/3)
 %define NOMEM       0xFFFF
 
 ; immediate kinds
@@ -106,6 +107,7 @@ te_cls:     resb 4                  ; class of each operand (0 = none)
 te_num:     resb 4                  ; register number
 te_high:    resb 4                  ; AH/CH/DH/BH
 te_size:    resw 4                  ; size in bits (0 = not written)
+te_vsib:    resb 4                  ; memory with a vector index: 1 xmm, 2 ymm, 3 zmm
 te_osz:     resb 1                  ; operand size the v-types chose (0 = none)
 te_regop:   resb 1                  ; operand index for each role, 0xFF = none
 te_rmop:    resb 1
@@ -208,6 +210,8 @@ te_classify:
     mov     byte [rdx + rcx], 0
     lea     rdx, [rel te_size]
     mov     word [rdx + rcx*2], 0
+    lea     rdx, [rel te_vsib]
+    mov     byte [rdx + rcx], 0
     movzx   eax, byte [r12 + INST_nops]
     cmp     ecx, eax
     jae     .next
@@ -253,6 +257,9 @@ te_classify:
 .mem_size:
     lea     rdx, [rel te_size]
     mov     [rdx + rcx*2], ax
+    movzx   eax, byte [rdi + OPERAND_vsib]
+    lea     rdx, [rel te_vsib]
+    mov     [rdx + rcx], al
     mov     r8d, C_MEM
     jmp     .set_cls
 .reg:
@@ -421,6 +428,17 @@ te_match:
     movzx   eax, word [rbx + TY_MSIZE]
     cmp     eax, NOMEM
     je      .fail
+    lea     rdx, [rel te_vsib]
+    movzx   r10d, byte [rdx + rcx]
+    cmp     byte [rbx + TY_SPECIAL], SP_VSIB
+    jne     .not_vsib_type
+    movzx   r11d, byte [rbx + TY_FIXREG]
+    cmp     r10d, r11d
+    jne     .fail
+    jmp     .next
+.not_vsib_type:
+    test    r10d, r10d
+    jnz     .fail                          ; [rbx + xmm1*4] is only for gathers
     ; {1toN}: N elements (8 bytes with W, else 4) must fill the operand
     push    rax
     call    te_operand
@@ -873,6 +891,21 @@ te_emit:
     movzx   eax, byte [rdx + rcx]
 .ev_v:
     mov     [rel te_vvvv], al              ; keep bit 4 for V'
+    ; a vector index (gathers) takes V' for its bit 4
+    movzx   ecx, byte [rel te_rmop]
+    cmp     ecx, 0xFF
+    je      .ev_v_done
+    lea     rdx, [rel te_vsib]
+    cmp     byte [rdx + rcx], 0
+    je      .ev_v_done
+    push    rax
+    call    te_operand
+    movzx   ecx, byte [rdi + OPERAND_index]
+    sub     ecx, 80
+    and     ecx, 16
+    or      [rel te_vvvv], cl
+    pop     rax
+.ev_v_done:
     not     eax
     and     eax, 15
     shl     eax, 3
