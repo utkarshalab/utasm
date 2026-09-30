@@ -201,6 +201,9 @@ lexer_next:
     cmp     rcx, 0x27              ; ' char literal
     je      .lex_char
 
+    cmp     rcx, 0x60              ; ` string with escapes
+    je      .lex_bquote
+
     cmp     rcx, '%'               ; directive
     jne     .not_percent
     mov     r10, [rbx + LEXER_pos]
@@ -1022,6 +1025,47 @@ lexer_next:
     test    rax, rax
     jnz     .fail
 
+    ; "1e3", "25E-2": decimal digits with an exponent are a float too
+    test    r14, r14
+    jnz     .set_kind
+    mov     rsi, rdx
+.fe_digits:
+    movzx   eax, byte [rsi]
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .fe_e
+    inc     rsi
+    jmp     .fe_digits
+.fe_e:
+    cmp     rsi, rdx
+    je      .set_kind
+    movzx   eax, byte [rsi]
+    or      eax, 0x20
+    cmp     eax, 'e'
+    jne     .set_kind
+    inc     rsi
+    movzx   eax, byte [rsi]
+    cmp     eax, '+'
+    je      .fe_sign
+    cmp     eax, '-'
+    jne     .fe_exp
+.fe_sign:
+    inc     rsi
+.fe_exp:
+    movzx   eax, byte [rsi]
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .set_kind
+.fe_exp_digits:
+    inc     rsi
+    movzx   eax, byte [rsi]
+    sub     eax, '0'
+    cmp     eax, 9
+    jbe     .fe_exp_digits
+    cmp     byte [rsi], 0
+    jne     .set_kind
+    mov     r14, 1
+.set_kind:
     ; Set token kind based on float flag
     mov     byte [r12 + TOKEN_kind], TOK_NUMBER
     test    r14, r14
@@ -1045,7 +1089,12 @@ lexer_next:
 ;   \"  double quote
 ;   \0  null byte
 ;
+.lex_bquote:
+    mov     byte [rel lex_quote], 0x60
+    jmp     .lex_quoted
 .lex_string:
+    mov     byte [rel lex_quote], '"'
+.lex_quoted:
     call    .token_begin
     ; skip opening "
     inc     qword [rbx + LEXER_pos]
@@ -1069,7 +1118,7 @@ lexer_next:
 
     movzx   rcx, byte [r11]
 
-    cmp     rcx, '"'               ; closing quote
+    cmp     cl, [rel lex_quote]    ; closing quote
     je      .lex_string_done
 
     cmp     rcx, 10                ; unexpected newline
@@ -1100,6 +1149,26 @@ lexer_next:
     jmp     .fail
 
 .lex_string_escape:
+    ; "..." is verbatim, as in NASM: only `...` has escapes. A backslash
+    ; that ends the line still continues it.
+    cmp     byte [rel lex_quote], 0x60
+    je      .escape_on
+    mov     r11, [rbx + LEXER_pos]
+    lea     rax, [r11 + 1]
+    cmp     rax, [rbx + LEXER_end]
+    jge     .literal_backslash
+    movzx   eax, byte [r11 + 1]
+    cmp     eax, 10
+    je      .escape_on
+    cmp     eax, 13
+    je      .escape_on
+.literal_backslash:
+    mov     byte [r13 + r10], '\'
+    inc     r10
+    inc     qword [rbx + LEXER_pos]
+    inc     word  [rbx + LEXER_col]
+    jmp     .lex_string_loop
+.escape_on:
     ; skip backslash
     inc     qword [rbx + LEXER_pos]
     inc     word  [rbx + LEXER_col]
@@ -1154,10 +1223,17 @@ lexer_next:
     je      .esc_backslash
     cmp     rcx, '"'
     je      .esc_quote
-    cmp     rcx, '0'
-    je      .esc_null
     cmp     rcx, 'x'
     je      .esc_hex
+    cmp     rcx, 'u'
+    je      .esc_u4
+    cmp     rcx, 'U'
+    je      .esc_u8
+    cmp     rcx, '0'
+    jb      .esc_other
+    cmp     rcx, '7'
+    jbe     .esc_octal
+.esc_other:
 
     ; unknown escape â€” store literally
     mov     byte [r13 + r10], cl
@@ -1165,38 +1241,130 @@ lexer_next:
     jmp     .lex_string_loop
 
 .esc_hex:
-    ; Parse 2 hex digits
-    xor     r14, r14               ; r14 = resulting byte
-    
-    ; First Digit
+    mov     r9d, 2                         ; \xHH: one or two digits
+    jmp     .esc_hex_digits
+.esc_u4:
+    mov     r9d, 4                         ; \uXXXX
+    jmp     .esc_hex_digits
+.esc_u8:
+    mov     r9d, 8                         ; \UXXXXXXXX
+.esc_hex_digits:
+    xor     r14, r14
+    xor     r8d, r8d                       ; digits read
+.esc_hex_next:
+    cmp     r8d, r9d
+    jae     .esc_hex_end
     mov     r11, [rbx + LEXER_pos]
     cmp     r11, [rbx + LEXER_end]
-    jge     .lex_string_unterminated
+    jge     .esc_hex_end
     movzx   rcx, byte [r11]
-    inc     qword [rbx + LEXER_pos]
-    inc     word  [rbx + LEXER_col]
-    
     call    .hex_digit_to_val
-    IF rax, e, ERR
-        jmp .lex_string_loop
-    ENDIF
-    shl     rax, 4
-    mov     r14, rax
-    
-    ; Second Digit
-    mov     r11, [rbx + LEXER_pos]
-    cmp     r11, [rbx + LEXER_end]
-    jge     .lex_string_unterminated
-    movzx   rcx, byte [r11]
-    inc     qword [rbx + LEXER_pos]
-    inc     word  [rbx + LEXER_col]
-    
-    call    .hex_digit_to_val
-    IF rax, e, ERR
-        jmp .lex_string_loop
-    ENDIF
+    cmp     rax, ERR
+    je      .esc_hex_end
+    shl     r14, 4
     or      r14, rax
-    
+    inc     qword [rbx + LEXER_pos]
+    inc     word  [rbx + LEXER_col]
+    inc     r8d
+    jmp     .esc_hex_next
+.esc_hex_end:
+    test    r8d, r8d
+    jnz     .esc_have_digits
+    ; "\x" without digits is the letter itself
+    mov     al, 'x'
+    cmp     r9d, 2
+    je      .esc_letter
+    mov     al, 'u'
+    cmp     r9d, 4
+    je      .esc_letter
+    mov     al, 'U'
+.esc_letter:
+    mov     byte [r13 + r10], al
+    inc     r10
+    jmp     .lex_string_loop
+.esc_have_digits:
+    cmp     r9d, 2
+    ja      .esc_utf8
+    mov     byte [r13 + r10], r14b
+    inc     r10
+    jmp     .lex_string_loop
+
+    ; \u / \U: the code point in UTF-8
+.esc_utf8:
+    cmp     r14, 0x80
+    jae     .utf8_2
+    mov     byte [r13 + r10], r14b
+    inc     r10
+    jmp     .lex_string_loop
+.utf8_2:
+    cmp     r14, 0x800
+    jae     .utf8_3
+    mov     rax, r14
+    shr     eax, 6
+    or      al, 0xC0
+    mov     byte [r13 + r10], al
+    inc     r10
+    jmp     .utf8_last1
+.utf8_3:
+    cmp     r14, 0x10000
+    jae     .utf8_4
+    mov     rax, r14
+    shr     eax, 12
+    or      al, 0xE0
+    mov     byte [r13 + r10], al
+    inc     r10
+    jmp     .utf8_last2
+.utf8_4:
+    mov     rax, r14
+    shr     eax, 18
+    and     al, 0x07
+    or      al, 0xF0
+    mov     byte [r13 + r10], al
+    inc     r10
+    mov     rax, r14
+    shr     eax, 12
+    and     al, 0x3F
+    or      al, 0x80
+    mov     byte [r13 + r10], al
+    inc     r10
+.utf8_last2:
+    mov     rax, r14
+    shr     eax, 6
+    and     al, 0x3F
+    or      al, 0x80
+    mov     byte [r13 + r10], al
+    inc     r10
+.utf8_last1:
+    mov     rax, r14
+    and     al, 0x3F
+    or      al, 0x80
+    mov     byte [r13 + r10], al
+    inc     r10
+    jmp     .lex_string_loop
+
+    ; \NNN: up to three octal digits (the first already read, in rcx)
+.esc_octal:
+    lea     r14, [rcx - '0']
+    mov     r8d, 1
+.esc_octal_next:
+    cmp     r8d, 3
+    jae     .esc_octal_end
+    mov     r11, [rbx + LEXER_pos]
+    cmp     r11, [rbx + LEXER_end]
+    jge     .esc_octal_end
+    movzx   rcx, byte [r11]
+    cmp     rcx, '0'
+    jb      .esc_octal_end
+    cmp     rcx, '7'
+    ja      .esc_octal_end
+    shl     r14, 3
+    add     r14, rcx
+    sub     r14, '0'
+    inc     qword [rbx + LEXER_pos]
+    inc     word  [rbx + LEXER_col]
+    inc     r8d
+    jmp     .esc_octal_next
+.esc_octal_end:
     mov     byte [r13 + r10], r14b
     inc     r10
     jmp     .lex_string_loop
@@ -1290,6 +1458,7 @@ lexer_next:
     mov     byte [r12 + TOKEN_kind], TOK_STRING
     mov     [r12 + TOKEN_value], r13
     mov     word [r12 + TOKEN_len], r10w
+    or      byte [r12 + TOKEN_flags], TOK_FLAG_COUNTED  ; may hold NULs
     xor     rax, rax
     mov     rdx, r12
     jmp     .done
@@ -2005,3 +2174,4 @@ lexer_char_props:
 [SECTION .bss]
 lex_char_start: resq 1              ; first character of a quoted literal
 lex_char_count: resq 1              ; its characters so far
+lex_quote:     resb 1              ; the quote a string literal ends with
