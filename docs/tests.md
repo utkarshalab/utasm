@@ -805,4 +805,35 @@ Add it. Run it. It passes. The bug is gone forever.
 
 ---
 
+## NASM Compatibility Suites
+
+`scripts/compat/run_all.py` assembles the same sources with NASM and with
+utasm and compares what comes out. `scripts/test.sh` runs it after the test
+matrix; it can also be run alone:
+
+```sh
+python3 scripts/compat/run_all.py build/gen1/utasm          # everything
+python3 scripts/compat/run_all.py build/gen1/utasm --quick  # skip the two slow suites
+python3 scripts/compat/run_all.py build/gen1/utasm -v       # also list known differences
+```
+
+| Suite | What is compared |
+|---|---|
+| bin probes | ~170 feature programs (preprocessor, directives, numbers, operators, instruction syntax) as flat binaries, byte for byte |
+| elf probes | ELF objects: section contents, relocations (type, symbol, addend) and the symbol table |
+| data forms | `db`/`dw`/`dd`/`dq`/`dt`, strings and escapes, floats, `incbin`: the bytes, or both rejecting |
+| sections/link | section headers of objects; programs that are linked (`ld` or `--standalone`) and run |
+| label operands | labels as immediates and displacements: instruction lengths and relocation types |
+| encoder corpus | every instruction of `corpus.py` alone, byte for byte |
+| disassembler | `utasm --disasm` against `objdump -d -M intel` on the gen1 objects and the corpus |
+
+The sources live in `scripts/compat/cases.py` and `corpus.py`. A difference
+that is deliberate or not implemented yet goes in `common.KNOWN` with the
+reason: it is reported as *known* and does not fail the run, and the suite
+says so when it starts matching, so the entry can be removed. The suites
+need `nasm`, `readelf`, `objdump` and `objcopy`; without them they are
+skipped with a note.
+
+---
+
 *UtkarshaLab — Engineering the Foundation of Tomorrow*
