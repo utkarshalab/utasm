@@ -89,6 +89,8 @@ TYPES = [   # name, rclass, special, rsize, msize, fixreg, imm
     ("MS64", 0, 0, 0, 0x8000 | 64, 0xFF, 0), ("MS80", 0, 0, 0, 0x8000 | 80, 0xFF, 0),
     # AVX-512 operands written as {rn-sae} / {rd-sae} / {ru-sae} / {rz-sae} and {sae}
     ("RC", C_RC, 0, 0, NOMEM, 0xFF, 0), ("SAE", C_SAE, 0, 0, NOMEM, 0xFF, 0),
+    # gather/scatter addresses: [base + xmm/ymm/zmm index * scale]
+    ("VMX", 0, 4, 0, 0, 1, 0), ("VMY", 0, 4, 0, 0, 2, 0), ("VMZ", 0, 4, 0, 0, 3, 0),
 ]
 TY = {t[0]: i for i, t in enumerate(TYPES)}
 
@@ -219,6 +221,8 @@ form("crc32", "R64 RM64", "F2", "38", 0xF1, M_R, "reg rm", F_W)
 form("adcx", "RDQ RMDQ", "66", "38", 0xF6, M_R, "reg rm", F_OSZ)
 form("adox", "RDQ RMDQ", "F3", "38", 0xF6, M_R, "reg rm", F_OSZ)
 form("movnti", "MDQ RDQ", "np", "0f", 0xC3, M_R, "rm reg", F_OSZ)
+# NASM also spells movsxd r64, r/m32 as movsx
+form("movsx", "R64 RM32", "", "", 0x63, M_R, "reg rm", F_W)
 
 # ============================================================================
 # Other integer and system instructions
@@ -238,6 +242,7 @@ FIXED = [   # name, prefix, map, opcode, fixed ModRM (or M_NONE), flags
     ("rdpmc", "", "0f", 0x33, M_NONE, 0), ("clts", "", "0f", 0x06, M_NONE, 0), ("invd", "", "0f", 0x08, M_NONE, 0),
     ("wbinvd", "", "0f", 0x09, M_NONE, 0), ("sysenter", "", "0f", 0x34, M_NONE, 0),
     ("sysexit", "", "0f", 0x35, M_NONE, 0), ("rsm", "", "0f", 0xAA, M_NONE, 0),
+    ("sysretq", "", "0f", 0x07, M_NONE, F_W), ("sysexitq", "", "0f", 0x35, M_NONE, F_W),
     ("lfence", "", "0f", 0xAE, 0xE8, 0), ("mfence", "", "0f", 0xAE, 0xF0, 0), ("sfence", "", "0f", 0xAE, 0xF8, 0),
     ("monitor", "", "0f", 0x01, 0xC8, 0), ("mwait", "", "0f", 0x01, 0xC9, 0), ("clac", "", "0f", 0x01, 0xCA, 0),
     ("stac", "", "0f", 0x01, 0xCB, 0), ("vmcall", "", "0f", 0x01, 0xC1, 0), ("vmlaunch", "", "0f", 0x01, 0xC2, 0),
@@ -620,6 +625,41 @@ def evex_forms():
                     pass
 
 evex_forms()
+
+# ---- gathers and scatters (vector-indexed memory) ----
+# AVX2 (VEX): dest, address, mask vector.  AVX-512 (EVEX): dest{k}, address
+# for gathers, address{k}, source for scatters; disp8*N scales by one element.
+# d/q = index elements of 4/8 bytes; ps/dd = 4-byte data, pd/dq/qq = 8-byte.
+GATHERS = [   # name, opcode, W, (VEX L0 dest, L0 addr, L1 dest, L1 addr), (EVEX dest per L0/L1/L2, addr per L)
+    ("vgatherdps", 0x92, 0, ("X", "VMX", "Y", "VMY"), (("X", "VMX"), ("Y", "VMY"), ("Z", "VMZ"))),
+    ("vgatherdpd", 0x92, 1, ("X", "VMX", "Y", "VMX"), (("X", "VMX"), ("Y", "VMX"), ("Z", "VMY"))),
+    ("vgatherqps", 0x93, 0, ("X", "VMX", "X", "VMY"), (("X", "VMX"), ("X", "VMY"), ("Y", "VMZ"))),
+    ("vgatherqpd", 0x93, 1, ("X", "VMX", "Y", "VMY"), (("X", "VMX"), ("Y", "VMY"), ("Z", "VMZ"))),
+    ("vpgatherdd", 0x90, 0, ("X", "VMX", "Y", "VMY"), (("X", "VMX"), ("Y", "VMY"), ("Z", "VMZ"))),
+    ("vpgatherdq", 0x90, 1, ("X", "VMX", "Y", "VMX"), (("X", "VMX"), ("Y", "VMX"), ("Z", "VMY"))),
+    ("vpgatherqd", 0x91, 0, ("X", "VMX", "X", "VMY"), (("X", "VMX"), ("X", "VMY"), ("Y", "VMZ"))),
+    ("vpgatherqq", 0x91, 1, ("X", "VMX", "Y", "VMY"), (("X", "VMX"), ("Y", "VMY"), ("Z", "VMZ"))),
+]
+SCATTERS = [  # name, opcode, W, (source, address) per L0/L1/L2
+    ("vscatterdps", 0xA2, 0, (("X", "VMX"), ("Y", "VMY"), ("Z", "VMZ"))),
+    ("vscatterdpd", 0xA2, 1, (("X", "VMX"), ("Y", "VMX"), ("Z", "VMY"))),
+    ("vscatterqps", 0xA3, 0, (("X", "VMX"), ("X", "VMY"), ("Y", "VMZ"))),
+    ("vscatterqpd", 0xA3, 1, (("X", "VMX"), ("Y", "VMY"), ("Z", "VMZ"))),
+    ("vpscatterdd", 0xA0, 0, (("X", "VMX"), ("Y", "VMY"), ("Z", "VMZ"))),
+    ("vpscatterdq", 0xA0, 1, (("X", "VMX"), ("Y", "VMX"), ("Z", "VMY"))),
+    ("vpscatterqd", 0xA1, 0, (("X", "VMX"), ("X", "VMY"), ("Y", "VMZ"))),
+    ("vpscatterqq", 0xA1, 1, (("X", "VMX"), ("Y", "VMY"), ("Z", "VMZ"))),
+]
+for n, code, w, (d0, a0, d1, a1), ev in GATHERS:
+    wf = F_W if w else 0
+    vform(n, [d0, a0, d0], "66", "38", code, M_R, "reg rm v", wf, L=0)
+    vform(n, [d1, a1, d1], "66", "38", code, M_R, "reg rm v", wf, L=1)
+    for L, (d, a) in enumerate(ev):
+        eform(n, [d, a], "66", "38", code, M_R, "reg rm", wf, L=L, n8=8 if w else 4)
+for n, code, w, ev in SCATTERS:
+    wf = F_W if w else 0
+    for L, (d, a) in enumerate(ev):
+        eform(n, [a, d], "66", "38", code, M_R, "rm reg", wf, L=L, n8=8 if w else 4)
 
 # ---- the VEX mask-register instructions (kmov, kand, kortest, ...) ----
 def kop_forms():
