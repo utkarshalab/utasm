@@ -281,7 +281,10 @@ prep_internal_next:
     jmp     .next
 
 .not_skipping:
-    ; check if it's a macro call
+    ; check if it's a macro call (not while a directive reads a name: a
+    ; %define being redefined must not expand its old body)
+    cmp     byte [rel prep_noexpand], 0
+    jne     .not_macro_call
     cmp     byte [r12 + TOKEN_kind], TOK_IDENT
     jne     .not_macro_call
     
@@ -290,11 +293,29 @@ prep_internal_next:
     mov     rsi, [r12 + TOKEN_value]
     call    symbol_find
     test    rax, rax
-    jnz     .not_macro_call        ; not found or error
-    
+    jnz     .try_icase             ; not found or error
+
     cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
     jne     .not_macro_call
-    
+    jmp     .macro_found
+
+    ; a %idefine matches in any case (only looked for once one exists)
+.try_icase:
+    cmp     dword [rel idefine_count], 0
+    je      .not_macro_call
+    mov     rsi, [r12 + TOKEN_value]
+    call    prep_icase_buf
+    test    rax, rax
+    jnz     .not_macro_call
+    mov     rdi, [rbx + PREP_ctx]
+    lea     rsi, [rel icase_buf]
+    call    symbol_find
+    test    rax, rax
+    jnz     .not_macro_call
+    cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
+    jne     .not_macro_call
+
+.macro_found:
     ; Found a macro call!
     mov     rdi, rbx
     mov     rsi, [rdx + SYMBOL_value] ; rsi = pointer to MACRO struct
@@ -420,7 +441,15 @@ prep_expand_start:
     ; Check arity
     movzx   rax, byte [r12 + MACRO_min_params]
     movzx   rdx, byte [r12 + MACRO_max_params]
-    
+    ; A parameterless macro (every %define) needs no argument buffers
+    test    dl, dl
+    jnz     .has_params
+    test    byte [r12 + MACRO_flags], MACRO_FLAG_FUNC
+    jnz     .has_params
+    xor     r15, r15
+    jmp     .done_params
+.has_params:
+
     ; Allocate space for up to MAX_PARAMS (let's say 32)
     ; For now, we'll allocate based on max_params if not variadic, 
     ; or a fixed buffer if variadic.
@@ -457,6 +486,19 @@ prep_expand_start:
     mov     dword [r13 + MACROEXP_pend_cnt], 0 ; scratch: slots used
 
     xor     r15, r15               ; r15 = argument index
+    mov     dword [rel fn_depth], 0
+
+    ; A function-like %define takes its arguments in parentheses: NAME(a, b)
+    test    byte [r12 + MACRO_flags], MACRO_FLAG_FUNC
+    jz      .line_args
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .error
+    cmp     byte [rdx + TOKEN_kind], TOK_LPAREN
+    jne     .error_too_few_args
+    jmp     .arg_loop
+.line_args:
 
     ; A macro that declares no parameters consumes nothing from the line.
     movzx   rax, byte [r12 + MACRO_max_params]
@@ -496,6 +538,32 @@ prep_expand_start:
 
     mov     rsi, [r13 + MACROEXP_pend_ptr]
     movzx   eax, byte [rsi + TOKEN_kind]
+    test    byte [r12 + MACRO_flags], MACRO_FLAG_FUNC
+    jz      .arg_line_kinds
+    ; inside parentheses: nested ( ) belong to the argument, the closing )
+    ; ends the call, a comma at depth 0 separates arguments
+    cmp     al, TOK_LPAREN
+    jne     .fn_not_open
+    inc     dword [rel fn_depth]
+    jmp     .arg_keep
+.fn_not_open:
+    cmp     al, TOK_RPAREN
+    jne     .fn_not_close
+    cmp     dword [rel fn_depth], 0
+    je      .arg_end_all
+    dec     dword [rel fn_depth]
+    jmp     .arg_keep
+.fn_not_close:
+    cmp     al, TOK_NEWLINE
+    je      .error_too_few_args            ; no closing parenthesis
+    cmp     al, TOK_EOF
+    je      .error_too_few_args
+    cmp     al, TOK_COMMA
+    jne     .arg_keep
+    cmp     dword [rel fn_depth], 0
+    je      .arg_end_one
+    jmp     .arg_keep
+.arg_line_kinds:
     cmp     al, TOK_NEWLINE
     je      .arg_end_all
     cmp     al, TOK_EOF
@@ -504,6 +572,7 @@ prep_expand_start:
     je      .arg_end_one
 
     ; Keep this token as part of the current argument
+.arg_keep:
     add     qword [r13 + MACROEXP_pend_ptr], TOKEN_SIZE
     inc     dword [r13 + MACROEXP_pend_cnt]
     mov     rcx, [r13 + MACROEXP_arglens]
@@ -1158,7 +1227,13 @@ prep_handle_directive:
     lea     rsi, [dir_xdefine]
     call    str_cmp
     test    rax, rax
-    jz      .do_def
+    jz      .do_xdefine
+
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_idefine]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_idefine
 
     mov     rdi, [r12 + TOKEN_value]
     lea     rsi, [dir_inc_short]
@@ -1317,6 +1392,22 @@ prep_handle_directive:
     jne     .done_cleanup
     mov     rdi, rbx
     call    prep_handle_substr
+    jmp     .done_cleanup
+
+.do_idefine:
+    cmp     byte [rbx + PREP_skip_depth], 0
+    jne     .done_cleanup
+    mov     byte [rel def_icase], 1
+    mov     rdi, rbx
+    call    prep_handle_def
+    jmp     .done_cleanup
+
+.do_xdefine:
+    cmp     byte [rbx + PREP_skip_depth], 0
+    jne     .done_cleanup
+    mov     byte [rel def_eager], 1
+    mov     rdi, rbx
+    call    prep_handle_def
     jmp     .done_cleanup
 
 .do_undef:
@@ -1662,6 +1753,9 @@ dir_def_short: db "def", 0          ; utasm short forms: %def, %inc
 dir_inc_short: db "inc", 0
 dir_xdefine:  db "xdefine", 0       ; %define is already expanded eagerly
 dir_undef:    db "undef", 0
+dir_idefine:  db "idefine", 0       ; treated as %define
+; "0".."9" for the %N references of a function-like %define
+def_digits:   db "0", 0, "1", 0, "2", 0, "3", 0, "4", 0, "5", 0, "6", 0, "7", 0, "8", 0, "9", 0
 undef_name:   db 0                  ; the name of an %undef'd entry
 msg_unknown_dir: db "error: unknown preprocessor directive %", 0
 msg_prep_error: db "preprocessor %error directive reached", 10, 0
@@ -2811,8 +2905,11 @@ prep_handle_assign:
 
     ; 1. Read the name through the preprocessor, not the raw lexer: inside a
     ;    %rep or %macro body the tokens come from the expansion, not the file.
+    ;    Not expanded: a name that is also a %define stays the name.
+    mov     byte [rel prep_noexpand], 1
     mov     rdi, rbx
     call    preprocessor_next_token
+    mov     byte [rel prep_noexpand], 0
     test    rax, rax
     jnz     .error
     mov     r12, rdx
@@ -2828,12 +2925,14 @@ prep_handle_assign:
     jnz     .error
     mov     r14, rdx               ; r14 = value
 
-    ; 3. Re-assign in place when the name already exists
+    ; 3. Re-assign in place when the name already exists (it may have been
+    ;    a %define: it is a number now)
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, r13
     call    symbol_find
     test    rax, rax
     jnz     .create
+    mov     byte [rdx + SYMBOL_kind], SYM_CONSTANT
     mov     [rdx + SYMBOL_value], r14
     xor     rax, rax
     jmp     .done
@@ -2888,8 +2987,10 @@ prep_handle_assign:
 prep_handle_undef:
     push    rbx
     mov     rbx, rdi
+    mov     byte [rel prep_noexpand], 1    ; the name, not its body
     mov     rdi, rbx
     call    preprocessor_next_token
+    mov     byte [rel prep_noexpand], 0
     test    rax, rax
     jnz     .ret
     cmp     byte [rdx + TOKEN_kind], TOK_IDENT
@@ -2899,8 +3000,11 @@ prep_handle_undef:
     call    symbol_find
     test    rax, rax
     jnz     .ok                            ; not defined: nothing to remove
+    cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
+    je      .remove                        ; a %define
     cmp     byte [rdx + SYMBOL_kind], SYM_CONSTANT
     jne     .ok                            ; only %define/%assign names
+.remove:
     lea     rax, [rel undef_name]
     mov     [rdx + SYMBOL_name], rax
 .ok:
@@ -2912,21 +3016,63 @@ prep_handle_undef:
     mov     rax, EXIT_DEFINE
     jmp     .ret
 
-; ---- prep_handle_def --------------------
+; ---- prep_icase_buf ---------------------
+;
+; prep_icase_buf
+; The key a %idefine name is stored under: 0x01 followed by the name in
+; lower case (no source text can spell it), written to icase_buf.
+; Input    : rsi = name
+; Output   : rax = 0, or 1 when the name is too long for the buffer
+;
+prep_icase_buf:
+    lea     rdi, [rel icase_buf]
+    mov     byte [rdi], 1
+    inc     rdi
+    xor     ecx, ecx
+.copy:
+    movzx   eax, byte [rsi + rcx]
+    cmp     eax, 'A'
+    jb      .put
+    cmp     eax, 'Z'
+    ja      .put
+    or      eax, 0x20
+.put:
+    mov     [rdi + rcx], al
+    test    eax, eax
+    jz      .ok
+    inc     ecx
+    cmp     ecx, 250
+    jb      .copy
+    mov     eax, 1
+    ret
+.ok:
+    xor     eax, eax
+    ret
+
+; ---- prep_handle_def ------------------
 ;
 ; prep_handle_def
-; Handles the %define directive.
-; Input    : rdi = pointer to PrepState
-; Output   : rax = EXIT_OK or error code
+; "%define NAME body": NAME stands for the rest of the line, expanded where
+; NAME is used (as in NASM, where a %define is text). The body is kept as a
+; parameterless macro, so the expansion machinery that serves %macro calls
+; serves it too. "%define NAME(a, b) body", with the parenthesis right
+; after the name, takes arguments: NAME(1, 2); the parameter names in the
+; body become %1, %2.
+;
+; The body is read with %1 / %%local substituted (inside a macro) but other
+; macros left unexpanded, so it is expanded when used; %xdefine (def_eager)
+; expands it now. A redefinition replaces the earlier body.
+;
+; Input    : rdi = PrepState
+; Output   : rax = EXIT_OK or error
 ;
 prep_handle_def:
-    prologue
     push    rbx
     push    r12
     push    r13
     push    r14
-    sub     rsp, SYMBOL_SIZE
-    mov     rbx, rdi               ; rbx = PrepState
+    push    r15
+    mov     rbx, rdi
 
     ; An expression-evaluating directive can leave the terminating NEWLINE
     ; in the peek slot; it does not belong to this definition.
@@ -2937,103 +3083,209 @@ prep_handle_def:
     mov     byte [rbx + PREP_has_peek], FALSE
 .no_stale_peek:
 
-    ; 1. Name (read through the preprocessor: %define also appears inside
-    ;    %macro and %rep bodies, where tokens come from the expansion)
+    ; 1. The name, never expanded: redefining must not expand the old body
+    mov     byte [rel prep_noexpand], 1
     mov     rdi, rbx
     call    preprocessor_next_token
     test    rax, rax
-    jnz     .error
+    jnz     .fail
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .bad
+    mov     r12, [rdx + TOKEN_value]       ; r12 = name
+    movzx   r13d, word [rdx + TOKEN_col]
+    movzx   eax, word [rdx + TOKEN_len]
+    add     r13d, eax                      ; the column right after the name
+    mov     r14d, [rdx + TOKEN_line]
+
+    ; %idefine: stored under a case-insensitive key
+    cmp     byte [rel def_icase], 0
+    je      .name_ready
+    mov     rsi, r12
+    call    prep_icase_buf
+    test    rax, rax
+    jnz     .bad
+    lea     rdi, [rel icase_buf]
+    call    str_len
+    lea     rsi, [rax + 1]
+    mov     rdi, [rbx + PREP_arena]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .fail
     mov     r12, rdx
-    cmp     byte [r12 + TOKEN_kind], TOK_IDENT
-    jne     .error_ident
-    mov     r13, [r12 + TOKEN_value]
+    mov     rdi, rdx
+    lea     rsi, [rel icase_buf]
+    call    str_concat
+    inc     dword [rel idefine_count]
+.name_ready:
 
-    ; 2. A bare "%define NAME" is a marker (include guards); its value is 0
-    xor     r14, r14
+    ; the body is expanded now only for %xdefine; that has to hold from the
+    ; first peek on, which may already read the body's first token
+    movzx   eax, byte [rel def_eager]
+    xor     eax, 1
+    mov     [rel prep_noexpand], al
+
+    ; 2. Parameters: "NAME(a, b)" with no blank before the parenthesis
+    mov     byte [rel def_nparams], 0
+    mov     byte [rel def_func], 0
     mov     rdi, rbx
     call    preprocessor_peek_token
     test    rax, rax
-    jnz     .error
-    cmp     byte [rdx + TOKEN_kind], TOK_NEWLINE
-    je      .store
-    cmp     byte [rdx + TOKEN_kind], TOK_EOF
-    je      .store
-
-    ; 3. Otherwise the value is an integer expression.
-    ;    NASM's %define is lazy, so the headers contain definitions that are
-    ;    never valid as expressions and never used. Evaluating eagerly must
-    ;    therefore not be fatal: such a name simply gets the value 0.
+    jnz     .fail
+    cmp     byte [rdx + TOKEN_kind], TOK_LPAREN
+    jne     .body
+    cmp     [rdx + TOKEN_line], r14d
+    jne     .body
+    cmp     [rdx + TOKEN_col], r13w
+    jne     .body
+    mov     byte [rel def_func], MACRO_FLAG_FUNC
     mov     rdi, rbx
-    call    parser_evaluate_expression
+    call    preprocessor_next_token        ; "("
+.param:
+    mov     rdi, rbx
+    call    preprocessor_next_token
     test    rax, rax
-    jz      .have_value
-    xor     r14, r14
-    jmp     .skip_rest
-.have_value:
-    mov     r14, rdx
-    jmp     .store
+    jnz     .fail
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_RPAREN
+    je      .body
+    cmp     eax, TOK_COMMA
+    je      .param
+    cmp     eax, TOK_IDENT
+    jne     .bad
+    movzx   ecx, byte [rel def_nparams]
+    cmp     ecx, 9
+    jae     .bad                           ; %1-%9
+    mov     rax, [rdx + TOKEN_value]
+    lea     r8, [rel def_pnames]
+    mov     [r8 + rcx*8], rax
+    inc     byte [rel def_nparams]
+    jmp     .param
 
-.skip_rest:
+    ; 3. The body: the rest of the line
+.body:
+    movzx   eax, byte [rel def_eager]
+    xor     eax, 1
+    mov     [rel prep_noexpand], al        ; %xdefine expands now
+    xor     r15d, r15d                     ; tokens captured
+.btok:
     mov     rdi, rbx
     call    preprocessor_peek_token
     test    rax, rax
-    jnz     .store
-    cmp     byte [rdx + TOKEN_kind], TOK_NEWLINE
+    jnz     .fail
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
     je      .store
-    cmp     byte [rdx + TOKEN_kind], TOK_EOF
+    cmp     eax, TOK_EOF
     je      .store
     mov     rdi, rbx
     call    preprocessor_next_token
-    jmp     .skip_rest
+    test    rax, rax
+    jnz     .fail
+    cmp     r15d, DEFINE_MAX_TOKENS
+    jae     .bad
+    mov     eax, r15d
+    imul    eax, eax, TOKEN_SIZE
+    lea     rdi, [rel def_scratch]
+    add     rdi, rax
+    mov     r8, rdi                        ; r8 = the captured token
+    mov     rsi, rdx
+    mov     ecx, TOKEN_SIZE / 8
+    rep movsq
+    inc     r15d
+    ; a parameter name becomes a %N reference
+    cmp     byte [r8 + TOKEN_kind], TOK_IDENT
+    jne     .btok
+    xor     r14d, r14d
+.pname:
+    movzx   eax, byte [rel def_nparams]
+    cmp     r14d, eax
+    jae     .btok
+    push    r8
+    mov     rdi, [r8 + TOKEN_value]
+    lea     rax, [rel def_pnames]
+    mov     rsi, [rax + r14*8]
+    call    str_cmp
+    pop     r8
+    test    rax, rax
+    jz      .is_param
+    inc     r14d
+    jmp     .pname
+.is_param:
+    mov     byte [r8 + TOKEN_kind], TOK_DIRECTIVE
+    lea     rax, [rel def_digits]
+    lea     rax, [rax + r14*2 + 2]         ; "1".."9"
+    mov     [r8 + TOKEN_value], rax
+    jmp     .btok
 
+    ; 4. A MACRO with the captured tokens, under NAME
 .store:
-    ; Redefinition updates the existing entry
+    mov     byte [rel prep_noexpand], 0
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, MACRO_SIZE
+    call    arena_alloc
+    test    rax, rax
+    jnz     .fail
+    mov     r13, rdx
+    mov     byte [r13 + MACRO_tag], TAG_MACRO
+    movzx   eax, byte [rel def_nparams]
+    mov     [r13 + MACRO_min_params], al
+    mov     [r13 + MACRO_max_params], al
+    movzx   eax, byte [rel def_func]
+    mov     [r13 + MACRO_flags], al
+    mov     [r13 + MACRO_name], r12
+    mov     [r13 + MACRO_ntokens], r15d
+    mov     eax, r15d
+    inc     eax
+    imul    esi, eax, TOKEN_SIZE
+    mov     rdi, [rbx + PREP_arena]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .fail
+    mov     [r13 + MACRO_tokens], rdx
+    mov     rdi, rdx
+    lea     rsi, [rel def_scratch]
+    mov     eax, r15d
+    imul    ecx, eax, TOKEN_SIZE / 8
+    rep movsq
+
     mov     rdi, [rbx + PREP_ctx]
-    mov     rsi, r13
+    mov     rsi, r12
     call    symbol_find
     test    rax, rax
     jnz     .create
-    mov     [rdx + SYMBOL_value], r14
-    xor     rax, rax
-    jmp     .done
-
+    mov     byte [rdx + SYMBOL_kind], SYM_MACRO    ; a redefinition
+    mov     [rdx + SYMBOL_value], r13
+    xor     eax, eax
+    jmp     .ret
 .create:
+    sub     rsp, SYMBOL_SIZE
     mov     rdi, rsp
-    mov     rcx, (SYMBOL_SIZE / 8)
-    xor     rax, rax
-    mov     r10, rdi
+    mov     rcx, SYMBOL_SIZE / 8
+    xor     eax, eax
     rep stosq
-    mov     rdi, r10
-
-    mov     byte [rdi + SYMBOL_tag], TAG_SYMBOL
-    mov     byte [rdi + SYMBOL_kind], SYM_CONSTANT
-    mov     [rdi + SYMBOL_name], r13
-    mov     [rdi + SYMBOL_value], r14
-
-    mov     rsi, rdi
+    mov     byte [rsp + SYMBOL_tag], TAG_SYMBOL
+    mov     byte [rsp + SYMBOL_kind], SYM_MACRO
+    mov     [rsp + SYMBOL_name], r12
+    mov     [rsp + SYMBOL_value], r13
     mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, rsp
     call    symbol_add
-    test    rax, rax
-    jnz     .error
-    xor     rax, rax
-    jmp     .done
-
-.error_ident:
-    mov     rax, EXIT_DEFINE
-    jmp     .done
-
-.error:
-    test    rax, rax
-    jnz     .done
-    mov     rax, EXIT_DEFINE
-
-.done:
     add     rsp, SYMBOL_SIZE
+    jmp     .ret
+
+.bad:
+    mov     rax, EXIT_DEFINE
+.fail:
+    mov     byte [rel prep_noexpand], 0
+.ret:
+    mov     byte [rel def_eager], 0
+    mov     byte [rel def_icase], 0
+    pop     r15
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
-    epilogue
+    ret
 
 ; ---- prep_handle_if ---------------------
 ;
@@ -3553,8 +3805,8 @@ macro_handle_def:
     sub     rsp, SYMBOL_SIZE
     mov     rdi, rsp
     
-    ; zero out
-    mov     rcx, 6
+    ; zero out (all of it: 48 bytes left the rest as stack garbage)
+    mov     rcx, SYMBOL_SIZE / 8
     xor     rax, rax
     mov     r10, rdi
     rep stosq
@@ -3742,3 +3994,15 @@ prep_handle_rep:
     mov     rsp, rbp
     pop     rbp
     ret
+
+[SECTION .bss]
+prep_noexpand: resb 1              ; 1: identifiers are not macro calls (a directive reads a name)
+def_eager:     resb 1              ; 1: %xdefine, expand the body now
+def_func:      resb 1              ; MACRO_FLAG_FUNC for NAME(a, b)
+def_nparams:   resb 1
+fn_depth:      resd 1              ; parenthesis depth in a function-like call
+def_pnames:    resq 9              ; parameter names of a function-like %define
+def_scratch:   resb DEFINE_MAX_TOKENS * TOKEN_SIZE
+def_icase:     resb 1              ; 1: %idefine
+idefine_count: resd 1              ; %idefine names so far
+icase_buf:     resb 256            ; a name's case-insensitive key
