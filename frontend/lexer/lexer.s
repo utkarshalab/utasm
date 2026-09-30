@@ -207,6 +207,12 @@ lexer_next:
     lea     r11, [r10 + 1]
     cmp     r11, [rbx + LEXER_end]
     jge     .lex_directive
+    ; "%" before a blank is the modulo operator (7 % 3); directives, %1 and
+    ; %%local never have a blank there
+    cmp     byte [r11], ' '
+    je      .emit_single_percent
+    cmp     byte [r11], 9
+    je      .emit_single_percent
     ; "%[NAME]" is a value, "%+" pastes tokens, "%$name" is a context local
     cmp     byte [r11], '['
     je      .lex_interp_value
@@ -275,6 +281,8 @@ lexer_next:
     je      .lex_equal
     cmp     rcx, '!'
     je      .lex_excl
+    cmp     rcx, '?'
+    je      .emit_single_question
 
     ; unknown character — emit error and skip
     jmp     .unknown_char
@@ -370,6 +378,16 @@ lexer_next:
 .emit_single_lparen:
     call    .token_begin
     mov     byte [r12 + TOKEN_kind], TOK_LPAREN
+    jmp     .advance_single
+
+.emit_single_percent:
+    call    .token_begin
+    mov     byte [r12 + TOKEN_kind], TOK_PERCENT
+    jmp     .advance_single
+
+.emit_single_question:
+    call    .token_begin
+    mov     byte [r12 + TOKEN_kind], TOK_QUESTION
     jmp     .advance_single
 
 .emit_single_rparen:
@@ -1303,6 +1321,9 @@ lexer_next:
     ; little-endian, so 'abcd' == 0x64636261 and the first one is the LSB.
     xor     r13, r13               ; accumulated value
     xor     r9, r9                 ; bit offset of the next character
+    mov     rax, [rbx + LEXER_pos]
+    mov     [rel lex_char_start], rax
+    mov     qword [rel lex_char_count], 0
 
 .lex_char_next:
     mov     r11, [rbx + LEXER_pos]
@@ -1360,6 +1381,7 @@ lexer_next:
     xor     rcx, rcx
 
 .lex_char_accum:
+    inc     qword [rel lex_char_count]
     mov     r10, rcx
     and     r10, 0xFF
     cmp     r9, 64
@@ -1371,13 +1393,41 @@ lexer_next:
     jmp     .lex_char_next
 
 .lex_char_closing:
+    ; More than eight characters is a string ('Hello, World!' in db),
+    ; taken verbatim like NASM's single-quoted strings
+    cmp     qword [rel lex_char_count], 8
+    ja      .lex_char_string
     ; consume the closing '
     inc     qword [rbx + LEXER_pos]
     inc     word  [rbx + LEXER_col]
 
     mov     byte [r12 + TOKEN_kind], TOK_CHAR
     mov     [r12 + TOKEN_value], r13
-    mov     word [r12 + TOKEN_len], 1
+    mov     rax, [rel lex_char_count]
+    mov     word [r12 + TOKEN_len], ax     ; characters: db emits them all
+    xor     rax, rax
+    mov     rdx, r12
+    jmp     .done
+
+.lex_char_string:
+    mov     rsi, [rbx + LEXER_pos]
+    sub     rsi, [rel lex_char_start]      ; raw length between the quotes
+    push    rsi
+    inc     rsi
+    mov     rdi, [rbx + LEXER_arena]
+    call    arena_alloc                    ; zeroed: the copy ends in NUL
+    pop     rcx
+    test    rax, rax
+    jnz     .fail
+    mov     rdi, rdx
+    mov     rsi, [rel lex_char_start]
+    push    rdx
+    rep movsb
+    pop     rdx
+    inc     qword [rbx + LEXER_pos]        ; the closing '
+    inc     word  [rbx + LEXER_col]
+    mov     byte [r12 + TOKEN_kind], TOK_STRING
+    mov     [r12 + TOKEN_value], rdx
     xor     rax, rax
     mov     rdx, r12
     jmp     .done
@@ -1952,3 +2002,6 @@ lexer_char_props:
     %assign i i+1
     %endrep
 
+[SECTION .bss]
+lex_char_start: resq 1              ; first character of a quoted literal
+lex_char_count: resq 1              ; its characters so far
