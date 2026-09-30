@@ -12,6 +12,8 @@
 %include "include/type.inc"
 %include "include/macro.inc"
 
+extern asmctx_find_section
+
 extern asmctx_get_section
 extern reloc_apply_one
 extern io_write
@@ -78,8 +80,39 @@ binary_layout:
     cmp     qword [rdx + SECTION_size], 0
     jne     .place
     mov     [rdx + SECTION_addr], r14      ; empty: no space, no alignment
+    test    byte [rdx + SECTION_bin_flags], BIN_VSTART
+    jz      .sec
+    mov     rax, [rdx + SECTION_vstart]
+    mov     [rdx + SECTION_addr], rax
     jmp     .sec
 .place:
+    ; start=: at that address of the image
+    test    byte [rdx + SECTION_bin_flags], BIN_START
+    jz      .no_start
+    mov     r14, [rdx + SECTION_start]
+    jmp     .at_cursor
+.no_start:
+    ; follows=: right after that section (then aligned as usual)
+    mov     rax, [rdx + SECTION_follows]
+    test    rax, rax
+    jz      .no_follows
+    push    rcx
+    push    rdx
+    push    r8
+    mov     rdi, rbx
+    mov     rsi, rax
+    call    asmctx_find_section
+    mov     r9, rdx
+    pop     r8
+    pop     rdx
+    pop     rcx
+    test    rax, rax
+    jnz     .no_follows
+    mov     r14, [r9 + SECTION_bin_off]
+    add     r14, [rel bin_origin]
+    add     r14, [r9 + SECTION_size]
+    mov     r8d, 1
+.no_follows:
     test    r8d, r8d
     jz      .at_cursor                     ; the first section is the origin
     mov     rax, [rdx + SECTION_align]
@@ -93,6 +126,15 @@ binary_layout:
     and     r14, r9
 .at_cursor:
     mov     [rdx + SECTION_addr], r14
+    mov     rax, r14
+    sub     rax, [rel bin_origin]
+    mov     [rdx + SECTION_bin_off], rax
+    ; vstart=: its labels count from that address instead
+    test    byte [rdx + SECTION_bin_flags], BIN_VSTART
+    jz      .no_vstart
+    mov     rax, [rdx + SECTION_vstart]
+    mov     [rdx + SECTION_addr], rax
+.no_vstart:
     add     r14, [rdx + SECTION_size]
     mov     r8d, 1
     jmp     .sec
@@ -148,8 +190,7 @@ binary_emit:
     je      .sec
     push    rdx
     mov     edi, r15d
-    mov     rsi, [rdx + SECTION_addr]
-    sub     rsi, [rel bin_origin]
+    mov     rsi, [rdx + SECTION_bin_off]   ; its place in the image
     xor     edx, edx                       ; SEEK_SET
     call    io_lseek
     pop     rdx
