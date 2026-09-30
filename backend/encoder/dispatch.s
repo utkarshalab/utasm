@@ -27,6 +27,7 @@ extern  x86_enc_table
 extern  x86_enc_maxid
 extern  amd64_emit_byte
 extern  amd64_emit_modrm_sib
+extern  amd64_disp8n
 
 ; ---- operand classes (C_* in scripts/gen_x86_enc.py) ----
 %define C_GPR       1
@@ -39,6 +40,8 @@ extern  amd64_emit_modrm_sib
 %define C_CR        8
 %define C_DR        9
 %define C_SEG       10
+%define C_RC        11              ; {rn-sae} .. {rz-sae}: te_num = rounding mode
+%define C_SAE       12              ; {sae}
 %define C_MEM       16
 %define C_IMM       17
 
@@ -73,6 +76,7 @@ extern  amd64_emit_modrm_sib
 %define FM_ROLES    10
 %define FM_FLAGS    12
 %define FM_VL       13              ; VEX/EVEX vector length (L)
+%define FM_N8       14              ; EVEX disp8*N scale
 %define FM_FIXIMM   15
 %define ENC_VEX     1
 %define ENC_EVEX    2
@@ -92,6 +96,7 @@ extern  amd64_emit_modrm_sib
 %define TF_D64      4
 %define TF_WAIT     8
 %define TF_FIXIMM   16
+%define TF_BCST     32              ; EVEX: a memory operand may be a {1toN} broadcast
 
 %define MODRM_R     8
 %define MODRM_NONE  9
@@ -107,6 +112,7 @@ te_rmop:    resb 1
 te_plusop:  resb 1
 te_vop:     resb 1
 te_vvvv:    resb 1                  ; inverted vvvv | L << 4 | pp, for the VEX bytes
+te_evex:    resb 1                  ; an operand needs EVEX (mask, broadcast, rounding)
 
 [SECTION .rodata]
 ; segment register IDs 24-29 (cs ds es fs gs ss) -> encoding
@@ -191,6 +197,7 @@ te_operand:
 ; * Fills te_cls / te_num / te_high / te_size for the INST operands.
 ; ;
 te_classify:
+    mov     byte [rel te_evex], 0
     xor     ecx, ecx
 .loop:
     lea     rdx, [rel te_cls]
@@ -205,7 +212,18 @@ te_classify:
     cmp     ecx, eax
     jae     .next
     call    te_operand
+    cmp     byte [rdi + OPERAND_mask], 0
+    jne     .needs_evex
+    cmp     byte [rdi + OPERAND_ctrl], 0
+    je      .kind
+.needs_evex:
+    mov     byte [rel te_evex], 1          ; {k}, {z} and {1toN} exist only in EVEX
+.kind:
     movzx   eax, byte [rdi + OPERAND_kind]
+    cmp     eax, OP_ROUNDING
+    je      .rc
+    cmp     eax, OP_SAE
+    je      .sae
     cmp     eax, OP_REG
     je      .reg
     cmp     eax, OP_MEM
@@ -216,6 +234,17 @@ te_classify:
 .imm:
     mov     r8d, C_IMM
     jmp     .set_cls
+.rc:
+    mov     byte [rel te_evex], 1
+    mov     rax, [rdi + OPERAND_imm]
+    and     eax, 3
+    mov     r8d, C_RC
+    jmp     .set_num
+.sae:
+    mov     byte [rel te_evex], 1
+    xor     eax, eax
+    mov     r8d, C_SAE
+    jmp     .set_num
 .mem:
     movzx   eax, word [rdi + OPERAND_xsize]
     test    eax, eax
@@ -319,6 +348,13 @@ te_classify:
 te_match:
     push    rbx
     mov     byte [rel te_osz], 0
+    cmp     byte [rel te_evex], 0
+    je      .enc_ok
+    movzx   eax, byte [r13 + FM_PFX]
+    shr     eax, 4
+    cmp     eax, ENC_EVEX
+    jne     .fail                          ; masks/broadcast/rounding: EVEX forms only
+.enc_ok:
     xor     ecx, ecx
 .op:
     movzx   eax, byte [r13 + FM_TYPES + rcx]
@@ -385,6 +421,31 @@ te_match:
     movzx   eax, word [rbx + TY_MSIZE]
     cmp     eax, NOMEM
     je      .fail
+    ; {1toN}: N elements (8 bytes with W, else 4) must fill the operand
+    push    rax
+    call    te_operand
+    pop     rax
+    test    byte [rdi + OPERAND_ctrl], 2
+    jz      .mem_whole
+    test    byte [r13 + FM_FLAGS], TF_BCST
+    jz      .fail
+    movzx   r10d, byte [rdi + OPERAND_ctrl]
+    shr     r10d, 2
+    and     r10d, 7                        ; log2(N)
+    mov     r11d, 32
+    test    byte [r13 + FM_FLAGS], TF_W
+    jz      .bc_elem
+    mov     r11d, 64
+.bc_elem:
+    push    rcx
+    mov     ecx, r10d
+    shl     r11d, cl                       ; bits the broadcast covers
+    pop     rcx
+    and     eax, 0x7FFF
+    cmp     eax, r11d
+    jne     .fail
+    jmp     .next
+.mem_whole:
     movzx   r10d, byte [rbx + TY_SPECIAL]
     test    r10d, r10d
     jz      .mem_plain
@@ -566,6 +627,8 @@ te_emit:
     shr     eax, 4
     cmp     eax, ENC_VEX
     je      .vex
+    cmp     eax, ENC_EVEX
+    je      .evex
     ; operand-size prefix
     test    byte [r13 + FM_FLAGS], TF_OSZ
     jz      .no_66
@@ -755,6 +818,131 @@ te_emit:
     call    amd64_emit_byte
     jmp     .opcode
 
+    ; ---- EVEX prefix: 62 P0 P1 P2 ----
+; P0 = R X B R' 0 0 m m, P1 = W vvvv 1 pp, P2 = z L'L b V' aaa (R X B R' vvvv
+; V' inverted). Registers 16-31 use R' (ModRM.reg), X (a register ModRM.rm)
+; and V' (vvvv).
+.evex:
+    call    .rexbits                       ; r15 = W R X B
+    mov     al, 0x62
+    call    amd64_emit_byte
+    movzx   eax, byte [r13 + FM_MAP]
+    dec     eax                            ; mm: 1 0F, 2 0F 38, 3 0F 3A
+    test    r15d, 4
+    jnz     .ev_x
+    or      eax, 0x80                      ; R
+.ev_x:
+    ; X: bit 4 of a register rm, else REX.X (the index)
+    movzx   ecx, byte [rel te_rmop]
+    cmp     ecx, 0xFF
+    je      .ev_x_rex
+    lea     rdx, [rel te_cls]
+    cmp     byte [rdx + rcx], C_MEM
+    je      .ev_x_rex
+    lea     rdx, [rel te_num]
+    test    byte [rdx + rcx], 16
+    jnz     .ev_b
+    or      eax, 0x40
+    jmp     .ev_b
+.ev_x_rex:
+    test    r15d, 2
+    jnz     .ev_b
+    or      eax, 0x40
+.ev_b:
+    test    r15d, 1
+    jnz     .ev_r2
+    or      eax, 0x20                      ; B
+.ev_r2:
+    movzx   ecx, byte [rel te_regop]
+    cmp     ecx, 0xFF
+    je      .ev_r2_set
+    lea     rdx, [rel te_num]
+    test    byte [rdx + rcx], 16
+    jnz     .ev_p0
+.ev_r2_set:
+    or      eax, 0x10                      ; R'
+.ev_p0:
+    call    amd64_emit_byte
+
+    ; P1: W, vvvv, 1, pp
+    xor     eax, eax
+    movzx   ecx, byte [rel te_vop]
+    cmp     ecx, 0xFF
+    je      .ev_v
+    lea     rdx, [rel te_num]
+    movzx   eax, byte [rdx + rcx]
+.ev_v:
+    mov     [rel te_vvvv], al              ; keep bit 4 for V'
+    not     eax
+    and     eax, 15
+    shl     eax, 3
+    or      eax, 4
+    movzx   ecx, byte [r13 + FM_PFX]
+    and     ecx, 3
+    or      eax, ecx
+    test    r15d, 8
+    jz      .ev_p1
+    or      eax, 0x80                      ; W
+.ev_p1:
+    call    amd64_emit_byte
+
+    ; P2: z, L'L, b, V', aaa - and the disp8*N scale
+    movzx   r15d, byte [r13 + FM_N8]       ; N for a whole memory operand
+    movzx   eax, byte [r13 + FM_VL]
+    and     eax, 3
+    shl     eax, 5                         ; L'L
+    xor     ecx, ecx
+.ev_ops:
+    lea     rdx, [rel te_cls]
+    movzx   r8d, byte [rdx + rcx]
+    cmp     r8d, C_RC
+    jne     .ev_not_rc
+    lea     rdx, [rel te_num]
+    movzx   eax, byte [rdx + rcx]
+    shl     eax, 5                         ; L'L = rounding mode
+    or      eax, 0x10                      ; b
+    jmp     .ev_next
+.ev_not_rc:
+    cmp     r8d, C_SAE
+    jne     .ev_not_sae
+    mov     eax, 0x10                      ; b, L'L = 00
+    jmp     .ev_next
+.ev_not_sae:
+    cmp     r8d, C_MEM
+    jne     .ev_next
+    push    rax
+    call    te_operand
+    pop     rax
+    test    byte [rdi + OPERAND_ctrl], 2
+    jz      .ev_next
+    or      eax, 0x10                      ; b: a broadcast
+    mov     r15d, 4                        ; N = one element
+    test    byte [r13 + FM_FLAGS], TF_W
+    jz      .ev_next
+    mov     r15d, 8
+.ev_next:
+    inc     ecx
+    cmp     ecx, 4
+    jb      .ev_ops
+    test    byte [rel te_vvvv], 16
+    jnz     .ev_aaa
+    or      eax, 0x08                      ; V'
+.ev_aaa:
+    push    rax
+    xor     ecx, ecx
+    call    te_operand                     ; the mask belongs to the first operand
+    pop     rax
+    movzx   ecx, byte [rdi + OPERAND_mask]
+    and     ecx, 7
+    or      eax, ecx
+    test    byte [rdi + OPERAND_ctrl], 1
+    jz      .ev_p2
+    or      eax, 0x80                      ; z
+.ev_p2:
+    call    amd64_emit_byte
+    mov     [rel amd64_disp8n], r15b
+    jmp     .opcode
+
     ; ---- opcode map and opcode ----
 .map:
     movzx   eax, byte [r13 + FM_MAP]
@@ -800,6 +988,7 @@ te_emit:
     call    te_operand
     pop     rax
     call    amd64_emit_modrm_sib
+    mov     byte [rel amd64_disp8n], 1
     jmp     .imms
 .fixed_modrm:
     mov     r15d, eax
