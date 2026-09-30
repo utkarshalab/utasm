@@ -192,6 +192,7 @@ struc MACRO
     field defaults, 8       ; default argument tokens ("%macro m 1-2 7")
     field ndefaults, 4      ; how many tokens (commas included)
     field pad2,     4       ; alignment padding
+    field next,     8       ; an overload of the same name (other arity)
 endstruc
 
 ; ============================================================================
