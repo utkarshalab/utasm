@@ -71,6 +71,8 @@ parser_parse_instruction:
     push    r15
     and     rsp, -16
     mov     rbx, rdi               ; RBX = PrepState
+    extern  reloc_wrt
+    mov     byte [rel reloc_wrt], 0    ; no "wrt ..name" pending
 
     mov     rdi, [rbx + PREP_arena]
 
@@ -957,7 +959,39 @@ parser_evaluate_expression:
     mov     r13, rdx               ; R13 = accumulated value
     mov     r12, rcx               ; R12 = deferred symbol name (optional)
     mov     r14, r11               ; R14 = resolved SYMBOL* (optional)
+
+    ; "sym wrt ..plt" (..gotpcrel, ..got, ..gotoff, ..tlsie, ..sym): the
+    ; relocation the reference gets
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .done
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .ternary
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel str_wrt]
+    call    str_cmp
+    test    rax, rax
+    jnz     .ternary
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .done
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel wrt_words]
+    call    parser_word_index
+    test    eax, eax
+    jz      .wrt_bad
+    imul    eax, eax, 12
+    lea     rcx, [rel wrt_words]
+    movzx   eax, byte [rcx + rax - 1]      ; the row's WRT_*
+    mov     [rel reloc_wrt], al
     jmp     .ternary
+.wrt_bad:
+    mov     rax, EXIT_UNEXPECTED_TOKEN
+    jmp     .done
 .too_deep:
     dec     dword [r10 + ASMCTX_expr_depth]
     mov     rax, EXIT_EXPR_TOO_DEEP
@@ -3512,6 +3546,26 @@ parser_handle_pseudo_op:
         jmp     .check_handler_result
         ENDIF
 
+    ; static NAME: a local symbol, kept in the object by name
+    mov     rdi, r12
+    lea     rsi, [rel str_static_d]
+    call    str_cmp
+    IF rax, e, 0
+        mov     rdi, rbx
+        mov     rsi, VIS_LOCAL
+        call    parser_handle_visibility
+        jmp     .check_handler_result
+        ENDIF
+
+    ; common NAME SIZE[:ALIGN]
+    mov     rdi, r12
+    lea     rsi, [rel str_common_d]
+    call    str_cmp
+    IF rax, e, 0
+        call    parser_handle_common
+        jmp     .check_handler_result
+        ENDIF
+
     mov     rdi, r12
     lea     rsi, [rel str_org]
     call    str_cmp
@@ -3595,6 +3649,8 @@ parser_handle_pseudo_op:
 
 %define INCBIN_CHUNK 4096
 %define TIMES_CAPACITY 256
+%define GSIZE_MAX      256          ; "global f:function (size)" per file
+%define GSIZE_TOKENS   64           ; tokens in one size expression
 
 ;*
 ; * [parser_data_string]
@@ -5125,6 +5181,52 @@ parser_handle_section_directive:
     call    preprocessor_next_token
     check_err
     mov     r12, rdx               ; r12 = token (.text, .data, etc)
+
+    ; ".note.GNU-stack": a name with '-' in it lexes as several tokens;
+    ; join the ones written together
+.name_piece:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    check_err
+    cmp     byte [rdx + TOKEN_kind], TOK_MINUS
+    jne     .name_done
+    mov     eax, [rdx + TOKEN_line]
+    cmp     eax, [r12 + TOKEN_line]
+    jne     .name_done
+    movzx   eax, word [r12 + TOKEN_col]
+    movzx   ecx, word [r12 + TOKEN_len]
+    add     eax, ecx
+    cmp     ax, [rdx + TOKEN_col]
+    jne     .name_done
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the '-'
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the next piece
+    check_err
+    mov     r13, rdx
+    mov     rdi, [r12 + TOKEN_value]
+    call    str_len
+    mov     r14, rax
+    mov     rdi, [r13 + TOKEN_value]
+    call    str_len
+    lea     rsi, [r14 + rax + 2]
+    mov     rdi, [rbx + PREP_arena]
+    call    arena_alloc
+    check_err
+    mov     r15, rdx
+    mov     rdi, rdx
+    mov     rsi, [r12 + TOKEN_value]
+    call    str_concat
+    mov     byte [r15 + r14], '-'
+    mov     rdi, r15
+    mov     rsi, [r13 + TOKEN_value]
+    call    str_concat
+    mov     [r12 + TOKEN_value], r15
+    mov     rdi, r15
+    call    str_len
+    mov     [r12 + TOKEN_len], ax
+    jmp     .name_piece
+.name_done:
     
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, [r12 + TOKEN_value]
@@ -5427,21 +5529,58 @@ parser_handle_visibility:
     push    rbx
     push    r12
     push    r13
+    push    r14
+    push    r15
     mov     r12, rsi               ; r12 = visibility
-    
+
+    ; global NAME[:type [visibility] [size]] [, NAME...]
+.name:
+    mov     rdi, rbx
     call    preprocessor_next_token
     check_err
     mov     r13, rdx               ; r13 = token
+    xor     r14d, r14d             ; the declared ELF type
+    xor     r15d, r15d             ; bit 8: typed; low byte: visibility
+    cmp     byte [r13 + TOKEN_kind], TOK_LABEL
+    je      .typed                 ; "f:function": the colon made a label
     IF byte [r13 + TOKEN_kind], ne, TOK_IDENT
         mov     rax, EXIT_UNEXPECTED_TOKEN
         jmp     .done
         ENDIF
-    
+    jmp     .have_name
+.typed:
+    or      r15d, 0x100
+.type_word:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    check_err
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .have_name
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel sym_attr_words]
+    call    parser_word_index      ; eax = row + 1, 0 if none
+    test    eax, eax
+    jz      .have_name
+    imul    eax, eax, 12
+    lea     rcx, [rel sym_attr_words]
+    movzx   ecx, byte [rcx + rax - 1]      ; the row's value byte
+    cmp     ecx, 0x10
+    jb      .is_type
+    and     ecx, 0x0F
+    mov     r15b, cl               ; default / internal / hidden / protected
+    jmp     .attr_used
+.is_type:
+    mov     r14d, ecx
+.attr_used:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    jmp     .type_word
+.have_name:
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, [r13 + TOKEN_value]
     extern  symbol_find
     call    symbol_find
-    
+
     IF rax, e, OK
         ; A91: Audit symbol binding visibility conflicts
         movzx   eax, byte [rdx + SYMBOL_vis]
@@ -5459,6 +5598,10 @@ parser_handle_visibility:
         jmp     .error
 .vis_ok:
         mov     byte [rdx + SYMBOL_vis], r12b
+        test    r15d, 0x100
+        jz      .next_name
+        mov     [rdx + SYMBOL_etype], r14b
+        mov     [rdx + SYMBOL_eother], r15b
         ELSE
         ; Symbol doesn't exist, create it as UNDEFINED for now
         sub     rsp, SYMBOL_SIZE
@@ -5472,22 +5615,327 @@ parser_handle_visibility:
         mov     rax, [r13 + TOKEN_value]
         mov     [rsi + SYMBOL_name], rax
         mov     byte [rsi + SYMBOL_vis], r12b
+        mov     [rsi + SYMBOL_etype], r14b
+        mov     [rsi + SYMBOL_eother], r15b
         call    symbol_add
         add     rsp, SYMBOL_SIZE
         ENDIF
-    
+
+.next_name:
+    ; "global f:function (f.end - f)": the size names labels that come
+    ; later, so its tokens are kept and evaluated when the whole source
+    ; has been read (parser_finish)
+    test    r15d, 0x100
+    jz      .rest
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    check_err
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .rest
+    cmp     eax, TOK_EOF
+    je      .rest
+    cmp     eax, TOK_COMMA
+    je      .rest
+    mov     eax, [rel gsize_count]
+    cmp     eax, GSIZE_MAX
+    jae     .rest
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, (GSIZE_TOKENS + 1) * TOKEN_SIZE
+    call    arena_alloc
+    check_err
+    mov     r14, rdx                       ; the tokens
+    xor     r15d, r15d                     ; how many
+.size_tok:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    check_err
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .size_kept
+    cmp     eax, TOK_EOF
+    je      .size_kept
+    cmp     eax, TOK_COMMA
+    je      .size_kept
+    cmp     r15d, GSIZE_TOKENS
+    jae     .size_kept
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rsi, rdx
+    imul    rdi, r15, TOKEN_SIZE
+    add     rdi, r14
+    mov     ecx, TOKEN_SIZE / 8
+    rep movsq
+    inc     r15d
+    jmp     .size_tok
+.size_kept:
+    test    r15d, r15d
+    jz      .rest
+    mov     eax, [rel gsize_count]
+    lea     rcx, [rel gsize_names]
+    mov     rdx, [r13 + TOKEN_value]
+    mov     [rcx + rax * 8], rdx
+    lea     rcx, [rel gsize_toks]
+    mov     [rcx + rax * 8], r14
+    lea     rcx, [rel gsize_ntok]
+    mov     [rcx + rax * 4], r15d
+    inc     dword [rel gsize_count]
+.rest:
+    ; the rest up to a comma or the end of the line
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    check_err
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .ok
+    cmp     eax, TOK_EOF
+    je      .ok
+    cmp     eax, TOK_RBRACKET
+    je      .ok
+    push    rax
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    pop     rax
+    cmp     eax, TOK_COMMA
+    je      .name
+    jmp     .next_name
+.ok:
     mov     rax, OK
 .done:
+    pop     r15
+    pop     r14
     pop     r13
     pop     r12
     pop     rbx
     epilogue
 
 .error:
+    pop     r15
+    pop     r14
     pop     r13
     pop     r12
     pop     rbx
     epilogue
+
+;*
+; * [parser_finish]
+; * Purpose: Work that needs the whole source read. The sizes written with
+; *   "global f:function (f.end - f)" name labels defined later, so their
+; *   tokens were kept (parser_handle_visibility) and are evaluated now,
+; *   replayed through the preprocessor like a %rep body.
+; * Input  : RDI = PrepState
+; * Output : RAX = OK
+; ;
+global parser_finish
+parser_finish:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    mov     rbx, rdi
+    xor     r12d, r12d
+.next:
+    cmp     r12d, [rel gsize_count]
+    jae     .done
+    ; the tokens and a newline ending them
+    lea     rax, [rel gsize_toks]
+    mov     r13, [rax + r12 * 8]
+    lea     rax, [rel gsize_ntok]
+    mov     r14d, [rax + r12 * 4]
+    imul    rdi, r14, TOKEN_SIZE
+    add     rdi, r13
+    lea     rsi, [rdi - TOKEN_SIZE]
+    mov     ecx, TOKEN_SIZE / 8
+    rep movsq
+    imul    rax, r14, TOKEN_SIZE
+    mov     byte [r13 + rax + TOKEN_kind], TOK_NEWLINE
+    inc     r14d
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, MACRO_SIZE
+    call    arena_alloc
+    test    rax, rax
+    jnz     .skip
+    mov     byte [rdx + MACRO_tag], TAG_MACRO
+    mov     [rdx + MACRO_ntokens], r14d
+    mov     [rdx + MACRO_tokens], r13
+    mov     byte [rbx + PREP_has_peek], FALSE    ; the end of the file
+    mov     rdi, rbx
+    mov     rsi, rdx
+    extern  prep_expand_start
+    call    prep_expand_start
+    test    rax, rax
+    jnz     .skip
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    push    rax
+    push    rdx
+    mov     rdi, rbx
+    call    parser_drain_line              ; what is left, and the newline
+    pop     rdx
+    pop     rax
+    test    rax, rax
+    jnz     .skip
+    mov     r14, rdx                       ; the size
+    lea     rax, [rel gsize_names]
+    mov     rsi, [rax + r12 * 8]
+    mov     rdi, [rbx + PREP_ctx]
+    call    symbol_find
+    test    rax, rax
+    jnz     .skip
+    mov     [rdx + SYMBOL_size], r14
+.skip:
+    inc     r12d
+    jmp     .next
+.done:
+    xor     eax, eax
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+[SECTION .bss]
+gsize_count:   resd 1              ; "global f:function (size)" waiting
+gsize_names:   resq GSIZE_MAX
+gsize_toks:    resq GSIZE_MAX
+gsize_ntok:    resd GSIZE_MAX
+[SECTION .text]
+
+;*
+; * [parser_word_index]
+; * Purpose: Which row of a word table (12-byte rows: the word, NUL-padded
+; *   to 11 bytes, then a value byte; a 0 byte ends it) matches a word.
+; * Input  : RDI = word, RSI = table
+; * Output : EAX = row + 1, or 0
+; ;
+parser_word_index:
+    push    r12
+    push    r13
+    push    r14
+    mov     r12, rdi
+    mov     r13, rsi
+    xor     r14d, r14d
+.row:
+    cmp     byte [r13], 0
+    je      .none
+    inc     r14d
+    mov     rdi, r12
+    mov     rsi, r13
+    call    str_cmp
+    test    rax, rax
+    jz      .hit
+    add     r13, 12
+    jmp     .row
+.hit:
+    mov     eax, r14d
+    jmp     .ret
+.none:
+    xor     eax, eax
+.ret:
+    pop     r14
+    pop     r13
+    pop     r12
+    ret
+
+;*
+; * [parser_handle_common]
+; * Purpose: NASM's "common NAME SIZE[:ALIGN]": an uninitialised common
+; *   block, merged by the linker (SHN_COMMON, value = alignment).
+; * Input  : RBX = PrepState
+; ;
+parser_handle_common:
+    push    r12
+    push    r13
+    push    r14
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .bad
+    mov     r12, [rdx + TOKEN_value]
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .ret
+    mov     r13, rdx                       ; size
+    mov     r14d, 1                        ; alignment
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_COLON
+    jne     .define
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .ret
+    mov     r14, rdx
+.define:
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, r12
+    call    symbol_find
+    test    rax, rax
+    jz      .fill
+    sub     rsp, SYMBOL_SIZE
+    mov     rdi, rsp
+    xor     eax, eax
+    mov     ecx, SYMBOL_SIZE / 8
+    rep stosq
+    mov     byte [rsp + SYMBOL_tag], TAG_SYMBOL
+    mov     [rsp + SYMBOL_name], r12
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, rsp
+    call    symbol_add
+    add     rsp, SYMBOL_SIZE
+    test    rax, rax
+    jnz     .ret
+.fill:
+    mov     byte [rdx + SYMBOL_kind], SYM_COMMON
+    mov     byte [rdx + SYMBOL_vis], VIS_GLOBAL
+    mov     byte [rdx + SYMBOL_etype], ETYPE_NOTYPE
+    mov     word [rdx + SYMBOL_section], SHN_COMMON
+    mov     [rdx + SYMBOL_value], r14
+    mov     [rdx + SYMBOL_size], r13
+    xor     eax, eax
+    jmp     .ret
+.bad:
+    mov     rax, EXIT_UNEXPECTED_TOKEN
+.ret:
+    pop     r14
+    pop     r13
+    pop     r12
+    ret
+
+[SECTION .rodata]
+; "global f:type visibility": word (11 bytes) + value (< 0x10: an ELF
+; type, 0x10 + n: a visibility)
+sym_attr_words:
+    db "function", 0, 0, 0, ETYPE_FUNC
+    db "func", 0, 0,0,0,0,0,0, ETYPE_FUNC
+    db "data", 0, 0,0,0,0,0,0, ETYPE_OBJECT
+    db "object", 0, 0,0,0,0, ETYPE_OBJECT
+    db "notype", 0, 0,0,0,0, ETYPE_NOTYPE
+    db "default", 0, 0,0,0, 0x10
+    db "internal", 0, 0, 0, 0x11
+    db "hidden", 0, 0,0,0,0, 0x12
+    db "protected", 0, 0, 0x13
+    db 0
+str_common_d:  db "common", 0
+str_static_d:  db "static", 0
+str_wrt:       db "wrt", 0
+; "wrt ..name": word (11 bytes) + WRT_*
+wrt_words:
+    db "..plt", 0, 0,0,0,0,0, WRT_PLT
+    db "..gotpcrel", 0, WRT_GOTPCREL
+    db "..got", 0, 0,0,0,0,0, WRT_GOT
+    db "..gotoff", 0, 0, 0, WRT_GOTOFF
+    db "..tlsie", 0, 0,0,0, WRT_TLSIE
+    db "..sym", 0, 0,0,0,0,0, WRT_SYM
+    db 0
+[SECTION .text]
 
 ;*
 ; * [parser_handle_comm]
