@@ -284,6 +284,8 @@ parser_parse_instruction:
     call    parser_check_prefix
     test    rax, rax
     jz      .lookup_mnemonic
+    cmp     eax, 1
+    je      .get_mnemonic              ; o32 / a64 in 64-bit code: no byte
     
     ; Find empty slot in prefixes[4]
     xor     rcx, rcx
@@ -531,6 +533,13 @@ parser_parse_operand:
         call    str_cmp
         IF rax, e, 0
             or      byte [r12 + OPERAND_flags], OP_FLAG_SHORT
+            jmp .fetch_operand_token
+            ENDIF
+        mov     rdi, [r13 + TOKEN_value]
+        lea     rsi, [rel str_far]
+        call    str_cmp
+        IF rax, e, 0
+            or      byte [r12 + OPERAND_flags], OP_FLAG_FAR
             jmp .fetch_operand_token
             ENDIF
         ENDIF
@@ -1411,6 +1420,11 @@ parser_evaluate_factor:
         movzx   edx, dl
         xor     rax, rax
         jmp     .done
+    ELSEIF al, e, TOK_QUESTION
+        ; "db ?": an uninitialised item, zero here
+        xor     edx, edx
+        xor     rax, rax
+        jmp     .done
         ENDIF
 
     ; A floating-point constant, in the format float_fmt names (dw/dd/dq/dt
@@ -1745,6 +1759,18 @@ parser_parse_mem_operand:
         jmp     .loop
         ENDIF
 
+    ; "nosplit": keep [reg*2] as index*2 with a disp32
+    IF al, e, TOK_IDENT
+        mov     rdi, [r13 + TOKEN_value]
+        lea     rsi, [rel str_nosplit]
+        call    str_cmp
+        IF rax, e, 0
+            or      byte [r12 + OPERAND_flags], OP_FLAG_NOSPLIT
+            jmp     .loop
+            ENDIF
+        mov     al, [r13 + TOKEN_kind]
+        ENDIF
+
     ; "fs:" lexes as a label: inside brackets it is a segment override
     IF al, e, TOK_LABEL
         mov     rsi, [r13 + TOKEN_value]
@@ -1899,6 +1925,22 @@ parser_parse_mem_operand:
     jmp     .loop
 
 .finalize:
+    ; [rbx*2] with no base is [rbx+rbx] -- no disp32 needed -- as NASM
+    ; encodes it, unless written with nosplit
+    cmp     byte [r12 + OPERAND_base], 0xFF
+    jne     .split_done
+    cmp     byte [r12 + OPERAND_index], 0xFF
+    je      .split_done
+    cmp     byte [r12 + OPERAND_vsib], 0
+    jne     .split_done
+    test    byte [r12 + OPERAND_flags], OP_FLAG_NOSPLIT
+    jnz     .split_done
+    cmp     byte [r12 + OPERAND_scale], 2
+    jne     .split_done
+    mov     al, [r12 + OPERAND_index]
+    mov     [r12 + OPERAND_base], al
+    mov     byte [r12 + OPERAND_scale], 1
+.split_done:
     ; ---- STRUCT BOUNDS CHECK ----
     ; If OPERAND_sym is set, the base address expression contained a
     ; struct-field dot-access (e.g. PageTable.Present).  At this point
@@ -2378,6 +2420,22 @@ parser_section_attrs:
     and     [r13 + SECTION_flags], ax      ; noalloc / noexec / nowrite
     jmp     .next
 .not_flag:
+    ; flat binary placement: vstart=, start=, follows=
+    mov     rdi, r12
+    lea     rsi, [rel attr_vstart]
+    call    str_cmp
+    test    rax, rax
+    jz      .vstart
+    mov     rdi, r12
+    lea     rsi, [rel attr_start]
+    call    str_cmp
+    test    rax, rax
+    jz      .start
+    mov     rdi, r12
+    lea     rsi, [rel attr_follows]
+    call    str_cmp
+    test    rax, rax
+    jz      .follows
     mov     rdi, r12
     lea     rsi, [rel attr_align]
     call    str_cmp
@@ -2393,6 +2451,43 @@ parser_section_attrs:
     jnz     .ret
     mov     [r13 + SECTION_align], rdx
     jmp     .next
+.vstart:
+    call    .equals_value
+    test    rax, rax
+    jnz     .ret
+    mov     [r13 + SECTION_vstart], rdx
+    or      byte [r13 + SECTION_bin_flags], BIN_VSTART
+    jmp     .next
+.start:
+    call    .equals_value
+    test    rax, rax
+    jnz     .ret
+    mov     [r13 + SECTION_start], rdx
+    or      byte [r13 + SECTION_bin_flags], BIN_START
+    jmp     .next
+.follows:
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; "="
+    cmp     byte [rdx + TOKEN_kind], TOK_EQUAL
+    jne     .bad
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .bad
+    mov     rax, [rdx + TOKEN_value]
+    mov     [r13 + SECTION_follows], rax
+    jmp     .next
+; "= expr": rax = OK or error, rdx = the value
+.equals_value:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    cmp     byte [rdx + TOKEN_kind], TOK_EQUAL
+    jne     .ev_bad
+    mov     rdi, rbx
+    jmp     parser_evaluate_expression
+.ev_bad:
+    mov     rax, EXIT_UNEXPECTED_TOKEN
+    ret
 .bad:
     mov     rax, EXIT_UNEXPECTED_TOKEN
     jmp     .ret
@@ -2510,50 +2605,61 @@ parser_lookup_mnemonic:
 
 ;*
 ; * [parser_check_prefix]
+; * Purpose: Is the word an instruction prefix? rep/repe/repz, repne/repnz,
+; *   lock, xacquire/xrelease, bnd, o16/o32/o64, a32/a64 and the segment
+; *   prefixes cs ds es ss fs gs, as NASM writes them.
 ; * Input: RSI = String pointer
-; * Output: AL = Prefix byte or 0
+; * Output: EAX = Prefix byte, 1 (accepted, nothing to emit) or 0
 ; ;
 parser_check_prefix:
-    prologue
-    extern     str_compare
-    mov     rdi, rsi
-    
-    lea     rsi, [str_rep]
-    call    str_compare
-    IF rax, e, 0
-        mov al, 0xF3
-        epilogue
-        ENDIF
-    
-    lea     rsi, [str_repe]
-    call    str_compare
-    IF rax, e, 0
-        mov al, 0xF3
-        epilogue
-        ENDIF
-    
-    lea     rsi, [str_repne]
-    call    str_compare
-    IF rax, e, 0
-        mov al, 0xF2
-        epilogue
-        ENDIF
-    
-    lea     rsi, [str_lock]
-    call    str_compare
-    IF rax, e, 0
-        mov al, 0xF0
-        epilogue
-        ENDIF
-    
-    xor     rax, rax
-    epilogue
+    push    r12
+    push    r13
+    mov     r12, rsi
+    lea     r13, [rel prefix_words]
+.word:
+    cmp     byte [r13], 0
+    je      .none
+    mov     rdi, r12
+    mov     rsi, r13
+    call    str_cmp
+    test    rax, rax
+    jz      .hit
+    add     r13, 10
+    jmp     .word
+.hit:
+    movzx   eax, byte [r13 + 9]
+    jmp     .ret
+.none:
+    xor     eax, eax
+.ret:
+    pop     r13
+    pop     r12
+    ret
 
 [SECTION .rodata]
-str_rep:    db "rep", 0
-str_repe:   db "repe", 0
-str_repne:  db "repne", 0
-str_lock:   db "lock", 0
+; name (9 bytes) + the prefix byte; 1 = accepted, no byte in 64-bit code
+prefix_words:
+    db "rep", 0, 0,0,0,0,0, 0xF3
+    db "repe", 0, 0,0,0,0, 0xF3
+    db "repz", 0, 0,0,0,0, 0xF3
+    db "repne", 0, 0,0,0, 0xF2
+    db "repnz", 0, 0,0,0, 0xF2
+    db "lock", 0, 0,0,0,0, 0xF0
+    db "xacquire", 0, 0xF2
+    db "xrelease", 0, 0xF3
+    db "bnd", 0, 0,0,0,0,0, 0xF2
+    db "o16", 0, 0,0,0,0,0, 0x66
+    db "o32", 0, 0,0,0,0,0, 1
+    db "o64", 0, 0,0,0,0,0, 1
+    db "a32", 0, 0,0,0,0,0, 0x67
+    db "a64", 0, 0,0,0,0,0, 1
+    db "cs", 0, 0,0,0,0,0,0, 0x2E
+    db "ds", 0, 0,0,0,0,0,0, 0x3E
+    db "es", 0, 0,0,0,0,0,0, 0x26
+    db "ss", 0, 0,0,0,0,0,0, 0x36
+    db "fs", 0, 0,0,0,0,0,0, 0x64
+    db "gs", 0, 0,0,0,0,0,0, 0x65
+    db 0
 
 [SECTION .text]
 
@@ -2987,6 +3093,16 @@ parser_define_label:
         movzx   ecx, word [rax + SECTION_index]
         mov     [rsi + SYMBOL_section], cx
         ENDIF
+    ; in an "absolute" block a label is a plain number
+    test    rax, rax
+    jz      .not_abs_new
+    cmp     rax, [rel abs_section]
+    jne     .not_abs_new
+    mov     byte [rsi + SYMBOL_kind], SYM_CONSTANT
+    mov     rcx, [rax + SECTION_addr]
+    add     [rsi + SYMBOL_value], rcx
+    mov     word [rsi + SYMBOL_section], 0
+.not_abs_new:
 
     mov     rdi, rbx
     mov     rsi, rsp
@@ -3012,6 +3128,15 @@ parser_define_label:
         movzx   ecx, word [rax + SECTION_index]
         mov     [rdx + SYMBOL_section], cx
         ENDIF
+    test    rax, rax
+    jz      .not_abs_old
+    cmp     rax, [rel abs_section]
+    jne     .not_abs_old
+    mov     byte [rdx + SYMBOL_kind], SYM_CONSTANT
+    mov     rcx, [rax + SECTION_addr]
+    add     [rdx + SYMBOL_value], rcx
+    mov     word [rdx + SYMBOL_section], 0
+.not_abs_old:
         
     mov     [rbx + ASMCTX_last_symbol], rdx    ; Store for potential equ override
     
@@ -3226,6 +3351,22 @@ parser_handle_pseudo_op:
     call    parser_iend
     jmp     .check_handler_result
 .not_iend:
+    mov     rdi, r12
+    lea     rsi, [rel str_absolute]
+    call    str_cmp
+    test    rax, rax
+    jnz     .not_absolute
+    call    parser_absolute
+    jmp     .check_handler_result
+.not_absolute:
+    mov     rdi, r12
+    lea     rsi, [rel str_alignb_d]
+    call    str_cmp
+    test    rax, rax
+    jnz     .not_alignb
+    call    parser_alignb
+    jmp     .check_handler_result
+.not_alignb:
     mov     rdi, r12
     lea     rsi, [rel str_incbin]
     call    str_cmp
@@ -3453,6 +3594,7 @@ parser_handle_pseudo_op:
     epilogue
 
 %define INCBIN_CHUNK 4096
+%define TIMES_CAPACITY 256
 
 ;*
 ; * [parser_data_string]
@@ -3823,6 +3965,102 @@ stmt_bracketed: resb 1              ; the statement is in [ ]
 [SECTION .text]
 
 ;*
+; * [parser_absolute]
+; * Purpose: "absolute ADDR": what follows (until the next section
+; *   directive) is laid out from ADDR without emitting anything; its labels
+; *   are plain numbers (the way a structure's fields are).
+; * Input  : RBX = PrepState
+; * Output : RAX = OK or an error
+; ;
+parser_absolute:
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .ret
+    push    rdx
+    mov     rax, [rel abs_section]
+    test    rax, rax
+    jnz     .have
+    mov     rdi, [rbx + PREP_ctx]
+    lea     rsi, [rel str_absolute]
+    mov     edx, SEC_CUSTOM
+    call    asm_ctx_create_section
+    test    rax, rax
+    jnz     .error
+    ; not a section of the output: out of the list again
+    mov     rdi, [rbx + PREP_ctx]
+    dec     word [rdi + ASMCTX_seccount]
+    mov     dword [rdx + SECTION_elf_type], SHT_NOBITS
+    mov     [rel abs_section], rdx
+    mov     rax, rdx
+.have:
+    pop     rdx
+    mov     [rax + SECTION_addr], rdx
+    mov     qword [rax + SECTION_size], 0
+    mov     rdi, [rbx + PREP_ctx]
+    mov     [rdi + ASMCTX_curr_sec], rax
+    xor     eax, eax
+.ret:
+    ret
+.error:
+    pop     rdx
+    ret
+
+;*
+; * [parser_alignb]
+; * Purpose: "alignb N [, fill]": reserve up to the next multiple of N (no
+; *   bytes are written; the fill is ignored, as for resb).
+; * Input  : RBX = PrepState
+; * Output : RAX = OK or an error
+; ;
+parser_alignb:
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .ret
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_curr_sec]
+    test    rax, rax
+    jz      .fill
+    test    rdx, rdx
+    jz      .fill
+    mov     rcx, [rax + SECTION_size]
+    neg     rcx
+    lea     r8, [rdx - 1]
+    and     rcx, r8
+    add     [rax + SECTION_size], rcx
+    cmp     rdx, [rax + SECTION_align]
+    jbe     .fill
+    mov     [rax + SECTION_align], rdx
+.fill:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_COMMA
+    jne     .ok
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .ret
+.ok:
+    xor     eax, eax
+.ret:
+    ret
+
+[SECTION .rodata]
+str_absolute:  db "absolute", 0
+str_alignb_d:  db "alignb", 0
+attr_vstart:   db "vstart", 0
+attr_start:    db "start", 0
+attr_follows:  db "follows", 0
+[SECTION .bss]
+abs_section:   resq 1              ; the "absolute" pseudo-section
+[SECTION .text]
+
+;*
 ; * [parser_struc_const]
 ; * Purpose: Defines a number (a NASM struc field, "<struct>_size").
 ; * Input  : RBX = PrepState, RSI = name, RDX = value
@@ -4049,86 +4287,95 @@ istruc_name:   resq 1              ; its structure's name
 ; *   RAX = EXIT_OK or error code
 ; ;
 parser_handle_times:
-    prologue
     push    rbx
     push    r12
     push    r13
     push    r14
     push    r15
-    sub     rsp, 16                ; [rbp - 48] = saved column
     mov     rbx, rdi
-
-    mov     rax, [rbx + PREP_ctx]
-    IF qword [rax + ASMCTX_mac_exp], ne, 0
-        mov     rax, EXIT_UNKNOWN_INSTR
-        jmp     .done
-        ENDIF
 
     ; 1. Repetition count
     mov     rdi, rbx
     call    parser_evaluate_expression
-    check_err_to .done
+    test    rax, rax
+    jnz     .ret
     mov     r15, rdx
 
-    ; 2. The directive being repeated
+    ; 2. The statement to repeat, with the newline ending it, becomes a
+    ;    %rep body: the parser then reads it N times, whether it is an
+    ;    instruction or a directive, from a file or inside a macro.
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, TIMES_CAPACITY * TOKEN_SIZE
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     r12, rdx                   ; the tokens
+    xor     r13d, r13d                 ; how many
+.token:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .captured
+    cmp     eax, TOK_EOF
+    je      .captured
+    cmp     r13d, TIMES_CAPACITY - 1
+    jae     .too_long
     mov     rdi, rbx
     call    preprocessor_next_token
-    check_err_to .done
-    IF byte [rdx + TOKEN_kind], ne, TOK_IDENT
-        mov     rax, EXIT_UNKNOWN_INSTR
-        jmp     .done
-        ENDIF
-    mov     r12, [rdx + TOKEN_value]   ; r12 = directive name
-
-    ; 3. Remember where its operands start
-    mov     r14, [rbx + PREP_lexer]
-    mov     byte [rbx + PREP_has_peek], FALSE
-    mov     byte [r14 + LEXER_has_peek], FALSE
-    mov     r13, [r14 + LEXER_pos]
-    mov     eax, [r14 + LEXER_line]
-    mov     [rbp - 48], eax
-    movzx   eax, word [r14 + LEXER_col]
-    mov     [rbp - 44], ax
-
-    ; "times 0" emits nothing, but the line still has to be consumed
-    IF r15, le, 0
-        mov     rdi, rbx
-        call    parser_drain_line
-        xor     rax, rax
-        jmp     .done
-        ENDIF
-
-.loop:
-    mov     r14, [rbx + PREP_lexer]
-    mov     [r14 + LEXER_pos], r13
-    mov     eax, [rbp - 48]
-    mov     [r14 + LEXER_line], eax
-    mov     ax, [rbp - 44]
-    mov     [r14 + LEXER_col], ax
-    mov     byte [rbx + PREP_has_peek], FALSE
-    mov     byte [r14 + LEXER_has_peek], FALSE
-
+    test    rax, rax
+    jnz     .ret
+    mov     rsi, rdx
+    imul    rdi, r13, TOKEN_SIZE
+    add     rdi, r12
+    mov     ecx, TOKEN_SIZE / 8
+    rep movsq
+    inc     r13d
+    jmp     .token
+.captured:
+    test    r13d, r13d
+    jz      .ok                        ; "times N" alone
+    test    r15, r15
+    jle     .ok                        ; "times 0": the line is consumed
+    ; the newline that ends each repetition
+    mov     rsi, rdx
+    imul    rdi, r13, TOKEN_SIZE
+    add     rdi, r12
+    mov     r14, rdi
+    mov     ecx, TOKEN_SIZE / 8
+    rep movsq
+    mov     byte [r14 + TOKEN_kind], TOK_NEWLINE
+    inc     r13d
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, MACRO_SIZE
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     byte [rdx + MACRO_tag], TAG_MACRO
+    mov     qword [rdx + MACRO_name], 0    ; anonymous, like a %rep body
+    mov     [rdx + MACRO_ntokens], r13d
+    mov     [rdx + MACRO_tokens], r12
     mov     rdi, rbx
-    mov     rsi, r12
-    call    parser_handle_pseudo_op
-    IF rax, ne, 1
-        mov     rax, EXIT_UNKNOWN_INSTR
-        jmp     .done
-        ENDIF
-
-    dec     r15
-    jnz     .loop
-
-    xor     rax, rax
-
-.done:
-    add     rsp, 16
+    mov     rsi, rdx
+    extern  prep_expand_start
+    call    prep_expand_start
+    test    rax, rax
+    jnz     .ret
+    mov     [rdx + MACROEXP_rep_count], r15d
+.ok:
+    xor     eax, eax
+.ret:
     pop     r15
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
-    epilogue
+    ret
+.too_long:
+    mov     rax, EXIT_UNEXPECTED_TOKEN
+    jmp     .ret
 
 ;*
 ; * [parser_drain_line]
@@ -4459,8 +4706,26 @@ parser_emit_data_16:
     call    parser_evaluate_expression
     mov     byte [rel float_fmt], 0
     check_err
+    mov     r10, rdx
+    mov     r8, r11
+    mov     r9, rcx
+    call    parser_data_symbol
+    test    rsi, rsi
+    jz      .plain16
+    mov     rdx, rsi               ; name
+    mov     rcx, rdi               ; addend
     mov     rdi, [rbx + PREP_ctx]
-    mov     rsi, rdx
+    mov     rax, [rdi + ASMCTX_curr_sec]
+    mov     rsi, [rax + SECTION_size]
+    mov     r8, R_X86_64_16
+    call    reloc_record
+    check_err
+    xor     esi, esi
+    jmp     .emit16
+.plain16:
+    mov     rsi, r10
+.emit16:
+    mov     rdi, [rbx + PREP_ctx]
     extern  asmctx_emit_word
     call    asmctx_emit_word
 .next:
@@ -5410,8 +5675,10 @@ str_yword: db "yword", 0
 str_zword: db "zword", 0
 str_ptr:   db "ptr", 0
 str_strict: db "strict", 0
+str_nosplit: db "nosplit", 0
 str_near:   db "near", 0
 str_short:  db "short", 0
+str_far:    db "far", 0
 msg_debug_token_kind: db "Debug token kind: ", 0
 msg_fallback_error: db "Fallback error at token kind: ", 0
 msg_size_spec_bracket: db "Size specifier expected '[' but got kind: ", 0
