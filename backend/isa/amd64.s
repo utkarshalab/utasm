@@ -1910,6 +1910,9 @@ mnc_tb_x64:
     mnc_ent "jrcxz", 0, 6529
     mnc_ent "sysexitq", 0, 6530
     mnc_ent "sysretq", 0, 6531
+    mnc_ent "retf", 0, 6532
+    mnc_ent "retfq", 0, 6533
+    mnc_ent "retn", 0, 6534
 
     dq 0
 
