@@ -170,6 +170,13 @@ _start:
     test    rax, rax
     jnz     .exit_error
 
+    ; Code and data before any "section" directive go to .text, as in NASM
+    mov     rdi, rbx
+    extern  parser_default_section
+    call    parser_default_section
+    test    rax, rax
+    jnz     .exit_error
+
 .assembly_loop:
     ; PHASE_PARSER covers the whole frontend: the lexer and preprocessor are
     ; demand-driven from inside parser_parse_instruction, so this one span
