@@ -90,6 +90,7 @@
 
 %define EXIT_ASSERT            75  ; compilation assertion failed
 %define EXIT_UNREACHABLE       76  ; compiler hit a code path marked unreachable
+%define EXIT_FATAL             78  ; %fatal: the message is already printed
 %define EXIT_NOT_IMPLEMENTED   77  ; requested compiler feature is not implemented
 
 ; ============================================================================
@@ -214,6 +215,13 @@
 
 ; Token flags (TOKEN_flags)
 %define TOK_FLAG_INTERP        0x01        ; text contains %[NAME], resolve at expansion
+%define TOK_FLAG_COUNTED       0x02        ; string: TOKEN_len is its byte count (NULs included)
+
+; floating-point formats (lib/float.s)
+%define FLT_HALF               1           ; binary16, dw
+%define FLT_SINGLE             2           ; binary32, dd
+%define FLT_DOUBLE             3           ; binary64, dq
+%define FLT_EXT                4           ; x87 80-bit extended, dt
 %define TOK_COMMENT            0x21
 %define TOK_FLOAT              0x22
 %define TOK_MACRO_LOCAL        0x23
