@@ -216,6 +216,17 @@ lexer_next:
     je      .emit_single_percent
     cmp     byte [r11], 9
     je      .emit_single_percent
+    ; "%%" before a blank is signed modulo (-7 %% 2); %%local has none
+    cmp     byte [r11], '%'
+    jne     .not_dpercent
+    lea     rax, [r11 + 1]
+    cmp     rax, [rbx + LEXER_end]
+    jge     .not_dpercent
+    cmp     byte [rax], ' '
+    je      .emit_dpercent
+    cmp     byte [rax], 9
+    je      .emit_dpercent
+.not_dpercent:
     ; "%[NAME]" is a value, "%+" pastes tokens, "%$name" is a context local
     cmp     byte [r11], '['
     je      .lex_interp_value
@@ -388,6 +399,21 @@ lexer_next:
     mov     byte [r12 + TOKEN_kind], TOK_PERCENT
     jmp     .advance_single
 
+.emit_dpercent:
+    call    .token_begin
+    mov     byte [r12 + TOKEN_kind], TOK_DPERCENT
+    mov     ecx, 2
+    jmp     .advance_n
+
+; advance past a token of ECX characters
+.advance_n:
+    add     qword [rbx + LEXER_pos], rcx
+    add     word  [rbx + LEXER_col], cx
+    mov     word  [r12 + TOKEN_len], cx
+    xor     rax, rax
+    mov     rdx, r12
+    jmp     .done
+
 .emit_single_question:
     call    .token_begin
     mov     byte [r12 + TOKEN_kind], TOK_QUESTION
@@ -453,7 +479,9 @@ lexer_next:
 .emit_single_caret:
     call    .token_begin
     mov     byte [r12 + TOKEN_kind], TOK_CARET
-    jmp     .advance_single
+    mov     cl, '^'
+    mov     r14b, TOK_LXOR                 ; ^^
+    jmp     .maybe_doubled
 
 .emit_single_tilde:
     call    .token_begin
@@ -492,6 +520,23 @@ lexer_next:
     jmp     .advance_single
 
 .emit_single_dollar:
+    ; "$0ff": a hex number, the $ a prefix before a digit
+    mov     r10, [rbx + LEXER_pos]
+    lea     r11, [r10 + 1]
+    cmp     r11, [rbx + LEXER_end]
+    jge     .dollar_alone
+    movzx   eax, byte [r11]
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .dollar_alone
+    call    .token_begin
+    mov     r13, [rbx + LEXER_pos]     ; the number's text starts at the $
+    xor     r14, r14
+    xor     r15, r15
+    inc     qword [rbx + LEXER_pos]
+    inc     word  [rbx + LEXER_col]
+    jmp     .lex_number_loop
+.dollar_alone:
     call    .token_begin
     mov     byte [r12 + TOKEN_kind], TOK_DOLLAR
     jmp     .advance_single
@@ -517,27 +562,46 @@ lexer_next:
     cmp     rcx, '<'
     jne     .check_le
 
-    ; It is <<
+    ; It is << (or <<<, the same shift)
     mov     byte [r12 + TOKEN_kind], TOK_LSHIFT
-    add     qword [rbx + LEXER_pos], 2
-    add     word  [rbx + LEXER_col],  2
-    mov     word  [r12 + TOKEN_len],  2
-    xor     rax, rax
-    mov     rdx, r12
-    jmp     .done
+    mov     ecx, 2
+    call    .third_is
+    cmp     al, '<'
+    jne     .advance_n
+    mov     ecx, 3
+    jmp     .advance_n
 
 .check_le:
+    cmp     rcx, '>'
+    jne     .check_le_eq
+    ; <> is !=
+    mov     byte [r12 + TOKEN_kind], TOK_NEQUAL
+    mov     ecx, 2
+    jmp     .advance_n
+.check_le_eq:
     cmp     rcx, '='
     jne     .emit_single_lt
 
-    ; It is <=
+    ; It is <= (or <=>, the three-way comparison)
     mov     byte [r12 + TOKEN_kind], TOK_LE
-    add     qword [rbx + LEXER_pos], 2
-    add     word  [rbx + LEXER_col],  2
-    mov     word  [r12 + TOKEN_len],  2
-    xor     rax, rax
-    mov     rdx, r12
-    jmp     .done
+    mov     ecx, 2
+    call    .third_is
+    cmp     al, '>'
+    jne     .advance_n
+    mov     byte [r12 + TOKEN_kind], TOK_CMP3
+    mov     ecx, 3
+    jmp     .advance_n
+
+; al = the character two after the current one (0 past the end)
+.third_is:
+    xor     eax, eax
+    mov     r13, [rbx + LEXER_pos]
+    add     r13, 2
+    cmp     r13, [rbx + LEXER_end]
+    jge     .third_ret
+    mov     al, [r13]
+.third_ret:
+    ret
 
 .emit_single_lt:
     mov     byte [r12 + TOKEN_kind], TOK_LT
@@ -554,14 +618,15 @@ lexer_next:
     cmp     rcx, '>'
     jne     .check_ge
 
-    ; It is >>
+    ; It is >> (or >>>, the arithmetic shift)
     mov     byte [r12 + TOKEN_kind], TOK_RSHIFT
-    add     qword [rbx + LEXER_pos], 2
-    add     word  [rbx + LEXER_col],  2
-    mov     word  [r12 + TOKEN_len],  2
-    xor     rax, rax
-    mov     rdx, r12
-    jmp     .done
+    mov     ecx, 2
+    call    .third_is
+    cmp     al, '>'
+    jne     .advance_n
+    mov     byte [r12 + TOKEN_kind], TOK_SAR
+    mov     ecx, 3
+    jmp     .advance_n
 
 .check_ge:
     cmp     rcx, '='
@@ -613,10 +678,10 @@ lexer_next:
     mov     r10, [rbx + LEXER_end]
     dec     r10
     cmp     r13, r10
-    jge     .unknown_char
+    jge     .emit_not
     movzx   rcx, byte [r13 + 1]
     cmp     rcx, '='
-    jne     .unknown_char
+    jne     .emit_not
     
     ; It is !=
     mov     byte [r12 + TOKEN_kind], TOK_NEQUAL
@@ -626,6 +691,10 @@ lexer_next:
     xor     rax, rax
     mov     rdx, r12
     jmp     .done
+
+.emit_not:
+    mov     byte [r12 + TOKEN_kind], TOK_NOT   ; ! logical not
+    jmp     .advance_single
 
 ; ---- identifier / label -----------------
 ;
@@ -942,6 +1011,25 @@ lexer_next:
     cmp     rdi, 'o'
     je      .lex_number_advance
     cmp     rdi, 'O'
+    je      .lex_number_advance
+    ; NASM's other radix letters (ffh, 777q, 1010y, 0t100) and 1_000
+    cmp     rdi, 'h'
+    je      .lex_number_advance
+    cmp     rdi, 'H'
+    je      .lex_number_advance
+    cmp     rdi, 'q'
+    je      .lex_number_advance
+    cmp     rdi, 'Q'
+    je      .lex_number_advance
+    cmp     rdi, 'y'
+    je      .lex_number_advance
+    cmp     rdi, 'Y'
+    je      .lex_number_advance
+    cmp     rdi, 't'
+    je      .lex_number_advance
+    cmp     rdi, 'T'
+    je      .lex_number_advance
+    cmp     rdi, '_'
     je      .lex_number_advance
     
     ; Float markers
