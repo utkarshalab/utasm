@@ -177,6 +177,13 @@ _start:
     test    rax, rax
     jnz     .exit_error
 
+    ; NASM's predefined macros (__NASM_MAJOR__, __OUTPUT_FORMAT__, ...)
+    lea     rdi, [rel global_prep]
+    extern  prep_predefine
+    call    prep_predefine
+    test    rax, rax
+    jnz     .exit_error
+
 .assembly_loop:
     ; PHASE_PARSER covers the whole frontend: the lexer and preprocessor are
     ; demand-driven from inside parser_parse_instruction, so this one span
