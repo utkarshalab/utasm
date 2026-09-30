@@ -138,6 +138,13 @@ cli_parse:
     test    rax, rax
     jz      .handle_standalone
 
+    ; --ubf-add TYPE=FILE[@ADDR]: another component of a UBF image
+    mov     rdi, r14
+    lea     rsi, [rel .flag_ubf_add]
+    call    str_cmp
+    test    rax, rax
+    jz      .handle_ubf_add
+
     ; check for -v
     mov     rdi, r14
     lea     rsi, [rel .flag_verbose_long]
@@ -264,6 +271,12 @@ cli_parse:
     test    rax, rax
     jz      .set_bin
 
+    mov     rdi, r14
+    lea     rsi, [rel .val_ubf]
+    call    str_cmp
+    test    rax, rax
+    jz      .set_ubf
+
     jmp     .unknown_val
 
 .set_elf64:
@@ -273,7 +286,15 @@ cli_parse:
     and     dword [rbx + ASMCTX_flags], ~CTX_FLAG_RELOCATABLE
     jmp     .next_arg
 
+.set_ubf:
+    ; a UBF boot image: laid out as a flat binary, written by ubf_emit
+    extern  ubf_enabled
+    mov     byte [rel ubf_enabled], 1
+    jmp     .set_flat
 .set_bin:
+    extern  ubf_enabled
+    mov     byte [rel ubf_enabled], 0
+.set_flat:
     mov     byte [rbx + ASMCTX_fmt], FMT_BIN
     and     dword [rbx + ASMCTX_flags], ~(CTX_FLAG_FORMAT_BIN | CTX_FLAG_FORMAT_ELF)
     or      dword [rbx + ASMCTX_flags], CTX_FLAG_FORMAT_BIN
@@ -338,6 +359,18 @@ cli_parse:
 
 .handle_standalone:
     mov     byte [rbx + ASMCTX_standalone], 1
+    jmp     .next_arg
+
+.handle_ubf_add:
+    dec     r12
+    jle     .missing_val
+    add     r13, 8
+    mov     r14, [r13]
+    mov     rdi, r14
+    extern  ubf_add_component
+    call    ubf_add_component
+    test    rax, rax
+    jnz     .unknown_val
     jmp     .next_arg
 
 .handle_profile:
@@ -473,6 +506,10 @@ cli_derive_output:
     jne     .elf_suffix
     lea     r15, [rel cli_parse.suffix_bin]
     mov     esi, 5                  ; ".bin" plus NUL
+    extern  ubf_enabled
+    cmp     byte [rel ubf_enabled], 0
+    je      .allocate
+    lea     r15, [rel cli_parse.suffix_ubf]
     jmp     .allocate
 .elf_suffix:
     lea     r15, [rel cli_parse.suffix_obj]
@@ -606,6 +643,9 @@ cli_parse.flag_standalone: db "--standalone", 0
 cli_parse.flag_verbose_long: db "--verbose", 0
 cli_parse.val_elf64:    db "elf64", 0
 cli_parse.val_bin:      db "bin", 0
+cli_parse.val_ubf:      db "ubf", 0
+cli_parse.flag_ubf_add: db "--ubf-add", 0
+cli_parse.suffix_ubf:   db ".ubf", 0
 cli_parse.val_amd64:    db "amd64", 0
 cli_parse.val_aarch64:  db "aarch64", 0
 cli_parse.val_riscv64:  db "riscv64", 0
