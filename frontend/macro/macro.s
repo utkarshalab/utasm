@@ -569,7 +569,7 @@ prep_expand_start:
     cmp     al, TOK_EOF
     je      .arg_end_all
     cmp     al, TOK_COMMA
-    je      .arg_end_one
+    je      .arg_comma
 
     ; Keep this token as part of the current argument
 .arg_keep:
@@ -579,6 +579,14 @@ prep_expand_start:
     inc     byte [rcx + r15]
     jmp     .arg_token
 
+.arg_comma:
+    ; the last parameter of a "+" macro keeps its commas
+    test    byte [r12 + MACRO_flags], MACRO_FLAG_GREEDY
+    jz      .arg_end_one
+    movzx   ecx, byte [r12 + MACRO_max_params]
+    dec     ecx
+    cmp     r15d, ecx
+    jae     .arg_keep
 .arg_end_one:
     ; A top-level comma ends this argument; the comma slot gets reused
     inc     r15
@@ -602,6 +610,52 @@ prep_expand_start:
         cmp     r15b, al
         jg      .error_too_many_args
         ENDIF
+
+    ; Optional parameters not given take their defaults: default d is the
+    ; d-th comma-separated piece of the list, for parameter min + d
+    cmp     dword [r12 + MACRO_ndefaults], 0
+    je      .dflt_done
+    cmp     byte [r12 + MACRO_max_params], 0xFF
+    je      .dflt_done
+.dflt_next:
+    movzx   eax, byte [r12 + MACRO_max_params]
+    cmp     r15d, eax
+    jae     .dflt_done
+    movzx   ecx, byte [r12 + MACRO_min_params]
+    mov     edx, r15d
+    sub     edx, ecx                       ; d
+    mov     r8, [r12 + MACRO_defaults]
+    mov     r9d, [r12 + MACRO_ndefaults]   ; tokens left
+.dflt_seek:
+    test    edx, edx
+    jz      .dflt_piece
+.dflt_seek_tok:
+    test    r9d, r9d
+    jz      .dflt_piece                    ; past the list: empty
+    movzx   eax, byte [r8 + TOKEN_kind]
+    add     r8, TOKEN_SIZE
+    dec     r9d
+    cmp     eax, TOK_COMMA
+    jne     .dflt_seek_tok
+    dec     edx
+    jmp     .dflt_seek
+.dflt_piece:
+    mov     [r14 + r15 * 8], r8
+    xor     ecx, ecx
+.dflt_len:
+    cmp     ecx, r9d
+    jae     .dflt_len_done
+    imul    rax, rcx, TOKEN_SIZE
+    cmp     byte [r8 + rax + TOKEN_kind], TOK_COMMA
+    je      .dflt_len_done
+    inc     ecx
+    jmp     .dflt_len
+.dflt_len_done:
+    mov     rax, [r13 + MACROEXP_arglens]
+    mov     [rax + r15], cl
+    inc     r15
+    jmp     .dflt_next
+.dflt_done:
 
     ; Release the collection scratch: these fields drive substitution now
     mov     qword [r13 + MACROEXP_pend_ptr], 0
@@ -1834,6 +1888,7 @@ dir_more:     db "ifidn", 0, 0,0,0,0,0,0,0,0,0, 0
               db "deftok", 0, 0,0,0,0,0,0,0,0, 8
               db 0
 msg_warning:  db "warning: ", 0
+str_nolist:   db ".nolist", 0
 msg_fatal:    db "error: ", 0
 msg_space:    db " ", 0
 ; "0".."9" for the %N references of a function-like %define
@@ -4072,6 +4127,9 @@ macro_handle_def:
     ; Param count can be N, N-M, or N-*
     xor     r14, r14               ; min_params
     xor     r15, r15               ; max_params
+    mov     byte [rel mdef_greedy], 0
+    mov     qword [rel mdef_defaults], 0
+    mov     dword [rel mdef_ndefaults], 0
     
     cmp     byte [r13 + TOKEN_kind], TOK_NUMBER
     jne     .body_start            ; No params specified
@@ -4117,9 +4175,67 @@ macro_handle_def:
     jg      .error_macro_def
     
     cmp     r15, 0xFF
-    je      .body_start
+    je      .tail
     cmp     r15, 32
     jg      .error_macro_def
+
+    ; After the count: "+" (the last parameter takes the rest of the line),
+    ; ".nolist", then default values for the optional parameters
+.tail:
+    mov     rdi, rbx
+    lea     rsi, [rsp + 64]
+    call    prep_raw_peek
+    movzx   eax, byte [rsp + 64 + TOKEN_kind]
+    cmp     eax, TOK_PLUS
+    jne     .not_plus
+    mov     byte [rel mdef_greedy], MACRO_FLAG_GREEDY
+    jmp     .tail_eat
+.not_plus:
+    cmp     eax, TOK_IDENT
+    jne     .defaults
+    mov     rdi, [rsp + 64 + TOKEN_value]
+    lea     rsi, [rel str_nolist]
+    call    str_cmp
+    test    rax, rax
+    jnz     .defaults
+.tail_eat:
+    mov     rdi, rbx
+    lea     rsi, [rsp + 64]
+    call    prep_raw_next
+    jmp     .tail
+.defaults:
+    movzx   eax, byte [rsp + 64 + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .body_start
+    cmp     eax, TOK_EOF
+    je      .body_start
+    ; reserved in one block before lexing, like a body
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, MACRO_ARG_CAPACITY * TOKEN_SIZE
+    call    arena_alloc
+    test    rax, rax
+    jnz     .error
+    mov     [rel mdef_defaults], rdx
+.default_tok:
+    mov     rdi, rbx
+    lea     rsi, [rsp + 64]
+    call    prep_raw_peek
+    movzx   eax, byte [rsp + 64 + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .body_start
+    cmp     eax, TOK_EOF
+    je      .body_start
+    mov     eax, [rel mdef_ndefaults]
+    cmp     eax, MACRO_ARG_CAPACITY
+    jae     .error_macro_def
+    imul    rsi, rax, TOKEN_SIZE
+    add     rsi, [rel mdef_defaults]
+    mov     rdi, rbx
+    call    prep_raw_next
+    test    rax, rax
+    jnz     .error
+    inc     dword [rel mdef_ndefaults]
+    jmp     .default_tok
 
 .body_start:
     ; 3. Allocate MACRO struct in arena
@@ -4145,6 +4261,12 @@ macro_handle_def:
     mov     [r15 + MACRO_min_params], al
     mov     rax, [rsp + 72]
     mov     [r15 + MACRO_max_params], al
+    movzx   eax, byte [rel mdef_greedy]
+    or      [r15 + MACRO_flags], al
+    mov     rax, [rel mdef_defaults]
+    mov     [r15 + MACRO_defaults], rax
+    mov     eax, [rel mdef_ndefaults]
+    mov     [r15 + MACRO_ndefaults], eax
 
     ; 4. Capture tokens until %endmacro
     ; The body must be one contiguous token array, so reserve it up front:
@@ -4423,3 +4545,6 @@ idefine_count: resd 1              ; %idefine names so far
 icase_buf:     resb 256            ; a name's case-insensitive key
 idn_case:      resb 1              ; 1: %ifidn compares case-sensitively
 exit_open:     resb 1              ; %if blocks %exitrep has to close
+mdef_defaults: resq 1              ; %macro header: default argument tokens
+mdef_ndefaults: resd 1             ; ... and how many
+mdef_greedy:   resb 1              ; ... MACRO_FLAG_GREEDY after a "+"
