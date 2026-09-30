@@ -413,9 +413,12 @@ asm_ctx_align:
     push    r12
     push    r13
     push    r14
-    
+
     mov     rbx, rdi
     mov     r12, rsi               ; r12 = alignment
+    ; an explicit fill from asm_ctx_align_fill applies to this call only
+    movzx   r14d, word [rel asm_align_fill]
+    mov     word [rel asm_align_fill], 0
     
     ; 1. Get current section
     mov     r13, [rbx + ASMCTX_curr_sec]
@@ -477,6 +480,8 @@ asm_ctx_align:
     sub     r12, rdx               ; padding = align - offset
     
     ; 3. Determine fill byte
+    test    r14d, 0x100
+    jnz     .fill_loop             ; written by the source ("align 4, db 0xCC")
     xor     r14, r14               ; Default: Zero-fill (safe for data/bss)
     
     mov     al, byte [r13 + SECTION_type]
@@ -512,6 +517,22 @@ asm_ctx_align:
     pop     r12
     pop     rbx
     epilogue
+
+;*
+; * [asm_ctx_align_fill]
+; * Purpose: asm_ctx_align with the fill byte the source wrote.
+; * Input  : RDI = AsmCtx, RSI = alignment, RDX = fill byte
+; ;
+global asm_ctx_align_fill
+asm_ctx_align_fill:
+    movzx   eax, dl
+    or      eax, 0x100
+    mov     [rel asm_align_fill], ax
+    jmp     asm_ctx_align
+
+[SECTION .bss]
+asm_align_fill: resw 1             ; 0x100 | fill byte, or 0 for the default
+[SECTION .text]
 
 ;*
 ; * [asmctx_get_section]
