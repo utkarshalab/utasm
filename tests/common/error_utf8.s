@@ -6,11 +6,6 @@
 // ============================================================================
 
 [SECTION .text]
-    // Invalid 2-byte sequence (missing second byte)
-    db 0xC2, 0x20
-    
-    // Invalid 3-byte sequence (missing second/third byte)
-    db 0xE2, 0x20, 0x20
-    
-    // Invalid 4-byte sequence
-    db 0xF0, 0x20, 0x20, 0x20
+    ; The source itself contains malformed UTF-8: a 2-byte lead byte
+    ; (0xC2) followed by a space instead of a continuation byte.
+    Â nop
