@@ -479,6 +479,7 @@ parser_parse_operand:
         
         ; Size specifier logic
         mov     [r12 + OPERAND_size], al
+        mov     [r12 + OPERAND_xsize], ax      ; yword/zword need 16 bits
         
         ; Peek next token. If "ptr", consume
         mov     rdi, rbx
@@ -666,9 +667,10 @@ parser_parse_reg_info:
     
     mov     rcx, rax
     shr     rcx, 8
-    and     cl, 0x7F            ; Size in bytes
-    shl     cl, 3               ; Convert to bits
+    and     ecx, 0x7F           ; Size in bytes
+    shl     ecx, 3              ; Convert to bits
     mov     [r12 + OPERAND_size], cl
+    mov     [r12 + OPERAND_xsize], cx      ; ymm/zmm: 256/512 need 16 bits
     
     shr     rax, 16
     and     al, 1
@@ -1428,6 +1430,14 @@ parser_parse_mem_operand:
         jmp     .loop
         ENDIF
 
+    ; "fs:" lexes as a label: inside brackets it is a segment override
+    IF al, e, TOK_LABEL
+        mov     rsi, [r13 + TOKEN_value]
+        call    parser_seg_override
+        check_err_to .error
+        jmp     .loop
+        ENDIF
+
     IF al, e, TOK_MINUS
         ; handle negative disp? usually handled by expression engine
         mov     rdi, rbx
@@ -1444,13 +1454,44 @@ parser_parse_mem_operand:
         mov     rsi, [r13 + TOKEN_value]
         movzx   rcx, byte [r12 + OPERAND_size]  ; reg_info overwrites the size
         push    rcx
+        movzx   rcx, word [r12 + OPERAND_xsize]
+        push    rcx
         call    parser_parse_reg_info
+        movzx   r8d, word [r12 + OPERAND_xsize] ; the register's width, if it is one
+        pop     rcx
+        mov     [r12 + OPERAND_xsize], cx
         pop     rcx
         mov     [r12 + OPERAND_size], cl        ; a memory operand keeps its own size
         IF rax, ne, ERR
+            ; 32-bit address registers ([eax], [r14d+1]) need the 67 prefix
+            cmp     r8d, 32
+            jne     .addr64
+            or      byte [r12 + OPERAND_flags], OP_FLAG_ADDR32
+        .addr64:
             ; It's a register. Is it base or index?
             ; (reg_info returns a status; the register id landed in OPERAND_reg)
             mov     al, [r12 + OPERAND_reg]
+
+            ; A segment register followed by ':' is an override ([fs:0x28])
+            cmp     al, REG_CS
+            jb      .not_seg
+            cmp     al, REG_SS
+            ja      .not_seg
+            push    rax
+            mov     rdi, rbx
+            call    preprocessor_peek_token
+            pop     rax
+            cmp     byte [rdx + TOKEN_kind], TOK_COLON
+            jne     .not_seg
+            movzx   eax, al
+            sub     eax, REG_CS
+            lea     rcx, [rel seg_prefix_bytes]
+            mov     al, [rcx + rax]
+            mov     [r12 + OPERAND_segment], al
+            mov     rdi, rbx
+            call    preprocessor_next_token ; consume ':'
+            jmp     .loop
+        .not_seg:
 
             ; A scaled register is the index even when there is no base yet,
             ; as in [table + rcx*4].
@@ -1601,8 +1642,45 @@ parser_parse_mem_operand:
 .error:
     epilogue
 
+;*
+; * [parser_seg_override]
+; * Purpose: Record a segment override written inside brackets ([fs:0x28]).
+; * Input  : RSI = register name, R12 = OPERAND
+; * Output : RAX = OK, or EXIT_INVALID_EXPR if it is not a segment register
+; ;
+parser_seg_override:
+    push    rbx
+    push    r13
+    mov     r13, rsi
+    xor     ebx, ebx
+.next:
+    mov     rdi, r13
+    lea     rsi, [rel seg_names]
+    lea     rsi, [rsi + rbx*4]
+    call    str_cmp
+    test    rax, rax
+    jz      .found
+    inc     ebx
+    cmp     ebx, 6
+    jb      .next
+    mov     rax, EXIT_INVALID_EXPR
+    jmp     .ret
+.found:
+    lea     rsi, [rel seg_prefix_bytes]
+    mov     al, [rsi + rbx]
+    mov     [r12 + OPERAND_segment], al
+    mov     rax, OK
+.ret:
+    pop     r13
+    pop     rbx
+    ret
+
 [SECTION .rodata]
 str_rel: db "rel", 0
+; segment registers in REG_CS..REG_SS order, 4 bytes each
+seg_names:  db "cs", 0, 0, "ds", 0, 0, "es", 0, 0, "fs", 0, 0, "gs", 0, 0, "ss", 0, 0
+; segment override prefixes for REG_CS..REG_SS (cs ds es fs gs ss)
+seg_prefix_bytes: db 0x2E, 0x3E, 0x26, 0x64, 0x65, 0x36
 str_abs: db "abs", 0
 
 [SECTION .text]
