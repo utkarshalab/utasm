@@ -385,6 +385,7 @@
 %define OP_FLAG_ABS            0x08        ; ABS keyword applied to force absolute offset
 %define OP_FLAG_SHORT          0x10        ; SHORT keyword applied to a branch target
 %define OP_FLAG_ADDR32         0x20        ; memory addressed by 32-bit registers (67 prefix)
+%define OP_FLAG_FAR            0x40        ; FAR: an indirect far jump / call (m16:32)
 
 ; ============================================================================
 ; CONTEXT FLAGS
@@ -1405,6 +1406,8 @@
 %define MACRO_FLAG_FUNC        0x01        ; %define NAME(a,b): arguments in parentheses
 %define MACRO_FLAG_GREEDY      0x02        ; %macro m 1+: the last parameter takes the rest
 %define MACRO_FLAG_DEFINE      0x04        ; a single-line macro (%define family)
+%define BIN_VSTART             0x01        ; SECTION_bin_flags: vstart= given
+%define BIN_START              0x02        ; start= given
 %define DEFINE_MAX_TOKENS      256         ; tokens in one %define body
 %define LEX_INTERP_BUF         256         ; work buffer for %[...] identifier interpolation
 %define PREP_CTX_MAX           64          ; maximum nesting depth of %push contexts
