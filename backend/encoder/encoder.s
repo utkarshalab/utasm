@@ -1837,6 +1837,7 @@ amd64_relax_cc:    resb 1          ; its condition code (jcc)
 global amd64_disp8n
 amd64_disp8n:      resb 1          ; EVEX disp8*N scale (0/1 = none), set by dispatch.s
 amd64_disp_emit:   resq 1          ; the disp8 value to emit (scaled for EVEX)
+amd64_branch_off:  resq 1          ; offset after a branch target label (jz $+2)
 [SECTION .text]
 
 extern relax_note
@@ -4308,6 +4309,24 @@ amd64_emit_branch_disp:
     mov     r14, rcx               ; r14 = displacement width
     mov     r15, rsi               ; r15 = symbol or name
 
+    ; The offset written after the target ("jmp .L1+4", "jz $+2"): the
+    ; operand's value is the label's plus that offset
+    mov     qword [rel amd64_branch_off], 0
+    test    r15, r15
+    jz      .off_done
+    lea     r8, [r12 + INST_op0]
+    cmp     [r8 + OPERAND_sym], r15
+    jne     .off_done
+    mov     rax, [r8 + OPERAND_imm]
+    cmp     byte [r15], TAG_SYMBOL
+    jne     .off_set               ; a forward name: the value is the offset
+    cmp     byte [r15 + SYMBOL_kind], SYM_LABEL
+    jne     .off_done              ; constants go through the relocation as before
+    sub     rax, [r15 + SYMBOL_value]
+.off_set:
+    mov     [rel amd64_branch_off], rax
+.off_done:
+
     test    r15, r15
     jz      .placeholder
 
@@ -4327,6 +4346,7 @@ amd64_emit_branch_disp:
 
     ; disp = target - address of the next instruction
     mov     rdi, [r15 + SYMBOL_value]
+    add     rdi, [rel amd64_branch_off]
     mov     rax, [r8 + SECTION_size]
     add     rax, r14
     sub     rdi, rax
@@ -4355,6 +4375,19 @@ amd64_emit_branch_disp:
     call    amd64_emit_reloc
     test    rax, rax
     jnz     .done                  ; propagate a real relocation failure
+
+    ; the offset after a forward label goes into the relocation's addend
+    mov     rax, [rel amd64_branch_off]
+    test    rax, rax
+    jz      .no_reloc_off
+    mov     ecx, [rbx + ASMCTX_nrelocs]
+    dec     ecx
+    imul    rcx, rcx, RELOC_SIZE
+    add     rcx, [rbx + ASMCTX_relocs]
+    add     [rcx + RELOC_addend], rax
+    jmp     .placeholder           ; not a candidate for shortening: the
+                                   ; optimizer retargets by the label alone
+.no_reloc_off:
 
     ; A jmp/jcc rel32 whose target is not defined yet: note it, so
     ; optimizer/jump.s can shorten it once all code is emitted.
@@ -4417,6 +4450,7 @@ amd64_emit_branch_disp:
     push    r8
     mov     rsi, [r8 + SECTION_size]       ; the displacement goes here
     mov     rdx, [r15 + SYMBOL_value]      ; the target's offset
+    add     rdx, [rel amd64_branch_off]
     xor     ecx, ecx
     mov     r8, r14                        ; width: 1 or 4
     mov     edi, RELAX_FIXED
