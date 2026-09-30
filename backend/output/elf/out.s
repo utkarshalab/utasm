@@ -231,6 +231,45 @@ elf64_emit:
         mov     [rsp + rax + 8], r11        ; size
     ENDIF
 
+    ; ---- 4c. Sections with other names ("section .init", ".text.hot") ----
+    ; In index order, after the standard four. A nobits one takes no file
+    ; space; it is only given its offset and size. (A standalone executable
+    ; lays out the standard sections only.)
+    cmp     byte [r12 + ASMCTX_standalone], 1
+    je      .custom_done
+    xor     r15d, r15d
+.custom_loop:
+    cmp     r15w, [r12 + ASMCTX_seccount]
+    jae     .custom_done
+    mov     rax, [r12 + ASMCTX_sections]
+    mov     r14, [rax + r15 * 8]           ; r14 = SECTION*
+    inc     r15d
+    cmp     byte [r14 + SECTION_type], SEC_CUSTOM
+    jne     .custom_loop
+    movzx   ebx, word [r14 + SECTION_index]
+    mov     rdx, r14
+    mov     edi, r13d
+    call    elf64_place_section
+    check_err
+    mov     edi, r13d
+    xor     esi, esi
+    mov     edx, 1
+    call    io_lseek
+    mov     rax, rbx
+    shl     rax, 4
+    mov     [rsp + rax], rdx               ; offset
+    mov     rdx, [r14 + SECTION_size]
+    mov     [rsp + rax + 8], rdx           ; size
+    cmp     dword [r14 + SECTION_elf_type], SHT_NOBITS
+    je      .custom_loop
+    mov     edi, r13d
+    mov     rsi, [r14 + SECTION_data]
+    mov     rdx, [r14 + SECTION_size]
+    call    io_write
+    check_err
+    jmp     .custom_loop
+.custom_done:
+
     ; In an executable the sections sit at their addresses, not in writing
     ; order (.rodata comes before .data): continue after the last of them.
     IF byte [r12 + ASMCTX_standalone], e, 1
@@ -1610,6 +1649,7 @@ shstrtab_data:
     db ".rela.data", 0  ; [70]
     db ".rela.rodata", 0; [81]
 shstrtab_end:
+str_rela_prefix: db ".rela"
 
 [SECTION .text]
 elf64_write_shstrtab:
@@ -1623,12 +1663,82 @@ elf64_write_shstrtab:
     call    io_write
     check_err
 
+    ; then ".rela<name>" for each section with another name: the section's
+    ; own name is the tail of that string (elf64_custom_rela_off)
+    push    rbx
+    push    r14
+    xor     ebx, ebx
+.custom:
+    cmp     bx, [r12 + ASMCTX_seccount]
+    jae     .custom_done
+    mov     rax, [r12 + ASMCTX_sections]
+    mov     r14, [rax + rbx * 8]
+    inc     ebx
+    cmp     byte [r14 + SECTION_type], SEC_CUSTOM
+    jne     .custom
+    mov     edi, r13d
+    lea     rsi, [rel str_rela_prefix]
+    mov     edx, 5
+    call    io_write
+    test    rax, rax
+    jnz     .custom_error
+    mov     rdi, [r14 + SECTION_name]
+    call    str_len
+    lea     rdx, [rax + 1]                 ; with its NUL
+    mov     edi, r13d
+    mov     rsi, [r14 + SECTION_name]
+    call    io_write
+    test    rax, rax
+    jnz     .custom_error
+    jmp     .custom
+.custom_error:
+    pop     r14
+    pop     rbx
+    jmp     .error
+.custom_done:
+    pop     r14
+    pop     rbx
+
     xor     rax, rax
     jmp     .done
 .error:
     mov     rax, EXIT_FILE_WRITE
 .done:
     epilogue
+
+;
+; elf64_custom_rela_off
+; Offset in .shstrtab of ".rela<name>" for a section with a name outside the
+; fixed table; the name itself is at that offset + 5.
+;
+; Input    : rsi = SECTION* (SEC_CUSTOM)
+; Output   : eax = offset
+; Clobbers : rcx, rdx, rdi, r8, r9
+;
+elf64_custom_rela_off:
+    mov     r8, [rel elf_sa_ctx]
+    mov     r9, [r8 + ASMCTX_sections]
+    mov     eax, shstrtab_end - shstrtab_data
+    xor     ecx, ecx
+.next:
+    cmp     cx, [r8 + ASMCTX_seccount]
+    jae     .ret
+    mov     rdx, [r9 + rcx * 8]
+    cmp     rdx, rsi
+    je      .ret
+    inc     ecx
+    cmp     byte [rdx + SECTION_type], SEC_CUSTOM
+    jne     .next
+    mov     rdi, [rdx + SECTION_name]
+    add     eax, 5                         ; ".rela"
+.len:
+    inc     eax                            ; each byte, the NUL included
+    cmp     byte [rdi], 0
+    lea     rdi, [rdi + 1]
+    jne     .len
+    jmp     .next
+.ret:
+    ret
 
 ; ============================================================================
 ; elf64_relocs_in_section
@@ -1719,6 +1829,8 @@ elf64_count_rela_sections:
 ;
 elf64_rela_name_for:
     movzx   eax, byte [rsi + SECTION_type]
+    cmp     al, SEC_CUSTOM
+    je      elf64_custom_rela_off          ; ".rela<name>"
     cmp     al, SEC_DATA
     je      .data
     cmp     al, SEC_RODATA
@@ -1888,6 +2000,16 @@ elf64_write_shdrs:
     ELSEIF dl, e, 'r'
         mov     dword [rsp + SHDR_NAME], 62 ; ".rodata"
     ENDIF
+    cmp     byte [rsi + SECTION_type], SEC_CUSTOM
+    jne     .named
+    push    rcx
+    push    rsi
+    call    elf64_custom_rela_off
+    pop     rsi
+    pop     rcx
+    add     eax, 5                         ; the name after ".rela"
+    mov     dword [rsp + SHDR_NAME], eax
+.named:
     
     mov     eax, [rsi + SECTION_elf_type]
     mov     dword [rsp + SHDR_TYPE], eax
