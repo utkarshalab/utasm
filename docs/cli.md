@@ -47,6 +47,23 @@ utasm -f bin boot.s -o boot.bin
 utasm --standalone --profile main.s -o main
 ```
 
+## Standalone executables
+
+`--standalone` writes a static ELF executable instead of an object file; the
+program starts at `_start`:
+
+```sh
+utasm --standalone hello.s -o hello && ./hello
+```
+
+It is loaded at 0x400000. The ELF header, the program headers and `.text`
+form one read/execute segment from the start of the file; `.rodata` gets a
+read-only segment and `.data` with `.bss` a read/write one, each starting on
+a new page. Sections get their addresses before relocations are resolved,
+so `lea rsi, [rel msg]` into `.rodata` or `mov rax, [rel counter]` into
+`.bss` reach the right place, and the symbol table lists addresses. The file
+is created executable (mode 0755).
+
 ## Inspecting ELF files
 
 `--inspect` turns utasm into a built-in, readelf-style viewer, so its own
