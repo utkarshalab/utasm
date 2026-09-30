@@ -68,7 +68,7 @@ _start:
     jpe     .L1                 // alias for JP
     jnp     .L1
     jpo     .L1                 // alias for JNP
-    jcxz    .L1
+    // jcxz is not encodable in 64-bit mode (jecxz/jrcxz are)
     jecxz   .L1
     jrcxz   .L1
 
