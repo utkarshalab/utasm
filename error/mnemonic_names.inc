@@ -4,7 +4,7 @@
 ; ============================================================================
 ;
 ; x86-64 mnemonic names as a packed, NUL-separated list, used only for
-; "did you mean" hints (error/hints.s). 1831 unique names.
+; "did you mean" hints (error/hints.s). 1839 unique names.
 
 mnemonic_names_x64:
     db "aaa", 0, "aad", 0, "aam", 0, "aas", 0, "adc", 0, "adcx", 0, "add", 0, "addpd", 0
@@ -235,5 +235,6 @@ mnemonic_names_x64:
     db "vpcmpnequb", 0, "vpcmpnequd", 0, "vpcmpnequq", 0, "vpcmpnequw", 0, "vpcmpneqw", 0, "vpcmpnleb", 0, "vpcmpnled", 0, "vpcmpnleq", 0
     db "vpcmpnleub", 0, "vpcmpnleud", 0, "vpcmpnleuq", 0, "vpcmpnleuw", 0, "vpcmpnlew", 0, "vpcmpnltb", 0, "vpcmpnltd", 0, "vpcmpnltq", 0
     db "vpcmpnltub", 0, "vpcmpnltud", 0, "vpcmpnltuq", 0, "vpcmpnltuw", 0, "vpcmpnltw", 0, "vpmaxsq", 0, "vpmaxuq", 0, "vpminsq", 0
-    db "vpminuq", 0, "vpmullq", 0, "vpord", 0, "vporq", 0, "vpsraq", 0, "vpxord", 0, "vpxorq", 0
+    db "vpminuq", 0, "vpmullq", 0, "vpord", 0, "vporq", 0, "vpsraq", 0, "vpxord", 0, "vpxorq", 0, "loope", 0
+    db "loopz", 0, "loopne", 0, "loopnz", 0, "jecxz", 0, "jrcxz", 0, "sysexitq", 0, "sysretq", 0
 mnemonic_names_x64_end:
