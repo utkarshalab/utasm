@@ -9,6 +9,8 @@
 %include "include/constant.inc"
 %include "include/type.inc"
 %include "include/macro.inc"
+
+%define IMM_PLACEHOLDER 0x12345678   ; see amd64_imm_fixup
 %include "include/arch/amd64.inc"
 %include "include/elf.inc"
 
@@ -44,6 +46,67 @@ amd64_encode_instruction:
     mov     dword [rbx + ASMCTX_inst_len], 0
     mov     dword [rel amd64_rip_pending], 0
     mov     byte [rel amd64_relax_kind], 0
+    mov     byte [rel imm_ph_active], 0
+
+    ; 0a. An immediate whose value came from a label defined earlier is still
+    ;     an address: encode it as a symbol reference, relocated, exactly as
+    ;     for a label defined later ("mov eax, msg", "push table"). Only
+    ;     branches keep the label itself (they measure the distance to it).
+    movzx   eax, word [r12 + INST_op_id]
+    cmp     eax, 1059                      ; CALL
+    je      .sym_done
+    cmp     eax, 1298                      ; JMP
+    je      .sym_done
+    cmp     eax, 1373                      ; LOOP
+    je      .sym_done
+    cmp     eax, 2151                      ; XBEGIN
+    je      .sym_done
+    cmp     eax, 3000
+    jb      .sym_not_jcc
+    cmp     eax, 3099                      ; Jcc
+    jbe     .sym_done
+.sym_not_jcc:
+    cmp     eax, 6524
+    jb      .sym_ops
+    cmp     eax, 6529                      ; LOOPcc, JECXZ, JRCXZ
+    jbe     .sym_done
+.sym_ops:
+    xor     ecx, ecx
+.sym_op:
+    movzx   eax, byte [r12 + INST_nops]
+    cmp     ecx, eax
+    jae     .sym_done
+    imul    rdi, rcx, OPERAND_SIZE
+    lea     rdi, [r12 + INST_op0 + rdi]
+    cmp     byte [rdi + OPERAND_kind], OP_IMM
+    jne     .sym_next
+    mov     rsi, [rdi + OPERAND_sym]
+    test    rsi, rsi
+    jz      .sym_next
+    cmp     byte [rsi + SYMBOL_tag], TAG_SYMBOL
+    jne     .sym_next
+    cmp     word [rsi + SYMBOL_section], SHN_ABS
+    je      .sym_next                      ; "x equ 5": a number
+    movzx   eax, byte [rsi + SYMBOL_kind]
+    cmp     eax, SYM_LABEL
+    je      .sym_convert
+    cmp     eax, SYM_DATA
+    je      .sym_convert
+    cmp     eax, SYM_EXTERN
+    je      .sym_convert
+    cmp     eax, SYM_COMMON
+    jne     .sym_next
+.sym_convert:
+    mov     rax, [rdi + OPERAND_imm]
+    sub     rax, [rsi + SYMBOL_value]      ; what was added to it
+    mov     [rdi + OPERAND_imm], rax
+    mov     rax, [rsi + SYMBOL_name]
+    mov     [rdi + OPERAND_sym], rax
+    mov     byte [rdi + OPERAND_kind], OP_SYMBOL
+.sym_next:
+    inc     ecx
+    jmp     .sym_op
+.sym_done:
 
     ; 0. VALIDATION: Check operand size consistency (A87: Hardened)
     ; Mnemonics with table forms (dispatch.s) check their operands per form:
@@ -144,6 +207,15 @@ amd64_encode_instruction:
     jne     .addr32_loop
     test    byte [rdi + OPERAND_flags], OP_FLAG_ADDR32
     jz      .addr32_loop
+    ; "a32" already put the prefix there
+    cmp     byte [r12 + INST_prefixes], 0x67
+    je      .addr32_done
+    cmp     byte [r12 + INST_prefixes + 1], 0x67
+    je      .addr32_done
+    cmp     byte [r12 + INST_prefixes + 2], 0x67
+    je      .addr32_done
+    cmp     byte [r12 + INST_prefixes + 3], 0x67
+    je      .addr32_done
     mov     al, 0x67
     call    amd64_emit_byte
 .addr32_done:
@@ -157,6 +229,58 @@ amd64_encode_instruction:
     je      .encoded
     test    rax, rax
     jnz     .done
+
+    ; 2c. Most encoders below take no label as an immediate (only MOV to a
+    ;     register and the branches do). Give them a placeholder value that
+    ;     only a full-width immediate holds; amd64_imm_fixup then turns its
+    ;     bytes into a relocation for the label.
+    movzx   eax, word [r12 + INST_op_id]
+    cmp     eax, 1059                      ; CALL
+    je      .ph_done
+    cmp     eax, 1298                      ; JMP
+    je      .ph_done
+    cmp     eax, 1373                      ; LOOP
+    je      .ph_done
+    cmp     eax, 2151                      ; XBEGIN
+    je      .ph_done
+    cmp     eax, 3000
+    jb      .ph_not_jcc
+    cmp     eax, 3099
+    jbe     .ph_done
+.ph_not_jcc:
+    cmp     eax, 6524
+    jb      .ph_not_loop
+    cmp     eax, 6529
+    jbe     .ph_done
+.ph_not_loop:
+    cmp     eax, 1391                      ; MOV reg, label: handled there
+    jne     .ph_scan
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_REG
+    je      .ph_done
+.ph_scan:
+    xor     ecx, ecx
+.ph_op:
+    movzx   eax, byte [r12 + INST_nops]
+    cmp     ecx, eax
+    jae     .ph_done
+    imul    rdi, rcx, OPERAND_SIZE
+    lea     rdi, [r12 + INST_op0 + rdi]
+    inc     ecx
+    cmp     byte [rdi + OPERAND_kind], OP_SYMBOL
+    jne     .ph_op
+    mov     rax, [rdi + OPERAND_sym]
+    mov     [rel imm_ph_sym], rax
+    mov     rax, [rdi + OPERAND_imm]
+    mov     [rel imm_ph_addend], rax
+    mov     byte [rdi + OPERAND_kind], OP_IMM
+    mov     qword [rdi + OPERAND_imm], IMM_PLACEHOLDER
+    mov     qword [rdi + OPERAND_sym], 0
+    xor     eax, eax
+    cmp     byte [r12 + INST_op0 + OPERAND_size], 64
+    sete    al
+    mov     [rel imm_ph_wide], al
+    mov     byte [rel imm_ph_active], 1
+.ph_done:
 
     ; 3. Dispatch based on Mnemonic ID
     movzx   rax, word [r12 + INST_op_id]
@@ -1485,6 +1609,20 @@ amd64_encode_instruction:
         call amd64_emit_byte
         mov al, 0x99
         call amd64_emit_byte
+    ELSEIF ax, e, 2155             ; XLAT
+        mov     al, 0xD7
+        call    amd64_emit_byte
+    ELSEIF ax, e, 2156             ; XLATB
+        mov     al, 0xD7
+        call    amd64_emit_byte
+    ELSEIF ax, e, 6532             ; RETF
+        call    amd64_encode_retf
+    ELSEIF ax, e, 6533             ; RETFQ
+        mov     al, 0x48
+        call    amd64_emit_byte
+        call    amd64_encode_retf
+    ELSEIF ax, e, 6534             ; RETN
+        call    amd64_encode_ret
 
     ; ----Legacy Bit Scanning & Byte Swapping ----
     ELSEIF ax, e, 1051             ; BSF
@@ -1731,6 +1869,12 @@ amd64_encode_instruction:
     cmp     rax, EXIT_INVALID_OPERAND
     je      .done
 .encoded:
+    cmp     byte [rel imm_ph_active], 0
+    je      .no_placeholder
+    call    amd64_imm_fixup
+    test    rax, rax
+    jnz     .done
+.no_placeholder:
     call    amd64_fix_rip_addend   ; the instruction is complete now
     xor     rax, rax
 .done:
@@ -1745,6 +1889,70 @@ amd64_encode_instruction:
     pop     r12
     pop     rbx
     epilogue
+
+;*
+; * [amd64_imm_fixup]
+; * Purpose: The instruction just emitted holds IMM_PLACEHOLDER where a
+; *   label's address goes (see 2c in amd64_encode_instruction): the last
+; *   4, 2 or 1 bytes. Zero them and record the relocation: R_X86_64_32S
+; *   for the imm32 of a 64-bit operation (sign-extended), else _32, _16
+; *   or _8 by width.
+; * Input : RBX = AsmCtx
+; * Output: RAX = OK or an error
+; ;
+amd64_imm_fixup:
+    mov     byte [rel imm_ph_active], 0
+    mov     rax, [rbx + ASMCTX_curr_sec]
+    mov     rcx, [rax + SECTION_size]      ; the end of the instruction
+    mov     rdx, [rax + SECTION_data]
+    cmp     rcx, 4
+    jb      .try2
+    cmp     dword [rdx + rcx - 4], IMM_PLACEHOLDER
+    je      .w4
+.try2:
+    cmp     rcx, 2
+    jb      .try1
+    cmp     word [rdx + rcx - 2], IMM_PLACEHOLDER & 0xFFFF
+    je      .w2
+.try1:
+    test    rcx, rcx
+    jz      .none
+    cmp     byte [rdx + rcx - 1], IMM_PLACEHOLDER & 0xFF
+    je      .w1
+.none:
+    xor     eax, eax
+    ret
+.w4:
+    sub     rcx, 4
+    mov     dword [rdx + rcx], 0
+    mov     r8d, R_X86_64_32
+    cmp     byte [rel imm_ph_wide], 0
+    je      .record
+    mov     r8d, R_X86_64_32S
+    jmp     .record
+.w2:
+    sub     rcx, 2
+    mov     word [rdx + rcx], 0
+    mov     r8d, R_X86_64_16
+    jmp     .record
+.w1:
+    dec     rcx
+    mov     byte [rdx + rcx], 0
+    mov     r8d, R_X86_64_8
+.record:
+    mov     rdi, rbx
+    mov     rsi, rcx
+    mov     rdx, [rel imm_ph_sym]
+    mov     rcx, [rel imm_ph_addend]
+    call    reloc_record
+    ret
+
+[SECTION .bss]
+imm_ph_sym:     resq 1              ; the label a placeholder stands for
+imm_ph_addend:  resq 1
+imm_ph_active:  resb 1
+imm_ph_wide:    resb 1              ; a 64-bit operation
+[SECTION .text]
 
 ;*
 ; * [amd64_branch_fits_rel8]
@@ -1988,6 +2196,29 @@ amd64_encode_mov:
                     ENDIF
                 ENDIF
 
+            ; A negative value that fits a sign-extended imm32: REX.W C7 /0 id
+            ; (7 bytes, not the 10 of B8+r imm64), as NASM picks
+            IF dl, e, 64
+                IF byte [r14 + OPERAND_kind], e, OP_IMM
+                    movsxd  r11, eax
+                    cmp     r11, rax
+                    jne     .mov_imm64
+                    mov     al, 64
+                    mov     rsi, 0
+                    mov     rdx, r13
+                    call    amd64_emit_prefixes
+                    mov     al, 0xC7
+                    call    amd64_emit_byte
+                    mov     al, [r13 + OPERAND_reg]
+                    and     al, 0x07
+                    or      al, 0xC0
+                    call    amd64_emit_byte
+                    mov     rdi, [r14 + OPERAND_imm]
+                    call    amd64_emit_dword
+                    jmp     .done
+                    ENDIF
+                ENDIF
+.mov_imm64:
             ; 64-bit MOV REG, IMM64 / SYMBOL
             IF dl, e, 64
                 mov al, 64
@@ -2638,8 +2869,30 @@ amd64_encode_push:
         call amd64_emit_modrm_sib
         jmp     .done
         ENDIF
+    IF byte [r10 + OPERAND_kind], e, OP_SYMBOL
+        ; push label: 68 id, R_X86_64_32S
+        mov     al, 0x68
+        call    amd64_emit_byte
+        mov     rdi, rbx
+        mov     rsi, [rbx + ASMCTX_curr_sec]
+        mov     rsi, [rsi + SECTION_size]
+        lea     r10, [r12 + INST_op0]
+        mov     rdx, [r10 + OPERAND_sym]
+        mov     rcx, [r10 + OPERAND_imm]
+        mov     r8, R_X86_64_32S
+        call    reloc_record
+        xor     edi, edi
+        call    amd64_emit_dword
+        jmp     .done
+        ENDIF
     IF byte [r10 + OPERAND_kind], e, OP_IMM
         mov     rax, [r10 + OPERAND_imm]
+        ; "push strict dword 5": the imm32 form even for a small value
+        test    byte [r10 + OPERAND_flags], OP_FLAG_STRICT
+        jz      .push_small
+        cmp     byte [r10 + OPERAND_size], 8
+        jne     .push_imm32
+.push_small:
         IF rax, ge, -128
             IF rax, le, 127
                 mov al, 0x6A
@@ -2649,10 +2902,11 @@ amd64_encode_push:
                 jmp .done
                 ENDIF
                 ENDIF
+.push_imm32:
         mov     al, 0x68
-        call amd64_emit_byte
+        call    amd64_emit_byte
         mov     rdi, [r10 + OPERAND_imm]
-        call amd64_emit_dword
+        call    amd64_emit_dword
         jmp     .done
         ENDIF
     jmp     .error
@@ -2844,6 +3098,26 @@ amd64_encode_jcc_short:
     mov     al, RELOC_REL8
     call    amd64_emit_branch_disp
     jmp     .done
+.done:
+    epilogue
+
+;*
+; * [amd64_encode_retf]
+; * RETF: CB, or CA iw with a count to pop (RETFQ puts REX.W before it).
+; ;
+amd64_encode_retf:
+    prologue
+    cmp     byte [r12 + INST_nops], 0
+    IF e
+        mov     al, 0xCB
+        call    amd64_emit_byte
+        jmp     .done
+        ENDIF
+    mov     al, 0xCA
+    call    amd64_emit_byte
+    lea     r10, [r12 + INST_op0]
+    mov     rdi, [r10 + OPERAND_imm]
+    call    amd64_emit_word
 .done:
     epilogue
 
@@ -5149,6 +5423,10 @@ amd64_encode_jmp:
     call    amd64_emit_byte
     lea     rdi, [r12 + INST_op0]          ; the calls above clobber r10
     mov     al, 4
+    test    byte [rdi + OPERAND_flags], OP_FLAG_FAR
+    jz      .jmp_near
+    mov     al, 5                          ; jmp far [m16:32]
+.jmp_near:
     call    amd64_emit_modrm_sib
 .done:
     epilogue
@@ -5193,6 +5471,10 @@ amd64_encode_call:
     call    amd64_emit_byte
     lea     rdi, [r12 + INST_op0]          ; the calls above clobber r10
     mov     al, 2
+    test    byte [rdi + OPERAND_flags], OP_FLAG_FAR
+    jz      .call_near
+    mov     al, 3                          ; call far [m16:32]
+.call_near:
     call    amd64_emit_modrm_sib
 .done:
     epilogue
