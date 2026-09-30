@@ -27,6 +27,9 @@ Thumbs.db
 # Logs
 *.log
 
+# Python bytecode (scripts/compat)
+__pycache__/
+
 # Scratch / debug artifacts (never commit these)
 scratch/
 task.md
