@@ -112,10 +112,21 @@ linker_run:
     lea     rdi, [rel global_profstate]
     mov     rsi, PHASE_OUTPUT
     call    profiler_start_phase
+    ; -f ubf: the flat image as the kernel of a UBF boot image
+    extern  ubf_enabled
+    cmp     byte [rel ubf_enabled], 0
+    jne     .emit_ubf
     mov     rdi, rbx
     mov     rsi, r12
     xor     rdx, rdx
     call    binary_emit
+    mov     r13, rax
+    jmp     .end_output_phase
+.emit_ubf:
+    mov     rdi, rbx
+    mov     esi, r12d
+    extern  ubf_emit
+    call    ubf_emit
     mov     r13, rax
     jmp     .end_output_phase
 
