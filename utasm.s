@@ -416,6 +416,13 @@ _start:
 
 .error_in_parser:
     mov     r15, rax                         ; Preserve error code in r15
+
+    ; %fatal has printed its own message: nothing to add
+    cmp     rax, EXIT_FATAL
+    jne     .report_parser_error
+    mov     rax, 4
+    jmp     .exit
+.report_parser_error:
     
     ; Print: "Parser error: "
     mov     rdi, 2
