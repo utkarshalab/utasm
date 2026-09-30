@@ -2773,6 +2773,16 @@ amd64_encode_xchg:
         jmp .rm_form                       ; no short form for bytes
         ENDIF
 
+    ; xchg eax, eax is not 90: that is nop, which would not clear the upper
+    ; half of rax. NASM encodes it 87 C0.
+    cmp     byte [r10 + OPERAND_size], 32
+    jne     .not_eax_eax
+    cmp     byte [r10 + OPERAND_reg], REG_RAX
+    jne     .not_eax_eax
+    cmp     byte [r11 + OPERAND_reg], REG_RAX
+    je      .rm_form
+.not_eax_eax:
+
     ; Accumulator short form: whichever operand is rAX names the opcode,
     ; the other supplies the low three bits.
     IF byte [r10 + OPERAND_reg], e, REG_RAX
