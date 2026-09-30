@@ -1959,6 +1959,18 @@ parser_parse_mem_operand:
     jmp     .loop
 
 .finalize:
+    ; rsp cannot be an index register: [rbx+rsp] is [rsp+rbx], and
+    ; [rsp*1] is [rsp], as NASM swaps them
+    cmp     byte [r12 + OPERAND_index], REG_RSP
+    jne     .rsp_done
+    cmp     byte [r12 + OPERAND_vsib], 0
+    jne     .rsp_done
+    cmp     byte [r12 + OPERAND_scale], 1
+    jne     .rsp_done
+    mov     al, [r12 + OPERAND_base]
+    mov     byte [r12 + OPERAND_base], REG_RSP
+    mov     [r12 + OPERAND_index], al      ; 0xFF (none) when there was no base
+.rsp_done:
     ; [rbx*2] with no base is [rbx+rbx] -- no disp32 needed -- as NASM
     ; encodes it, unless written with nosplit
     cmp     byte [r12 + OPERAND_base], 0xFF
