@@ -33,6 +33,7 @@ task.md
 gdb_trace*.txt
 tmp_test*.s
 test_*.s
+!tests/unit/test_*.s
 *.patch
 *.patch.log
 err.txt
