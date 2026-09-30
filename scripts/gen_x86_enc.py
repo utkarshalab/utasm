@@ -23,8 +23,8 @@ Form layout:
   +9  db  ModRM: 0-7 /digit, 8 /r, 9 none, 0xC0-0xFF a fixed ModRM byte
   +10 dw  operand roles, 3 bits each (R_*)
   +12 db  flags (F_*)
-  +13 db  VEX/EVEX: L and W (reserved for the VEX/EVEX forms)
-  +14 db  reserved
+  +13 db  VEX/EVEX vector length L (0 xmm, 1 ymm, 2 zmm)
+  +14 db  EVEX disp8*N scale in bytes (1 for other encodings)
   +15 db  immediate byte appended after the operands (with F_FIXIMM)
 
     python3 scripts/gen_x86_enc.py           regenerate
@@ -46,7 +46,7 @@ ISA = os.path.join(ROOT, "backend", "isa", "amd64.s")
 # operand size, 2 size 32/64 does, 3 immediate; rsize/msize in bits
 # (msize 0xFFFF = no memory, 0 = any size); fixreg: required register number;
 # imm: immediate kind.
-C_GPR, C_XMM, C_YMM, C_ZMM, C_K, C_ST, C_MM, C_CR, C_DR, C_SEG = range(1, 11)
+C_GPR, C_XMM, C_YMM, C_ZMM, C_K, C_ST, C_MM, C_CR, C_DR, C_SEG, C_RC, C_SAE = range(1, 13)
 NOMEM = 0xFFFF
 I8, I8S, I16, I32, IZ, I64, ONE = range(1, 8)
 TYPES = [   # name, rclass, special, rsize, msize, fixreg, imm
@@ -87,13 +87,15 @@ TYPES = [   # name, rclass, special, rsize, msize, fixreg, imm
     # strict memory: the size must be written (x87 picks the opcode by size)
     ("MS16", 0, 0, 0, 0x8000 | 16, 0xFF, 0), ("MS32", 0, 0, 0, 0x8000 | 32, 0xFF, 0),
     ("MS64", 0, 0, 0, 0x8000 | 64, 0xFF, 0), ("MS80", 0, 0, 0, 0x8000 | 80, 0xFF, 0),
+    # AVX-512 operands written as {rn-sae} / {rd-sae} / {ru-sae} / {rz-sae} and {sae}
+    ("RC", C_RC, 0, 0, NOMEM, 0xFF, 0), ("SAE", C_SAE, 0, 0, NOMEM, 0xFF, 0),
 ]
 TY = {t[0]: i for i, t in enumerate(TYPES)}
 
 # roles
 R_NONE, R_REG, R_RM, R_VVVV, R_PLUS, R_IMM, R_IS4 = range(7)
 # flags
-F_W, F_OSZ, F_D64, F_WAIT, F_FIXIMM = 1, 2, 4, 8, 16
+F_W, F_OSZ, F_D64, F_WAIT, F_FIXIMM, F_BCST = 1, 2, 4, 8, 16, 32
 PFXN = {"": 0, "np": 0, "66": 1, "F3": 2, "F2": 3}
 MAPN = {"": 1, "0f": 2, "38": 3, "3a": 4}
 M_DIGIT = lambda d: d
@@ -310,6 +312,7 @@ PRED32 = ("eq lt le unord neq nlt nle ord eq_uq nge ngt false neq_oq ge gt true 
 # packed (XMMWORD) instructions without a 256-bit VEX form
 XMM_ONLY = {"pcmpestri", "pcmpestrm", "pcmpistri", "pcmpistrm", "aesimc", "aeskeygenassist",
             "phminposuw", "maskmovdqu", "dppd"}
+VEX_W1_SSE = {"vgf2p8affineqb", "vgf2p8affineinvqb"}
 SHIFT_BY_XMM = {"psrlw", "psrld", "psrlq", "psraw", "psrad", "psllw", "pslld", "psllq"}
 NARROW = {"cvtpd2ps", "cvtpd2dq", "cvttpd2dq"}           # xmm destination, ymm source
 WIDEN = {"cvtdq2pd", "cvtps2pd"}                         # ymm destination, xmm source
@@ -327,14 +330,15 @@ def vex_from_sse():
             nds = bool(fl & T.S_NDS)
             wq = fl & T.S_WQ
             v = "v" + name if isinstance(name, str) else None
+            vw = F_W if v in VEX_W1_SSE else 0            # VEX.W1 by name
             wide = msz == 128 and (not isinstance(name, str) or name not in XMM_ONLY)
             W = XM.get(msz, "XM128")
 
             def both(types0, types1, roles, flags=0, fiximm=0, prio=0, nm=None):
                 nm = nm or v
-                vform(nm, types0, pfx, mp, opcode, M_R, roles, flags, fiximm, prio, L=0)
+                vform(nm, types0, pfx, mp, opcode, M_R, roles, flags | vw, fiximm, prio, L=0)
                 if types1:
-                    vform(nm, types1, pfx, mp, opcode, M_R, roles, flags, fiximm, prio, L=1)
+                    vform(nm, types1, pfx, mp, opcode, M_R, roles, flags | vw, fiximm, prio, L=1)
 
             if f == "VW":
                 if name in ("movss", "movsd"):
@@ -437,16 +441,16 @@ def vex_only():
             opcode, pfx = key // 4, ("np", "66", "F3", "F2")[key % 4]
             f = FORM_NAME[fm]
             msz = MSZ[fl & 7]
-            names = [(name, 0)]
+            names = [(name, 0, msz)]
             if isinstance(name, str) and fl & T.V_WSD:     # vfmadd132ps / vfmadd132pd
-                names.append((name[:-1] + "d", F_W))
+                names.append((name[:-1] + "d", F_W, 64 if msz == 32 else msz))
             elif isinstance(name, str) and fl & T.S_WQ:    # vpsrlvd / vpsrlvq
-                names.append((name[:-1] + "q", F_W))
-            for nm, wf in names:
+                names.append((name[:-1] + "q", F_W, msz))
+            for nm, wf, nmsz in names:
                 if isinstance(nm, str) and nm in VEX_W1:
                     wf |= F_W
                 ymm_only = isinstance(nm, str) and nm in YMM_ONLY
-                wm = XM.get(msz, "XM128")
+                wm = XM.get(nmsz, "XM128")
                 scalar = msz in (8, 16, 32, 64)
 
                 def both(t0, t1, roles, flags=0):
@@ -498,6 +502,150 @@ vex_only()
 vex_from_sse()
 vform("vldmxcsr", "M32", "np", "0f", 0xAE, 2, "rm")
 vform("vstmxcsr", "M32", "np", "0f", 0xAE, 3, "rm")
+
+# ============================================================================
+# EVEX (AVX-512), from the shared opcode map
+# ============================================================================
+# The EVEX table is keyed by map, opcode, pp, W and group; its entries give
+# the memory size class, flags and an operand shape (see gen_x86_tables.py).
+# Each becomes forms for the vector lengths it can have, with the disp8*N
+# scale in the form (FM +14) and F_BCST where a memory operand can be a
+# broadcast. {k}/{z} masks are accepted on any EVEX form; a trailing
+# {rn-sae}.. / {sae} operand selects the rounding forms.
+EMAP = {2: "0f", 3: "38", 4: "3a"}
+EPFX = {0: "np", 1: "66", 2: "F3", 3: "F2"}
+EV_PRED_INT = ("eq", "lt", "le", None, "neq", "nlt", "nle")
+
+def eform(name, types, pfx, mp, opcode, modrm, roles, flags=0, fiximm=0, prio=0, L=0, n8=1):
+    form(name, types, pfx, mp, opcode, modrm, roles, flags, fiximm, prio, ENC_EVEX, L)
+    forms[-1] = forms[-1] + (n8,)
+
+def ev_mem_bytes(msize, L):
+    vl = 16 << L
+    return {0: vl, 1: 1, 2: 2, 3: 4, 4: 8, 5: vl // 2, 6: vl // 4, 7: vl // 8, 8: 16, 9: 32}[msize]
+
+def vec_rm(nbytes):
+    """register-or-memory type for a W operand of nbytes"""
+    return {1: "XM8", 2: "XM16", 4: "XM32", 8: "XM64", 16: "XM128", 32: "YM256", 64: "ZM512"}[nbytes]
+
+def vec_reg(L):
+    return ("X", "Y", "Z")[L]
+
+def evex_forms():
+    by_slot = {}
+    for key, e in T.evex_tab.items():
+        slot = key & ~0x10                       # same map/opcode/pp/group, either W
+        by_slot.setdefault(slot, {})[(key >> 4) & 1] = e
+    for key in sorted(T.evex_tab):
+        name, msize, flags, shape = T.evex_tab[key]
+        mapn, opcode, pp, w, g = key >> 24, (key >> 16) & 0xFF, (key >> 8) & 3, (key >> 4) & 1, key & 15
+        gpr = "E" in shape or "G" in shape
+        other = by_slot[key & ~0x10].get(1 - w)
+        if w == 1 and other is not None and other[0] == name and not gpr:
+            continue                             # W ignored: NASM writes W0
+        mp, pfx = EMAP[mapn], EPFX[pp]
+        modrm = (g - 8) if g else M_R
+        wf = F_W if w else 0
+        bc = F_BCST if flags & T.EV_BCST else 0
+        elem = 8 if w else 4
+        scalar = bool(flags & T.EV_SCALAR)
+        for L in ((0,) if scalar else (0, 1, 2)):
+            types, roles = [], []
+            nbytes = ev_mem_bytes(msize, L)
+            for c in shape:
+                if c == "V":
+                    types.append("X" if scalar else vec_reg(L)); roles.append("reg")
+                elif c == "Y":
+                    types.append(vec_reg(max(L - 1, 0))); roles.append("reg")
+                elif c == "H":
+                    types.append("X" if scalar else vec_reg(L)); roles.append("v")
+                elif c == "W":
+                    types.append(vec_rm(nbytes)); roles.append("rm")
+                elif c == "E":
+                    if nbytes == 1:
+                        t = "R32M8"
+                    elif nbytes == 2:
+                        t = "R32M16"
+                    else:
+                        t = "RM64" if w else "RM32"
+                    types.append(t); roles.append("rm")
+                elif c == "G":
+                    types.append("R64" if w else "R32"); roles.append("reg")
+                elif c == "K":
+                    types.append("K"); roles.append("reg")
+                elif c == "k":
+                    types.append("K"); roles.append("rm")
+                elif c == "I":
+                    types.append("I8"); roles.append("i")
+            n8 = elem if flags & T.EV_NELEM else nbytes
+            if flags & T.EV_MOVS:                # vmovss/vmovsd: vvvv only between registers
+                wi = shape.index("W")
+                hi = shape.index("H")
+                mem_t = [t for i, t in enumerate(types) if i != hi]
+                mem_t[mem_t.index(types[wi])] = {4: "M32", 8: "M64"}[nbytes]
+                mem_r = [r for i, r in enumerate(roles) if i != hi]
+                eform(name, mem_t, pfx, mp, opcode, modrm, mem_r, wf, L=L, n8=n8)
+                reg_t = list(types)
+                reg_t[wi] = "X"
+                eform(name, reg_t, pfx, mp, opcode, modrm, roles, wf, L=L, n8=n8)
+                continue
+            eform(name, types, pfx, mp, opcode, modrm, roles, wf | bc, L=L, n8=n8,
+                  prio=1 if (name, mapn) == ("vpextrw", 2) else 0)
+            # predicate pseudo-ops: vpcmpltub, vcmpnle_uqps, ...
+            if flags & (T.EV_PINT | T.EV_PFP):
+                if flags & T.EV_PINT:
+                    base, sfx = "vpcmp", name[5:]
+                    preds = [(i, p) for i, p in enumerate(EV_PRED_INT) if p]
+                    if not sfx.startswith("u"):
+                        preds = [(i, p) for i, p in preds if p != "eq"]   # vpcmpeqb is 0F 74
+                else:
+                    base, sfx = "vcmp", name[4:]
+                    preds = list(enumerate(PRED32))
+                for imm, p in preds:
+                    eform(base + p + sfx, types[:-1], pfx, mp, opcode, modrm, roles[:-1],
+                          wf | bc | F_FIXIMM, imm, L=L, n8=n8)
+            # rounding control / suppress-all-exceptions: registers only, full length
+            if flags & (T.EV_ER | T.EV_SAE) and (scalar or L == 2) and "W" in shape:
+                rt = list(types)
+                rt[shape.index("W")] = "X" if scalar else "Z"
+                extra = "RC" if flags & T.EV_ER else "SAE"
+                rr = list(roles)
+                if rr[-1] == "i":                # the imm8 stays last
+                    rt.insert(len(rt) - 1, extra); rr.insert(len(rr) - 1, "-")
+                else:
+                    rt.append(extra); rr.append("-")
+                if len(rt) <= 4:
+                    eform(name, rt, pfx, mp, opcode, modrm, rr, wf, L=L, n8=n8)
+                if flags & T.EV_ER and not flags & T.EV_SAE:
+                    pass
+
+evex_forms()
+
+# ---- the VEX mask-register instructions (kmov, kand, kortest, ...) ----
+def kop_forms():
+    for m, code, pp, w, n, shape in T.kops:
+        mp, pfx = EMAP[m], EPFX[pp]
+        wf = F_W if w else 0
+        if shape == 1:
+            vform(n, "K K K", pfx, mp, code, M_R, "reg v rm", wf, L=1)
+        elif shape == 2:
+            vform(n, "K K", pfx, mp, code, M_R, "reg rm", wf)
+            vform(n, ["K", {"b": "M8", "w": "M16", "d": "M32", "q": "M64"}[n[-1]]], pfx, mp, code,
+                  M_R, "reg rm", wf)
+        elif shape == 3:
+            vform(n, [{"b": "M8", "w": "M16", "d": "M32", "q": "M64"}[n[-1]], "K"], pfx, mp, code,
+                  M_R, "rm reg", wf)
+        elif shape == 4:
+            vform(n, ["K", "R64" if w else "R32"], pfx, mp, code, M_R, "reg rm", wf)
+        elif shape == 5:
+            vform(n, ["R64" if w else "R32", "K"], pfx, mp, code, M_R, "reg rm", wf)
+        elif shape == 6:
+            vform(n, "K K", pfx, mp, code, M_R, "reg rm", wf)
+        elif shape == 7:
+            vform(n, "K K I8", pfx, mp, code, M_R, "reg rm i", wf)
+
+kop_forms()
+
 
 
 # ============================================================================
@@ -570,7 +718,7 @@ def render():
         if mid not in by_id:
             by_id[mid] = []
             order.append(mid)
-        by_id[mid].append((f[9], i, f))
+        by_id[mid].append((f[10] == ENC_EVEX, f[9], i, f))
     out = [
         "; " + "=" * 76,
         "; GENERATED by scripts/gen_x86_enc.py - do not edit by hand.",
@@ -595,7 +743,7 @@ def render():
     table, index = [], {}
     for mid in sorted(order):
         index[mid] = len(table) + 1
-        for _, _, f in sorted(by_id[mid], key=lambda x: (x[0], x[1])):
+        for _, _, _, f in sorted(by_id[mid], key=lambda x: (x[0], x[1], x[2])):
             table.append((mid, f))
     maxid = max(index)
     out += ["", "; mnemonic ID -> first form + 1 (0 = none)", "x86_enc_index:"]
@@ -603,14 +751,16 @@ def render():
         out.append("    dw " + ", ".join(str(index.get(j, 0)) for j in range(i, min(i + 16, maxid + 1))))
     out += ["", "global x86_enc_maxid", "x86_enc_maxid: dd %d        ; highest mnemonic ID in the index" % maxid, "",
             "; forms, 16 bytes each", "x86_enc_table:"]
-    for mid, (name, types, pfx, mp, opcode, modrm, roles, flags, fiximm, _, enc, L) in table:
+    for mid, f in table:
+        name, types, pfx, mp, opcode, modrm, roles, flags, fiximm, _, enc, L = f[:12]
+        n8 = f[12] if len(f) > 12 else 1
         ts = (types + [0, 0, 0, 0])[:4]
         rl = 0
         for i, r in enumerate(roles):
             rl |= r << (3 * i)
         out.append("    dw %d\n    db %d, %d, %d, %d, 0x%02x, %d, 0x%02x, 0x%02x\n    dw 0x%04x\n"
-                   "    db 0x%02x, %d, 0, 0x%02x      ; %s %s"
-                   % (mid, ts[0], ts[1], ts[2], ts[3], pfx | enc << 4, mp, opcode, modrm, rl, flags, L, fiximm,
+                   "    db 0x%02x, %d, %d, 0x%02x      ; %s %s"
+                   % (mid, ts[0], ts[1], ts[2], ts[3], pfx | enc << 4, mp, opcode, modrm, rl, flags, L, n8, fiximm,
                       name, " ".join(TYPES[t][0] for t in types)))
     out.append("    dw 0")
     return "\n".join(out) + "\n", len(table)
