@@ -1458,6 +1458,10 @@ str_is_ident_char:
     je      .yes
     cmp     dil, '.'
     je      .yes
+    cmp     dil, '@'                   ; NASM: ..@x, and names with @ in them
+    je      .yes
+    cmp     dil, '$'
+    je      .yes
     xor     rax, rax
     ret
 .yes_pop:
