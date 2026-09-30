@@ -270,6 +270,10 @@
 %define TOK_SEMICOLON          0x46        ; ; semicolon punctuation
 %define TOK_DOT                0x47        ; . dot/period punctuation
 %define TOK_COLONCOLON         0x48        ; :: namespace colon operator
+%define TOK_SAR                0x49        ; >>> arithmetic shift right
+%define TOK_CMP3               0x4A        ; <=> three-way comparison
+%define TOK_LXOR               0x4B        ; ^^ logical exclusive or
+%define TOK_DPERCENT           0x4C        ; %% signed modulo
 
 ; ============================================================================
 ; SYMBOL KINDS AND VISIBILITY
@@ -1400,6 +1404,7 @@
 %define MACRO_ARG_CAPACITY     64          ; token slots reserved for one invocation's arguments
 %define MACRO_FLAG_FUNC        0x01        ; %define NAME(a,b): arguments in parentheses
 %define MACRO_FLAG_GREEDY      0x02        ; %macro m 1+: the last parameter takes the rest
+%define MACRO_FLAG_DEFINE      0x04        ; a single-line macro (%define family)
 %define DEFINE_MAX_TOKENS      256         ; tokens in one %define body
 %define LEX_INTERP_BUF         256         ; work buffer for %[...] identifier interpolation
 %define PREP_CTX_MAX           64          ; maximum nesting depth of %push contexts
