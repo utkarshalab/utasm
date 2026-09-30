@@ -4,7 +4,7 @@
 ; ============================================================================
 ;
 ; x86-64 mnemonic names as a packed, NUL-separated list, used only for
-; "did you mean" hints (error/hints.s). 1759 unique names.
+; "did you mean" hints (error/hints.s). 1831 unique names.
 
 mnemonic_names_x64:
     db "aaa", 0, "aad", 0, "aam", 0, "aas", 0, "adc", 0, "adcx", 0, "add", 0, "addpd", 0
@@ -226,5 +226,14 @@ mnemonic_names_x64:
     db "vpunpcklqdq", 0, "vpunpcklwd", 0, "vpxor", 0, "vrcpps", 0, "vrcpss", 0, "vroundpd", 0, "vroundps", 0, "vroundsd", 0
     db "vroundss", 0, "vrsqrtps", 0, "vrsqrtss", 0, "vshufpd", 0, "vshufps", 0, "vsqrtpd", 0, "vsqrtps", 0, "vsqrtsd", 0
     db "vsqrtss", 0, "vsubpd", 0, "vsubps", 0, "vsubsd", 0, "vsubss", 0, "vucomisd", 0, "vucomiss", 0, "vunpckhpd", 0
-    db "vunpckhps", 0, "vunpcklpd", 0, "vunpcklps", 0, "vxorpd", 0, "vxorps", 0, "vldmxcsr", 0, "vstmxcsr", 0
+    db "vunpckhps", 0, "vunpcklpd", 0, "vunpcklps", 0, "vxorpd", 0, "vxorps", 0, "vldmxcsr", 0, "vstmxcsr", 0, "vbroadcastf32x2", 0
+    db "vbroadcastf32x4", 0, "vbroadcastf32x8", 0, "vbroadcastf64x2", 0, "vbroadcastf64x4", 0, "vbroadcasti32x2", 0, "vbroadcasti32x4", 0, "vbroadcasti32x8", 0, "vbroadcasti64x2", 0
+    db "vbroadcasti64x4", 0, "vgf2p8affineinvqb", 0, "vgf2p8affineqb", 0, "vgf2p8mulb", 0, "vpabsq", 0, "vpandd", 0, "vpandnd", 0, "vpandnq", 0
+    db "vpandq", 0, "vpcmpequb", 0, "vpcmpequd", 0, "vpcmpequq", 0, "vpcmpequw", 0, "vpcmpleb", 0, "vpcmpled", 0, "vpcmpleq", 0
+    db "vpcmpleub", 0, "vpcmpleud", 0, "vpcmpleuq", 0, "vpcmpleuw", 0, "vpcmplew", 0, "vpcmpltb", 0, "vpcmpltd", 0, "vpcmpltq", 0
+    db "vpcmpltub", 0, "vpcmpltud", 0, "vpcmpltuq", 0, "vpcmpltuw", 0, "vpcmpltw", 0, "vpcmpneqb", 0, "vpcmpneqd", 0, "vpcmpneqq", 0
+    db "vpcmpnequb", 0, "vpcmpnequd", 0, "vpcmpnequq", 0, "vpcmpnequw", 0, "vpcmpneqw", 0, "vpcmpnleb", 0, "vpcmpnled", 0, "vpcmpnleq", 0
+    db "vpcmpnleub", 0, "vpcmpnleud", 0, "vpcmpnleuq", 0, "vpcmpnleuw", 0, "vpcmpnlew", 0, "vpcmpnltb", 0, "vpcmpnltd", 0, "vpcmpnltq", 0
+    db "vpcmpnltub", 0, "vpcmpnltud", 0, "vpcmpnltuq", 0, "vpcmpnltuw", 0, "vpcmpnltw", 0, "vpmaxsq", 0, "vpmaxuq", 0, "vpminsq", 0
+    db "vpminuq", 0, "vpmullq", 0, "vpord", 0, "vporq", 0, "vpsraq", 0, "vpxord", 0, "vpxorq", 0
 mnemonic_names_x64_end:
