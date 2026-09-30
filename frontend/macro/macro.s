@@ -1247,6 +1247,74 @@ prep_handle_directive:
     test    rax, rax
     jz      .do_undef
 
+    ; the names below dispatch through dir_more (name, handler, 16 bytes)
+    lea     r8, [rel dir_more]
+.more:
+    cmp     byte [r8], 0
+    je      .more_done
+    push    r8
+    mov     rdi, [r12 + TOKEN_value]
+    mov     rsi, r8
+    call    str_cmp
+    pop     r8
+    test    rax, rax
+    jz      .more_hit
+    add     r8, 16
+    jmp     .more
+.more_hit:
+    movzx   eax, byte [r8 + 15]            ; handler number
+    cmp     eax, 4
+    jb      .more_cond                     ; %ifidn family: also while skipping
+    cmp     byte [rbx + PREP_skip_depth], 0
+    jne     .done_cleanup
+.more_cond:
+    lea     rcx, [rel .more_table]
+    jmp     [rcx + rax*8]
+.more_table:
+    dq      .m_ifidn, .m_ifnidn, .m_ifnidni, .m_elifidn
+    dq      .m_warning, .m_fatal, .m_exitrep, .m_strcat, .m_deftok
+.m_ifidn:
+    mov     rdi, rbx
+    call    prep_handle_ifidn
+    jmp     .done_cleanup
+.m_ifnidn:
+    mov     rdi, rbx
+    call    prep_handle_ifnidn
+    jmp     .done_cleanup
+.m_ifnidni:
+    mov     rdi, rbx
+    call    prep_handle_ifnidni
+    jmp     .done_cleanup
+.m_elifidn:
+    mov     rdi, rbx
+    call    prep_handle_elifidn
+    jmp     .done_cleanup
+.m_warning:
+    mov     rdi, rbx
+    xor     esi, esi
+    call    prep_handle_message
+    jmp     .done_cleanup
+.m_fatal:
+    mov     rdi, rbx
+    mov     esi, 1
+    call    prep_handle_message
+    jmp     .done_cleanup
+.m_exitrep:
+    mov     rdi, rbx
+    call    prep_handle_exitrep
+    jmp     .done_cleanup
+.m_strcat:
+    mov     rdi, rbx
+    xor     esi, esi
+    call    prep_handle_strtok
+    jmp     .done_cleanup
+.m_deftok:
+    mov     rdi, rbx
+    mov     esi, 1
+    call    prep_handle_strtok
+    jmp     .done_cleanup
+.more_done:
+
     mov     rdi, [r12 + TOKEN_value]
     lea     rsi, [dir_if]
     call    str_cmp
@@ -1754,6 +1822,20 @@ dir_inc_short: db "inc", 0
 dir_xdefine:  db "xdefine", 0       ; %define is already expanded eagerly
 dir_undef:    db "undef", 0
 dir_idefine:  db "idefine", 0       ; treated as %define
+; more directives: 15-byte name + handler number (see .more_table)
+dir_more:     db "ifidn", 0, 0,0,0,0,0,0,0,0,0, 0
+              db "ifnidn", 0, 0,0,0,0,0,0,0,0, 1
+              db "ifnidni", 0, 0,0,0,0,0,0,0, 2
+              db "elifidn", 0, 0,0,0,0,0,0,0, 3
+              db "warning", 0, 0,0,0,0,0,0,0, 4
+              db "fatal", 0, 0,0,0,0,0,0,0,0,0, 5
+              db "exitrep", 0, 0,0,0,0,0,0,0, 6
+              db "strcat", 0, 0,0,0,0,0,0,0,0, 7
+              db "deftok", 0, 0,0,0,0,0,0,0,0, 8
+              db 0
+msg_warning:  db "warning: ", 0
+msg_fatal:    db "error: ", 0
+msg_space:    db " ", 0
 ; "0".."9" for the %N references of a function-like %define
 def_digits:   db "0", 0, "1", 0, "2", 0, "3", 0, "4", 0, "5", 0, "6", 0, "7", 0, "8", 0, "9", 0
 undef_name:   db 0                  ; the name of an %undef'd entry
@@ -2001,7 +2083,8 @@ prep_read_idn_pair:
     call    preprocessor_next_token
     test    rax, rax
     jnz     .fail
-    mov     r12, [rdx + TOKEN_value]
+    call    prep_token_text            ; 'text' is a packed character constant
+    mov     r12, rax
 
     ; separator
     mov     rdi, rbx
@@ -2013,7 +2096,8 @@ prep_read_idn_pair:
     call    preprocessor_next_token
     test    rax, rax
     jnz     .fail
-    mov     r13, [rdx + TOKEN_value]
+    call    prep_token_text
+    mov     r13, rax
 
     test    r12, r12
     jz      .not_equal
@@ -2022,7 +2106,13 @@ prep_read_idn_pair:
 
     mov     rdi, r12
     mov     rsi, r13
+    cmp     byte [rel idn_case], 0
+    jne     .case_sensitive
     call    prep_str_cmp_ci
+    jmp     .compared
+.case_sensitive:
+    call    str_cmp                    ; %ifidn / %ifnidn
+.compared:
     test    rax, rax
     jnz     .not_equal
 
@@ -3049,6 +3139,314 @@ prep_icase_buf:
     xor     eax, eax
     ret
 
+; ---- %ifidn family ----------------------
+;
+; %ifidn / %ifnidn compare their two operands as text, case-sensitively;
+; %ifidni / %ifnidni ignore case. prep_read_idn_pair reads the pair
+; (idn_case selects the comparison) and returns RDX = 1 when they match.
+;
+prep_handle_ifidn:
+    mov     byte [rel idn_case], 1
+    push    rbx
+    mov     rbx, rdi
+    call    prep_read_idn_pair
+    test    rax, rax
+    jnz     .done
+    xor     esi, esi
+    test    rdx, rdx
+    setne   sil
+    mov     rdi, rbx
+    call    prep_cond_enter
+.done:
+    mov     byte [rel idn_case], 0
+    pop     rbx
+    ret
+
+prep_handle_ifnidn:
+    mov     byte [rel idn_case], 1
+    jmp     prep_ifnidn_common
+prep_handle_ifnidni:
+    mov     byte [rel idn_case], 0
+prep_ifnidn_common:
+    push    rbx
+    mov     rbx, rdi
+    call    prep_read_idn_pair
+    test    rax, rax
+    jnz     .done
+    xor     esi, esi
+    test    rdx, rdx
+    sete    sil                            ; the negation
+    mov     rdi, rbx
+    call    prep_cond_enter
+.done:
+    mov     byte [rel idn_case], 0
+    pop     rbx
+    ret
+
+prep_handle_elifidn:
+    mov     byte [rel idn_case], 1
+    push    rbx
+    mov     rbx, rdi
+    call    prep_read_idn_pair
+    test    rax, rax
+    jnz     .done
+    xor     esi, esi
+    test    rdx, rdx
+    setne   sil
+    mov     rdi, rbx
+    call    prep_cond_branch
+.done:
+    mov     byte [rel idn_case], 0
+    pop     rbx
+    ret
+
+; ---- %warning / %fatal ------------------
+;
+; Print the rest of the line as a message on stderr: "warning: ..." and go
+; on, or "error: ..." and stop (%fatal).
+; Input    : rdi = PrepState, esi = 0 warning / 1 fatal
+;
+prep_handle_message:
+    push    rbx
+    push    r12
+    push    r13
+    mov     rbx, rdi
+    mov     r13d, esi
+    mov     rdi, 2
+    lea     rsi, [rel msg_warning]
+    test    r13d, r13d
+    jz      .head
+    lea     rsi, [rel msg_fatal]
+.head:
+    call    print_str
+    xor     r12d, r12d                     ; words printed
+.word:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .end
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .end
+    cmp     eax, TOK_EOF
+    je      .end
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_IDENT
+    je      .text
+    cmp     eax, TOK_STRING
+    je      .text
+    cmp     eax, TOK_CHAR
+    jne     .word
+.text:
+    call    prep_token_text
+    test    rax, rax
+    jz      .word
+    push    rax
+    test    r12d, r12d
+    jz      .no_space
+    mov     rdi, 2
+    lea     rsi, [rel msg_space]
+    call    print_str
+.no_space:
+    pop     rsi
+    mov     rdi, 2
+    call    print_str
+    inc     r12d
+    jmp     .word
+.end:
+    mov     rdi, 2
+    lea     rsi, [rel msg_newline]
+    call    print_str
+    xor     eax, eax
+    test    r13d, r13d
+    jz      .ret
+    mov     rax, EXIT_ERROR                ; %fatal stops the assembly
+.ret:
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+; ---- %exitrep ---------------------------
+;
+; Leave the innermost %rep: this pass is its last, and the rest of its body
+; is skipped. The %if blocks the rest of the body would have closed are
+; closed now, so the conditional stack stays balanced.
+; Input    : rdi = PrepState
+;
+prep_handle_exitrep:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    mov     rbx, rdi
+    mov     rdi, rbx
+    call    prep_drain_line                ; the line ends before the skip
+    mov     rax, [rbx + PREP_ctx]
+    mov     r12, [rax + ASMCTX_mac_exp]
+.find:
+    test    r12, r12
+    jz      .none                          ; not inside a %rep
+    mov     rax, [r12 + MACROEXP_macro]
+    cmp     qword [rax + MACRO_name], 0    ; a %rep body is an anonymous macro
+    je      .found
+    mov     r12, [r12 + MACROEXP_parent]
+    jmp     .find
+.found:
+    ; count the %endif lines left in the body without their %if
+    mov     r13, [r12 + MACROEXP_body]
+    xor     r14d, r14d                     ; open %ifs met in the rest
+    mov     byte [rel exit_open], 0
+.scan:
+    mov     rax, [r12 + MACROEXP_macro]
+    cmp     r13d, [rax + MACRO_ntokens]
+    jae     .close
+    mov     rcx, r13
+    imul    rcx, rcx, TOKEN_SIZE
+    add     rcx, [rax + MACRO_tokens]
+    inc     r13
+    cmp     byte [rcx + TOKEN_kind], TOK_DIRECTIVE
+    jne     .scan
+    mov     rdi, [rcx + TOKEN_value]
+    test    rdi, rdi
+    jz      .scan
+    cmp     byte [rdi], 'i'
+    jne     .not_if
+    cmp     byte [rdi + 1], 'f'
+    jne     .not_if
+    inc     r14d                           ; %if, %ifdef, %ifidn, ...
+    jmp     .scan
+.not_if:
+    push    rdi
+    lea     rsi, [rel dir_endif]
+    call    str_cmp
+    pop     rdi
+    test    rax, rax
+    jnz     .scan
+    test    r14d, r14d
+    jz      .unmatched
+    dec     r14d
+    jmp     .scan
+.unmatched:
+    inc     byte [rel exit_open]
+    jmp     .scan
+.close:
+    movzx   r14d, byte [rel exit_open]
+.close_one:
+    test    r14d, r14d
+    jz      .end_loop
+    mov     rdi, rbx
+    call    prep_handle_endif
+    dec     r14d
+    jmp     .close_one
+.end_loop:
+    mov     dword [r12 + MACROEXP_rep_count], 1
+    mov     rax, [r12 + MACROEXP_macro]
+    mov     eax, [rax + MACRO_ntokens]
+    mov     [r12 + MACROEXP_body], rax
+    xor     eax, eax
+    jmp     .ret
+.none:
+    mov     rax, EXIT_UNEXPECTED_TOKEN
+.ret:
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+; ---- %strcat / %deftok ------------------
+;
+; "%strcat NAME 'ab', "cd"" defines NAME as the string "abcd";
+; "%deftok NAME 'text'" defines NAME as the token the text spells (an
+; identifier or a number).
+; Input    : rdi = PrepState, esi = 0 strcat / 1 deftok
+;
+prep_handle_strtok:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    mov     rbx, rdi
+    mov     r14d, esi
+    mov     byte [rel prep_noexpand], 1
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     byte [rel prep_noexpand], 0
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .bad
+    mov     r12, [rdx + TOKEN_value]       ; name
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, 1024
+    call    arena_alloc                    ; zeroed: the text ends in NUL
+    test    rax, rax
+    jnz     .ret
+    mov     r13, rdx                       ; the text
+.part:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .built
+    cmp     eax, TOK_EOF
+    je      .built
+    cmp     eax, TOK_COMMA
+    je      .part
+    cmp     eax, TOK_STRING
+    je      .str_part
+    cmp     eax, TOK_CHAR
+    jne     .bad
+.str_part:
+    call    prep_token_text
+    test    rax, rax
+    jz      .bad
+    mov     rdi, r13
+    mov     rsi, rax
+    call    str_concat                     ; the parts, one after the other
+    jmp     .part
+.built:
+    ; one token: a string (%strcat) or what the text spells (%deftok)
+    lea     rdi, [rel def_scratch]
+    mov     ecx, TOKEN_SIZE / 8
+    xor     eax, eax
+    rep stosq
+    mov     byte [rel def_scratch + TOKEN_tag], TAG_TOKEN
+    mov     byte [rel def_scratch + TOKEN_kind], TOK_STRING
+    mov     [rel def_scratch + TOKEN_value], r13
+    mov     rdi, r13
+    call    str_len
+    mov     [rel def_scratch + TOKEN_len], ax
+    test    r14d, r14d
+    jz      .store
+    mov     byte [rel def_scratch + TOKEN_kind], TOK_IDENT
+    movzx   eax, byte [r13]
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .store
+    mov     byte [rel def_scratch + TOKEN_kind], TOK_NUMBER  ; kept as text
+.store:
+    mov     byte [rel def_nparams], 0
+    mov     byte [rel def_func], 0
+    mov     r15d, 1
+    call    prep_define_store
+    jmp     .ret
+.bad:
+    mov     rax, EXIT_DEFINE
+.ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
 ; ---- prep_handle_def ------------------
 ;
 ; prep_handle_def
@@ -3220,6 +3618,34 @@ prep_handle_def:
     ; 4. A MACRO with the captured tokens, under NAME
 .store:
     mov     byte [rel prep_noexpand], 0
+    call    prep_define_store
+    jmp     .ret
+
+.bad:
+    mov     rax, EXIT_DEFINE
+.fail:
+    mov     byte [rel prep_noexpand], 0
+.ret:
+    mov     byte [rel def_eager], 0
+    mov     byte [rel def_icase], 0
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+; ---- prep_define_store ------------------
+;
+; prep_define_store
+; Stores a %define: a MACRO holding the tokens in def_scratch, under the
+; name. A redefinition replaces the earlier body.
+; Input    : rbx = PrepState, r12 = name, r15d = token count;
+;            def_nparams / def_func describe the parameters
+; Output   : rax = EXIT_OK or error
+;
+prep_define_store:
+    push    r13
     mov     rdi, [rbx + PREP_arena]
     mov     rsi, MACRO_SIZE
     call    arena_alloc
@@ -3271,20 +3697,9 @@ prep_handle_def:
     mov     rsi, rsp
     call    symbol_add
     add     rsp, SYMBOL_SIZE
-    jmp     .ret
-
-.bad:
-    mov     rax, EXIT_DEFINE
 .fail:
-    mov     byte [rel prep_noexpand], 0
 .ret:
-    mov     byte [rel def_eager], 0
-    mov     byte [rel def_icase], 0
-    pop     r15
-    pop     r14
     pop     r13
-    pop     r12
-    pop     rbx
     ret
 
 ; ---- prep_handle_if ---------------------
@@ -4006,3 +4421,5 @@ def_scratch:   resb DEFINE_MAX_TOKENS * TOKEN_SIZE
 def_icase:     resb 1              ; 1: %idefine
 idefine_count: resd 1              ; %idefine names so far
 icase_buf:     resb 256            ; a name's case-insensitive key
+idn_case:      resb 1              ; 1: %ifidn compares case-sensitively
+exit_open:     resb 1              ; %if blocks %exitrep has to close
