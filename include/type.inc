@@ -341,7 +341,8 @@ struc OPERAND
     field pad1,       4       ; padding to align imm to 8-byte boundary
     field imm,        8       ; immediate or displacement value
     field sym,        8       ; pointer to Symbol
-    field pad2,       8       ; alignment padding to maintain multiple of 8
+    field vsib,       1       ; vector index register: 1 xmm, 2 ymm, 3 zmm (gathers)
+    field pad2,       7       ; alignment padding to maintain multiple of 8
 endstruc
 
 ; ============================================================================
