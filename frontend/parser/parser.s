@@ -420,6 +420,44 @@ parser_parse_instruction:
     jmp     .get_mnemonic
 
 .unknown_mnemonic:
+    ; NASM also takes a label without its colon when an instruction or data
+    ; directive follows it ("msg db 'hi'") or it is alone on the line
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .no_label
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .colonless
+    cmp     eax, TOK_EOF
+    je      .colonless
+    cmp     eax, TOK_IDENT
+    jne     .no_label
+    mov     rsi, [rdx + TOKEN_value]
+    call    parser_is_statement_word
+    test    eax, eax
+    jz      .no_label
+.colonless:
+    mov     rsi, [r12 + TOKEN_value]
+    cmp     byte [rsi], '.'
+    jne     .colonless_global
+    cmp     byte [rsi + 1], '.'
+    je      .colonless_define             ; "..@N_x": a macro-local
+    mov     rdi, [rbx + PREP_ctx]
+    mov     r14, [rdi + ASMCTX_last_global]
+    test    r14, r14
+    jz      .colonless_define             ; before any global label
+    call    parser_concat_local_name
+    mov     rsi, rdx
+    jmp     .colonless_define
+.colonless_global:
+    mov     rdi, [rbx + PREP_ctx]
+    mov     [rdi + ASMCTX_last_global], rsi
+.colonless_define:
+    call    parser_define_label
+    check_err
+    jmp     .get_mnemonic
+.no_label:
     ; Remember the closest known instruction/directive; utasm.s prints it
     ; as a hint after the "Parser error" line.
     mov     rdi, [r12 + TOKEN_value]
@@ -2085,6 +2123,159 @@ parser_pos_label:
     ret
 
 ;*
+; * [parser_is_statement_word]
+; * Purpose: Is this word an instruction or a data directive? Used to take
+; *          "msg db 'hi'" / "top nop" as a label without its colon.
+; * Input  : RSI = word, RBX = PrepState
+; * Output : EAX = 1 or 0
+; ;
+parser_is_statement_word:
+    push    r12
+    push    r13
+    mov     r12, rsi
+    lea     r13, [rel stmt_words]
+.word:
+    cmp     byte [r13], 0
+    je      .mnemonic
+    mov     rdi, r12
+    mov     rsi, r13
+    call    str_cmp
+    test    rax, rax
+    jz      .yes
+.skip:
+    inc     r13
+    cmp     byte [r13 - 1], 0
+    jne     .skip
+    jmp     .word
+.mnemonic:
+    hash_fnv1a_64 r12, r13
+    call    parser_get_arch_tables         ; rax = mnemonic table
+    mov     rdi, r13
+    mov     rsi, rax
+    call    parser_lookup_mnemonic
+    test    rax, rax
+    jnz     .yes
+    xor     eax, eax
+    jmp     .ret
+.yes:
+    mov     eax, 1
+.ret:
+    pop     r13
+    pop     r12
+    ret
+
+;*
+; * [parser_skip_to_eol]
+; * Purpose: Skip the rest of the statement (a directive utasm accepts but
+; *          has nothing to do for, such as "cpu").
+; * Input  : RBX = PrepState
+; ;
+parser_skip_to_eol:
+.next:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_NEWLINE
+    je      .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_EOF
+    je      .ret
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    jmp     .next
+.ret:
+    xor     eax, eax
+    ret
+
+;*
+; * [parser_section_attrs]
+; * Purpose: NASM's section attributes after the name: progbits / nobits,
+; *          alloc / noalloc, exec / noexec, write / nowrite, align=N.
+; * Input  : RBX = PrepState, R13 = SECTION
+; * Output : RAX = OK or an error
+; ;
+parser_section_attrs:
+    push    r12
+.next:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .done
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     r12, [rdx + TOKEN_value]
+    mov     rdi, r12
+    lea     rsi, [rel attr_progbits]
+    call    str_cmp
+    test    rax, rax
+    jnz     .not_progbits
+    mov     dword [r13 + SECTION_elf_type], SHT_PROGBITS
+    jmp     .next
+.not_progbits:
+    mov     rdi, r12
+    lea     rsi, [rel attr_nobits]
+    call    str_cmp
+    test    rax, rax
+    jnz     .not_nobits
+    mov     dword [r13 + SECTION_elf_type], SHT_NOBITS
+    jmp     .next
+.not_nobits:
+    lea     r8, [rel attr_flag_names]
+    xor     ecx, ecx
+.flag:
+    cmp     ecx, 6
+    jae     .not_flag
+    push    rcx
+    push    r8
+    mov     rdi, r12
+    mov     rsi, r8
+    call    str_cmp
+    pop     r8
+    pop     rcx
+    test    rax, rax
+    jz      .flag_hit
+    add     r8, 8
+    inc     ecx
+    jmp     .flag
+.flag_hit:
+    lea     rax, [rel attr_flag_bits]
+    movzx   eax, word [rax + rcx*2]
+    test    ecx, 1
+    jnz     .flag_off
+    or      [r13 + SECTION_flags], ax      ; alloc / exec / write
+    jmp     .next
+.flag_off:
+    not     eax
+    and     [r13 + SECTION_flags], ax      ; noalloc / noexec / nowrite
+    jmp     .next
+.not_flag:
+    mov     rdi, r12
+    lea     rsi, [rel attr_align]
+    call    str_cmp
+    test    rax, rax
+    jnz     .bad                           ; an attribute NASM does not have
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; "="
+    cmp     byte [rdx + TOKEN_kind], TOK_EQUAL
+    jne     .bad
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .ret
+    mov     [r13 + SECTION_align], rdx
+    jmp     .next
+.bad:
+    mov     rax, EXIT_UNEXPECTED_TOKEN
+    jmp     .ret
+.done:
+    xor     eax, eax
+.ret:
+    pop     r12
+    ret
+
+;*
 ; * [parser_seg_override]
 ; * Purpose: Record a segment override written inside brackets ([fs:0x28]).
 ; * Input  : RSI = register name, R12 = OPERAND
@@ -2692,7 +2883,10 @@ parser_handle_pseudo_op:
     mov     rbx, rdi               ; rbx = PrepState
     mov     r12, rsi               ; r12 = mnemonic string
 
-    ; 1. Data Directives (db, dw, dd, dq)
+    ; 1. Data Directives (db, dw, dd, dq) - the whole word, not a prefix
+    ;    ("dbg" or "dword_table" as a statement word is not db / dw)
+    cmp     byte [r12 + 2], 0
+    jne     .not_data
     mov     ax, [r12]
     IF ax, e, 'db'
         mov     rdi, rbx
@@ -2712,6 +2906,7 @@ parser_handle_pseudo_op:
         jmp     .check_handler_result
         ENDIF
 
+.not_data:
     ; 1.4 "times N <directive>" repeats the rest of the line N times
     mov     rdi, r12
     lea     rsi, [rel str_times]
@@ -2723,6 +2918,8 @@ parser_handle_pseudo_op:
         ENDIF
 
     ; 1.5 Reservation Directives (resb, resw, resd, resq)
+    cmp     byte [r12 + 4], 0
+    jne     .not_res
     mov     eax, [r12]
     IF eax, e, 'resb'
         mov     rdi, rbx
@@ -2746,7 +2943,27 @@ parser_handle_pseudo_op:
         jmp     .check_handler_result
         ENDIF
 
-    ; 2. Section Directive
+.not_res:
+    ; 2. Section Directive ("segment" is NASM's other name for it)
+    mov     rdi, r12
+    lea     rsi, [rel str_segment]
+    call    str_cmp
+    test    rax, rax
+    jnz     .not_segment
+    mov     rdi, rbx
+    call    parser_handle_section_directive
+    jmp     .check_handler_result
+.not_segment:
+    ; "cpu <level>": utasm encodes whatever it is given
+    mov     rdi, r12
+    lea     rsi, [rel str_cpu]
+    call    str_cmp
+    test    rax, rax
+    jnz     .not_cpu
+    call    parser_skip_to_eol
+    mov     rax, 1
+    jmp     .check_handler_result
+.not_cpu:
     mov     rdi, r12
     lea     rsi, [rel str_section]
     extern  str_cmp
@@ -3695,6 +3912,7 @@ parser_handle_section_directive:
     push    r15
     
     ; Get section name token
+    mov     rdi, rbx
     call    preprocessor_next_token
     check_err
     mov     r12, rdx               ; r12 = token (.text, .data, etc)
@@ -3726,6 +3944,7 @@ parser_handle_section_directive:
     IF r15, ne, OK
         mov     rdi, [r12 + TOKEN_value]
         mov     dword [r13 + SECTION_elf_type], SHT_PROGBITS ; Default
+        mov     word [r13 + SECTION_flags], SHF_ALLOC  ; NASM's for other names
         
         ; .text -> AX
         lea     rsi, [str_text]
@@ -3764,7 +3983,11 @@ parser_handle_section_directive:
                         ENDIF
                         ENDIF
 
-    ; 3. Reset last_global on section change (Removed to support local labels after section directives)
+    ; 3. NASM attributes: progbits, nobits, alloc, exec, write, align=N
+    call    parser_section_attrs
+    check_err
+
+    ; Reset last_global on section change (Removed to support local labels after section directives)
     
     
     ; 3. Check for attributes (comma + string)
@@ -3814,8 +4037,13 @@ parser_handle_section_directive:
                 jmp     .done
                 ENDIF
             
-            ; A92: Validate flag consistency for duplicate declarations
+            ; A92: Validate flag consistency for duplicate declarations; a
+            ; new section takes the flags over the defaults for its name
             movzx   ecx, word [r13 + SECTION_flags]
+            cmp     r15, OK
+            je      .check_flags
+            xor     ecx, ecx
+        .check_flags:
             IF ecx, ne, 0
                 IF ecx, ne, eax
                     mov     rax, EXIT_INVALID_SECTION_FLAGS
@@ -3830,11 +4058,13 @@ parser_handle_section_directive:
             jz      .no_group
             
             ; Expect comma, then signature name
+            mov     rdi, rbx
             call    preprocessor_next_token
             IF byte [rdx + TOKEN_kind], ne, TOK_COMMA
                 mov     rax, EXIT_UNEXPECTED_TOKEN
                 jmp     .done
                 ENDIF
+            mov     rdi, rbx
             call    preprocessor_next_token
             IF byte [rdx + TOKEN_kind], ne, TOK_IDENT
                 mov     rax, EXIT_UNEXPECTED_TOKEN
@@ -3894,9 +4124,12 @@ parser_handle_section_directive:
 
         .parse_comdat:
             ; 3.2 Optional COMDAT keyword
+            mov     rdi, rbx
             call    preprocessor_peek_token
             IF byte [rdx + TOKEN_kind], e, TOK_COMMA
+                mov     rdi, rbx
                 call    preprocessor_next_token
+                mov     rdi, rbx
                 call    preprocessor_next_token
                 mov     rdi, [rdx + TOKEN_value]
                 lea     rsi, [str_comdat]
@@ -3910,9 +4143,12 @@ parser_handle_section_directive:
         ENDIF
 
         ; 4. Optional: Type (@progbits, etc)
+        mov     rdi, rbx
         call    preprocessor_peek_token
         IF byte [rdx + TOKEN_kind], e, TOK_COMMA
+            mov     rdi, rbx
             call    preprocessor_next_token
+            mov     rdi, rbx
             call    preprocessor_next_token
             ; Check for @progbits, @nobits, etc
             ; For now, support @ progbits as separate or joined
@@ -4139,6 +4375,18 @@ str_local:     db "local", 0
 str_align:     db "align", 0
 str_p2align:   db "p2align", 0
 str_section:   db "section", 0
+str_segment:   db "segment", 0
+str_cpu:       db "cpu", 0
+; words that make the name before them a label without its colon
+stmt_words:    db "db", 0, "dw", 0, "dd", 0, "dq", 0, "dt", 0, "resb", 0, "resw", 0
+               db "resd", 0, "resq", 0, "rest", 0, "times", 0, "incbin", 0, 0
+attr_progbits: db "progbits", 0
+attr_nobits:   db "nobits", 0
+attr_align:    db "align", 0
+; alloc/noalloc, exec/noexec, write/nowrite: 8 bytes each, even = set
+attr_flag_names: db "alloc", 0, 0, 0, "noalloc", 0, "exec", 0, 0, 0, 0
+               db "noexec", 0, 0, "write", 0, 0, 0, "nowrite", 0
+attr_flag_bits: dw SHF_ALLOC, SHF_ALLOC, SHF_EXECINSTR, SHF_EXECINSTR, SHF_WRITE, SHF_WRITE
 str_section_upper: db "SECTION", 0
 str_times:     db "times", 0
 str_struc:     db "struc", 0
