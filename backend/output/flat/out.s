@@ -15,166 +15,162 @@
 extern asmctx_get_section
 extern reloc_apply_one
 extern io_write
+extern io_lseek
 extern symbol_find
 
 [SECTION .text]
 
 ; ============================================================================
-; binary_emit
+; Flat binary layout
 ; ============================================================================
-;
-; binary_emit
-; Writes assembled sections as a contiguous flat binary.
-; Section order: .text then .data (no .bss â€” zero-filled at runtime).
-; The caller is responsible for setting the correct ORG address by passing
-; it as base_addr; this only affects relocation patching, not the output.
+; Like NASM's bin format: the first section (.text) starts at the origin
+; that "org" set (0 by default); every other section with contents follows
+; in the order it was declared, aligned to its own alignment and at least 4
+; bytes; .bss and other NOBITS sections come last and take no file space.
+; binary_layout runs before relocations are resolved, so references between
+; sections (lea rsi, [rel msg] into .data, dq label) get real addresses.
 
-; Input  : rdi = pointer to AsmCtx
-;            rsi = output file descriptor (i32, already opened for write)
-;            rdx = base address (ORG value, 0x7C00 for bootloaders etc.)
-; Output : rax = EXIT_OK or error code
-;
-global binary_emit
-binary_emit:
-    prologue
-    push    r12
-    push    r13
-    push    r14
-    push    r15
+[SECTION .bss]
+bin_origin: resq 1                  ; address of the first byte of the file
 
-    mov     r12, rdi               ; r12 = AsmCtx
-    mov     r13d, esi              ; r13d = fd
-    mov     r14, rdx               ; r14 = base_addr (ORG)
+[SECTION .text]
 
-    ; ---- 1. Apply relocations before writing ----
-    mov     rdi, r12
-    mov     rsi, r14
-    call    binary_patch_relocs
-    check_err
-
-    ; ---- 2. Write .text section ----
-    mov     rdi, r12
-    mov     rsi, SEC_TEXT
-    call    asmctx_get_section
-    check_err
-    mov     r15, rdx               ; r15 = SECTION* for .text
-
-    mov     edi, r13d
-    mov     rsi, [r15 + SECTION_data]
-    mov     rdx, [r15 + SECTION_size]
-    test    rdx, rdx
-    jz      .write_data
-    call    io_write
-    check_err
-
-.write_data:
-    ; ---- 3. Write .data section ----
-    mov     rdi, r12
-    mov     rsi, SEC_DATA
-    call    asmctx_get_section
-    check_err
-    mov     r15, rdx
-
-    mov     edi, r13d
-    mov     rsi, [r15 + SECTION_data]
-    mov     rdx, [r15 + SECTION_size]
-    test    rdx, rdx
-    jz      .done
-    call    io_write
-    check_err
-
-.error:
-.done:
-    xor     rax, rax
-    pop     r15
-    pop     r14
-    pop     r13
-    pop     r12
-    epilogue
-
-; ============================================================================
-; binary_patch_relocs
-; ============================================================================
-;
-; binary_patch_relocs
-; Applies all relocations in the AsmCtx reloc table directly into the
-; in-memory .text buffer before it is flushed to disk.
-
-; For flat binary output, all symbols must be defined (no external refs).
-; Any unresolved symbol causes EXIT_UNDEF_REF.
-
-; Input  : rdi = AsmCtx, rsi = base_addr (ORG)
-; Output : rax = EXIT_OK or EXIT_UNDEF_REF
-;
-global binary_patch_relocs
-binary_patch_relocs:
-    prologue
+;*
+; * [binary_layout]
+; * Purpose: Assign every section its address in the flat binary.
+; * Input  : RDI = AsmCtx
+; * Output : RAX = EXIT_OK
+; ;
+global binary_layout
+binary_layout:
     push    rbx
     push    r12
     push    r13
     push    r14
-
-    mov     rbx, rdi               ; rbx = AsmCtx
-    mov     r12, rsi               ; r12 = base_addr
-
-    ; Get .text buffer base
-    mov     rdi, rbx
-    mov     rsi, SEC_TEXT
-    call    asmctx_get_section
-    check_err
-    mov     r13, [rdx + SECTION_data]  ; r13 = .text buffer
-
-    ; Walk reloc table
-    mov     r14, [rbx + ASMCTX_relocs]
-    mov     ecx, [rbx + ASMCTX_nrelocs]
-    xor     r15d, r15d             ; index
-
-.loop:
-    cmp     r15d, ecx
-    jge     .done
-
-    mov     rdi, r15
-    imul    rdi, RELOC_SIZE
-    add     rdi, r14                       ; rdi = RELOC*
-
-    ; resolve symbol value
-    mov     rsi, [rdi + RELOC_sym]     ; symbol name ptr
-    mov     rdi, rbx
-    call    symbol_find
+    push    r15
+    mov     rbx, rdi
+    mov     r12, [rbx + ASMCTX_sections]
+    movzx   r13d, word [rbx + ASMCTX_seccount]
+    xor     r14d, r14d                     ; cursor
+    test    r13d, r13d
+    jz      .done
+    mov     rax, [r12]
     test    rax, rax
-    jnz     .undef                     ; symbol not found
-
-    ; target_va = base_addr + symbol.value
-    mov     rax, [rdx + SYMBOL_value]
-    add     rax, r12                   ; absolute VA
-
-    ; patch_va = base_addr + reloc.offset
-    mov     rcx, [rdi + RELOC_offset]
-    lea     rdx, [r13 + rcx]           ; patch_ptr (buffer)
-    add     rcx, r12                   ; patch_va (absolute)
-
-    ; Apply via unified helper
-    mov     rsi, rax                   ; sym_va
-    call    reloc_apply_one
-    check_err
-
+    jz      .done
+    mov     r14, [rax + SECTION_addr]      ; the origin (org)
+    mov     [rel bin_origin], r14
+    xor     r8d, r8d                       ; 1 once a section has been placed
+    xor     r15d, r15d                     ; pass 0: contents, pass 1: NOBITS
+.pass:
+    xor     ecx, ecx
+.sec:
+    cmp     ecx, r13d
+    jae     .pass_done
+    mov     rdx, [r12 + rcx*8]
+    inc     ecx
+    test    rdx, rdx
+    jz      .sec
+    xor     eax, eax
+    cmp     dword [rdx + SECTION_elf_type], SHT_NOBITS
+    sete    al
+    cmp     eax, r15d
+    jne     .sec                           ; not this pass
+    cmp     qword [rdx + SECTION_size], 0
+    jne     .place
+    mov     [rdx + SECTION_addr], r14      ; empty: no space, no alignment
+    jmp     .sec
+.place:
+    test    r8d, r8d
+    jz      .at_cursor                     ; the first section is the origin
+    mov     rax, [rdx + SECTION_align]
+    cmp     rax, 4
+    jae     .align
+    mov     eax, 4
+.align:
+    lea     r9, [rax - 1]
+    add     r14, r9
+    not     r9
+    and     r14, r9
+.at_cursor:
+    mov     [rdx + SECTION_addr], r14
+    add     r14, [rdx + SECTION_size]
+    mov     r8d, 1
+    jmp     .sec
+.pass_done:
     inc     r15d
-    jmp     .loop
-
-.error:
+    cmp     r15d, 2
+    jb      .pass
 .done:
-    xor     rax, rax
-    jmp     .ret
-
-.undef:
-    mov     rax, EXIT_UNDEF_REF
-
-.ret:
+    xor     eax, eax
+    pop     r15
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
-    epilogue
+    ret
+
+; ============================================================================
+; binary_emit
+; ============================================================================
+;
+; binary_emit
+; Writes every section with contents at its offset from the origin (see
+; binary_layout); the gaps between them read as zeros. Relocations were
+; already applied by reloc_resolve_all against the laid-out addresses.
+;
+; Input  : rdi = pointer to AsmCtx
+;          rsi = output file descriptor (i32, already opened for write)
+;          rdx = unused (the origin comes from "org")
+; Output : rax = EXIT_OK or error code
+;
+global binary_emit
+binary_emit:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    mov     rbx, rdi
+    mov     r15d, esi                      ; fd
+    mov     r12, [rbx + ASMCTX_sections]
+    movzx   r13d, word [rbx + ASMCTX_seccount]
+    xor     r14d, r14d
+.sec:
+    cmp     r14d, r13d
+    jae     .ok
+    mov     rdx, [r12 + r14*8]
+    inc     r14d
+    test    rdx, rdx
+    jz      .sec
+    cmp     dword [rdx + SECTION_elf_type], SHT_NOBITS
+    je      .sec
+    cmp     qword [rdx + SECTION_size], 0
+    je      .sec
+    push    rdx
+    mov     edi, r15d
+    mov     rsi, [rdx + SECTION_addr]
+    sub     rsi, [rel bin_origin]
+    xor     edx, edx                       ; SEEK_SET
+    call    io_lseek
+    pop     rdx
+    test    rax, rax
+    jnz     .ret
+    mov     edi, r15d
+    mov     rsi, [rdx + SECTION_data]
+    mov     rdx, [rdx + SECTION_size]
+    call    io_write
+    test    rax, rax
+    jnz     .ret
+    jmp     .sec
+.ok:
+    xor     eax, eax
+.ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
 
 ; ============================================================================
 ; binary_emit_bootloader
