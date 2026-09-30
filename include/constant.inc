@@ -387,6 +387,24 @@
 %define OP_FLAG_ADDR32         0x20        ; memory addressed by 32-bit registers (67 prefix)
 %define OP_FLAG_FAR            0x40        ; FAR: an indirect far jump / call (m16:32)
 
+; RELOC_flags
+%define RELOC_FLAG_SYM         0x01        ; "wrt ..sym": against the symbol itself,
+                                           ; not its section's symbol
+
+; "wrt ..name" (reloc_wrt): the relocation the next reloc_record makes
+%define WRT_NONE               0
+%define WRT_PLT                1           ; ..plt      R_X86_64_PLT32
+%define WRT_GOTPCREL           2           ; ..gotpcrel R_X86_64_GOTPCREL
+%define WRT_GOT                3           ; ..got      R_X86_64_GOT32 / GOT64
+%define WRT_GOTOFF             4           ; ..gotoff   R_X86_64_GOTOFF64
+%define WRT_TLSIE              5           ; ..tlsie    R_X86_64_GOTTPOFF
+%define WRT_SYM                6           ; ..sym      as usual, against the symbol
+
+; SYMBOL_etype / SYMBOL_eother (the ELF values)
+%define ETYPE_NOTYPE           0
+%define ETYPE_OBJECT           1
+%define ETYPE_FUNC             2
+
 ; ============================================================================
 ; CONTEXT FLAGS
 ; ============================================================================
