@@ -96,6 +96,7 @@ parser_parse_instruction:
     ; Reload tables from stack
     mov     r10, [rsp]
     mov     r11, [rsp + 8]
+    mov     byte [rel stmt_bracketed], 0
 
     ; Check if bracketed directive/statement starts
     mov     rdi, rbx
@@ -107,6 +108,7 @@ parser_parse_instruction:
         call    preprocessor_next_token
         check_err
         mov     qword [rsp + 16], 1 ; is_bracketed = 1
+        mov     byte [rel stmt_bracketed], 1
         ENDIF
 
     mov     rdi, rbx
@@ -921,7 +923,8 @@ parser_evaluate_additive:
 
 ;*
 ; * [parser_evaluate_expression]
-; * Purpose: Entry point for expression evaluation (logical level: && ||)
+; * Purpose: Entry point for expression evaluation: the binary levels
+; *   (parser_eval_level), then cond ? a : b.
 ; ;
 global parser_evaluate_expression
 parser_evaluate_expression:
@@ -932,51 +935,26 @@ parser_evaluate_expression:
     push    r14
 
     mov     rbx, rdi
-    call    parser_evaluate_comparison
+    mov     r10, [rbx + PREP_ctx]
+    inc     dword [r10 + ASMCTX_expr_depth]
+    cmp     dword [r10 + ASMCTX_expr_depth], 64
+    jg      .too_deep
+    mov     rdi, rbx
+    xor     esi, esi
+    call    parser_eval_level
+    mov     r10, [rbx + PREP_ctx]
+    dec     dword [r10 + ASMCTX_expr_depth]
     check_err_to .done
     mov     r13, rdx               ; R13 = accumulated value
     mov     r12, rcx               ; R12 = deferred symbol name (optional)
     mov     r14, r11               ; R14 = resolved SYMBOL* (optional)
+    jmp     .ternary
+.too_deep:
+    dec     dword [r10 + ASMCTX_expr_depth]
+    mov     rax, EXIT_EXPR_TOO_DEEP
+    jmp     .done
+.ternary:
 
-.loop:
-    mov     rdi, rbx
-    call    preprocessor_peek_token
-    mov     al, [rdx + TOKEN_kind]
-
-    IF al, e, TOK_AND
-        mov     rdi, rbx
-        call    preprocessor_next_token
-        mov     rdi, rbx
-        call    parser_evaluate_comparison
-        check_err_to .done
-
-        xor     rax, rax
-        test    r13, r13
-        setne   al
-        xor     rcx, rcx
-        test    rdx, rdx
-        setne   cl
-        and     al, cl
-        movzx   r13, al
-        xor     r12, r12           ; a logical result is a raw integer
-        xor     r14, r14
-        jmp     .loop
-
-    ELSEIF al, e, TOK_OR
-        mov     rdi, rbx
-        call    preprocessor_next_token
-        mov     rdi, rbx
-        call    parser_evaluate_comparison
-        check_err_to .done
-
-        mov     rax, r13
-        or      rax, rdx
-        setne   al
-        movzx   r13, al
-        xor     r12, r12
-        xor     r14, r14
-        jmp     .loop
-        ENDIF
 
     ; cond ? a : b, the lowest precedence as in NASM
     mov     rdi, rbx
@@ -1029,147 +1007,230 @@ parser_evaluate_expression:
     pop     rbx
     epilogue
 
+%define EVAL_LAST_LEVEL 7
+%define EOP_LOR   1
+%define EOP_LXOR  2
+%define EOP_LAND  3
+%define EOP_EQ    4
+%define EOP_NE    5
+%define EOP_LT    6
+%define EOP_LE    7
+%define EOP_GT    8
+%define EOP_GE    9
+%define EOP_CMP3  10
+%define EOP_OR    11
+%define EOP_XOR   12
+%define EOP_AND   13
+%define EOP_SHL   14
+%define EOP_SHR   15
+%define EOP_SAR   16
+
 ;*
-; * [parser_evaluate_comparison]
-; * Purpose: Relational level (== != < <= > >=)
+; * [parser_eval_level]
+; * Purpose: One binary-operator level of NASM's precedence, lowest first:
+; *     0 ||    1 ^^    2 &&    3 = == != <> < <= > >= <=>
+; *     4 |     5 ^     6 &     7 << >> <<< >>>
+; *   then + - (parser_evaluate_additive), * / % %% (parser_evaluate_term)
+; *   and the unary operators (parser_evaluate_factor). Left-associative.
+; *   A value that went through an operator here is a plain number; one
+; *   that did not keeps its symbol for the caller.
+; * Input  : RDI = PrepState, ESI = level
+; * Output : RAX = OK or an error, RDX = value, RCX / R11 = symbol info
 ; ;
-parser_evaluate_comparison:
-    prologue
+parser_eval_level:
     push    rbx
     push    r12
     push    r13
     push    r14
-    
-    mov     rbx, rdi               ; RBX = PrepState
-    mov     r10, [rbx + PREP_ctx]  ; R10 = AsmCtx
-    
-    ; Check Recursion Depth
-    inc     dword [r10 + ASMCTX_expr_depth]
-    IF dword [r10 + ASMCTX_expr_depth], g, 64
-        mov     rax, EXIT_EXPR_TOO_DEEP
-        jmp     .done_err
-        ENDIF
-        
+    push    r15
+    sub     rsp, 16                ; [rsp] = level, [rsp + 8] = SYMBOL*
+    mov     rbx, rdi
+    mov     eax, esi
+    mov     [rsp], rax
     mov     rdi, rbx
-    call    parser_evaluate_additive
-    check_err_to .done_err
-    mov     r13, rdx               ; R13 = left operand value
-    mov     r14, rcx               ; R14 = left operand symbol (optional)
-    
+    call    parser_eval_next
+    test    rax, rax
+    jnz     .ret
+    mov     r12, rdx               ; running value
+    mov     r13, rcx               ; deferred symbol name
+    mov     [rsp + 8], r11         ; resolved SYMBOL*
 .loop:
     mov     rdi, rbx
     call    preprocessor_peek_token
-    mov     r12, rdx
-    mov     al, [r12 + TOKEN_kind]
-    
-    IF al, e, TOK_EQUAL
-        mov     rdi, rbx
-        call    preprocessor_next_token
-        mov     rdi, rbx
-        call    parser_evaluate_additive
-        check_err_to .done_err
-        
-        ; Evaluate: left == right
-        cmp     r13, rdx
-        sete    cl
-        movzx   r13, cl
-        xor     r14, r14           ; comparisons produce raw integers
-        jmp     .loop
-        
-    ELSEIF al, e, TOK_NEQUAL
-        mov     rdi, rbx
-        call    preprocessor_next_token
-        mov     rdi, rbx
-        call    parser_evaluate_additive
-        check_err_to .done_err
-        
-        ; Evaluate: left != right
-        cmp     r13, rdx
-        setne   cl
-        movzx   r13, cl
-        xor     r14, r14           ; comparisons produce raw integers
-        jmp     .loop
-
-    ELSEIF al, e, TOK_LT
-        mov     rdi, rbx
-        call    preprocessor_next_token
-        mov     rdi, rbx
-        call    parser_evaluate_additive
-        check_err_to .done_err
-
-        cmp     r13, rdx
-        setl    cl
-        movzx   r13, cl
-        xor     r14, r14
-        jmp     .loop
-
-    ELSEIF al, e, TOK_LE
-        mov     rdi, rbx
-        call    preprocessor_next_token
-        mov     rdi, rbx
-        call    parser_evaluate_additive
-        check_err_to .done_err
-
-        cmp     r13, rdx
-        setle   cl
-        movzx   r13, cl
-        xor     r14, r14
-        jmp     .loop
-
-    ELSEIF al, e, TOK_GT
-        mov     rdi, rbx
-        call    preprocessor_next_token
-        mov     rdi, rbx
-        call    parser_evaluate_additive
-        check_err_to .done_err
-
-        cmp     r13, rdx
-        setg    cl
-        movzx   r13, cl
-        xor     r14, r14
-        jmp     .loop
-
-    ELSEIF al, e, TOK_GE
-        mov     rdi, rbx
-        call    preprocessor_next_token
-        mov     rdi, rbx
-        call    parser_evaluate_additive
-        check_err_to .done_err
-
-        cmp     r13, rdx
-        setge   cl
-        movzx   r13, cl
-        xor     r14, r14
-        jmp     .loop
-        ENDIF
-        
-    mov     rdx, r13
-    mov     rcx, r14
-    xor     rax, rax
-
-.done:
-    mov     r10, [rbx + PREP_ctx]
-    dec     dword [r10 + ASMCTX_expr_depth]
+    test    rax, rax
+    jnz     .ret
+    movzx   eax, byte [rdx + TOKEN_kind]
+    mov     rcx, [rsp]
+    shl     rcx, 4
+    lea     r8, [rel eval_level_ops]
+    add     r8, rcx
+.find:
+    movzx   ecx, byte [r8]
+    test    ecx, ecx
+    jz      .no_op
+    cmp     eax, ecx
+    je      .found
+    add     r8, 2
+    jmp     .find
+.found:
+    movzx   r15d, byte [r8 + 1]    ; the operation
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rdi, rbx
+    mov     rsi, [rsp]
+    call    parser_eval_next
+    test    rax, rax
+    jnz     .ret
+    xor     eax, eax
+    xor     ecx, ecx
+    cmp     r15d, EOP_LOR
+    je      .lor
+    cmp     r15d, EOP_LXOR
+    je      .lxor
+    cmp     r15d, EOP_LAND
+    je      .land
+    cmp     r15d, EOP_EQ
+    je      .eq
+    cmp     r15d, EOP_NE
+    je      .ne
+    cmp     r15d, EOP_LT
+    je      .lt
+    cmp     r15d, EOP_LE
+    je      .le
+    cmp     r15d, EOP_GT
+    je      .gt
+    cmp     r15d, EOP_GE
+    je      .ge
+    cmp     r15d, EOP_CMP3
+    je      .cmp3
+    cmp     r15d, EOP_OR
+    je      .bor
+    cmp     r15d, EOP_XOR
+    je      .bxor
+    cmp     r15d, EOP_AND
+    je      .band
+    mov     rcx, rdx
+    and     ecx, 63                ; shift count
+    cmp     r15d, EOP_SHL
+    je      .shl
+    cmp     r15d, EOP_SHR
+    je      .shr
+    sar     r12, cl                ; EOP_SAR
+    jmp     .applied
+.lor:
+    test    r12, r12
+    setne   al
+    test    rdx, rdx
+    setne   cl
+    or      al, cl
+    jmp     .bool
+.lxor:
+    test    r12, r12
+    setne   al
+    test    rdx, rdx
+    setne   cl
+    xor     al, cl
+    jmp     .bool
+.land:
+    test    r12, r12
+    setne   al
+    test    rdx, rdx
+    setne   cl
+    and     al, cl
+    jmp     .bool
+.eq:
+    cmp     r12, rdx
+    sete    al
+    jmp     .bool
+.ne:
+    cmp     r12, rdx
+    setne   al
+    jmp     .bool
+.lt:
+    cmp     r12, rdx
+    setl    al
+    jmp     .bool
+.le:
+    cmp     r12, rdx
+    setle   al
+    jmp     .bool
+.gt:
+    cmp     r12, rdx
+    setg    al
+    jmp     .bool
+.ge:
+    cmp     r12, rdx
+    setge   al
+    jmp     .bool
+.cmp3:
+    cmp     r12, rdx
+    setg    al
+    setl    cl
+    sub     al, cl                 ; -1, 0 or 1
+    movsx   r12, al
+    jmp     .applied
+.bool:
+    movzx   r12d, al
+    jmp     .applied
+.bor:
+    or      r12, rdx
+    jmp     .applied
+.bxor:
+    xor     r12, rdx
+    jmp     .applied
+.band:
+    and     r12, rdx
+    jmp     .applied
+.shl:
+    shl     r12, cl
+    jmp     .applied
+.shr:
+    shr     r12, cl
+.applied:
+    xor     r13d, r13d             ; a plain number now
+    mov     qword [rsp + 8], 0
+    jmp     .loop
+.no_op:
+    mov     rdx, r12
+    mov     rcx, r13
+    mov     r11, [rsp + 8]
+    xor     eax, eax
+.ret:
+    add     rsp, 16
+    pop     r15
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
-    epilogue
     ret
 
-.done_err:
-    mov     r10, [rbx + PREP_ctx]
-    dec     dword [r10 + ASMCTX_expr_depth]
-    pop     r14
-    pop     r13
-    pop     r12
-    pop     rbx
-    epilogue
-    ret
+; The level above ESI: the next binary level, or + - after the last one.
+parser_eval_next:
+    cmp     esi, EVAL_LAST_LEVEL
+    jae     parser_evaluate_additive
+    inc     esi
+    jmp     parser_eval_level
+
+
+[SECTION .rodata]
+; per level, 16 bytes: (token kind, operation) pairs ending in 0
+eval_level_ops:
+    db TOK_OR, EOP_LOR, 0, 0,0,0,0,0,0,0,0,0,0,0,0,0
+    db TOK_LXOR, EOP_LXOR, 0, 0,0,0,0,0,0,0,0,0,0,0,0,0
+    db TOK_AND, EOP_LAND, 0, 0,0,0,0,0,0,0,0,0,0,0,0,0
+    db TOK_EQUAL, EOP_EQ, TOK_NEQUAL, EOP_NE, TOK_LT, EOP_LT, TOK_LE, EOP_LE
+    db TOK_GT, EOP_GT, TOK_GE, EOP_GE, TOK_CMP3, EOP_CMP3, 0, 0
+    db TOK_PIPE, EOP_OR, 0, 0,0,0,0,0,0,0,0,0,0,0,0,0
+    db TOK_CARET, EOP_XOR, 0, 0,0,0,0,0,0,0,0,0,0,0,0,0
+    db TOK_AMPERSAND, EOP_AND, 0, 0,0,0,0,0,0,0,0,0,0,0,0,0
+    db TOK_LSHIFT, EOP_SHL, TOK_RSHIFT, EOP_SHR, TOK_SAR, EOP_SAR, 0, 0,0,0,0,0,0,0,0,0
+[SECTION .text]
 
 ;*
 ; * [parser_evaluate_term]
-; * Purpose: Multiplicative level (* / << >> & | ^)
+; * Purpose: Multiplicative level: * / % (unsigned, as in NASM) and %%
+; *   (signed modulo). utasm reads "//" as a comment, so NASM's signed
+; *   division operator is not available.
 ; ;
 parser_evaluate_term:
     prologue
@@ -1218,9 +1279,25 @@ parser_evaluate_term:
         jz      .div_zero
         mov     r14, rdx           ; R14 = divisor
         mov     rax, r12           ; RAX = dividend
-        cqo                        ; Sign-extend RAX into RDX (A64)
-        idiv    r14
+        xor     edx, edx           ; unsigned, as NASM's /
+        div     r14
         mov     r12, rax
+        jmp     .loop
+    ELSEIF al, e, TOK_DPERCENT
+        ; %% : signed modulo
+        mov     rdi, rbx
+        call    preprocessor_next_token
+        check_err
+        mov     rdi, rbx
+        call    parser_evaluate_factor
+        check_err
+        test    rdx, rdx
+        jz      .div_zero
+        mov     r14, rdx
+        mov     rax, r12
+        cqo
+        idiv    r14
+        mov     r12, rdx
         jmp     .loop
     ELSEIF al, e, TOK_PERCENT
         ; modulo, unsigned as NASM's %
@@ -1237,55 +1314,6 @@ parser_evaluate_term:
         xor     edx, edx
         div     r14
         mov     r12, rdx
-        jmp     .loop
-    ELSEIF al, e, TOK_LSHIFT
-        mov     rdi, rbx
-        call    preprocessor_next_token
-        check_err
-        mov     rdi, rbx
-        call    parser_evaluate_factor
-        check_err
-        mov     rcx, rdx
-        and     cl, 0x3F           ; Safety Mask: shift count 0-63
-        shl     r12, cl
-        jmp     .loop
-    ELSEIF al, e, TOK_RSHIFT
-        mov     rdi, rbx
-        call    preprocessor_next_token
-        check_err
-        mov     rdi, rbx
-        call    parser_evaluate_factor
-        check_err
-        mov     rcx, rdx
-        and     cl, 0x3F           ; Safety Mask: shift count 0-63
-        shr     r12, cl
-        jmp     .loop
-    ELSEIF al, e, TOK_AMPERSAND
-        mov     rdi, rbx
-        call    preprocessor_next_token
-        check_err
-        mov     rdi, rbx
-        call    parser_evaluate_factor
-        check_err
-        and     r12, rdx
-        jmp     .loop
-    ELSEIF al, e, TOK_PIPE
-        mov     rdi, rbx
-        call    preprocessor_next_token
-        check_err
-        mov     rdi, rbx
-        call    parser_evaluate_factor
-        check_err
-        or      r12, rdx
-        jmp     .loop
-    ELSEIF al, e, TOK_CARET
-        mov     rdi, rbx
-        call    preprocessor_next_token
-        check_err
-        mov     rdi, rbx
-        call    parser_evaluate_factor
-        check_err
-        xor     r12, rdx
         jmp     .loop
         ENDIF
     
@@ -1364,6 +1392,23 @@ parser_evaluate_factor:
         call    parser_evaluate_factor
         check_err
         not     rdx
+        xor     rax, rax
+        jmp     .done
+    ELSEIF al, e, TOK_PLUS
+        mov     rdi, rbx
+        call    parser_evaluate_factor
+        check_err
+        mov     r14, rcx               ; +x keeps x's symbol
+        mov     r15, r11
+        xor     rax, rax
+        jmp     .done
+    ELSEIF al, e, TOK_NOT
+        mov     rdi, rbx
+        call    parser_evaluate_factor
+        check_err
+        test    rdx, rdx
+        sete    dl
+        movzx   edx, dl
         xor     rax, rax
         jmp     .done
         ENDIF
@@ -2257,6 +2302,8 @@ parser_skip_to_eol:
     test    rax, rax
     jnz     .ret
     cmp     byte [rdx + TOKEN_kind], TOK_NEWLINE
+    je      .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_RBRACKET
     je      .ret
     cmp     byte [rdx + TOKEN_kind], TOK_EOF
     je      .ret
@@ -3207,6 +3254,42 @@ parser_handle_pseudo_op:
     mov     rax, 1
     jmp     .check_handler_result
 .not_cpu:
+    ; use16 / use32 / use64: bits 16 / 32 / 64
+    lea     r13, [rel use_words]
+.use_word:
+    cmp     byte [r13], 0
+    je      .not_use
+    mov     rdi, r12
+    mov     rsi, r13
+    call    str_cmp
+    test    rax, rax
+    jz      .use_hit
+    add     r13, 8
+    jmp     .use_word
+.use_hit:
+    mov     al, [r13 + 7]
+    mov     [rel asm_bits], al
+    xor     eax, eax
+    jmp     .check_handler_result
+.not_use:
+    ; warning, map, list, float, sectalign, debug, required: accepted,
+    ; nothing for utasm to do
+    lea     r13, [rel ignored_words]
+.ignored_word:
+    cmp     byte [r13], 0
+    je      .not_ignored
+    mov     rdi, r12
+    mov     rsi, r13
+    call    str_cmp
+    test    rax, rax
+    jz      .ignored_hit
+    add     r13, 10
+    jmp     .ignored_word
+.ignored_hit:
+    call    parser_skip_to_eol
+    mov     rax, 1
+    jmp     .check_handler_result
+.not_ignored:
     mov     rdi, r12
     lea     rsi, [rel str_section]
     extern  str_cmp
@@ -3337,8 +3420,7 @@ parser_handle_pseudo_op:
     lea     rsi, [rel str_bits]
     call    str_cmp
     IF rax, e, 0
-        mov     rdi, rbx
-        call    parser_handle_default   ; reuse same skip logic
+        call    parser_handle_bits
         jmp     .check_handler_result
         ENDIF
 
@@ -3688,6 +3770,56 @@ float_fn_val:  resq 1
 ds_chars:      resq 2              ; a quoted literal's characters
 ds_pad:        resq 1
 incbin_buf:    resb 4096
+[SECTION .text]
+
+;*
+; * [parser_handle_bits]
+; * Purpose: "bits 16 / 32 / 64": the code mode (asm_bits, __BITS__).
+; * Input  : RBX = PrepState
+; * Output : RAX = OK or an error
+; ;
+parser_handle_bits:
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .ret
+    cmp     rdx, 16
+    je      .ok
+    cmp     rdx, 32
+    je      .ok
+    cmp     rdx, 64
+    je      .ok
+    mov     rax, EXIT_INVALID_OPERAND
+    ret
+.ok:
+    mov     [rel asm_bits], dl
+    xor     eax, eax
+.ret:
+    ret
+
+[SECTION .data]
+global asm_bits
+asm_bits:       db 64               ; bits 16 / 32 / 64
+align 8
+global user_sect_name
+user_sect_name: dq str_text         ; __SECT__'s section
+[SECTION .rodata]
+; name (7 bytes) + bits
+use_words:      db "use16", 0, 0, 16
+                db "use32", 0, 0, 32
+                db "use64", 0, 0, 64
+                db 0
+; directive names, 10 bytes each
+ignored_words:  db "warning", 0, 0, 0
+                db "map", 0, 0, 0, 0, 0, 0, 0
+                db "list", 0, 0, 0, 0, 0, 0
+                db "float", 0, 0, 0, 0, 0
+                db "sectalign", 0
+                db "debug", 0, 0, 0, 0, 0
+                db "required", 0, 0
+                db 0
+[SECTION .bss]
+stmt_bracketed: resb 1              ; the statement is in [ ]
 [SECTION .text]
 
 ;*
@@ -4622,6 +4754,9 @@ parser_handle_default:
     IF byte [rdx + TOKEN_kind], e, TOK_EOF
         jmp .done
         ENDIF
+    IF byte [rdx + TOKEN_kind], e, TOK_RBRACKET
+        jmp .done                  ; [default rel]
+        ENDIF
     mov     rdi, rbx
     call    preprocessor_next_token
     mov     r12, rdx               ; r12 = consumed token
@@ -4757,6 +4892,13 @@ parser_handle_section_directive:
     movzx   eax, word [rdi + ASMCTX_seccount]
     mov     [r13 + SECTION_named_at], eax
 .named:
+    ; __SECT__ names the section a plain "section" line chose; the
+    ; primitive [section ...] form leaves it, as in NASM
+    cmp     byte [rel stmt_bracketed], 0
+    jne     .sect_noted
+    mov     rax, [r12 + TOKEN_value]
+    mov     [rel user_sect_name], rax
+.sect_noted:
 
     ; 2. Auto-assign flags and type for standard sections if new
     IF r15, ne, OK
