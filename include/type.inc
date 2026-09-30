@@ -336,7 +336,7 @@ struc OPERAND
     field scale,      1       ; scale factor (1, 2, 4, 8)
     field shift_type, 1       ; AArch64 shift type (LSL, LSR, etc)
     field shift_imm,  1       ; shift immediate amount
-    field pad0,       2       ; padding to align reloc to 4-byte boundary
+    field xsize,      2       ; size in bits as a word: 256/512 do not fit OPERAND_size
     field reloc,      4       ; relocation type (e.g. :lo12:)
     field pad1,       4       ; padding to align imm to 8-byte boundary
     field imm,        8       ; immediate or displacement value
