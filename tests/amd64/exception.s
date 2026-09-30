@@ -33,7 +33,7 @@ idiv    rcx                      // would trap on overflow
 // ---- Overflow check idiom ------------------------------
 mov     rax, 0x7FFFFFFFFFFFFFFF  // INT64_MAX
 add     rax, 1                   // generates OF=1
-into                             // trap if OF (32-bit only, not valid in 64-bit)
+// into: 32-bit only, not valid in 64-bit mode (NASM rejects it too)
 
 // ---- Stack overflow probe (encoding only) ---------------
 sub     rsp, 0x1000              // page boundary probe
