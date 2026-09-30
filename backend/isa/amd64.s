@@ -1902,6 +1902,14 @@ mnc_tb_x64:
     mnc_ent "vpsraq", 0, 6521
     mnc_ent "vpxord", 0, 6522
     mnc_ent "vpxorq", 0, 6523
+    mnc_ent "loope", 0, 6524
+    mnc_ent "loopz", 0, 6525
+    mnc_ent "loopne", 0, 6526
+    mnc_ent "loopnz", 0, 6527
+    mnc_ent "jecxz", 0, 6528
+    mnc_ent "jrcxz", 0, 6529
+    mnc_ent "sysexitq", 0, 6530
+    mnc_ent "sysretq", 0, 6531
 
     dq 0
 
