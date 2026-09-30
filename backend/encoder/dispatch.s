@@ -234,7 +234,9 @@ te_classify:
     je      .mem
     cmp     eax, OP_IMM
     je      .imm
-    jmp     .next                          ; symbols and the rest: no class
+    cmp     eax, OP_SYMBOL
+    je      .imm                           ; a label's address: relocated
+    jmp     .next                          ; the rest: no class
 .imm:
     mov     r8d, C_IMM
     jmp     .set_cls
@@ -493,6 +495,29 @@ te_match:
     call    te_operand
     mov     rax, [rdi + OPERAND_imm]
     movzx   r10d, byte [rbx + TY_IMM]
+    ; a label's address: never a byte immediate, any wider one
+    cmp     byte [rdi + OPERAND_kind], OP_SYMBOL
+    jne     .imm_value
+    cmp     r10d, IK_ONE
+    je      .fail
+    cmp     r10d, IK_I8
+    je      .fail
+    cmp     r10d, IK_I8S
+    je      .fail
+    jmp     .next
+.imm_value:
+    ; "strict dword 5": not the byte-sized immediate forms
+    test    byte [rdi + OPERAND_flags], OP_FLAG_STRICT
+    jz      .imm_kind
+    cmp     byte [rdi + OPERAND_size], 8
+    je      .imm_kind
+    cmp     r10d, IK_ONE
+    je      .fail
+    cmp     r10d, IK_I8
+    je      .fail
+    cmp     r10d, IK_I8S
+    je      .fail
+.imm_kind:
     cmp     r10d, IK_ONE
     je      .i_one
     cmp     r10d, IK_I8
@@ -1110,8 +1135,42 @@ te_emit:
     jne     .ei_put
     mov     r8d, 8
 .ei_put:
+    mov     r9d, eax                       ; the immediate's kind
     call    te_operand
     mov     r15, [rdi + OPERAND_imm]
+    cmp     byte [rdi + OPERAND_kind], OP_SYMBOL
+    jne     .ei_byte
+    ; a label's address: a relocation for the field, zeros in it. A 32-bit
+    ; field of a 64-bit operation is sign-extended (R_X86_64_32S).
+    mov     ecx, R_X86_64_64
+    cmp     r8d, 8
+    je      .ei_rtype
+    mov     ecx, R_X86_64_16
+    cmp     r8d, 2
+    je      .ei_rtype
+    mov     ecx, R_X86_64_8
+    cmp     r8d, 1
+    je      .ei_rtype
+    mov     ecx, R_X86_64_32
+    cmp     r9d, IK_IZ
+    jne     .ei_rtype
+    cmp     byte [rel te_osz], 32
+    je      .ei_rtype
+    mov     ecx, R_X86_64_32S              ; 64-bit, or push's own width
+.ei_rtype:
+    push    r8
+    push    rdi
+    mov     r8d, ecx
+    mov     rcx, r15                       ; the addend
+    mov     rdx, [rdi + OPERAND_sym]
+    mov     rax, [rbx + ASMCTX_curr_sec]
+    mov     rsi, [rax + SECTION_size]      ; where the field goes
+    mov     rdi, rbx
+    extern  reloc_record
+    call    reloc_record
+    pop     rdi
+    pop     r8
+    xor     r15d, r15d
 .ei_byte:
     mov     eax, r15d
     push    r8
