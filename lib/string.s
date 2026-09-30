@@ -560,9 +560,10 @@ mem_cmp:
 ; ---- str_to_int -------------------------
 ;
 ; str_to_int
-; Converts a string to a signed 64-bit integer.
-; Supports decimal, hex (0x prefix), binary (0b prefix),
-; octal (0o prefix), and optional leading sign (+ or -).
+; Converts a string to a signed 64-bit integer, by NASM's rules: an
+; optional sign; "$" + digits for hex; the prefixes 0x/0h (hex), 0d/0t
+; (decimal), 0o/0q (octal), 0b/0y (binary); else the suffixes h/x, d/t,
+; o/q, b/y; else decimal. Underscores between digits are ignored.
 ; Input    : rdi = pointer to null-terminated string
 ; Output   : rax = EXIT_OK or EXIT_INVALID_IMM
 ;              rdx = parsed integer value (signed)
@@ -586,127 +587,65 @@ str_to_int:
     cmp     al, '+'
     je      .skip_sign
     cmp     al, '-'
-    jne     .check_prefix
+    jne     .radix
     mov     r13, 1                 ; negative
 .skip_sign:
     inc     rdi
 
-.check_prefix:
-    ; check for 0x, 0b, 0o prefix
-    mov     al, byte [rdi]
-    cmp     al, '0'
-    jne     .check_suffix
-    mov     al, byte [rdi + 1]
-    cmp     al, 'x'
-    je      .set_hex
-    cmp     al, 'X'
-    je      .set_hex
-    cmp     al, 'b'
-    je      .set_bin
-    cmp     al, 'B'
-    je      .set_bin
-    cmp     al, 'o'
-    je      .set_oct
-    cmp     al, 'O'
-    je      .set_oct
-    jmp     .check_suffix
-
-.set_hex:
-    mov     r12, 16
-    add     rdi, 2
-    jmp     .parse_loop
-
-.set_bin:
-    mov     r12, 2
-    add     rdi, 2
-    jmp     .parse_loop
-
-.set_oct:
-    mov     r12, 8
-    add     rdi, 2
-    jmp     .parse_loop
-
-.check_suffix:
-    ; Check for trailing radix markers (h, b, o, d)
+    ; NASM's radix rules: "$" + digit is hex; "0" + a radix letter is a
+    ; prefix (0x 0h hex, 0d 0t decimal, 0o 0q octal, 0b 0y binary);
+    ; otherwise a trailing radix letter is a suffix (ffh, 777q, 1010b,
+    ; 100d). Underscores are ignored.
+.radix:
     push    rdi
-    extern  str_len
     call    str_len
     pop     rdi
-    test    rax, rax
-    jz      .parse_loop
-    
-    ; r8 = length, r9 = last char
-    mov     r8, rax
-    movzx   r9, byte [rdi + r8 - 1]
-    
-    ; Hex: h, H
-    cmp     r9, 'h'
-    je      .found_hex_suffix
-    cmp     r9, 'H'
-    je      .found_hex_suffix
-    
-    ; Bin: b, B
-    cmp     r9, 'b'
-    je      .found_bin_suffix
-    cmp     r9, 'B'
-    je      .found_bin_suffix
-    
-    ; Oct: o, O, q, Q
-    cmp     r9, 'o'
-    je      .found_oct_suffix
-    cmp     r9, 'O'
-    je      .found_oct_suffix
-    cmp     r9, 'q'
-    je      .found_oct_suffix
-    cmp     r9, 'Q'
-    je      .found_oct_suffix
-    
-    ; Dec: d, D
-    cmp     r9, 'd'
-    je      .found_dec_suffix
-    cmp     r9, 'D'
-    je      .found_dec_suffix
-    
-    jmp     .parse_loop
-
-.found_hex_suffix:
+    mov     r8, rax                ; r8 = characters left to read
+    cmp     byte [rdi], '$'
+    jne     .zero_prefix
     mov     r12, 16
-    dec     r8                     ; ignore suffix in loop
-    jmp     .parse_loop_limit
-
-.found_bin_suffix:
-    mov     r12, 2
+    inc     rdi
     dec     r8
-    jmp     .parse_loop_limit
-
-.found_oct_suffix:
-    mov     r12, 8
+    jmp     .digits
+.zero_prefix:
+    cmp     r8, 2
+    jbe     .suffix
+    cmp     byte [rdi], '0'
+    jne     .suffix
+    movzx   ecx, byte [rdi + 1]
+    call    .radix_letter
+    test    eax, eax
+    jz      .suffix
+    mov     r12, rax
+    add     rdi, 2
+    sub     r8, 2
+    jmp     .digits
+.suffix:
+    cmp     r8, 1
+    jbe     .digits
+    movzx   ecx, byte [rdi + r8 - 1]
+    call    .radix_letter
+    test    eax, eax
+    jz      .digits
+    mov     r12, rax
     dec     r8
-    jmp     .parse_loop_limit
 
-.found_dec_suffix:
-    mov     r12, 10
-    dec     r8
-    jmp     .parse_loop_limit
-
-.parse_loop:
-    ; Use full length if no suffix
-    push    rdi
-    extern  str_len
-    call    str_len
-    pop     rdi
-    mov     r8, rax
-
-.parse_loop_limit:
+.digits:
+    test    r8, r8
+    jz      .invalid
     xor     r10, r10               ; i = 0
 .loop:
     cmp     r10, r8
     jge     .apply_sign
-    
+
     movzx   rax, byte [rdi + r10]
     test    al, al
     jz      .apply_sign
-
+    cmp     al, '_'
+    jne     .digit
+    inc     r10
+    jmp     .loop
+.digit:
     ; convert char to digit value
     cmp     al, '0'
     jl      .invalid
@@ -750,6 +689,34 @@ str_to_int:
     mov     rbx, rax
     inc     r10
     jmp     .loop
+
+; ecx = a character: eax = the radix it names (b y 2, o q 8, d t 10,
+; h x 16), or 0
+.radix_letter:
+    or      ecx, 0x20
+    mov     eax, 2
+    cmp     ecx, 'b'
+    je      .rl_ret
+    cmp     ecx, 'y'
+    je      .rl_ret
+    mov     eax, 8
+    cmp     ecx, 'o'
+    je      .rl_ret
+    cmp     ecx, 'q'
+    je      .rl_ret
+    mov     eax, 10
+    cmp     ecx, 'd'
+    je      .rl_ret
+    cmp     ecx, 't'
+    je      .rl_ret
+    mov     eax, 16
+    cmp     ecx, 'h'
+    je      .rl_ret
+    cmp     ecx, 'x'
+    je      .rl_ret
+    xor     eax, eax
+.rl_ret:
+    ret
 
 .overflow:
     mov     rax, EXIT_INVALID_IMM
