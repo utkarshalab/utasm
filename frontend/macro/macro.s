@@ -445,6 +445,7 @@ prep_internal_next:
 ;             rsi = pointer to MACRO struct
 ; Output   : rax = EXIT_OK or error code
 ;
+global prep_expand_start
 prep_expand_start:
     push    rbp
     mov     rbp, rsp
