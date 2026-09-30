@@ -932,6 +932,45 @@ parser_evaluate_expression:
         jmp     .loop
         ENDIF
 
+    ; cond ? a : b, the lowest precedence as in NASM
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_QUESTION
+    jne     .no_ternary
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rdi, rbx
+    call    parser_evaluate_expression     ; the "then" value
+    check_err_to .done
+    push    rdx
+    push    rcx
+    push    r11
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    cmp     byte [rdx + TOKEN_kind], TOK_COLON
+    jne     .ternary_bad
+    mov     rdi, rbx
+    call    parser_evaluate_expression     ; the "else" value
+    test    rax, rax
+    jnz     .ternary_err
+    test    r13, r13
+    jz      .ternary_else
+    pop     r11
+    pop     rcx
+    pop     rdx
+    xor     rax, rax
+    jmp     .done
+.ternary_else:
+    add     rsp, 24
+    xor     rax, rax
+    jmp     .done
+.ternary_bad:
+    mov     rax, EXIT_UNEXPECTED_TOKEN     ; "?" without its ":"
+.ternary_err:
+    add     rsp, 24
+    jmp     .done
+
+.no_ternary:
     mov     rdx, r13
     mov     rcx, r12
     mov     r11, r14
@@ -1137,6 +1176,22 @@ parser_evaluate_term:
         idiv    r14
         mov     r12, rax
         jmp     .loop
+    ELSEIF al, e, TOK_PERCENT
+        ; modulo, unsigned as NASM's %
+        mov     rdi, rbx
+        call    preprocessor_next_token
+        check_err
+        mov     rdi, rbx
+        call    parser_evaluate_factor
+        check_err
+        test    rdx, rdx
+        jz      .div_zero
+        mov     r14, rdx
+        mov     rax, r12
+        xor     edx, edx
+        div     r14
+        mov     r12, rdx
+        jmp     .loop
     ELSEIF al, e, TOK_LSHIFT
         mov     rdi, rbx
         call    preprocessor_next_token
@@ -1270,8 +1325,9 @@ parser_evaluate_factor:
         xor     rax, rax
         jmp     .done
     ELSEIF al, e, TOK_DOLLAR
-        ; Current location counter ($). The position becomes a plain
-        ; number here, so code in this section must not move afterwards.
+        ; Current location counter ($) or the section's start ($$). Code in
+        ; this section must not move afterwards: the value may end up as a
+        ; plain number.
         call    relax_freeze_current
         mov     rax, [rbx + PREP_ctx]
         mov     rax, [rax + ASMCTX_curr_sec]
@@ -1280,7 +1336,22 @@ parser_evaluate_factor:
             xor rax, rax
             jmp     .done
             ENDIF
-        mov     rdx, [rax + SECTION_size]
+        ; "$$" arrives as two '$' tokens
+        xor     r13d, r13d
+        mov     rdi, rbx
+        call    preprocessor_peek_token
+        check_err
+        cmp     byte [rdx + TOKEN_kind], TOK_DOLLAR
+        jne     .pos_label
+        mov     rdi, rbx
+        call    preprocessor_next_token
+        mov     r13d, 1
+.pos_label:
+        mov     edi, r13d
+        call    parser_pos_label
+        check_err
+        mov     r15, rdx                   ; a defined label, as for an identifier
+        mov     rdx, [rdx + SYMBOL_value]
         xor     rax, rax
         jmp     .done
     ELSEIF al, e, TOK_IDENT
@@ -1967,6 +2038,53 @@ parser_numlabel_name:
     ret
 
 ;*
+; * [parser_pos_label]
+; * Purpose: "$" and "$$" as labels. Each use becomes a hidden label
+; *          ("L@here.N", which no source can spell) at the current
+; *          position, or at offset 0 of the current section for "$$", so
+; *          branches, data relocations and label differences treat them
+; *          like any other label: "jmp $", "loop $", "dq $", "$-start".
+; * Input  : EDI = 0 for "$", 1 for "$$"; RBX = PrepState
+; * Output : RAX = OK and RDX = the SYMBOL*, or an error
+; ;
+parser_pos_label:
+    push    r12
+    push    r13
+    mov     r12d, edi
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, 32
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     r13, rdx
+    mov     rdi, r13
+    lea     rsi, [rel pos_prefix]
+    call    str_concat
+    lea     rdi, [rel numlbl_digits]
+    mov     rsi, [rel pos_count]
+    inc     qword [rel pos_count]
+    call    str_int_to_str
+    mov     rdi, r13
+    lea     rsi, [rel numlbl_digits]
+    call    str_concat
+    mov     rsi, r13
+    call    parser_define_label
+    test    rax, rax
+    jnz     .ret
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, r13
+    call    symbol_find
+    test    rax, rax
+    jnz     .ret
+    test    r12d, r12d
+    jz      .ret
+    mov     qword [rdx + SYMBOL_value], 0  ; "$$": the start of the section
+.ret:
+    pop     r13
+    pop     r12
+    ret
+
+;*
 ; * [parser_seg_override]
 ; * Purpose: Record a segment override written inside brackets ([fs:0x28]).
 ; * Input  : RSI = register name, R12 = OPERAND
@@ -2003,6 +2121,7 @@ parser_seg_override:
 deco_buf:   resb 64                 ; the decorator text being matched
 numlbl_count: resd NUMLBL_MAX       ; definitions of each numeric label so far
 numlbl_digits: resb 24
+pos_count:  resq 1                  ; "$" labels made so far
 
 [SECTION .rodata]
 str_rel: db "rel", 0
@@ -2014,6 +2133,7 @@ deco_names: db "z", 0, 0, 0, 0, 0, 0, 0
             db "sae", 0, 0, 0, 0, 0
 deco_dash:  db "-", 0
 numlbl_prefix: db "L@num.", 0
+pos_prefix: db "L@here.", 0
 numlbl_dot: db ".", 0
 ; segment registers in REG_CS..REG_SS order, 4 bytes each
 seg_names:  db "cs", 0, 0, "ds", 0, 0, "es", 0, 0, "fs", 0, 0, "gs", 0, 0, "ss", 0, 0
@@ -2998,9 +3118,24 @@ parser_handle_align:
     call    preprocessor_peek_token
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
         call    preprocessor_next_token
+        ; NASM writes the fill as an instruction: "align 4, db 0xCC"
+        mov     rdi, rbx
+        call    preprocessor_peek_token
+        cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+        jne     .fill_value
+        mov     rdi, [rdx + TOKEN_value]
+        lea     rsi, [rel str_db]
+        call    str_cmp
+        test    rax, rax
+        jnz     .fill_value
+        mov     rdi, rbx
+        call    preprocessor_next_token    ; consume "db"
+    .fill_value:
+        mov     rdi, rbx
         call    parser_evaluate_expression
         check_err
-        mov     r14, rdx
+        movzx   r14d, dl
+        or      r14d, 0x100            ; written by the source
         ELSE
         ; Architecture-specific NOP selection
         mov     rdi, [rbx + PREP_ctx]
@@ -3019,8 +3154,19 @@ parser_handle_align:
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, r13
     mov     rdx, r14
+    test    r14d, 0x100
+    jz      .auto_fill
+    extern  asm_ctx_align_fill
+    call    asm_ctx_align_fill
+    jmp     .aligned
+.auto_fill:
     call    asm_ctx_align
-    
+.aligned:
+
+    ; all three: popping only r12 handed the caller back a wrong r12 and a
+    ; clobbered r13/r14, which crashed right after "align 4, <fill>"
+    pop     r14
+    pop     r13
     pop     r12
     mov     rax, OK
     epilogue
@@ -3097,6 +3243,8 @@ str_equ:    db "equ", 0
 
 parser_emit_data_8:
     prologue
+    push    r13
+    push    r14
 .loop:
     mov     rdi, rbx
     call    preprocessor_next_token
@@ -3104,6 +3252,33 @@ parser_emit_data_8:
     mov     r12, rdx
     mov     al, [r12 + TOKEN_kind]
     
+    IF al, e, TOK_CHAR
+        ; a quoted literal on its own is a string: db 'abc' is 3 bytes
+        mov     rdi, rbx
+        call    preprocessor_peek_token
+        movzx   eax, byte [rdx + TOKEN_kind]
+        cmp     eax, TOK_COMMA
+        je      .char_bytes
+        cmp     eax, TOK_NEWLINE
+        je      .char_bytes
+        cmp     eax, TOK_EOF
+        je      .char_bytes
+        mov     al, TOK_CHAR               ; part of an expression ('a'+1)
+        jmp     .not_char
+.char_bytes:
+        movzx   r13d, word [r12 + TOKEN_len]
+        mov     r14, [r12 + TOKEN_value]
+.char_byte:
+        test    r13d, r13d
+        jz      .next_item
+        mov     rdi, [rbx + PREP_ctx]
+        movzx   esi, r14b
+        call    asmctx_emit_byte
+        shr     r14, 8
+        dec     r13d
+        jmp     .char_byte
+        ENDIF
+.not_char:
     IF al, e, TOK_STRING
         mov     rsi, [r12 + TOKEN_value]
         mov     rdi, [rbx + PREP_ctx]
@@ -3121,7 +3296,8 @@ parser_emit_data_8:
         extern  asmctx_emit_byte
         call    asmctx_emit_byte
         ENDIF
-    
+
+.next_item:
     mov     rdi, rbx
     call    preprocessor_peek_token
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
@@ -3129,9 +3305,13 @@ parser_emit_data_8:
         call    preprocessor_next_token
         jmp     .loop
         ENDIF
+    pop     r14
+    pop     r13
     epilogue
 
 .error:
+    pop     r14
+    pop     r13
     epilogue
 
 parser_emit_data_16:
@@ -3468,6 +3648,39 @@ str_default_rel_upper:  db "REL", 0
 str_default_abs:        db "abs", 0
 str_default_abs_upper:  db "ABS", 0
 [SECTION .text]
+
+;*
+; * [parser_default_section]
+; * Purpose: Select .text before the first statement, as NASM does: code and
+; *          data written before any "section" directive belong there (they
+; *          were dropped), and org has a section to apply to.
+; * Input  : RDI = AsmCtx
+; * Output : RAX = OK or an error
+; ;
+global parser_default_section
+parser_default_section:
+    push    rbx
+    mov     rbx, rdi
+    mov     rdi, rbx
+    lea     rsi, [rel str_text]
+    call    asmctx_find_section
+    test    rax, rax
+    jz      .select
+    mov     rdi, rbx
+    lea     rsi, [rel str_text]
+    mov     rdx, SEC_CUSTOM
+    call    asm_ctx_create_section
+    test    rax, rax
+    jnz     .ret
+    mov     word [rdx + SECTION_flags], (SHF_ALLOC | SHF_EXECINSTR)
+    mov     dword [rdx + SECTION_elf_type], SHT_PROGBITS
+    mov     byte [rdx + SECTION_type], SEC_TEXT
+.select:
+    mov     [rbx + ASMCTX_curr_sec], rdx
+    xor     eax, eax
+.ret:
+    pop     rbx
+    ret
 
 ;*
 ; * [parser_handle_section_directive]
@@ -3940,6 +4153,7 @@ str_ror:       db "ror", 0
 str_comdat:    db "comdat", 0
 str_org:       db "org", 0
 str_text:      db ".text", 0
+str_db:        db "db", 0
 str_data:      db ".data", 0
 str_bss:       db ".bss", 0
 str_rodata:    db ".rodata", 0
