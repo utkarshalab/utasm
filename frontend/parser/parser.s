@@ -2468,11 +2468,13 @@ parser_parse_struc:
     ;   [rbp - 72] field alignment
     ;   [rbp - 80] length of the struct name
     ;   [rbp - 88] length of the field name
-    sub     rsp, 48
+    ;   [rbp - 96] 1 once a field is written in NASM's form
+    sub     rsp, 64
 
     mov     rbx, rdi               ; rbx = PrepState
     mov     r15, rsi               ; r15 = struct name Token
     mov     qword [rbp - 48], 0    ; running byte offset
+    mov     qword [rbp - 96], 0
 
     ; Build struct-name string ("StructName", null-terminated from token)
     mov     r13, [r15 + TOKEN_value]  ; r13 = struct name ptr
@@ -2494,7 +2496,15 @@ parser_parse_struc:
         mov     rax, EXIT_UNEXPECTED_EOF
         jmp     .error
         ENDIF
-    
+
+    ; NASM's ".x:" field label (a "name:" one too)
+    IF al, e, TOK_LOCAL_LABEL
+        jmp     .nasm_label
+        ENDIF
+    IF al, e, TOK_LABEL
+        jmp     .nasm_label
+        ENDIF
+
     ; Check for 'endstruc'
     IF al, e, TOK_IDENT
         mov     rdi, [r12 + TOKEN_value]
@@ -2505,13 +2515,12 @@ parser_parse_struc:
             jmp .register_struct
             ENDIF
         
-        ; Check for 'field' keyword
+        ; Check for 'field' keyword; any other word is NASM's form
         mov     rdi, [r12 + TOKEN_value]
         lea     rsi, [str_field]
         call    str_compare
         IF rax, ne, 0
-            mov     rax, EXIT_UNEXPECTED_TOKEN
-            jmp     .error
+            jmp     .nasm_word
             ENDIF
             ELSE
         mov     rax, EXIT_UNEXPECTED_TOKEN
@@ -2628,6 +2637,73 @@ parser_parse_struc:
     mov     [rbp - 48], rax
     jmp     .field_loop
     
+    ; ---- NASM's form: ".x: resd 1", ".y resw 2", "resb 4", "alignb 8" ----
+    ; A field is a plain number, "<struct>.x" (or the name itself when it
+    ; has no dot); the reservation after it moves the offset on.
+.nasm_word:
+    mov     byte [rbp - 96], 1
+    mov     rdi, [r12 + TOKEN_value]
+    call    parser_res_unit                ; eax = bytes per unit, 0 if none
+    test    eax, eax
+    jnz     .nasm_res
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [rel str_alignb]
+    call    str_cmp
+    test    rax, rax
+    jz      .nasm_alignb
+    ; any other word names a field (a label without its colon)
+.nasm_label:
+    mov     byte [rbp - 96], 1
+    mov     rsi, [r12 + TOKEN_value]
+    cmp     byte [rsi], '.'
+    jne     .nasm_named
+    mov     [rbp - 56], rsi
+    mov     rdi, r13
+    call    str_len
+    mov     [rbp - 80], rax
+    mov     rdi, [rbp - 56]
+    call    str_len
+    mov     [rbp - 88], rax
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, [rbp - 80]
+    add     rsi, [rbp - 88]
+    inc     rsi                            ; NUL
+    call    arena_alloc
+    check_err_to .error
+    mov     r12, rdx
+    mov     rdi, rdx
+    mov     rsi, r13
+    mov     rcx, [rbp - 80]
+    rep movsb
+    mov     rsi, [rbp - 56]
+    mov     rcx, [rbp - 88]
+    rep movsb
+    mov     byte [rdi], 0
+    mov     rsi, r12                       ; "<struct>.x"
+.nasm_named:
+    mov     rdx, [rbp - 48]
+    call    parser_struc_const
+    check_err_to .error
+    jmp     .field_loop
+.nasm_res:
+    mov     [rbp - 64], rax                ; bytes per unit
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    check_err_to .error
+    imul    rdx, [rbp - 64]
+    add     [rbp - 48], rdx
+    jmp     .field_loop
+.nasm_alignb:
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    check_err_to .error
+    mov     rax, [rbp - 48]
+    lea     rax, [rax + rdx - 1]
+    neg     rdx
+    and     rax, rdx
+    mov     [rbp - 48], rax
+    jmp     .field_loop
+
 .register_struct:
     ; Register the struct itself: kind=SYM_STRUCT, size=total
     sub     rsp, SYMBOL_SIZE
@@ -2693,7 +2769,25 @@ parser_parse_struc:
     mov     qword [rsi + SYMBOL_size], 8  ; size of QWORD constant
     call    symbol_add
     add     rsp, SYMBOL_SIZE
-    
+
+    ; NASM's form names the size "<struct>_size"
+    cmp     byte [rbp - 96], 0
+    je      .no_nasm_size
+    mov     rdi, [rbx + PREP_arena]
+    lea     rsi, [r12 + 6]
+    call    arena_alloc
+    check_err_to .error
+    mov     rdi, rdx
+    mov     rsi, r15
+    lea     rcx, [r12 + 6]
+    rep movsb
+    mov     dword [rdx + r12 + 1], 'size'
+    mov     rsi, rdx
+    mov     rdx, [rbp - 48]
+    call    parser_struc_const
+    check_err_to .error
+.no_nasm_size:
+
     xor     rax, rax
     jmp     .done
 
@@ -2707,7 +2801,7 @@ parser_parse_struc:
 
 .error:
 .done:
-    add     rsp, 48                    ; discard the locals frame
+    add     rsp, 64                    ; discard the locals frame
     pop     r15
     pop     r14
     pop     r13
@@ -2944,6 +3038,31 @@ parser_handle_pseudo_op:
         ENDIF
 
 .not_res:
+    ; NASM's structure instances: istruc NAME / at FIELD, data / iend
+    mov     rdi, r12
+    lea     rsi, [rel str_istruc]
+    call    str_cmp
+    test    rax, rax
+    jnz     .not_istruc
+    call    parser_istruc
+    jmp     .check_handler_result
+.not_istruc:
+    mov     rdi, r12
+    lea     rsi, [rel str_at]
+    call    str_cmp
+    test    rax, rax
+    jnz     .not_at
+    call    parser_at
+    jmp     .check_handler_result
+.not_at:
+    mov     rdi, r12
+    lea     rsi, [rel str_iend]
+    call    str_cmp
+    test    rax, rax
+    jnz     .not_iend
+    call    parser_iend
+    jmp     .check_handler_result
+.not_iend:
     ; 2. Section Directive ("segment" is NASM's other name for it)
     mov     rdi, r12
     lea     rsi, [rel str_segment]
@@ -3126,6 +3245,221 @@ parser_handle_pseudo_op:
     pop     r12
     pop     rbx
     epilogue
+
+;*
+; * [parser_struc_const]
+; * Purpose: Defines a number (a NASM struc field, "<struct>_size").
+; * Input  : RBX = PrepState, RSI = name, RDX = value
+; * Output : RAX = OK or an error
+; ;
+parser_struc_const:
+    push    r12
+    push    r13
+    mov     r12, rsi
+    mov     r13, rdx
+    sub     rsp, SYMBOL_SIZE
+    mov     rdi, rsp
+    xor     eax, eax
+    mov     rcx, SYMBOL_SIZE / 8
+    rep stosq
+    mov     byte [rsp + SYMBOL_tag], TAG_SYMBOL
+    mov     byte [rsp + SYMBOL_kind], SYM_CONSTANT
+    mov     byte [rsp + SYMBOL_vis], VIS_LOCAL
+    mov     [rsp + SYMBOL_name], r12
+    mov     [rsp + SYMBOL_value], r13
+    mov     qword [rsp + SYMBOL_size], 8
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, rsp
+    call    symbol_add
+    add     rsp, SYMBOL_SIZE
+    pop     r13
+    pop     r12
+    ret
+
+;*
+; * [parser_res_unit]
+; * Purpose: The unit of a reservation word: resb 1, resw 2, resd 4,
+; *          resq 8, rest 10, reso 16, resy 32, resz 64.
+; * Input  : RDI = word
+; * Output : EAX = bytes per unit, 0 when it is no reservation word
+; ;
+parser_res_unit:
+    cmp     byte [rdi + 4], 0
+    jne     .none
+    mov     ecx, [rdi]
+    mov     eax, 1
+    cmp     ecx, 'resb'
+    je      .ret
+    mov     eax, 2
+    cmp     ecx, 'resw'
+    je      .ret
+    mov     eax, 4
+    cmp     ecx, 'resd'
+    je      .ret
+    mov     eax, 8
+    cmp     ecx, 'resq'
+    je      .ret
+    mov     eax, 10
+    cmp     ecx, 'rest'
+    je      .ret
+    mov     eax, 16
+    cmp     ecx, 'reso'
+    je      .ret
+    mov     eax, 32
+    cmp     ecx, 'resy'
+    je      .ret
+    mov     eax, 64
+    cmp     ecx, 'resz'
+    je      .ret
+.none:
+    xor     eax, eax
+.ret:
+    ret
+
+;*
+; * [parser_pad_to]
+; * Purpose: Zero-fills the current section up to an offset (istruc/at/iend).
+; * Input  : RBX = PrepState, RDI = offset
+; * Output : RAX = OK or an error
+; ;
+    extern  asm_ctx_emit_byte
+parser_pad_to:
+    push    r12
+    mov     r12, rdi
+.loop:
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rax, [rdi + ASMCTX_curr_sec]
+    cmp     [rax + SECTION_size], r12
+    jae     .done
+    xor     esi, esi
+    call    asm_ctx_emit_byte
+    test    rax, rax
+    jnz     .ret
+    jmp     .loop
+.done:
+    xor     eax, eax
+.ret:
+    pop     r12
+    ret
+
+;*
+; * [parser_istruc]
+; * Purpose: "istruc NAME" starts an instance of a NASM structure here.
+; * Input  : RBX = PrepState
+; * Output : RAX = OK or an error
+; ;
+parser_istruc:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .bad
+    mov     rax, [rdx + TOKEN_value]
+    mov     [rel istruc_name], rax
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_curr_sec]
+    mov     rax, [rax + SECTION_size]
+    mov     [rel istruc_base], rax
+    xor     eax, eax
+    ret
+.bad:
+    mov     rax, EXIT_UNEXPECTED_TOKEN
+.ret:
+    ret
+
+;*
+; * [parser_at]
+; * Purpose: "at FIELD, <data>": zero-fill up to the field; the data after
+; *          the comma is then parsed as a statement of its own.
+; * Input  : RBX = PrepState
+; * Output : RAX = OK or an error
+; ;
+parser_at:
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .ret
+    mov     rdi, [rel istruc_base]
+    add     rdi, rdx
+    call    parser_pad_to
+    test    rax, rax
+    jnz     .ret
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_COMMA
+    jne     .ok
+    mov     rdi, rbx
+    call    preprocessor_next_token
+.ok:
+    xor     eax, eax
+.ret:
+    ret
+
+;*
+; * [parser_iend]
+; * Purpose: "iend": zero-fill to the end of the structure (its
+; *          "<name>_size", or utasm's "<name>_SIZE").
+; * Input  : RBX = PrepState
+; * Output : RAX = OK or an error
+; ;
+parser_iend:
+    push    r12
+    push    r13
+    mov     r12, [rel istruc_name]
+    test    r12, r12
+    jz      .ok
+    mov     rdi, r12
+    call    str_len
+    mov     r13, rax
+    mov     rdi, [rbx + PREP_arena]
+    lea     rsi, [rax + 6]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     rdi, rdx
+    mov     rsi, r12
+    mov     rcx, r13
+    rep movsb
+    mov     dword [rdi], '_siz'
+    mov     word [rdi + 4], 'e'
+    mov     r12, rdx                       ; the name
+    mov     r13, rdi                       ; its suffix
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, r12
+    call    symbol_find
+    test    rax, rax
+    jz      .found
+    mov     dword [r13], '_SIZ'
+    mov     byte [r13 + 4], 'E'
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, r12
+    call    symbol_find
+    test    rax, rax
+    jnz     .ok                            ; unknown: nothing to fill
+.found:
+    mov     rdi, [rel istruc_base]
+    add     rdi, [rdx + SYMBOL_value]
+    call    parser_pad_to
+    jmp     .ret
+.ok:
+    xor     eax, eax
+.ret:
+    pop     r13
+    pop     r12
+    ret
+
+[SECTION .rodata]
+str_alignb:    db "alignb", 0
+str_istruc:    db "istruc", 0
+str_at:        db "at", 0
+str_iend:      db "iend", 0
+[SECTION .bss]
+istruc_base:   resq 1              ; offset where the istruc began
+istruc_name:   resq 1              ; its structure's name
+[SECTION .text]
 
 ;*
 ; * [parser_handle_times]
