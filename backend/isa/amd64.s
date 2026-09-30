@@ -821,10 +821,7 @@ mnc_tb_x64:
     mnc_ent "v4fnmaddps", 0, 1712
     mnc_ent "v4fnmaddss", 0, 1713
     mnc_ent "vaddph", 0, 1714
-    mnc_ent "vaddps", 0, ID_VADDPS
     mnc_ent "vaddsh", 0, 1715
-    mnc_ent "vmovups", 0, ID_VMOVUPS
-    mnc_ent "vxorps", 0, ID_VXORPS
     mnc_ent "valignd", 0, 1716
     mnc_ent "valignq", 0, 1717
     mnc_ent "vblendmpd", 0, 1718
@@ -1380,6 +1377,460 @@ mnc_tb_x64:
     mnc_ent "eresume", 0, 5705
     mnc_ent "egetkey", 0, 5706
 
+    ; ---- added for the table-driven encoder (scripts/gen_x86_enc.py) ----
+    mnc_ent "cmpeqpd", 0, 6000
+    mnc_ent "cmpeqps", 0, 6001
+    mnc_ent "cmpeqsd", 0, 6002
+    mnc_ent "cmpeqss", 0, 6003
+    mnc_ent "cmplepd", 0, 6004
+    mnc_ent "cmpleps", 0, 6005
+    mnc_ent "cmplesd", 0, 6006
+    mnc_ent "cmpless", 0, 6007
+    mnc_ent "cmpltpd", 0, 6008
+    mnc_ent "cmpltps", 0, 6009
+    mnc_ent "cmpltsd", 0, 6010
+    mnc_ent "cmpltss", 0, 6011
+    mnc_ent "cmpneqpd", 0, 6012
+    mnc_ent "cmpneqps", 0, 6013
+    mnc_ent "cmpneqsd", 0, 6014
+    mnc_ent "cmpneqss", 0, 6015
+    mnc_ent "cmpnlepd", 0, 6016
+    mnc_ent "cmpnleps", 0, 6017
+    mnc_ent "cmpnlesd", 0, 6018
+    mnc_ent "cmpnless", 0, 6019
+    mnc_ent "cmpnltpd", 0, 6020
+    mnc_ent "cmpnltps", 0, 6021
+    mnc_ent "cmpnltsd", 0, 6022
+    mnc_ent "cmpnltss", 0, 6023
+    mnc_ent "cmpordpd", 0, 6024
+    mnc_ent "cmpordps", 0, 6025
+    mnc_ent "cmpordsd", 0, 6026
+    mnc_ent "cmpordss", 0, 6027
+    mnc_ent "cmpunordpd", 0, 6028
+    mnc_ent "cmpunordps", 0, 6029
+    mnc_ent "cmpunordsd", 0, 6030
+    mnc_ent "cmpunordss", 0, 6031
+    mnc_ent "fcmovb", 0, 6032
+    mnc_ent "fcmovbe", 0, 6033
+    mnc_ent "fcmove", 0, 6034
+    mnc_ent "fcmovnb", 0, 6035
+    mnc_ent "fcmovnbe", 0, 6036
+    mnc_ent "fcmovne", 0, 6037
+    mnc_ent "fcmovnu", 0, 6038
+    mnc_ent "fcmovu", 0, 6039
+    mnc_ent "fxrstor64", 0, 6040
+    mnc_ent "fxsave64", 0, 6041
+    mnc_ent "pclmulhqhqdq", 0, 6042
+    mnc_ent "pclmulhqlqdq", 0, 6043
+    mnc_ent "pclmullqhqdq", 0, 6044
+    mnc_ent "pclmullqlqdq", 0, 6045
+    mnc_ent "pmovsxbd", 0, 6046
+    mnc_ent "pmovsxbq", 0, 6047
+    mnc_ent "pmovsxbw", 0, 6048
+    mnc_ent "pmovsxdq", 0, 6049
+    mnc_ent "pmovsxwd", 0, 6050
+    mnc_ent "pmovsxwq", 0, 6051
+    mnc_ent "pmovzxbd", 0, 6052
+    mnc_ent "pmovzxbq", 0, 6053
+    mnc_ent "pmovzxbw", 0, 6054
+    mnc_ent "pmovzxdq", 0, 6055
+    mnc_ent "pmovzxwd", 0, 6056
+    mnc_ent "pmovzxwq", 0, 6057
+    mnc_ent "popfw", 0, 6058
+    mnc_ent "prefetchnta", 0, 6059
+    mnc_ent "prefetcht0", 0, 6060
+    mnc_ent "prefetcht1", 0, 6061
+    mnc_ent "prefetcht2", 0, 6062
+    mnc_ent "pushfw", 0, 6063
+    mnc_ent "ud2", 0, 6064
+    mnc_ent "xrstor64", 0, 6065
+    mnc_ent "xsave64", 0, 6066
+    mnc_ent "vaddps", 0, 6067
+    mnc_ent "vaddsd", 0, 6068
+    mnc_ent "vaddss", 0, 6069
+    mnc_ent "vaddsubpd", 0, 6070
+    mnc_ent "vaddsubps", 0, 6071
+    mnc_ent "vaesimc", 0, 6072
+    mnc_ent "vaeskeygenassist", 0, 6073
+    mnc_ent "vandnpd", 0, 6074
+    mnc_ent "vandnps", 0, 6075
+    mnc_ent "vandpd", 0, 6076
+    mnc_ent "vandps", 0, 6077
+    mnc_ent "vblendpd", 0, 6078
+    mnc_ent "vblendps", 0, 6079
+    mnc_ent "vblendvpd", 0, 6080
+    mnc_ent "vblendvps", 0, 6081
+    mnc_ent "vbroadcastf128", 0, 6082
+    mnc_ent "vbroadcasti128", 0, 6083
+    mnc_ent "vbroadcastsd", 0, 6084
+    mnc_ent "vbroadcastss", 0, 6085
+    mnc_ent "vcmpeq_ospd", 0, 6086
+    mnc_ent "vcmpeq_osps", 0, 6087
+    mnc_ent "vcmpeq_ossd", 0, 6088
+    mnc_ent "vcmpeq_osss", 0, 6089
+    mnc_ent "vcmpeq_uqpd", 0, 6090
+    mnc_ent "vcmpeq_uqps", 0, 6091
+    mnc_ent "vcmpeq_uqsd", 0, 6092
+    mnc_ent "vcmpeq_uqss", 0, 6093
+    mnc_ent "vcmpeq_uspd", 0, 6094
+    mnc_ent "vcmpeq_usps", 0, 6095
+    mnc_ent "vcmpeq_ussd", 0, 6096
+    mnc_ent "vcmpeq_usss", 0, 6097
+    mnc_ent "vcmpeqpd", 0, 6098
+    mnc_ent "vcmpeqps", 0, 6099
+    mnc_ent "vcmpeqsd", 0, 6100
+    mnc_ent "vcmpeqss", 0, 6101
+    mnc_ent "vcmpfalse_ospd", 0, 6102
+    mnc_ent "vcmpfalse_osps", 0, 6103
+    mnc_ent "vcmpfalse_ossd", 0, 6104
+    mnc_ent "vcmpfalse_osss", 0, 6105
+    mnc_ent "vcmpfalsepd", 0, 6106
+    mnc_ent "vcmpfalseps", 0, 6107
+    mnc_ent "vcmpfalsesd", 0, 6108
+    mnc_ent "vcmpfalsess", 0, 6109
+    mnc_ent "vcmpge_oqpd", 0, 6110
+    mnc_ent "vcmpge_oqps", 0, 6111
+    mnc_ent "vcmpge_oqsd", 0, 6112
+    mnc_ent "vcmpge_oqss", 0, 6113
+    mnc_ent "vcmpgepd", 0, 6114
+    mnc_ent "vcmpgeps", 0, 6115
+    mnc_ent "vcmpgesd", 0, 6116
+    mnc_ent "vcmpgess", 0, 6117
+    mnc_ent "vcmpgt_oqpd", 0, 6118
+    mnc_ent "vcmpgt_oqps", 0, 6119
+    mnc_ent "vcmpgt_oqsd", 0, 6120
+    mnc_ent "vcmpgt_oqss", 0, 6121
+    mnc_ent "vcmpgtpd", 0, 6122
+    mnc_ent "vcmpgtps", 0, 6123
+    mnc_ent "vcmpgtsd", 0, 6124
+    mnc_ent "vcmpgtss", 0, 6125
+    mnc_ent "vcmple_oqpd", 0, 6126
+    mnc_ent "vcmple_oqps", 0, 6127
+    mnc_ent "vcmple_oqsd", 0, 6128
+    mnc_ent "vcmple_oqss", 0, 6129
+    mnc_ent "vcmplepd", 0, 6130
+    mnc_ent "vcmpleps", 0, 6131
+    mnc_ent "vcmplesd", 0, 6132
+    mnc_ent "vcmpless", 0, 6133
+    mnc_ent "vcmplt_oqpd", 0, 6134
+    mnc_ent "vcmplt_oqps", 0, 6135
+    mnc_ent "vcmplt_oqsd", 0, 6136
+    mnc_ent "vcmplt_oqss", 0, 6137
+    mnc_ent "vcmpltpd", 0, 6138
+    mnc_ent "vcmpltps", 0, 6139
+    mnc_ent "vcmpltsd", 0, 6140
+    mnc_ent "vcmpltss", 0, 6141
+    mnc_ent "vcmpneq_oqpd", 0, 6142
+    mnc_ent "vcmpneq_oqps", 0, 6143
+    mnc_ent "vcmpneq_oqsd", 0, 6144
+    mnc_ent "vcmpneq_oqss", 0, 6145
+    mnc_ent "vcmpneq_ospd", 0, 6146
+    mnc_ent "vcmpneq_osps", 0, 6147
+    mnc_ent "vcmpneq_ossd", 0, 6148
+    mnc_ent "vcmpneq_osss", 0, 6149
+    mnc_ent "vcmpneq_uspd", 0, 6150
+    mnc_ent "vcmpneq_usps", 0, 6151
+    mnc_ent "vcmpneq_ussd", 0, 6152
+    mnc_ent "vcmpneq_usss", 0, 6153
+    mnc_ent "vcmpneqpd", 0, 6154
+    mnc_ent "vcmpneqps", 0, 6155
+    mnc_ent "vcmpneqsd", 0, 6156
+    mnc_ent "vcmpneqss", 0, 6157
+    mnc_ent "vcmpnge_uqpd", 0, 6158
+    mnc_ent "vcmpnge_uqps", 0, 6159
+    mnc_ent "vcmpnge_uqsd", 0, 6160
+    mnc_ent "vcmpnge_uqss", 0, 6161
+    mnc_ent "vcmpngepd", 0, 6162
+    mnc_ent "vcmpngeps", 0, 6163
+    mnc_ent "vcmpngesd", 0, 6164
+    mnc_ent "vcmpngess", 0, 6165
+    mnc_ent "vcmpngt_uqpd", 0, 6166
+    mnc_ent "vcmpngt_uqps", 0, 6167
+    mnc_ent "vcmpngt_uqsd", 0, 6168
+    mnc_ent "vcmpngt_uqss", 0, 6169
+    mnc_ent "vcmpngtpd", 0, 6170
+    mnc_ent "vcmpngtps", 0, 6171
+    mnc_ent "vcmpngtsd", 0, 6172
+    mnc_ent "vcmpngtss", 0, 6173
+    mnc_ent "vcmpnle_uqpd", 0, 6174
+    mnc_ent "vcmpnle_uqps", 0, 6175
+    mnc_ent "vcmpnle_uqsd", 0, 6176
+    mnc_ent "vcmpnle_uqss", 0, 6177
+    mnc_ent "vcmpnlepd", 0, 6178
+    mnc_ent "vcmpnleps", 0, 6179
+    mnc_ent "vcmpnlesd", 0, 6180
+    mnc_ent "vcmpnless", 0, 6181
+    mnc_ent "vcmpnlt_uqpd", 0, 6182
+    mnc_ent "vcmpnlt_uqps", 0, 6183
+    mnc_ent "vcmpnlt_uqsd", 0, 6184
+    mnc_ent "vcmpnlt_uqss", 0, 6185
+    mnc_ent "vcmpnltpd", 0, 6186
+    mnc_ent "vcmpnltps", 0, 6187
+    mnc_ent "vcmpnltsd", 0, 6188
+    mnc_ent "vcmpnltss", 0, 6189
+    mnc_ent "vcmpord_spd", 0, 6190
+    mnc_ent "vcmpord_sps", 0, 6191
+    mnc_ent "vcmpord_ssd", 0, 6192
+    mnc_ent "vcmpord_sss", 0, 6193
+    mnc_ent "vcmpordpd", 0, 6194
+    mnc_ent "vcmpordps", 0, 6195
+    mnc_ent "vcmpordsd", 0, 6196
+    mnc_ent "vcmpordss", 0, 6197
+    mnc_ent "vcmppd", 0, 6198
+    mnc_ent "vcmpps", 0, 6199
+    mnc_ent "vcmpsd", 0, 6200
+    mnc_ent "vcmpss", 0, 6201
+    mnc_ent "vcmptrue_uspd", 0, 6202
+    mnc_ent "vcmptrue_usps", 0, 6203
+    mnc_ent "vcmptrue_ussd", 0, 6204
+    mnc_ent "vcmptrue_usss", 0, 6205
+    mnc_ent "vcmptruepd", 0, 6206
+    mnc_ent "vcmptrueps", 0, 6207
+    mnc_ent "vcmptruesd", 0, 6208
+    mnc_ent "vcmptruess", 0, 6209
+    mnc_ent "vcmpunord_spd", 0, 6210
+    mnc_ent "vcmpunord_sps", 0, 6211
+    mnc_ent "vcmpunord_ssd", 0, 6212
+    mnc_ent "vcmpunord_sss", 0, 6213
+    mnc_ent "vcmpunordpd", 0, 6214
+    mnc_ent "vcmpunordps", 0, 6215
+    mnc_ent "vcmpunordsd", 0, 6216
+    mnc_ent "vcmpunordss", 0, 6217
+    mnc_ent "vcomisd", 0, 6218
+    mnc_ent "vcomiss", 0, 6219
+    mnc_ent "vcvtdq2pd", 0, 6220
+    mnc_ent "vcvtdq2ps", 0, 6221
+    mnc_ent "vcvtpd2dq", 0, 6222
+    mnc_ent "vcvtpd2ps", 0, 6223
+    mnc_ent "vcvtps2dq", 0, 6224
+    mnc_ent "vcvtps2pd", 0, 6225
+    mnc_ent "vcvtsd2si", 0, 6226
+    mnc_ent "vcvtsd2ss", 0, 6227
+    mnc_ent "vcvtsi2sd", 0, 6228
+    mnc_ent "vcvtsi2ss", 0, 6229
+    mnc_ent "vcvtss2sd", 0, 6230
+    mnc_ent "vcvtss2si", 0, 6231
+    mnc_ent "vcvttpd2dq", 0, 6232
+    mnc_ent "vcvttps2dq", 0, 6233
+    mnc_ent "vcvttsd2si", 0, 6234
+    mnc_ent "vcvttss2si", 0, 6235
+    mnc_ent "vdivpd", 0, 6236
+    mnc_ent "vdivps", 0, 6237
+    mnc_ent "vdivsd", 0, 6238
+    mnc_ent "vdivss", 0, 6239
+    mnc_ent "vdppd", 0, 6240
+    mnc_ent "vdpps", 0, 6241
+    mnc_ent "vextractps", 0, 6242
+    mnc_ent "vfmaddsub132pd", 0, 6243
+    mnc_ent "vfmaddsub132ps", 0, 6244
+    mnc_ent "vfmaddsub213pd", 0, 6245
+    mnc_ent "vfmaddsub213ps", 0, 6246
+    mnc_ent "vfmaddsub231pd", 0, 6247
+    mnc_ent "vfmaddsub231ps", 0, 6248
+    mnc_ent "vhaddpd", 0, 6249
+    mnc_ent "vhaddps", 0, 6250
+    mnc_ent "vhsubpd", 0, 6251
+    mnc_ent "vhsubps", 0, 6252
+    mnc_ent "vinsertps", 0, 6253
+    mnc_ent "vlddqu", 0, 6254
+    mnc_ent "vmaskmovdqu", 0, 6255
+    mnc_ent "vmaskmovpd", 0, 6256
+    mnc_ent "vmaskmovps", 0, 6257
+    mnc_ent "vmaxpd", 0, 6258
+    mnc_ent "vmaxps", 0, 6259
+    mnc_ent "vmaxsd", 0, 6260
+    mnc_ent "vmaxss", 0, 6261
+    mnc_ent "vminpd", 0, 6262
+    mnc_ent "vminps", 0, 6263
+    mnc_ent "vminsd", 0, 6264
+    mnc_ent "vminss", 0, 6265
+    mnc_ent "vmovapd", 0, 6266
+    mnc_ent "vmovaps", 0, 6267
+    mnc_ent "vmovd", 0, 6268
+    mnc_ent "vmovddup", 0, 6269
+    mnc_ent "vmovdqa", 0, 6270
+    mnc_ent "vmovdqu", 0, 6271
+    mnc_ent "vmovhlps", 0, 6272
+    mnc_ent "vmovhpd", 0, 6273
+    mnc_ent "vmovhps", 0, 6274
+    mnc_ent "vmovlhps", 0, 6275
+    mnc_ent "vmovlpd", 0, 6276
+    mnc_ent "vmovlps", 0, 6277
+    mnc_ent "vmovmskpd", 0, 6278
+    mnc_ent "vmovmskps", 0, 6279
+    mnc_ent "vmovntdq", 0, 6280
+    mnc_ent "vmovntdqa", 0, 6281
+    mnc_ent "vmovntpd", 0, 6282
+    mnc_ent "vmovntps", 0, 6283
+    mnc_ent "vmovq", 0, 6284
+    mnc_ent "vmovsd", 0, 6285
+    mnc_ent "vmovshdup", 0, 6286
+    mnc_ent "vmovsldup", 0, 6287
+    mnc_ent "vmovss", 0, 6288
+    mnc_ent "vmovupd", 0, 6289
+    mnc_ent "vmovups", 0, 6290
+    mnc_ent "vmpsadbw", 0, 6291
+    mnc_ent "vmulpd", 0, 6292
+    mnc_ent "vmulps", 0, 6293
+    mnc_ent "vmulsd", 0, 6294
+    mnc_ent "vmulss", 0, 6295
+    mnc_ent "vorpd", 0, 6296
+    mnc_ent "vorps", 0, 6297
+    mnc_ent "vpabsb", 0, 6298
+    mnc_ent "vpabsd", 0, 6299
+    mnc_ent "vpabsw", 0, 6300
+    mnc_ent "vpackssdw", 0, 6301
+    mnc_ent "vpacksswb", 0, 6302
+    mnc_ent "vpackusdw", 0, 6303
+    mnc_ent "vpackuswb", 0, 6304
+    mnc_ent "vpaddb", 0, 6305
+    mnc_ent "vpaddd", 0, 6306
+    mnc_ent "vpaddq", 0, 6307
+    mnc_ent "vpaddsb", 0, 6308
+    mnc_ent "vpaddsw", 0, 6309
+    mnc_ent "vpaddusb", 0, 6310
+    mnc_ent "vpaddusw", 0, 6311
+    mnc_ent "vpaddw", 0, 6312
+    mnc_ent "vpalignr", 0, 6313
+    mnc_ent "vpand", 0, 6314
+    mnc_ent "vpandn", 0, 6315
+    mnc_ent "vpavgb", 0, 6316
+    mnc_ent "vpavgw", 0, 6317
+    mnc_ent "vpblendvb", 0, 6318
+    mnc_ent "vpblendw", 0, 6319
+    mnc_ent "vpclmulhqhqdq", 0, 6320
+    mnc_ent "vpclmulhqlqdq", 0, 6321
+    mnc_ent "vpclmullqhqdq", 0, 6322
+    mnc_ent "vpclmullqlqdq", 0, 6323
+    mnc_ent "vpcmpeqb", 0, 6324
+    mnc_ent "vpcmpeqd", 0, 6325
+    mnc_ent "vpcmpeqq", 0, 6326
+    mnc_ent "vpcmpeqw", 0, 6327
+    mnc_ent "vpcmpestri", 0, 6328
+    mnc_ent "vpcmpestrm", 0, 6329
+    mnc_ent "vpcmpgtb", 0, 6330
+    mnc_ent "vpcmpgtd", 0, 6331
+    mnc_ent "vpcmpgtq", 0, 6332
+    mnc_ent "vpcmpgtw", 0, 6333
+    mnc_ent "vpcmpistri", 0, 6334
+    mnc_ent "vpcmpistrm", 0, 6335
+    mnc_ent "vpextrb", 0, 6336
+    mnc_ent "vpextrd", 0, 6337
+    mnc_ent "vpextrq", 0, 6338
+    mnc_ent "vpextrw", 0, 6339
+    mnc_ent "vphaddd", 0, 6340
+    mnc_ent "vphaddsw", 0, 6341
+    mnc_ent "vphaddw", 0, 6342
+    mnc_ent "vphminposuw", 0, 6343
+    mnc_ent "vphsubd", 0, 6344
+    mnc_ent "vphsubsw", 0, 6345
+    mnc_ent "vphsubw", 0, 6346
+    mnc_ent "vpinsrb", 0, 6347
+    mnc_ent "vpinsrd", 0, 6348
+    mnc_ent "vpinsrq", 0, 6349
+    mnc_ent "vpinsrw", 0, 6350
+    mnc_ent "vpmaddubsw", 0, 6351
+    mnc_ent "vpmaddwd", 0, 6352
+    mnc_ent "vpmaskmovd", 0, 6353
+    mnc_ent "vpmaskmovq", 0, 6354
+    mnc_ent "vpmaxsb", 0, 6355
+    mnc_ent "vpmaxsd", 0, 6356
+    mnc_ent "vpmaxsw", 0, 6357
+    mnc_ent "vpmaxub", 0, 6358
+    mnc_ent "vpmaxud", 0, 6359
+    mnc_ent "vpmaxuw", 0, 6360
+    mnc_ent "vpminsb", 0, 6361
+    mnc_ent "vpminsd", 0, 6362
+    mnc_ent "vpminsw", 0, 6363
+    mnc_ent "vpminub", 0, 6364
+    mnc_ent "vpminud", 0, 6365
+    mnc_ent "vpminuw", 0, 6366
+    mnc_ent "vpmovmskb", 0, 6367
+    mnc_ent "vpmovsxbd", 0, 6368
+    mnc_ent "vpmovsxbq", 0, 6369
+    mnc_ent "vpmovsxbw", 0, 6370
+    mnc_ent "vpmovsxdq", 0, 6371
+    mnc_ent "vpmovsxwd", 0, 6372
+    mnc_ent "vpmovsxwq", 0, 6373
+    mnc_ent "vpmovzxbd", 0, 6374
+    mnc_ent "vpmovzxbq", 0, 6375
+    mnc_ent "vpmovzxbw", 0, 6376
+    mnc_ent "vpmovzxdq", 0, 6377
+    mnc_ent "vpmovzxwd", 0, 6378
+    mnc_ent "vpmovzxwq", 0, 6379
+    mnc_ent "vpmuldq", 0, 6380
+    mnc_ent "vpmulhrsw", 0, 6381
+    mnc_ent "vpmulhuw", 0, 6382
+    mnc_ent "vpmulhw", 0, 6383
+    mnc_ent "vpmulld", 0, 6384
+    mnc_ent "vpmullw", 0, 6385
+    mnc_ent "vpmuludq", 0, 6386
+    mnc_ent "vpor", 0, 6387
+    mnc_ent "vpsadbw", 0, 6388
+    mnc_ent "vpshufb", 0, 6389
+    mnc_ent "vpshufd", 0, 6390
+    mnc_ent "vpshufhw", 0, 6391
+    mnc_ent "vpshuflw", 0, 6392
+    mnc_ent "vpsignb", 0, 6393
+    mnc_ent "vpsignd", 0, 6394
+    mnc_ent "vpsignw", 0, 6395
+    mnc_ent "vpslld", 0, 6396
+    mnc_ent "vpslldq", 0, 6397
+    mnc_ent "vpsllq", 0, 6398
+    mnc_ent "vpsllw", 0, 6399
+    mnc_ent "vpsrad", 0, 6400
+    mnc_ent "vpsraw", 0, 6401
+    mnc_ent "vpsrld", 0, 6402
+    mnc_ent "vpsrldq", 0, 6403
+    mnc_ent "vpsrlq", 0, 6404
+    mnc_ent "vpsrlw", 0, 6405
+    mnc_ent "vpsubb", 0, 6406
+    mnc_ent "vpsubd", 0, 6407
+    mnc_ent "vpsubq", 0, 6408
+    mnc_ent "vpsubsb", 0, 6409
+    mnc_ent "vpsubsw", 0, 6410
+    mnc_ent "vpsubusb", 0, 6411
+    mnc_ent "vpsubusw", 0, 6412
+    mnc_ent "vpsubw", 0, 6413
+    mnc_ent "vptest", 0, 6414
+    mnc_ent "vpunpckhbw", 0, 6415
+    mnc_ent "vpunpckhdq", 0, 6416
+    mnc_ent "vpunpckhqdq", 0, 6417
+    mnc_ent "vpunpckhwd", 0, 6418
+    mnc_ent "vpunpcklbw", 0, 6419
+    mnc_ent "vpunpckldq", 0, 6420
+    mnc_ent "vpunpcklqdq", 0, 6421
+    mnc_ent "vpunpcklwd", 0, 6422
+    mnc_ent "vpxor", 0, 6423
+    mnc_ent "vrcpps", 0, 6424
+    mnc_ent "vrcpss", 0, 6425
+    mnc_ent "vroundpd", 0, 6426
+    mnc_ent "vroundps", 0, 6427
+    mnc_ent "vroundsd", 0, 6428
+    mnc_ent "vroundss", 0, 6429
+    mnc_ent "vrsqrtps", 0, 6430
+    mnc_ent "vrsqrtss", 0, 6431
+    mnc_ent "vshufpd", 0, 6432
+    mnc_ent "vshufps", 0, 6433
+    mnc_ent "vsqrtpd", 0, 6434
+    mnc_ent "vsqrtps", 0, 6435
+    mnc_ent "vsqrtsd", 0, 6436
+    mnc_ent "vsqrtss", 0, 6437
+    mnc_ent "vsubpd", 0, 6438
+    mnc_ent "vsubps", 0, 6439
+    mnc_ent "vsubsd", 0, 6440
+    mnc_ent "vsubss", 0, 6441
+    mnc_ent "vucomisd", 0, 6442
+    mnc_ent "vucomiss", 0, 6443
+    mnc_ent "vunpckhpd", 0, 6444
+    mnc_ent "vunpckhps", 0, 6445
+    mnc_ent "vunpcklpd", 0, 6446
+    mnc_ent "vunpcklps", 0, 6447
+    mnc_ent "vxorpd", 0, 6448
+    mnc_ent "vxorps", 0, 6449
+    mnc_ent "vldmxcsr", 0, 6450
+    mnc_ent "vstmxcsr", 0, 6451
+
     dq 0
 
 global amd64_register_table
@@ -1823,5 +2274,41 @@ amd64_register_table:
     dq H_GS, (2 << 8) | REG_GS
     compile_time_hash "ss", H_SS
     dq H_SS, (2 << 8) | REG_SS
+    compile_time_hash "es", H_ES
+    dq H_ES, (2 << 8) | REG_ES
+
+    ; ---- x87 stack (ST0-ST7) and MMX (MM0-MM7), for the table encoder ----
+    compile_time_hash "st0", H_ST0
+    dq H_ST0, (10 << 8) | 112
+    compile_time_hash "st1", H_ST1
+    dq H_ST1, (10 << 8) | 113
+    compile_time_hash "st2", H_ST2
+    dq H_ST2, (10 << 8) | 114
+    compile_time_hash "st3", H_ST3
+    dq H_ST3, (10 << 8) | 115
+    compile_time_hash "st4", H_ST4
+    dq H_ST4, (10 << 8) | 116
+    compile_time_hash "st5", H_ST5
+    dq H_ST5, (10 << 8) | 117
+    compile_time_hash "st6", H_ST6
+    dq H_ST6, (10 << 8) | 118
+    compile_time_hash "st7", H_ST7
+    dq H_ST7, (10 << 8) | 119
+    compile_time_hash "mm0", H_MM0
+    dq H_MM0, (8 << 8) | 120
+    compile_time_hash "mm1", H_MM1
+    dq H_MM1, (8 << 8) | 121
+    compile_time_hash "mm2", H_MM2
+    dq H_MM2, (8 << 8) | 122
+    compile_time_hash "mm3", H_MM3
+    dq H_MM3, (8 << 8) | 123
+    compile_time_hash "mm4", H_MM4
+    dq H_MM4, (8 << 8) | 124
+    compile_time_hash "mm5", H_MM5
+    dq H_MM5, (8 << 8) | 125
+    compile_time_hash "mm6", H_MM6
+    dq H_MM6, (8 << 8) | 126
+    compile_time_hash "mm7", H_MM7
+    dq H_MM7, (8 << 8) | 127
 
     dq 0
