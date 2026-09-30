@@ -1820,6 +1820,9 @@ amd64_rip_disp:    resq 1          ; displacement of this instruction's RIP oper
 amd64_rip_pending: resd 1          ; index + 1 of this instruction's RIP reloc
 amd64_relax_kind:  resb 1          ; RELAX_JMP/JCC: this branch may be shortened
 amd64_relax_cc:    resb 1          ; its condition code (jcc)
+global amd64_disp8n
+amd64_disp8n:      resb 1          ; EVEX disp8*N scale (0/1 = none), set by dispatch.s
+amd64_disp_emit:   resq 1          ; the disp8 value to emit (scaled for EVEX)
 [SECTION .text]
 
 extern relax_note
@@ -4803,10 +4806,24 @@ amd64_emit_modrm_sib:
 
 .plain_disp:
     mov     rdi, [r13 + OPERAND_imm] ; Displacement
+    mov     [rel amd64_disp_emit], rdi
 
     ; Determine Mod based on Displacement
     test    rdi, rdi
     jz      .mod00
+    ; EVEX: a disp8 counts in units of N (compressed displacement), so it
+    ; must be a multiple of N; otherwise the displacement takes 32 bits
+    movzx   r9d, byte [rel amd64_disp8n]
+    cmp     r9d, 1
+    jbe     .disp8_check
+    mov     rax, rdi
+    cqo
+    idiv    r9
+    test    rdx, rdx
+    jnz     .mod32
+    mov     rdi, rax
+    mov     [rel amd64_disp_emit], rax
+.disp8_check:
     ; Check if fits in 8 bits
     cmp     rdi, -128
     jl      .mod32
@@ -4921,7 +4938,7 @@ jmp .s0
 
     ; Emit Displacement
     IF dl, e, 1
-        mov     rax, [r13 + OPERAND_imm]
+        mov     rax, [rel amd64_disp_emit]
         call    amd64_emit_byte
     ELSEIF dl, e, 2
         mov     rdi, [r13 + OPERAND_imm]
