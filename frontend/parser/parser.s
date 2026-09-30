@@ -15,9 +15,17 @@ DEFAULT REL
 %include "include/arch/aarch64.inc"
 
 extern arena_alloc
+extern float_encode
+extern io_open
+extern io_read
+extern io_close
+extern io_lseek
+extern asmctx_emit_word
+extern asmctx_emit_qword
 extern preprocessor_next_token
 extern preprocessor_peek_token
 extern preprocessor_putback_token
+extern preprocessor_unread_token
 extern str_to_int
 extern symbol_add
 extern symbol_find
@@ -1332,6 +1340,19 @@ parser_evaluate_factor:
     mov     al, [r12 + TOKEN_kind]
     
     IF al, e, TOK_MINUS
+        ; "-1.5" in a data directive: a negative floating-point constant
+        mov     rdi, rbx
+        call    preprocessor_peek_token
+        check_err
+        cmp     byte [rdx + TOKEN_kind], TOK_FLOAT
+        jne     .negate
+        mov     rdi, rbx
+        call    preprocessor_next_token
+        check_err
+        mov     r12, rdx
+        mov     esi, 1
+        jmp     .float
+.negate:
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
@@ -1346,6 +1367,65 @@ parser_evaluate_factor:
         xor     rax, rax
         jmp     .done
         ENDIF
+
+    ; A floating-point constant, in the format float_fmt names (dw/dd/dq/dt
+    ; or __floatNN__ set it); anywhere else it is an error, as in NASM
+    cmp     al, TOK_FLOAT
+    jne     .not_float
+    xor     esi, esi
+.float:
+    movzx   edx, byte [rel float_fmt]
+    test    edx, edx
+    jz      .float_bad
+    mov     rdi, [r12 + TOKEN_value]
+    call    float_encode
+    check_err
+    mov     [rel float_hi], rcx
+    mov     byte [rel float_seen], 1
+    xor     eax, eax
+    jmp     .done
+.float_bad:
+    mov     rax, EXIT_INVALID_OPERAND
+    jmp     .done
+.not_float:
+    ; __float16__(x) / __float32__(x) / __float64__(x): the bits as a number
+    cmp     al, TOK_IDENT
+    jne     .not_float_fn
+    mov     rdi, [r12 + TOKEN_value]
+    call    parser_float_func
+    test    eax, eax
+    jz      .not_float_fn_ident
+    movzx   r13d, byte [rel float_fmt]     ; the enclosing directive's
+    mov     [rel float_fmt], al
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .float_fn_end
+    cmp     byte [rdx + TOKEN_kind], TOK_LPAREN
+    jne     .float_fn_bad
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .float_fn_end
+    mov     [rel float_fn_val], rdx
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .float_fn_end
+    cmp     byte [rdx + TOKEN_kind], TOK_RPAREN
+    jne     .float_fn_bad
+    mov     rdx, [rel float_fn_val]
+    mov     byte [rel float_seen], 0       ; a plain number from here on
+    xor     eax, eax
+    jmp     .float_fn_end
+.float_fn_bad:
+    mov     rax, EXIT_UNEXPECTED_TOKEN
+.float_fn_end:
+    mov     [rel float_fmt], r13b
+    jmp     .done
+.not_float_fn_ident:
+    mov     al, TOK_IDENT
+.not_float_fn:
 
     IF al, e, TOK_NUMBER
         ; "1f" / "1b": a numeric label reference, looked up like a symbol
@@ -2998,6 +3078,22 @@ parser_handle_pseudo_op:
         mov     rdi, rbx
         call    parser_emit_data_64
         jmp     .check_handler_result
+    ELSEIF ax, e, 'dt'
+        mov     esi, 10
+        call    parser_emit_data_wide
+        jmp     .check_handler_result
+    ELSEIF ax, e, 'do'
+        mov     esi, 16
+        call    parser_emit_data_wide
+        jmp     .check_handler_result
+    ELSEIF ax, e, 'dy'
+        mov     esi, 32
+        call    parser_emit_data_wide
+        jmp     .check_handler_result
+    ELSEIF ax, e, 'dz'
+        mov     esi, 64
+        call    parser_emit_data_wide
+        jmp     .check_handler_result
         ENDIF
 
 .not_data:
@@ -3035,6 +3131,26 @@ parser_handle_pseudo_op:
         mov     rsi, 8
         call    parser_handle_res
         jmp     .check_handler_result
+    ELSEIF eax, e, 'rest'
+        mov     rdi, rbx
+        mov     rsi, 10
+        call    parser_handle_res
+        jmp     .check_handler_result
+    ELSEIF eax, e, 'reso'
+        mov     rdi, rbx
+        mov     rsi, 16
+        call    parser_handle_res
+        jmp     .check_handler_result
+    ELSEIF eax, e, 'resy'
+        mov     rdi, rbx
+        mov     rsi, 32
+        call    parser_handle_res
+        jmp     .check_handler_result
+    ELSEIF eax, e, 'resz'
+        mov     rdi, rbx
+        mov     rsi, 64
+        call    parser_handle_res
+        jmp     .check_handler_result
         ENDIF
 
 .not_res:
@@ -3063,6 +3179,14 @@ parser_handle_pseudo_op:
     call    parser_iend
     jmp     .check_handler_result
 .not_iend:
+    mov     rdi, r12
+    lea     rsi, [rel str_incbin]
+    call    str_cmp
+    test    rax, rax
+    jnz     .not_incbin
+    call    parser_incbin
+    jmp     .check_handler_result
+.not_incbin:
     ; 2. Section Directive ("segment" is NASM's other name for it)
     mov     rdi, r12
     lea     rsi, [rel str_segment]
@@ -3245,6 +3369,326 @@ parser_handle_pseudo_op:
     pop     r12
     pop     rbx
     epilogue
+
+%define INCBIN_CHUNK 4096
+
+;*
+; * [parser_data_string]
+; * Purpose: A data item that is a string: a "..." / `...` string, or a
+; *   quoted literal standing alone ('abc', not 'a'+1). Its bytes are
+; *   emitted and zero-padded to a whole number of units, as NASM does
+; *   (dd "abcde" is 8 bytes). Anything else is handed back untouched.
+; * Input  : RBX = PrepState, ESI = unit in bytes
+; * Output : RAX = OK or an error, EDX = 1 when a string was emitted
+; ;
+parser_data_string:
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    mov     r15d, esi
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret
+    mov     r12, rdx
+    movzx   eax, byte [r12 + TOKEN_kind]
+    cmp     eax, TOK_STRING
+    je      .string
+    cmp     eax, TOK_CHAR
+    jne     .not
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_COMMA
+    je      .chars
+    cmp     eax, TOK_NEWLINE
+    je      .chars
+    cmp     eax, TOK_EOF
+    je      .chars
+.not:
+    mov     rdi, rbx
+    mov     rsi, r12
+    call    preprocessor_unread_token      ; ahead of the token peeked
+    xor     eax, eax
+    xor     edx, edx
+    jmp     .ret
+.chars:
+    mov     rax, [r12 + TOKEN_value]       ; packed, first character lowest
+    mov     [rel ds_chars], rax
+    lea     r14, [rel ds_chars]
+    movzx   r13d, word [r12 + TOKEN_len]
+    jmp     .emit
+.string:
+    mov     r14, [r12 + TOKEN_value]
+    movzx   r13d, word [r12 + TOKEN_len]
+    test    byte [r12 + TOKEN_flags], TOK_FLAG_COUNTED
+    jnz     .emit
+    mov     rdi, r14
+    call    str_len
+    mov     r13, rax
+.emit:
+    mov     rax, r13
+    xor     edx, edx
+    div     r15
+    xor     ecx, ecx
+    test    rdx, rdx
+    jz      .no_pad
+    mov     rcx, r15
+    sub     rcx, rdx
+.no_pad:
+    mov     [rel ds_pad], rcx
+.byte:
+    test    r13, r13
+    jz      .pad
+    mov     rdi, [rbx + PREP_ctx]
+    movzx   esi, byte [r14]
+    call    asmctx_emit_byte
+    test    rax, rax
+    jnz     .ret
+    inc     r14
+    dec     r13
+    jmp     .byte
+.pad:
+    cmp     qword [rel ds_pad], 0
+    je      .done
+    mov     rdi, [rbx + PREP_ctx]
+    xor     esi, esi
+    call    asmctx_emit_byte
+    dec     qword [rel ds_pad]
+    jmp     .pad
+.done:
+    xor     eax, eax
+    mov     edx, 1
+.ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    ret
+
+;*
+; * [parser_emit_data_wide]
+; * Purpose: dt / do / dy / dz: 10-, 16-, 32- and 64-byte items: a
+; *   floating-point constant in dt (the x87 80-bit format) or a string,
+; *   zero-padded to the unit. NASM takes no plain integer here.
+; * Input  : RBX = PrepState, ESI = unit in bytes
+; * Output : RAX = OK or an error
+; ;
+parser_emit_data_wide:
+    push    r12
+    push    r13
+    mov     r12d, esi
+.loop:
+    mov     esi, r12d
+    call    parser_data_string
+    test    rax, rax
+    jnz     .ret
+    test    edx, edx
+    jnz     .next
+    xor     eax, eax
+    cmp     r12d, 10
+    jne     .fmt
+    mov     eax, FLT_EXT
+.fmt:
+    mov     [rel float_fmt], al
+    mov     byte [rel float_seen], 0
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    mov     byte [rel float_fmt], 0
+    test    rax, rax
+    jnz     .ret
+    ; as in NASM, only a float constant (dt) or a string fills these
+    cmp     byte [rel float_seen], 0
+    je      .not_float
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, rdx
+    call    asmctx_emit_qword
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, [rel float_hi]            ; sign and exponent
+    call    asmctx_emit_word
+    jmp     .next
+.not_float:
+    mov     rax, EXIT_INVALID_OPERAND
+    jmp     .ret
+.next:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_COMMA
+    jne     .done
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    jmp     .loop
+.done:
+    xor     eax, eax
+.ret:
+    pop     r13
+    pop     r12
+    ret
+
+;*
+; * [parser_float_func]
+; * Purpose: Is this name __float16__, __float32__ or __float64__?
+; * Input  : RDI = name
+; * Output : EAX = the FLT_* format, or 0
+; ;
+parser_float_func:
+    push    r12
+    push    r13
+    mov     r12, rdi
+    lea     r13, [rel float_fn_names]
+.name:
+    cmp     byte [r13], 0
+    je      .none
+    mov     rdi, r12
+    mov     rsi, r13
+    call    str_cmp
+    test    rax, rax
+    jz      .hit
+    add     r13, 16
+    jmp     .name
+.hit:
+    movzx   eax, byte [r13 + 15]
+    jmp     .ret
+.none:
+    xor     eax, eax
+.ret:
+    pop     r13
+    pop     r12
+    ret
+
+;*
+; * [parser_incbin]
+; * Purpose: incbin "file" [, offset [, length]]: the file's bytes.
+; * Input  : RBX = PrepState
+; * Output : RAX = OK or an error
+; ;
+parser_incbin:
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret
+    movzx   eax, byte [rdx + TOKEN_kind]
+    mov     r12, [rdx + TOKEN_value]
+    cmp     eax, TOK_STRING
+    je      .have_name
+    cmp     eax, TOK_CHAR
+    jne     .bad
+    mov     [rel ds_chars], r12            ; a short 'name', unpacked
+    mov     byte [rel ds_chars + 8], 0
+    lea     r12, [rel ds_chars]
+.have_name:
+    xor     r13d, r13d                     ; offset
+    mov     r14, -1                        ; length: to the end
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_COMMA
+    jne     .open
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .ret
+    mov     r13, rdx
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_COMMA
+    jne     .open
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .ret
+    mov     r14, rdx
+.open:
+    mov     rdi, r12
+    xor     esi, esi                       ; O_RDONLY
+    xor     edx, edx
+    call    io_open
+    test    rax, rax
+    jnz     .ret
+    mov     r15, rdx                       ; fd
+    mov     rdi, r15
+    mov     rsi, r13
+    xor     edx, edx                       ; SEEK_SET
+    call    io_lseek
+.chunk:
+    test    r14, r14
+    jz      .close
+    mov     rdx, INCBIN_CHUNK
+    cmp     r14, rdx
+    jae     .read
+    mov     rdx, r14
+.read:
+    mov     rdi, r15
+    lea     rsi, [rel incbin_buf]
+    call    io_read
+    test    rax, rax
+    jnz     .close_error
+    test    rdx, rdx
+    jz      .close                         ; end of the file
+    sub     r14, rdx
+    mov     r13, rdx
+    lea     r12, [rel incbin_buf]
+.byte:
+    test    r13, r13
+    jz      .chunk
+    mov     rdi, [rbx + PREP_ctx]
+    movzx   esi, byte [r12]
+    call    asmctx_emit_byte
+    inc     r12
+    dec     r13
+    jmp     .byte
+.close:
+    mov     rdi, r15
+    call    io_close
+    xor     eax, eax
+    jmp     .ret
+.close_error:
+    mov     r13, rax
+    mov     rdi, r15
+    call    io_close
+    mov     rax, r13
+    jmp     .ret
+.bad:
+    mov     rax, EXIT_UNEXPECTED_TOKEN
+.ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    ret
+
+[SECTION .rodata]
+str_incbin:    db "incbin", 0
+; name (15 bytes) + FLT_* format
+float_fn_names: db "__float16__", 0, 0,0,0, FLT_HALF
+               db "__float32__", 0, 0,0,0, FLT_SINGLE
+               db "__float64__", 0, 0,0,0, FLT_DOUBLE
+               db 0
+[SECTION .bss]
+float_fmt:     resb 1              ; FLT_* for a float constant here, 0: none
+float_seen:    resb 1              ; the last value was a float constant
+float_hi:      resq 1              ; its 80-bit sign/exponent word
+float_fn_val:  resq 1
+ds_chars:      resq 2              ; a quoted literal's characters
+ds_pad:        resq 1
+incbin_buf:    resb 4096
+[SECTION .text]
 
 ;*
 ; * [parser_struc_const]
@@ -3797,6 +4241,11 @@ parser_emit_data_8:
     push    r13
     push    r14
 .loop:
+    mov     esi, 1
+    call    parser_data_string
+    check_err
+    test    edx, edx
+    jnz     .next_item
     mov     rdi, rbx
     call    preprocessor_next_token
     check_err
@@ -3838,7 +4287,7 @@ parser_emit_data_8:
         ELSE
         mov     rdi, rbx
         mov     rsi, r12
-        call    preprocessor_putback_token
+        call    preprocessor_unread_token  ; 'a'+1: the '+' is peeked
         mov     rdi, rbx
         call    parser_evaluate_expression
         check_err
@@ -3868,13 +4317,21 @@ parser_emit_data_8:
 parser_emit_data_16:
     prologue
 .loop:
+    mov     esi, 2
+    call    parser_data_string
+    check_err
+    test    edx, edx
+    jnz     .next
+    mov     byte [rel float_fmt], FLT_HALF
     mov     rdi, rbx
     call    parser_evaluate_expression
+    mov     byte [rel float_fmt], 0
     check_err
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, rdx
     extern  asmctx_emit_word
     call    asmctx_emit_word
+.next:
     mov     rdi, rbx
     call    preprocessor_peek_token
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
@@ -3937,8 +4394,15 @@ parser_data_symbol:
 parser_emit_data_32:
     prologue
 .loop:
+    mov     esi, 4
+    call    parser_data_string
+    check_err
+    test    edx, edx
+    jnz     .next
+    mov     byte [rel float_fmt], FLT_SINGLE
     mov     rdi, rbx
     call    parser_evaluate_expression
+    mov     byte [rel float_fmt], 0
     check_err
 
     mov     r10, rdx
@@ -3985,8 +4449,15 @@ parser_emit_data_32:
 parser_emit_data_64:
     prologue
 .loop:
+    mov     esi, 8
+    call    parser_data_string
+    check_err
+    test    edx, edx
+    jnz     .next
+    mov     byte [rel float_fmt], FLT_DOUBLE
     mov     rdi, rbx
     call    parser_evaluate_expression
+    mov     byte [rel float_fmt], 0
     check_err
 
     mov     r10, rdx
@@ -4226,6 +4697,10 @@ parser_default_section:
     mov     word [rdx + SECTION_flags], (SHF_ALLOC | SHF_EXECINSTR)
     mov     dword [rdx + SECTION_elf_type], SHT_PROGBITS
     mov     byte [rdx + SECTION_type], SEC_TEXT
+    mov     byte [rdx + SECTION_implicit], 1   ; placed as NASM would (elf64_order_text)
+    cmp     byte [rbx + ASMCTX_fmt], FMT_BIN
+    je      .select
+    mov     qword [rdx + SECTION_align], 16    ; NASM's ELF default
 .select:
     mov     [rbx + ASMCTX_curr_sec], rdx
     xor     eax, eax
@@ -4273,6 +4748,15 @@ parser_handle_section_directive:
     ; Set active section in AsmCtx
     mov     rdi, [rbx + PREP_ctx]
     mov     [rdi + ASMCTX_curr_sec], r13
+    ; the default .text takes its place among the sections where the
+    ; source first names it, as in NASM
+    cmp     byte [r13 + SECTION_implicit], 0
+    je      .named
+    cmp     dword [r13 + SECTION_named_at], 0
+    jne     .named
+    movzx   eax, word [rdi + ASMCTX_seccount]
+    mov     [r13 + SECTION_named_at], eax
+.named:
 
     ; 2. Auto-assign flags and type for standard sections if new
     IF r15, ne, OK
@@ -4316,6 +4800,28 @@ parser_handle_section_directive:
                         ENDIF
                         ENDIF
                         ENDIF
+
+    ; NASM's default alignments for the standard ELF sections: .text 16,
+    ; .data / .rodata / .bss 4 (attributes below may change them)
+    cmp     r15, OK
+    je      .default_align_done
+    mov     rax, [rbx + PREP_ctx]
+    cmp     byte [rax + ASMCTX_fmt], FMT_BIN
+    je      .default_align_done
+    movzx   eax, byte [r13 + SECTION_type]
+    mov     ecx, 16
+    cmp     eax, SEC_TEXT
+    je      .set_default_align
+    mov     ecx, 4
+    cmp     eax, SEC_DATA
+    je      .set_default_align
+    cmp     eax, SEC_BSS
+    je      .set_default_align
+    cmp     eax, SEC_RODATA
+    jne     .default_align_done
+.set_default_align:
+    mov     [r13 + SECTION_align], rcx
+.default_align_done:
 
     ; 3. NASM attributes: progbits, nobits, alloc, exec, write, align=N
     call    parser_section_attrs
@@ -4713,7 +5219,8 @@ str_segment:   db "segment", 0
 str_cpu:       db "cpu", 0
 ; words that make the name before them a label without its colon
 stmt_words:    db "db", 0, "dw", 0, "dd", 0, "dq", 0, "dt", 0, "resb", 0, "resw", 0
-               db "resd", 0, "resq", 0, "rest", 0, "times", 0, "incbin", 0, 0
+               db "resd", 0, "resq", 0, "rest", 0, "times", 0, "incbin", 0
+               db "do", 0, "dy", 0, "dz", 0, "reso", 0, "resy", 0, "resz", 0, 0
 attr_progbits: db "progbits", 0
 attr_nobits:   db "nobits", 0
 attr_align:    db "align", 0
