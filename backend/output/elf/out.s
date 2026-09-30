@@ -1521,8 +1521,39 @@ elf64_write_symtab:
     call    io_write
     check_err
 
+    ; ---- 1b. A section symbol per section (local, STT_SECTION, no
+    ;      name), as NASM writes them: symbol i is section i, and the
+    ;      relocations against local labels use them ----
+    xor     r14d, r14d
+.secsym:
+    cmp     r14w, [r12 + ASMCTX_seccount]
+    jae     .secsym_done
+    mov     rdi, rsp
+    mov     rsi, ELF64_SYM_SIZE
+    call    mem_zero
+    mov     byte [rsp + SYM64_INFO], STT_SECTION
+    lea     eax, [r14 + 1]
+    mov     [rsp + SYM64_SHNDX], ax
+    xor     ecx, ecx
+    cmp     byte [rel elf_sa_on], 0
+    je      .secsym_value
+    mov     rax, [r12 + ASMCTX_sections]
+    mov     rax, [rax + r14 * 8]
+    mov     rcx, [rax + SECTION_addr]
+.secsym_value:
+    mov     [rsp + SYM64_VALUE], rcx
+    mov     edi, r13d
+    mov     rsi, rsp
+    mov     rdx, ELF64_SYM_SIZE
+    call    io_write
+    check_err
+    inc     r14d
+    jmp     .secsym
+.secsym_done:
+
     ; ---- 2. Pass 1: Local Symbols ----
-    mov     r11, 1                 ; ELF symbol index (0 is Null)
+    movzx   r11d, word [r12 + ASMCTX_seccount]
+    inc     r11                    ; after the null and the section symbols
     xor     r14, r14               ; internal loop index
     mov     r15, [r12 + ASMCTX_symtab]
     mov     ebx, [r12 + ASMCTX_symcount]
@@ -1609,16 +1640,14 @@ elf64_write_symtab:
     ; (kind == LABEL ? FUNC : OBJECT)
     movzx   eax, byte [r10 + SYMBOL_vis]   ; VIS_LOCAL=0, VIS_GLOBAL=1, VIS_WEAK=2
     shl     al, 4
-    mov     cl, [r10 + SYMBOL_kind]
-    IF cl, e, SYM_LABEL
-        or      al, STT_FUNC
-        ELSE
-        or      al, STT_OBJECT
-        ENDIF
+    ; the type the source declared ("global f:function"), STT_NOTYPE
+    ; otherwise, as NASM
+    or      al, [r10 + SYMBOL_etype]
     mov     [rsp + 48 + SYM64_INFO], al
-    
-    ; st_other: STV_DEFAULT (0)
-    mov     byte [rsp + 48 + SYM64_OTHER], 0
+
+    ; st_other: the declared visibility (hidden, protected, ...)
+    mov     al, [r10 + SYMBOL_eother]
+    mov     [rsp + 48 + SYM64_OTHER], al
     
     ; st_shndx
     movzx   eax, word [r10 + SYMBOL_section]
@@ -2125,12 +2154,27 @@ elf64_write_rela:
     push    rcx                    ; loop index: the callee clobbers rcx
     call    symbol_find
     pop     rcx
+    xor     r9d, r9d                       ; added to the addend
     IF rax, e, EXIT_OK
         mov     eax, [rdx + SYMBOL_elf_idx]
+        ; a local label: against its section's symbol, its offset added
+        ; to the addend, as NASM writes it (unless "wrt ..sym")
+        test    byte [r15 + RELOC_flags], RELOC_FLAG_SYM
+        jnz     .sym_ready
+        cmp     byte [rdx + SYMBOL_vis], VIS_LOCAL
+        jne     .sym_ready
+        movzx   r8d, word [rdx + SYMBOL_section]
+        test    r8d, r8d
+        jz      .sym_ready
+        cmp     r8d, 0xFF00
+        jae     .sym_ready
+        mov     eax, r8d
+        mov     r9, [rdx + SYMBOL_value]
     ELSE
         xor     eax, eax
     ENDIF
-    
+.sym_ready:
+
     mov     r11, rax
     shl     r11, 32
     
@@ -2141,6 +2185,7 @@ elf64_write_rela:
 
     ; r_addend
     mov     rax, [r15 + RELOC_addend]
+    add     rax, r9
     mov     qword [rsp + RELA_ADDEND], rax
 
     mov     edi, r13d
@@ -2388,7 +2433,8 @@ elf64_write_shdrs:
     mov     dword [rsp + SHDR_LINK], eax
     
     ; Info = first global symbol index
-    mov     r10, 1                 ; 1 for NULL symbol
+    movzx   r10d, word [rbx + ASMCTX_seccount]
+    inc     r10                    ; the NULL symbol and the section symbols
     mov     rsi, [rbx + ASMCTX_symtab]
     mov     edi, [rbx + ASMCTX_symcount]
     xor     ecx, ecx
