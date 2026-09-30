@@ -372,6 +372,7 @@
 %define OP_FLAG_NOSPLIT        0x04        ; NOSPLIT keyword applied to index register
 %define OP_FLAG_ABS            0x08        ; ABS keyword applied to force absolute offset
 %define OP_FLAG_SHORT          0x10        ; SHORT keyword applied to a branch target
+%define OP_FLAG_ADDR32         0x20        ; memory addressed by 32-bit registers (67 prefix)
 
 ; ============================================================================
 ; CONTEXT FLAGS
