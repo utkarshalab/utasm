@@ -1390,6 +1390,8 @@
 %define MACRO_BODY_CAPACITY    1024        ; token slots reserved per %macro definition
 %define REP_BODY_CAPACITY      256         ; token slots reserved per %rep execution
 %define MACRO_ARG_CAPACITY     64          ; token slots reserved for one invocation's arguments
+%define MACRO_FLAG_FUNC        0x01        ; %define NAME(a,b): arguments in parentheses
+%define DEFINE_MAX_TOKENS      256         ; tokens in one %define body
 %define LEX_INTERP_BUF         256         ; work buffer for %[...] identifier interpolation
 %define PREP_CTX_MAX           64          ; maximum nesting depth of %push contexts
 %define MACRO_TABLE_INIT_CAP   128         ; starting capacity of macro parser maps
