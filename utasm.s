@@ -266,6 +266,12 @@ _start:
     jmp     .assembly_loop
 
 .finish_assembly:
+    ; what needs the whole source read ("global f:function (size)")
+    lea     rdi, [rel global_prep]
+    extern  parser_finish
+    call    parser_finish
+
+    lea     rbx, [rel global_ctx]
     mov     rdi, rbx
     call    linker_run
     test    rax, rax
