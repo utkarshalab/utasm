@@ -33,6 +33,7 @@ extern symbol_find
 ; sections (lea rsi, [rel msg] into .data, dq label) get real addresses.
 
 [SECTION .bss]
+global bin_origin
 bin_origin: resq 1                  ; address of the first byte of the file
 
 [SECTION .text]
