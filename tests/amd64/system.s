@@ -15,7 +15,7 @@ int     0x80            // Linux legacy syscall
 int     0x03            // breakpoint (INT 3 short form)
 int3                    // short breakpoint encoding
 int     0xFF            // max interrupt vector
-into                    // overflow interrupt
+// into: not valid in 64-bit mode
 iret                    // interrupt return (16-bit)
 iretd                   // interrupt return (32-bit)
 iretq                   // interrupt return (64-bit)
