@@ -178,6 +178,22 @@ if [ -x "$UTASM_BIN" ] && [ -f tests/hello_amd64.s ]; then
     fi
 fi
 
+# ----------------------------------------------------------------------------
+# NASM compatibility suites (scripts/compat/): the same sources assembled by
+# NASM and utasm must give the same bytes, relocations and symbols. Skipped
+# (with a note) where NASM, binutils or python3 are not installed.
+# ----------------------------------------------------------------------------
+if command -v python3 >/dev/null 2>&1; then
+    echo
+    echo -e "${BOLD}[+] Running NASM compatibility suites...${NC}"
+    if python3 scripts/compat/run_all.py "$UTASM_BIN"; then
+        echo -e "${GREEN}[+] NASM compatibility suites passed.${NC}"
+    else
+        echo -e "${RED}[-] NASM compatibility suites FAILED.${NC}"
+        FAILED=$((FAILED + 1))
+    fi
+fi
+
 echo "============================================================================"
 
 if [ $FAILED -ne 0 ]; then
