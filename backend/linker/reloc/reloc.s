@@ -50,6 +50,37 @@ reloc_record:
     mov     r14, rcx               ; addend
     ; r8 = reloc type (held in r8 throughout)
 
+    ; "sym wrt ..plt" and friends: the statement asked for another type
+    xor     r9d, r9d                       ; RELOC_flags
+    movzx   eax, byte [rel reloc_wrt]
+    test    eax, eax
+    jz      .wrt_done
+    mov     byte [rel reloc_wrt], 0
+    cmp     eax, WRT_SYM
+    jne     .wrt_type
+    mov     r9d, RELOC_FLAG_SYM
+    jmp     .wrt_done
+.wrt_type:
+    mov     ecx, R_X86_64_PLT32
+    cmp     eax, WRT_PLT
+    je      .wrt_set
+    mov     ecx, R_X86_64_GOTPCREL
+    cmp     eax, WRT_GOTPCREL
+    je      .wrt_set
+    mov     ecx, R_X86_64_GOTOFF64
+    cmp     eax, WRT_GOTOFF
+    je      .wrt_set
+    mov     ecx, R_X86_64_GOTTPOFF
+    cmp     eax, WRT_TLSIE
+    je      .wrt_set
+    mov     ecx, R_X86_64_GOT32            ; WRT_GOT
+    cmp     r8d, R_X86_64_64
+    jne     .wrt_set
+    mov     ecx, 27                        ; R_X86_64_GOT64 for a 64-bit field
+.wrt_set:
+    mov     r8d, ecx
+.wrt_done:
+
     ; Check capacity
     mov     eax, [rbx + ASMCTX_nrelocs]
     cmp     eax, MAX_RELOC
@@ -74,6 +105,7 @@ reloc_record:
     mov     [rdx + RELOC_sym],    r13
     mov     [rdx + RELOC_addend], r14
     mov     [rdx + RELOC_type],   r8d
+    mov     [rdx + RELOC_flags],  r9b
 
     ; Target section: the one currently being emitted into
     mov     rcx, [rbx + ASMCTX_curr_sec]
@@ -141,6 +173,17 @@ reloc_resolve_all:
     mov     rbx, rdi               ; AsmCtx
     ; rsi/rdx (output buffer, base VA) are unused: patching targets each
     ; relocation own section data buffer.
+
+    ; A relocatable object (not bin, not --standalone) leaves every field
+    ; to the linker, which reads the addend from .rela: the fields stay
+    ; zero, as NASM writes them.
+    cmp     byte [rbx + ASMCTX_fmt], FMT_BIN
+    je      .patch
+    cmp     byte [rbx + ASMCTX_standalone], 1
+    je      .patch
+    xor     eax, eax
+    jmp     .ret
+.patch:
 
     mov     r14, [rbx + ASMCTX_relocs]
     mov     r15d, [rbx + ASMCTX_nrelocs]
@@ -522,3 +565,7 @@ reloc_init:
 .error:
     pop     rbx
     epilogue
+
+[SECTION .bss]
+global reloc_wrt
+reloc_wrt:      resb 1              ; WRT_*: set by "wrt ..name", used once
