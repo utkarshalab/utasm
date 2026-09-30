@@ -56,6 +56,9 @@ elf64_emit:
 
     mov     r12, rdi               ; r12 = AsmCtx
     mov     r13d, esi              ; r13d = fd
+    mov     [rel elf_sa_ctx], r12
+    mov     al, [r12 + ASMCTX_standalone]
+    mov     [rel elf_sa_on], al
 
     ; Allocate section info table (32 entries of {offset, size} = 512 bytes)
     sub     rsp, 512
@@ -102,6 +105,11 @@ elf64_emit:
     call    asmctx_get_section
     IF rax, e, 0
         movzx   ebx, word [rdx + SECTION_index] ; ebx = index
+        IF byte [r12 + ASMCTX_standalone], e, 1
+            mov     edi, r13d
+            call    elf64_place_section
+            check_err
+            ENDIF
 
         ; Record start
         mov     edi, r13d
@@ -134,15 +142,10 @@ elf64_emit:
     call    asmctx_get_section
     IF rax, e, 0
         movzx   ebx, word [rdx + SECTION_index] ; ebx = index
-        
-        mov     rsi, [rdx + SECTION_align]
-        IF rsi, e, 0
-            mov rsi, 8
-        ENDIF ; Default 8-byte
         mov     edi, r13d
-        call    elf64_align_file
+        call    elf64_place_section
         check_err
-        
+
         ; Record start
         mov     edi, r13d
         xor     rsi, rsi
@@ -173,13 +176,8 @@ elf64_emit:
     call    asmctx_get_section
     IF rax, e, 0
         movzx   ebx, word [rdx + SECTION_index] ; ebx = index
-
-        mov     rsi, [rdx + SECTION_align]
-        IF rsi, e, 0
-            mov rsi, 8
-        ENDIF
         mov     edi, r13d
-        call    elf64_align_file
+        call    elf64_place_section
         check_err
 
         ; Record start
@@ -232,6 +230,16 @@ elf64_emit:
         mov     r11, [r14 + SECTION_size]
         mov     [rsp + rax + 8], r11        ; size
     ENDIF
+
+    ; In an executable the sections sit at their addresses, not in writing
+    ; order (.rodata comes before .data): continue after the last of them.
+    IF byte [r12 + ASMCTX_standalone], e, 1
+        mov     edi, r13d
+        xor     esi, esi
+        mov     edx, 2                 ; SEEK_END
+        call    io_lseek
+        check_err
+        ENDIF
 
     ; ---- 4.5 Write Section Groups (A57) ----
     mov     rdi, r12
@@ -539,6 +547,190 @@ elf64_write_debug_abbrev:
 ; ============================================================================
 ; elf64_write_ehdr
 ; ============================================================================
+; Standalone executables
+; ============================================================================
+; The file is mapped at ELF_SA_BASE. The ELF header, the program headers and
+; .text form one R+X segment from file offset 0; .rodata is an R segment and
+; .data/.bss an RW segment, each starting on a new page. Every section's file
+; offset is therefore its address minus ELF_SA_BASE, which elf64_emit uses
+; to place it.
+
+%define ELF_SA_BASE     0x400000
+
+[SECTION .bss]
+elf_sa_phnum:   resb 1              ; program headers in this executable
+elf_sa_has_ro:  resb 1
+elf_sa_has_rw:  resb 1
+elf_sa_on:      resb 1              ; 1 while writing a standalone executable
+elf_sa_ctx:     resq 1
+elf_sa_rw_off:  resq 1              ; file offset of the RW segment
+elf_sa_rw_end:  resq 1              ; its end in memory (.bss included), as offset
+elf_sa_text_end: resq 1             ; end of the R+X segment in the file
+
+[SECTION .text]
+
+;*
+; * [elf64_standalone_layout]
+; * Purpose: Give the sections of a standalone executable their virtual
+; *          addresses. Runs after jump relaxation (sizes are final) and
+; *          before relocations are resolved (they use the addresses).
+; * Input  : RDI = AsmCtx
+; * Output : RAX = EXIT_OK
+; ;
+global elf64_standalone_layout
+elf64_standalone_layout:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    mov     r12, rdi
+    mov     byte [rel elf_sa_has_ro], 0
+    mov     byte [rel elf_sa_has_rw], 0
+
+    ; which segments are there
+    mov     rdi, r12
+    mov     rsi, SEC_RODATA
+    call    asmctx_get_section
+    test    rax, rax
+    jnz     .no_ro
+    cmp     qword [rdx + SECTION_size], 0
+    je      .no_ro
+    mov     byte [rel elf_sa_has_ro], 1
+.no_ro:
+    mov     rdi, r12
+    mov     rsi, SEC_DATA
+    call    asmctx_get_section
+    test    rax, rax
+    jnz     .no_data
+    cmp     qword [rdx + SECTION_size], 0
+    je      .no_data
+    mov     byte [rel elf_sa_has_rw], 1
+.no_data:
+    mov     rdi, r12
+    mov     rsi, SEC_BSS
+    call    asmctx_get_section
+    test    rax, rax
+    jnz     .no_bss
+    cmp     qword [rdx + SECTION_size], 0
+    je      .no_bss
+    mov     byte [rel elf_sa_has_rw], 1
+.no_bss:
+    movzx   eax, byte [rel elf_sa_has_ro]
+    movzx   ecx, byte [rel elf_sa_has_rw]
+    lea     eax, [rax + rcx + 1]
+    mov     [rel elf_sa_phnum], al
+    imul    r13, rax, ELF64_PHDR_SIZE
+    add     r13, ELF64_EHDR_SIZE           ; r13 = file offset after the headers
+
+    ; .text right after the headers
+    mov     rdi, r12
+    mov     rsi, SEC_TEXT
+    call    asmctx_get_section
+    test    rax, rax
+    jnz     .text_done
+    mov     rbx, rdx
+    mov     rsi, [rbx + SECTION_align]
+    cmp     rsi, 16
+    jae     .text_align
+    mov     rsi, 16
+.text_align:
+    call    .align_r13
+    lea     rax, [r13 + ELF_SA_BASE]
+    mov     [rbx + SECTION_addr], rax
+    add     r13, [rbx + SECTION_size]
+.text_done:
+    mov     [rel elf_sa_text_end], r13
+
+    ; .rodata on its own page
+    cmp     byte [rel elf_sa_has_ro], 0
+    je      .ro_done
+    mov     rdi, r12
+    mov     rsi, SEC_RODATA
+    call    asmctx_get_section
+    mov     rbx, rdx
+    mov     rsi, 0x1000
+    call    .align_r13
+    lea     rax, [r13 + ELF_SA_BASE]
+    mov     [rbx + SECTION_addr], rax
+    add     r13, [rbx + SECTION_size]
+.ro_done:
+
+    ; .data, then .bss (memory only), on the next page
+    cmp     byte [rel elf_sa_has_rw], 0
+    je      .rw_done
+    mov     rsi, 0x1000
+    call    .align_r13
+    mov     [rel elf_sa_rw_off], r13
+    mov     rdi, r12
+    mov     rsi, SEC_DATA
+    call    asmctx_get_section
+    test    rax, rax
+    jnz     .rw_bss
+    mov     rbx, rdx
+    mov     rsi, [rbx + SECTION_align]
+    call    .align_r13
+    lea     rax, [r13 + ELF_SA_BASE]
+    mov     [rbx + SECTION_addr], rax
+    add     r13, [rbx + SECTION_size]
+.rw_bss:
+    mov     rdi, r12
+    mov     rsi, SEC_BSS
+    call    asmctx_get_section
+    test    rax, rax
+    jnz     .rw_end
+    mov     rbx, rdx
+    mov     rsi, [rbx + SECTION_align]
+    call    .align_r13
+    lea     rax, [r13 + ELF_SA_BASE]
+    mov     [rbx + SECTION_addr], rax
+    add     r13, [rbx + SECTION_size]
+.rw_end:
+    mov     [rel elf_sa_rw_end], r13
+.rw_done:
+    xor     eax, eax
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+; r13 = r13 rounded up to rsi (a power of two; 0 or 1 = no alignment)
+.align_r13:
+    cmp     rsi, 1
+    jbe     .al_ret
+    lea     rax, [rsi - 1]
+    add     r13, rax
+    not     rax
+    and     r13, rax
+.al_ret:
+    ret
+
+;*
+; * [elf64_place_section]
+; * Purpose: Move the file position to where section RDX belongs: its
+; *          address minus ELF_SA_BASE in a standalone executable (layout
+; *          above), else the next multiple of its alignment.
+; * Input  : EDI = fd, RDX = SECTION*
+; * Output : RAX = EXIT_OK or an error
+; ;
+elf64_place_section:
+    cmp     byte [rel elf_sa_on], 0
+    je      .aligned
+    mov     rsi, [rdx + SECTION_addr]
+    test    rsi, rsi
+    jz      .aligned
+    sub     rsi, ELF_SA_BASE
+    xor     edx, edx                       ; SEEK_SET: the gap reads as zeros
+    jmp     io_lseek
+.aligned:
+    mov     rsi, [rdx + SECTION_align]
+    test    rsi, rsi
+    jnz     .align_it
+    mov     rsi, 8
+.align_it:
+    jmp     elf64_align_file
+
+; ============================================================================
 ;
 ; elf64_resolve_entry
 ; Finds the _start symbol and computes its absolute virtual address.
@@ -649,7 +841,8 @@ elf64_write_ehdr:
     IF byte [r12 + ASMCTX_standalone], e, 1
         mov     qword [r14 + EHDR_PHOFF], ELF64_EHDR_SIZE
         mov     word  [r14 + EHDR_PHENTSIZE], ELF64_PHDR_SIZE
-        mov     word  [r14 + EHDR_PHNUM], 2 ; For now: 1 Code + 1 Data
+        movzx   eax, byte [rel elf_sa_phnum]
+        mov     word  [r14 + EHDR_PHNUM], ax
         ELSE
         mov     qword [r14 + EHDR_PHOFF], 0
         mov     word  [r14 + EHDR_PHENTSIZE], 0
@@ -689,6 +882,8 @@ elf64_write_ehdr:
 
 ;*
 ; * [elf64_write_phdrs]
+; * Writes one PT_LOAD per segment of elf64_standalone_layout: R+X for the
+; * headers and .text, R for .rodata, RW for .data and .bss.
 ; ;
 elf64_write_phdrs:
     prologue
@@ -696,85 +891,87 @@ elf64_write_phdrs:
     push    r12
     push    r13
     push    r14
-    
+
     mov     r12, rdi               ; r12 = AsmCtx
     mov     r13d, esi              ; r13d = fd
-    
-    ; Allocate 112 bytes for 2 PHDRs
+
     mov     rdi, [r12 + ASMCTX_arena]
-    mov     rsi, 112
+    mov     rsi, 3 * ELF64_PHDR_SIZE
     call    arena_alloc
     check_err
     mov     r14, rdx               ; r14 = buffer
-    
     mov     rdi, r14
-    mov     rsi, 112
+    mov     rsi, 3 * ELF64_PHDR_SIZE
     call    mem_zero
-    
-    ; 1. Calculate Code Offset: Immediately after Headers
-    mov     rax, ELF64_EHDR_SIZE
-    add     rax, 112               ; 2 PHDRs * 56 bytes
-    mov     r15, rax               ; r15 = code_offset
-    
-    ; CODE Segment
-    mov     dword [r14 + PHDR_type],   PT_LOAD
-    mov     dword [r14 + PHDR_flags],  (PF_R | PF_X)
-    mov     qword [r14 + PHDR_offset], r15
-    mov     rax, [r12 + ASMCTX_entry_point]
-    mov     qword [r14 + PHDR_vaddr],  rax
-    mov     qword [r14 + PHDR_paddr],  rax
-    
+    mov     rbx, r14               ; rbx = next header
+
+    ; headers + .text: R+X from the start of the file
+    mov     dword [rbx + PHDR_type],   PT_LOAD
+    mov     dword [rbx + PHDR_flags],  (PF_R | PF_X)
+    mov     qword [rbx + PHDR_offset], 0
+    mov     qword [rbx + PHDR_vaddr],  ELF_SA_BASE
+    mov     qword [rbx + PHDR_paddr],  ELF_SA_BASE
+    mov     rax, [rel elf_sa_text_end]
+    mov     qword [rbx + PHDR_filesz], rax
+    mov     qword [rbx + PHDR_memsz],  rax
+    mov     qword [rbx + PHDR_align],  0x1000
+    add     rbx, ELF64_PHDR_SIZE
+
+    ; .rodata: R
+    cmp     byte [rel elf_sa_has_ro], 0
+    je      .no_ro
     mov     rdi, r12
-    mov     rsi, SEC_TEXT
+    mov     rsi, SEC_RODATA
     call    asmctx_get_section
-    mov     rax, [rdx + SECTION_size]
-    mov     qword [r14 + PHDR_filesz], rax
-    mov     qword [r14 + PHDR_memsz],  rax
-    mov     qword [r14 + PHDR_align],  0x1000
-    
-    ; 2. Calculate Data Offset: Align(Code_Offset + Code_Size, 4096)
-    add     r15, rax               ; r15 = code_offset + code_size
-    add     r15, 4095
-    and     r15, -4096             ; r15 = data_offset (aligned)
-    
-    ; DATA Segment
-    add     r14, 56
-    mov     dword [r14 + PHDR_type],   PT_LOAD
-    mov     dword [r14 + PHDR_flags],  (PF_R | PF_W)
-    mov     qword [r14 + PHDR_offset], r15
-    
-    ; Virtual Address for data segment: Entry + (Data_Offset - Code_Offset)
-    mov     rax, [r12 + ASMCTX_entry_point]
-    mov     rcx, r15               ; data_offset
-    sub     rcx, [r14 - 56 + PHDR_offset] ; code_offset
-    add     rax, rcx
-    
-    mov     qword [r14 + PHDR_vaddr],  rax
-    mov     qword [r14 + PHDR_paddr],  rax
-    
+    mov     rax, [rdx + SECTION_addr]
+    mov     rcx, [rdx + SECTION_size]
+    mov     dword [rbx + PHDR_type],   PT_LOAD
+    mov     dword [rbx + PHDR_flags],  PF_R
+    mov     qword [rbx + PHDR_vaddr],  rax
+    mov     qword [rbx + PHDR_paddr],  rax
+    sub     rax, ELF_SA_BASE
+    mov     qword [rbx + PHDR_offset], rax
+    mov     qword [rbx + PHDR_filesz], rcx
+    mov     qword [rbx + PHDR_memsz],  rcx
+    mov     qword [rbx + PHDR_align],  0x1000
+    add     rbx, ELF64_PHDR_SIZE
+.no_ro:
+
+    ; .data + .bss: RW; only .data takes file bytes
+    cmp     byte [rel elf_sa_has_rw], 0
+    je      .no_rw
+    mov     rax, [rel elf_sa_rw_off]
+    mov     dword [rbx + PHDR_type],   PT_LOAD
+    mov     dword [rbx + PHDR_flags],  (PF_R | PF_W)
+    mov     qword [rbx + PHDR_offset], rax
+    lea     rcx, [rax + ELF_SA_BASE]
+    mov     qword [rbx + PHDR_vaddr],  rcx
+    mov     qword [rbx + PHDR_paddr],  rcx
+    mov     rcx, [rel elf_sa_rw_end]
+    sub     rcx, rax
+    mov     qword [rbx + PHDR_memsz],  rcx
+    xor     ecx, ecx
     mov     rdi, r12
     mov     rsi, SEC_DATA
+    push    rcx
     call    asmctx_get_section
-    mov     rax, [rdx + SECTION_size]
-    mov     qword [r14 + PHDR_filesz], rax
-    
-    ; memsz = data_size + bss_size
-    mov     r8, rax                ; r8 = data_size
-    
-    mov     rdi, r12
-    mov     rsi, SEC_BSS
-    call    asmctx_get_section
-    mov     rax, [rdx + SECTION_size]
-    add     r8, rax                ; r8 = data_size + bss_size
-    
-    mov     qword [r14 + PHDR_memsz],  r8
-    mov     qword [r14 + PHDR_align],  0x1000
-    
-    ; Write buffer
-    sub     r14, 56
+    pop     rcx
+    test    rax, rax
+    jnz     .rw_file
+    mov     rcx, [rdx + SECTION_addr]
+    sub     rcx, ELF_SA_BASE
+    sub     rcx, [rel elf_sa_rw_off]
+    add     rcx, [rdx + SECTION_size]      ; .data ends the file part
+.rw_file:
+    mov     qword [rbx + PHDR_filesz], rcx
+    mov     qword [rbx + PHDR_align],  0x1000
+    add     rbx, ELF64_PHDR_SIZE
+.no_rw:
+
     mov     edi, r13d
     mov     rsi, r14
-    mov     rdx, 112
+    mov     rdx, rbx
+    sub     rdx, r14
     call    io_write
     check_err
     
@@ -1157,8 +1354,23 @@ elf64_write_symtab:
     movzx   eax, word [r10 + SYMBOL_section]
     mov     [rsp + 48 + SYM64_SHNDX], ax
     
-    ; st_value
+    ; st_value (an address in an executable: add the section's)
     mov     rax, [r10 + SYMBOL_value]
+    cmp     byte [rel elf_sa_on], 0
+    je      .sv_put
+    movzx   ecx, word [r10 + SYMBOL_section]
+    test    ecx, ecx
+    jz      .sv_put                        ; undefined
+    cmp     ecx, 0xFF00
+    jae     .sv_put                        ; SHN_ABS and other reserved indices
+    mov     rdx, [rel elf_sa_ctx]
+    mov     rdx, [rdx + ASMCTX_sections]
+    dec     ecx
+    mov     rdx, [rdx + rcx*8]
+    test    rdx, rdx
+    jz      .sv_put
+    add     rax, [rdx + SECTION_addr]
+.sv_put:
     mov     [rsp + 48 + SYM64_VALUE], rax
     
     ; st_size
