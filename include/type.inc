@@ -105,7 +105,11 @@ struc SYMBOL
     field tag,      1       ; always TAG_SYMBOL
     field kind,     1       ; SYM_* value
     field vis,      1       ; VIS_* value
-    field pad0,     5       ; alignment padding
+    field etype,    1       ; ELF symbol type: STT_NOTYPE unless declared
+                            ; ("global f:function" / ":data")
+    field eother,   1       ; ELF visibility: default, internal, hidden,
+                            ; protected
+    field pad0,     3       ; alignment padding
     field name,     8       ; pointer to name string
     field value,    8       ; address or constant value
     field size,     8       ; size in bytes
@@ -154,7 +158,8 @@ endstruc
 
 struc RELOC
     field tag,         1       ; TAG_RELOC
-    field pad0,        3       ; explicit padding to align type to 4-byte boundary
+    field flags,       1       ; RELOC_FLAG_*
+    field pad0,        2       ; explicit padding to align type to 4-byte boundary
     field type,        4       ; RELOC_* value (Arch-specific)
     field offset,      8       ; offset in binary section (8 bytes for ELF64)
     field addend,      8       ; signed addend for RELA
