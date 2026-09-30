@@ -139,6 +139,13 @@ struc SECTION
     field pad1,        1    ; alignment padding
     field named_at,    4    ; implicit .text: sections there were when the
                             ; source first named it (0 = never)
+    ; flat binary placement (section attributes)
+    field vstart,      8    ; vstart=: the address its labels count from
+    field start,       8    ; start=: where it goes in the image
+    field follows,     8    ; follows=: the section it comes right after
+    field bin_off,     8    ; its offset in the image (binary_layout)
+    field bin_flags,   1    ; BIN_VSTART / BIN_START given
+    field pad2,        7
 endstruc
 
 ; ============================================================================
