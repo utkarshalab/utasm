@@ -450,6 +450,10 @@ sse("3a", 0x14, "66", "pextrb", "EVI", "b"); sse("3a", 0x15, "66", "pextrw", "EV
 sse("3a", 0x16, "66", "pextrd", "EVI", "d", S_WQ); sse("3a", 0x17, "66", "extractps", "EVI", "d")
 sse("3a", 0x20, "66", "pinsrb", "VEI", "b", S_NDS); sse("3a", 0x22, "66", "pinsrd", "VEI", "d", S_NDS | S_WQ)
 sse("3a", 0x44, "66", "pclmulqdq", "PCLMUL", "x", S_NDS)
+# GFNI (the VEX forms of the affine ones take VEX.W1)
+sse("3a", 0xCE, "66", "gf2p8affineqb", "VWI", "x", S_NDS)
+sse("3a", 0xCF, "66", "gf2p8affineinvqb", "VWI", "x", S_NDS)
+sse("38", 0xCF, "66", "gf2p8mulb", "VW", "x", S_NDS)
 
 # ============================================================================
 # VEX-only instructions (AVX/AVX2/FMA/BMI without a legacy SSE form)
@@ -749,9 +753,11 @@ for code, n in ((0x39, "vpmins"), (0x3B, "vpminu"), (0x3D, "vpmaxs"), (0x3F, "vp
                 (0x45, "vpsrlv"), (0x46, "vpsrav"), (0x47, "vpsllv"), (0x64, "vpblendm"),
                 (0x76, "vpermi2"), (0x7E, "vpermt2"), (0x36, "vperm")):
     ev2("38", code, "66", n + "d", n + "q", "VHW", "v", B)
-for code, n in ((0x0C, "vpermil"), (0x16, "vperm"), (0x77, "vpermi2"), (0x7F, "vpermt2"), (0x65, "vblendm"),
+for code, n in ((0x16, "vperm"), (0x77, "vpermi2"), (0x7F, "vpermt2"), (0x65, "vblendm"),
                 (0x2C, "vscalef")):
     ev2("38", code, "66", n + "ps", n + "pd", "VHW", "v", B | (EV_ER if code == 0x2C else 0))
+ev("38", 0x0C, "66", 0, "vpermilps", "VHW", "v", B)       # two opcodes, not one by W
+ev("38", 0x0D, "66", 1, "vpermilpd", "VHW", "v", B)
 ev2("38", 0x40, "66", "vpmulld", "vpmullq", "VHW", "v", B)
 ev("38", 0x28, "66", 1, "vpmuldq", "VHW", "v", B)
 ev("38", 0x2B, "66", 0, "vpackusdw", "VHW", "v", B)
