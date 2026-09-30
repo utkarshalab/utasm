@@ -186,6 +186,9 @@ struc MACRO
     field ntokens,  4       ; token count in body
     field pad1,     4       ; explicit padding to align tokens to 8-byte boundary
     field tokens,   8       ; pointer to token array
+    field defaults, 8       ; default argument tokens ("%macro m 1-2 7")
+    field ndefaults, 4      ; how many tokens (commas included)
+    field pad2,     4       ; alignment padding
 endstruc
 
 ; ============================================================================
