@@ -59,6 +59,11 @@ elf64_emit:
     mov     [rel elf_sa_ctx], r12
     mov     al, [r12 + ASMCTX_standalone]
     mov     [rel elf_sa_on], al
+    cmp     al, 1
+    je      .text_kept
+    mov     rdi, r12
+    call    elf64_order_text
+.text_kept:
 
     ; Allocate section info table (32 entries of {offset, size} = 512 bytes)
     sub     rsp, 512
@@ -233,18 +238,37 @@ elf64_emit:
 
     ; ---- 4c. Sections with other names ("section .init", ".text.hot") ----
     ; In index order, after the standard four. A nobits one takes no file
-    ; space; it is only given its offset and size. (A standalone executable
-    ; lays out the standard sections only.)
+    ; space; it is only given its offset and size. In a standalone
+    ; executable the loaded ones go to their addresses first; the others
+    ; then follow the end of the file.
+    mov     byte [rel elf_custom_pass], 1
+.custom_pass:
+    cmp     byte [rel elf_custom_pass], 2
+    jne     .custom_pass_go
     cmp     byte [r12 + ASMCTX_standalone], 1
-    je      .custom_done
+    jne     .custom_pass_go
+    mov     edi, r13d
+    xor     esi, esi
+    mov     edx, 2                         ; SEEK_END
+    call    io_lseek
+    check_err
+.custom_pass_go:
     xor     r15d, r15d
 .custom_loop:
     cmp     r15w, [r12 + ASMCTX_seccount]
-    jae     .custom_done
+    jae     .custom_pass_end
     mov     rax, [r12 + ASMCTX_sections]
     mov     r14, [rax + r15 * 8]           ; r14 = SECTION*
     inc     r15d
     cmp     byte [r14 + SECTION_type], SEC_CUSTOM
+    jne     .custom_loop
+    ; pass 1: sections with an address; pass 2: the rest
+    xor     eax, eax
+    cmp     qword [r14 + SECTION_addr], 0
+    setne   al
+    mov     ecx, 2
+    sub     cl, [rel elf_custom_pass]
+    cmp     eax, ecx
     jne     .custom_loop
     movzx   ebx, word [r14 + SECTION_index]
     mov     rdx, r14
@@ -268,6 +292,10 @@ elf64_emit:
     call    io_write
     check_err
     jmp     .custom_loop
+.custom_pass_end:
+    inc     byte [rel elf_custom_pass]
+    cmp     byte [rel elf_custom_pass], 2
+    jbe     .custom_pass
 .custom_done:
 
     ; In an executable the sections sit at their addresses, not in writing
@@ -596,6 +624,13 @@ elf64_write_debug_abbrev:
 
 %define ELF_SA_BASE     0x400000
 
+; elf64_sa_class: where a section goes in a standalone executable
+%define SA_NONE         0           ; not loaded
+%define SA_EXEC         1           ; the R+X segment, after .text
+%define SA_RO           2           ; the R segment, after .rodata
+%define SA_RW           3           ; the RW segment, after .data
+%define SA_NOBITS       4           ; the RW segment's memory part, after .bss
+
 [SECTION .bss]
 elf_sa_phnum:   resb 1              ; program headers in this executable
 elf_sa_has_ro:  resb 1
@@ -605,6 +640,10 @@ elf_sa_ctx:     resq 1
 elf_sa_rw_off:  resq 1              ; file offset of the RW segment
 elf_sa_rw_end:  resq 1              ; its end in memory (.bss included), as offset
 elf_sa_text_end: resq 1             ; end of the R+X segment in the file
+elf_sa_ro_off:  resq 1              ; the R segment, as file offsets
+elf_sa_ro_end:  resq 1
+elf_sa_rw_file_end: resq 1          ; end of the RW segment's file part
+elf_custom_pass: resb 1             ; elf64_emit's pass over other sections
 
 [SECTION .text]
 
@@ -654,6 +693,29 @@ elf64_standalone_layout:
     je      .no_bss
     mov     byte [rel elf_sa_has_rw], 1
 .no_bss:
+    ; sections with other names join the segment their flags call for
+    xor     r14d, r14d
+.scan:
+    cmp     r14w, [r12 + ASMCTX_seccount]
+    jae     .scanned
+    mov     rax, [r12 + ASMCTX_sections]
+    mov     rbx, [rax + r14 * 8]
+    inc     r14d
+    cmp     byte [rbx + SECTION_type], SEC_CUSTOM
+    jne     .scan
+    cmp     qword [rbx + SECTION_size], 0
+    je      .scan
+    call    elf64_sa_class
+    cmp     eax, SA_RO
+    jne     .scan_rw
+    mov     byte [rel elf_sa_has_ro], 1
+    jmp     .scan
+.scan_rw:
+    cmp     eax, SA_RW
+    jb      .scan
+    mov     byte [rel elf_sa_has_rw], 1
+    jmp     .scan
+.scanned:
     movzx   eax, byte [rel elf_sa_has_ro]
     movzx   ecx, byte [rel elf_sa_has_rw]
     lea     eax, [rax + rcx + 1]
@@ -661,7 +723,7 @@ elf64_standalone_layout:
     imul    r13, rax, ELF64_PHDR_SIZE
     add     r13, ELF64_EHDR_SIZE           ; r13 = file offset after the headers
 
-    ; .text right after the headers
+    ; .text right after the headers, then other executable sections
     mov     rdi, r12
     mov     rsi, SEC_TEXT
     call    asmctx_get_section
@@ -678,23 +740,35 @@ elf64_standalone_layout:
     mov     [rbx + SECTION_addr], rax
     add     r13, [rbx + SECTION_size]
 .text_done:
+    mov     ecx, SA_EXEC
+    call    .place_custom
     mov     [rel elf_sa_text_end], r13
 
-    ; .rodata on its own page
+    ; .rodata and other read-only sections on their own page
     cmp     byte [rel elf_sa_has_ro], 0
     je      .ro_done
+    mov     rsi, 0x1000
+    call    .align_r13
+    mov     [rel elf_sa_ro_off], r13
     mov     rdi, r12
     mov     rsi, SEC_RODATA
     call    asmctx_get_section
+    test    rax, rax
+    jnz     .ro_custom
     mov     rbx, rdx
-    mov     rsi, 0x1000
+    mov     rsi, [rbx + SECTION_align]
     call    .align_r13
     lea     rax, [r13 + ELF_SA_BASE]
     mov     [rbx + SECTION_addr], rax
     add     r13, [rbx + SECTION_size]
+.ro_custom:
+    mov     ecx, SA_RO
+    call    .place_custom
+    mov     [rel elf_sa_ro_end], r13
 .ro_done:
 
-    ; .data, then .bss (memory only), on the next page
+    ; .data and other writable sections, then .bss and other nobits ones
+    ; (memory only), on the next page
     cmp     byte [rel elf_sa_has_rw], 0
     je      .rw_done
     mov     rsi, 0x1000
@@ -704,14 +778,17 @@ elf64_standalone_layout:
     mov     rsi, SEC_DATA
     call    asmctx_get_section
     test    rax, rax
-    jnz     .rw_bss
+    jnz     .rw_custom
     mov     rbx, rdx
     mov     rsi, [rbx + SECTION_align]
     call    .align_r13
     lea     rax, [r13 + ELF_SA_BASE]
     mov     [rbx + SECTION_addr], rax
     add     r13, [rbx + SECTION_size]
-.rw_bss:
+.rw_custom:
+    mov     ecx, SA_RW
+    call    .place_custom
+    mov     [rel elf_sa_rw_file_end], r13  ; the file part ends here
     mov     rdi, r12
     mov     rsi, SEC_BSS
     call    asmctx_get_section
@@ -724,6 +801,8 @@ elf64_standalone_layout:
     mov     [rbx + SECTION_addr], rax
     add     r13, [rbx + SECTION_size]
 .rw_end:
+    mov     ecx, SA_NOBITS
+    call    .place_custom
     mov     [rel elf_sa_rw_end], r13
 .rw_done:
     xor     eax, eax
@@ -731,6 +810,35 @@ elf64_standalone_layout:
     pop     r13
     pop     r12
     pop     rbx
+    ret
+
+; The sections of class ECX (elf64_sa_class) with other names, in order,
+; each at the next multiple of its alignment from r13.
+.place_custom:
+    push    r14
+    push    r15
+    mov     r15d, ecx
+    xor     r14d, r14d
+.pc_next:
+    cmp     r14w, [r12 + ASMCTX_seccount]
+    jae     .pc_done
+    mov     rax, [r12 + ASMCTX_sections]
+    mov     rbx, [rax + r14 * 8]
+    inc     r14d
+    cmp     byte [rbx + SECTION_type], SEC_CUSTOM
+    jne     .pc_next
+    call    elf64_sa_class
+    cmp     eax, r15d
+    jne     .pc_next
+    mov     rsi, [rbx + SECTION_align]
+    call    .align_r13
+    lea     rax, [r13 + ELF_SA_BASE]
+    mov     [rbx + SECTION_addr], rax
+    add     r13, [rbx + SECTION_size]
+    jmp     .pc_next
+.pc_done:
+    pop     r15
+    pop     r14
     ret
 
 ; r13 = r13 rounded up to rsi (a power of two; 0 or 1 = no alignment)
@@ -742,6 +850,142 @@ elf64_standalone_layout:
     not     rax
     and     r13, rax
 .al_ret:
+    ret
+
+;
+; elf64_sa_class
+; Which part of a standalone executable a section belongs to.
+; Input    : rbx = SECTION*
+; Output   : eax = SA_NONE (not loaded), SA_EXEC, SA_RO, SA_RW or SA_NOBITS
+; Clobbers : rcx
+;
+elf64_sa_class:
+    xor     eax, eax
+    movzx   ecx, word [rbx + SECTION_flags]
+    test    ecx, SHF_ALLOC
+    jz      .ret
+    mov     eax, SA_NOBITS
+    cmp     dword [rbx + SECTION_elf_type], SHT_NOBITS
+    je      .ret
+    mov     eax, SA_EXEC
+    test    ecx, SHF_EXECINSTR
+    jnz     .ret
+    mov     eax, SA_RW
+    test    ecx, SHF_WRITE
+    jnz     .ret
+    mov     eax, SA_RO
+.ret:
+    ret
+
+;
+; elf64_order_text
+; utasm creates .text before reading the source; NASM creates a section
+; where the source first names it. So in an object file the default .text
+; moves to where the source named it, or last when it never did -- and is
+; left out when, besides, nothing went into it. The sections it passes and
+; the symbols in them are renumbered.
+; Input    : rdi = AsmCtx
+;
+elf64_order_text:
+    push    rbx
+    push    r12
+    movzx   ecx, word [rdi + ASMCTX_seccount]
+    cmp     ecx, 2
+    jb      .keep
+    mov     rsi, [rdi + ASMCTX_sections]
+    mov     rbx, [rsi]                     ; the default .text
+    cmp     byte [rbx + SECTION_implicit], 0
+    je      .keep
+    mov     r8, [rdi + ASMCTX_symtab]
+    mov     r9d, [rdi + ASMCTX_symcount]
+    mov     eax, [rbx + SECTION_named_at]
+    test    eax, eax
+    jz      .never_named
+    lea     r12d, [rax - 1]                ; its position
+    jmp     .move
+.never_named:
+    lea     r12d, [rcx - 1]                ; last
+    cmp     qword [rbx + SECTION_size], 0
+    jne     .move
+    xor     r10d, r10d
+.sym:
+    cmp     r10d, r9d
+    jae     .drop
+    imul    r11, r10, SYMBOL_SIZE
+    cmp     dword [r8 + r11 + SYMBOL_section], 1
+    je      .move                          ; a label in it: keep it
+    inc     r10d
+    jmp     .sym
+.drop:
+    ; leave it out: the others move up one
+    xor     edx, edx
+.shift:
+    lea     r10d, [rdx + 1]
+    cmp     r10d, ecx
+    jae     .shifted
+    mov     rax, [rsi + r10 * 8]
+    mov     [rsi + rdx * 8], rax
+    dec     dword [rax + SECTION_index]
+    inc     edx
+    jmp     .shift
+.shifted:
+    dec     ecx
+    mov     [rdi + ASMCTX_seccount], cx
+    xor     r10d, r10d
+.drop_renumber:
+    cmp     r10d, r9d
+    jae     .keep
+    imul    r11, r10, SYMBOL_SIZE
+    mov     eax, [r8 + r11 + SYMBOL_section]
+    cmp     eax, 1
+    jbe     .drop_next
+    cmp     eax, 0xFF00                    ; SHN_ABS and the like
+    jae     .drop_next
+    dec     dword [r8 + r11 + SYMBOL_section]
+.drop_next:
+    inc     r10d
+    jmp     .drop_renumber
+
+.move:
+    test    r12d, r12d
+    jz      .keep                          ; already in place
+    xor     edx, edx
+.move_up:
+    cmp     edx, r12d
+    jae     .moved
+    mov     rax, [rsi + rdx * 8 + 8]
+    mov     [rsi + rdx * 8], rax
+    dec     dword [rax + SECTION_index]
+    inc     edx
+    jmp     .move_up
+.moved:
+    mov     [rsi + r12 * 8], rbx
+    lea     eax, [r12d + 1]
+    mov     [rbx + SECTION_index], eax
+    ; symbols: 1 -> its new index, 2 .. new index -> one less
+    xor     r10d, r10d
+.move_renumber:
+    cmp     r10d, r9d
+    jae     .keep
+    imul    r11, r10, SYMBOL_SIZE
+    mov     eax, [r8 + r11 + SYMBOL_section]
+    cmp     eax, 1
+    jb      .move_next
+    jne     .move_other
+    lea     eax, [r12d + 1]
+    mov     [r8 + r11 + SYMBOL_section], eax
+    jmp     .move_next
+.move_other:
+    lea     edx, [r12d + 1]
+    cmp     eax, edx
+    ja      .move_next
+    dec     dword [r8 + r11 + SYMBOL_section]
+.move_next:
+    inc     r10d
+    jmp     .move_renumber
+.keep:
+    pop     r12
+    pop     rbx
     ret
 
 ;*
@@ -959,17 +1203,15 @@ elf64_write_phdrs:
     ; .rodata: R
     cmp     byte [rel elf_sa_has_ro], 0
     je      .no_ro
-    mov     rdi, r12
-    mov     rsi, SEC_RODATA
-    call    asmctx_get_section
-    mov     rax, [rdx + SECTION_addr]
-    mov     rcx, [rdx + SECTION_size]
+    mov     rax, [rel elf_sa_ro_off]
+    mov     rcx, [rel elf_sa_ro_end]
+    sub     rcx, rax
     mov     dword [rbx + PHDR_type],   PT_LOAD
     mov     dword [rbx + PHDR_flags],  PF_R
+    mov     qword [rbx + PHDR_offset], rax
+    add     rax, ELF_SA_BASE
     mov     qword [rbx + PHDR_vaddr],  rax
     mov     qword [rbx + PHDR_paddr],  rax
-    sub     rax, ELF_SA_BASE
-    mov     qword [rbx + PHDR_offset], rax
     mov     qword [rbx + PHDR_filesz], rcx
     mov     qword [rbx + PHDR_memsz],  rcx
     mov     qword [rbx + PHDR_align],  0x1000
@@ -989,19 +1231,8 @@ elf64_write_phdrs:
     mov     rcx, [rel elf_sa_rw_end]
     sub     rcx, rax
     mov     qword [rbx + PHDR_memsz],  rcx
-    xor     ecx, ecx
-    mov     rdi, r12
-    mov     rsi, SEC_DATA
-    push    rcx
-    call    asmctx_get_section
-    pop     rcx
-    test    rax, rax
-    jnz     .rw_file
-    mov     rcx, [rdx + SECTION_addr]
-    sub     rcx, ELF_SA_BASE
-    sub     rcx, [rel elf_sa_rw_off]
-    add     rcx, [rdx + SECTION_size]      ; .data ends the file part
-.rw_file:
+    mov     rcx, [rel elf_sa_rw_file_end]  ; .data and the other writable
+    sub     rcx, [rel elf_sa_rw_off]       ; progbits sections are the file part
     mov     qword [rbx + PHDR_filesz], rcx
     mov     qword [rbx + PHDR_align],  0x1000
     add     rbx, ELF64_PHDR_SIZE
