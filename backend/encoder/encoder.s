@@ -4808,6 +4808,35 @@ amd64_emit_reloc:
     mov     [rdx + RELOC_pc_adjust], r14d
     mov     dword [rdx + RELOC_pad1], 0
 
+    ; "sym wrt ..plt" and friends (reloc_wrt): the type the statement asked
+    ; for; the PC-relative addend above stays the same
+    extern  reloc_wrt
+    movzx   eax, byte [rel reloc_wrt]
+    test    eax, eax
+    jz      .wrt_done
+    mov     byte [rel reloc_wrt], 0
+    cmp     eax, WRT_SYM
+    jne     .wrt_type
+    mov     byte [rdx + RELOC_flags], RELOC_FLAG_SYM
+    jmp     .wrt_done
+.wrt_type:
+    mov     ecx, R_X86_64_PLT32
+    cmp     eax, WRT_PLT
+    je      .wrt_set
+    mov     ecx, R_X86_64_GOTPCREL
+    cmp     eax, WRT_GOTPCREL
+    je      .wrt_set
+    mov     ecx, R_X86_64_GOTTPOFF
+    cmp     eax, WRT_TLSIE
+    je      .wrt_set
+    mov     ecx, R_X86_64_GOTOFF64
+    cmp     eax, WRT_GOTOFF
+    je      .wrt_set
+    mov     ecx, R_X86_64_GOT32
+.wrt_set:
+    mov     [rdx + RELOC_type], ecx
+.wrt_done:
+
     ; 5. Increment relocation count
     inc     dword [rbx + ASMCTX_nrelocs]
     xor     rax, rax
@@ -5416,6 +5445,10 @@ amd64_encode_jmp:
     ; Size 32 = no REX.W and no 0x66 (the operand is always 64-bit in long
     ; mode); REX.B/X are still added for r8-r15.
     mov     al, 32
+    test    byte [r10 + OPERAND_flags], OP_FLAG_FAR
+    jz      .far_width
+    mov     al, 64                         ; far: REX.W (m16:64), as NASM
+.far_width:
     xor     rsi, rsi                       ; no ModRM.reg operand
     mov     rdx, r10                       ; ModRM.rm operand
     call    amd64_emit_prefixes
@@ -5464,6 +5497,10 @@ amd64_encode_call:
     ; Size 32 = no REX.W and no 0x66 (the operand is always 64-bit in long
     ; mode); REX.B/X are still added for r8-r15.
     mov     al, 32
+    test    byte [r10 + OPERAND_flags], OP_FLAG_FAR
+    jz      .far_width
+    mov     al, 64                         ; far: REX.W (m16:64), as NASM
+.far_width:
     xor     rsi, rsi                       ; no ModRM.reg operand
     mov     rdx, r10                       ; ModRM.rm operand
     call    amd64_emit_prefixes
