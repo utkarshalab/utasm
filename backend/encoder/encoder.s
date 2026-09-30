@@ -1563,9 +1563,23 @@ amd64_encode_instruction:
     ELSEIF ax, e, 1357             ; LEAVE
         mov     al, 0xC9
         call    amd64_emit_byte
-    ELSEIF ax, e, 1373             ; LOOP
-        mov     al, 0xE2
-        call    amd64_emit_branch_rel8
+    ELSEIF ax, e, 1373             ; LOOP: rel8 only, like jmp short
+        mov     r13, 0xE2
+        call    amd64_encode_branch_short
+    ELSEIF_RANGE ax, 6524, 6525    ; LOOPE / LOOPZ
+        mov     r13, 0xE1
+        call    amd64_encode_branch_short
+    ELSEIF_RANGE ax, 6526, 6527    ; LOOPNE / LOOPNZ
+        mov     r13, 0xE0
+        call    amd64_encode_branch_short
+    ELSEIF ax, e, 6529             ; JRCXZ
+        mov     r13, 0xE3
+        call    amd64_encode_branch_short
+    ELSEIF ax, e, 6528             ; JECXZ: jrcxz with a 32-bit count (67)
+        mov     al, 0x67
+        call    amd64_emit_byte
+        mov     r13, 0xE3
+        call    amd64_encode_branch_short
     ELSEIF ax, e, 1685             ; SYSRET
         call    amd64_encode_sysret
     ELSEIF ax, e, 1682             ; SYSCALL
@@ -2165,9 +2179,25 @@ amd64_encode_arithmetic:
     prologue
     cmp     byte [r12 + INST_nops], 2
     jne     .error
-    
+
     lea     r10, [r12 + INST_op0]  ; Dest
     lea     r11, [r12 + INST_op1]  ; Src
+
+    ; A 64-bit destination takes a sign-extended imm32. Like NASM, a value
+    ; from 0x80000000 to 0xFFFFFFFF stands for its low 32 bits sign-extended:
+    ; "cmp r8, 0xFFFFFFFF" is cmp r8, -1 and "or rax, 0x80000001" sets the
+    ; upper half too.
+    cmp     byte [r11 + OPERAND_kind], OP_IMM
+    jne     .imm_ok
+    cmp     byte [r10 + OPERAND_size], 64
+    jne     .imm_ok
+    mov     rax, [r11 + OPERAND_imm]
+    mov     rcx, rax
+    shr     rcx, 32
+    jnz     .imm_ok
+    movsxd  rax, eax
+    mov     [r11 + OPERAND_imm], rax
+.imm_ok:
     
     ; Case 1: r/m, reg
     IF byte [r10 + OPERAND_kind], e, OP_REG
