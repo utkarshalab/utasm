@@ -19,7 +19,7 @@
 - **CPU Profiles** — Named CPU targets with per-instruction feature validation
 - **DWARF v5** — Full debug symbol emission (`.debug_info`, `.debug_abbrev`, `.debug_line`, `.debug_frame`)
 - **io\_uring I/O** — Asynchronous file I/O for ultra-fast multi-megabyte builds
-- **Multiple Output Formats** — ELF64, PE32+ (UEFI), flat binary, `.upk` (UtkarshaLab package format)
+- **Multiple Output Formats** — ELF64 (objects and standalone executables), flat binary, `.ubf` boot images for Tattva OS ([docs/ubf.md](docs/ubf.md)); PE32+ (UEFI) and `.upk` packages are planned
 - **Built-in Tools** — Disassembler, object inspector, symbol dumper — no external tools required
 - **Zero Dependencies** — No libc, no runtime, raw syscalls only
 
