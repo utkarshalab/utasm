@@ -279,6 +279,10 @@ reloc_apply_one:
     je      .abs32
     cmp     r11d, R_X86_64_32S
     je      .abs32
+    cmp     r11d, R_X86_64_16
+    je      .abs16
+    cmp     r11d, R_X86_64_8
+    je      .abs8
     cmp     r11d, R_AARCH64_ADR_PREL_PG_HI21
     je      .aarch64_adrp
     cmp     r11d, R_AARCH64_ADD_ABS_LO12_NC
@@ -346,6 +350,16 @@ reloc_apply_one:
 .abs32:
     add     rax, r10               ; symbol value + addend
     mov     [r8], eax
+    jmp     .done_patch
+
+.abs16:
+    add     rax, r10               ; dw label (a boot sector's org)
+    mov     [r8], ax
+    jmp     .done_patch
+
+.abs8:
+    add     rax, r10
+    mov     [r8], al
     jmp     .done_patch
 
 .aarch64_jmp26:
