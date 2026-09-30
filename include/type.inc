@@ -135,7 +135,10 @@ struc SECTION
     field group_flags, 4    ; GRP_COMDAT
     field group_sig,   8    ; pointer to signature SYMBOL
     field relax_frozen, 1   ; 1 = code here must not move (optimizer/jump.s)
-    field pad1,        7    ; maintain 16-byte alignment
+    field implicit,    1    ; 1 = the default .text utasm creates up front
+    field pad1,        1    ; alignment padding
+    field named_at,    4    ; implicit .text: sections there were when the
+                            ; source first named it (0 = never)
 endstruc
 
 ; ============================================================================
