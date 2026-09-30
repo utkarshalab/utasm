@@ -95,11 +95,22 @@ preprocessor_next_token:
     mov     r12, rdx
     
     mov     byte [rbx + PREP_has_peek], FALSE
-    
+
     mov     rdi, r12
     lea     rsi, [rbx + PREP_peek]
     mov     rcx, TOKEN_SIZE
     rep movsb
+
+    ; a token queued behind the one just taken moves up
+    cmp     byte [rel has_putback_next], TRUE
+    jne     .peek_taken
+    lea     rdi, [rbx + PREP_peek]
+    lea     rsi, [rel putback_next]
+    mov     rcx, TOKEN_SIZE
+    rep movsb
+    mov     byte [rbx + PREP_has_peek], TRUE
+    mov     byte [rel has_putback_next], FALSE
+.peek_taken:
     
     mov     rdx, r12
     xor     rax, rax
@@ -136,6 +147,30 @@ preprocessor_next_token:
     jmp     .done
 
 
+; ---- preprocessor_unread_token ----------
+;
+; Like preprocessor_putback_token, for a token read *before* the one now
+; waiting in the peek slot: the peeked token stays queued behind it instead
+; of being replaced ("db 'a'+1" reads 'a', peeks '+', then hands 'a' back).
+; putback keeps replacing the peek slot, which the operand parser relies on.
+;
+; Input    : rdi = PrepState, rsi = token
+;
+global preprocessor_unread_token
+preprocessor_unread_token:
+    cmp     byte [rdi + PREP_has_peek], TRUE
+    jne     preprocessor_putback_token
+    push    rdi
+    push    rsi
+    lea     rsi, [rdi + PREP_peek]
+    lea     rdi, [rel putback_next]
+    mov     rcx, TOKEN_SIZE
+    rep movsb
+    mov     byte [rel has_putback_next], TRUE
+    pop     rsi
+    pop     rdi
+    jmp     preprocessor_putback_token
+
 global preprocessor_putback_token
 preprocessor_putback_token:
     prologue
@@ -143,7 +178,7 @@ preprocessor_putback_token:
     push    r12
     mov     rbx, rdi               ; rdi = PrepState
     mov     r12, rsi               ; rsi = TOKEN*
-    
+
     ; Copy token into peek slot
     lea     rdi, [rbx + PREP_peek]
     mov     rsi, r12
@@ -3317,7 +3352,7 @@ prep_handle_message:
     xor     eax, eax
     test    r13d, r13d
     jz      .ret
-    mov     rax, EXIT_ERROR                ; %fatal stops the assembly
+    mov     rax, EXIT_FATAL                ; %fatal stops the assembly
 .ret:
     pop     r13
     pop     r12
@@ -4548,3 +4583,5 @@ exit_open:     resb 1              ; %if blocks %exitrep has to close
 mdef_defaults: resq 1              ; %macro header: default argument tokens
 mdef_ndefaults: resd 1             ; ... and how many
 mdef_greedy:   resb 1              ; ... MACRO_FLAG_GREEDY after a "+"
+putback_next:  resb TOKEN_SIZE     ; a token queued behind the peek slot
+has_putback_next: resb 1
