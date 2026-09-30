@@ -180,7 +180,8 @@ struc MACRO
     field tag,      1       ; always TAG_MACRO
     field min_params, 1     ; minimum required parameters
     field max_params, 1     ; maximum allowed parameters (0xFF = variadic)
-    field pad0,      5       ; alignment padding
+    field flags,     1       ; MACRO_FLAG_* (function-like %define)
+    field pad0,      4       ; alignment padding
     field name,     8       ; macro name pointer
     field ntokens,  4       ; token count in body
     field pad1,     4       ; explicit padding to align tokens to 8-byte boundary
