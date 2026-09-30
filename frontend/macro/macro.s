@@ -838,9 +838,16 @@ prep_expand_next:
         extern  str_int_to_str
         call    str_int_to_str
         
-        ; 2. Allocate final label buffer
+        ; 2. Allocate the label: "..@" + ID + name + NUL. Only what it needs:
+        ;    compile_time_hash expands its %%names once per character, so a
+        ;    MAX_TOKEN buffer each time used up the arena on large tables.
+        mov     rdi, r15
+        call    str_len
+        mov     r14, rax
+        mov     rdi, [r12 + TOKEN_value]
+        call    str_len
+        lea     rsi, [r14 + rax + 4]
         mov     rdi, [rbx + PREP_arena]
-        mov     rsi, MAX_TOKEN
         call    arena_alloc
         test    rax, rax
         jnz     .produced
