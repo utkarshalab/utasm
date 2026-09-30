@@ -267,12 +267,10 @@ prep_internal_next:
     cmp     byte [rbx + PREP_skip_depth], 0
     je      .not_skipping
 
-    ; we are skipping. only care about % directives
+    ; we are skipping. only care about % directives (a lone TOK_PERCENT is
+    ; the modulo operator: the lexer makes directives TOK_DIRECTIVE)
     cmp     byte [r12 + TOKEN_kind], TOK_DIRECTIVE
-    je      .skip_is_directive
-    cmp     byte [r12 + TOKEN_kind], TOK_PERCENT
     jne     .next                  ; consume everything else
-.skip_is_directive:
 
     ; handle directive even when skipping
     mov     rdi, rbx
@@ -307,8 +305,6 @@ prep_internal_next:
 
 .not_macro_call:
     xor     rax, rax
-    cmp     byte [r12 + TOKEN_kind], TOK_PERCENT
-    je      .is_directive
     cmp     byte [r12 + TOKEN_kind], TOK_DIRECTIVE
     je      .is_directive
     jmp     .done                  ; normal token
@@ -2339,7 +2335,8 @@ prep_handle_strlen:
     call    preprocessor_next_token
     test    rax, rax
     jnz     .done
-    mov     rdi, [rdx + TOKEN_value]   ; string contents
+    call    prep_token_text            ; 'hello' is a packed character constant
+    mov     rdi, rax                   ; string contents
     test    rdi, rdi
     jz      .empty
     call    str_len
@@ -2387,7 +2384,8 @@ prep_handle_substr:
     call    preprocessor_next_token
     test    rax, rax
     jnz     .done
-    mov     r13, [rdx + TOKEN_value]   ; string contents
+    call    prep_token_text
+    mov     r13, rax                   ; string contents
 
     mov     rdi, rbx
     call    parser_evaluate_expression ; 1-based index
@@ -2428,6 +2426,52 @@ prep_handle_substr:
     pop     r12
     pop     rbx
     epilogue
+
+; ---- prep_token_text ------------------
+;
+; prep_token_text
+; The text of a quoted token as a NUL-terminated string. A "..." string (or a
+; '...' one longer than eight characters) already is one; a short '...' is a
+; character constant whose characters are packed into TOKEN_value, so they
+; are unpacked into an arena buffer.
+; Input    : rdx = token, rbx = PrepState
+; Output   : rax = the text (0 if none)
+;
+prep_token_text:
+    cmp     byte [rdx + TOKEN_kind], TOK_CHAR
+    je      .char
+    mov     rax, [rdx + TOKEN_value]
+    ret
+.char:
+    push    r12
+    push    r13
+    mov     r12, [rdx + TOKEN_value]
+    movzx   r13d, word [rdx + TOKEN_len]
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, 16
+    call    arena_alloc                ; zeroed: the text ends in NUL
+    test    rax, rax
+    jnz     .none
+    xor     ecx, ecx
+.byte:
+    cmp     ecx, r13d
+    jae     .done
+    cmp     ecx, 8
+    jae     .done
+    mov     [rdx + rcx], r12b
+    shr     r12, 8
+    inc     ecx
+    jmp     .byte
+.done:
+    mov     rax, rdx
+    pop     r13
+    pop     r12
+    ret
+.none:
+    xor     eax, eax
+    pop     r13
+    pop     r12
+    ret
 
 ; ---- prep_drop_stale_newline ------------
 ;
