@@ -576,8 +576,10 @@ print_num:
                    db "Usage: utasm [options] <source.s>", 10
                    db "       utasm --inspect [--inspect-only <parts>] <file>", 10, 10
                    db "Options:", 10
-                   db "  -f, --format <format>     elf64 (default), bin", 10
-                   db "  -o <file>                 output path (default: source.o / source.bin)", 10
+                   db "  -f, --format <format>     elf64 (default), bin, ubf (a UBF boot image)", 10
+                   db "  -o <file>                 output path (default: source.o / .bin / .ubf)", 10
+                   db "  --ubf-add TYPE=FILE[@ADDR]  -f ubf: add a component (initrd, dtb,", 10
+                   db "                            config, module, firmware) loaded at ADDR", 10
                    db "  -a, -arch, --arch <arch>  amd64 (default), aarch64, riscv64", 10
                    db "  --standalone              produce a standalone executable", 10
                    db "  --profile, -P             print internal compiler profile", 10
