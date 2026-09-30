@@ -12,8 +12,9 @@ after the source file (for example, `source.s` becomes `source.o`).
 
 | Option | Meaning |
 | --- | --- |
-| `-f`, `--format <format>` | Output format: `elf64` (default) or `bin`. Non-standalone ELF output is a relocatable object. |
-| `-o <file>` | Output path; defaults to a source-derived `.o` or `.bin` filename. |
+| `-f`, `--format <format>` | Output format: `elf64` (default), `bin`, or `ubf` (a UBF boot image, see [ubf.md](ubf.md)). Non-standalone ELF output is a relocatable object. |
+| `-o <file>` | Output path; defaults to a source-derived `.o`, `.bin` or `.ubf` filename. |
+| `--ubf-add TYPE=FILE[@ADDR]` | With `-f ubf`: add a component (`initrd`, `dtb`, `config`, `module`, `firmware`) read from FILE, loaded at ADDR. Repeatable, up to 7. |
 | `-a`, `-arch`, `--arch <arch>` | Target architecture: `amd64` (default), `aarch64`, or `riscv64`. |
 | `--standalone` | Produce a standalone executable and require `_start`. |
 | `--profile`, `-P` | Print the assembler's internal performance profile. |
@@ -42,6 +43,9 @@ utasm --arch amd64 --format elf64 source.s -o source.o
 
 # Flat binary
 utasm -f bin boot.s -o boot.bin
+
+# UBF boot image: the kernel plus a configuration component
+utasm -f ubf kernel.s --ubf-add config=boot.cfg@0x200000 -o tattva.ubf
 
 # A self-contained executable, with profiling
 utasm --standalone --profile main.s -o main
