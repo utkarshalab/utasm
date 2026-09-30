@@ -1507,11 +1507,84 @@ str_int_to_str:
     jmp     int_to_str
 
 ; ---- str_utf8_decode --------------------
-; Decodes a UTF-8 character at [RDI].
-; Returns code point in RAX, length in RDX.
+; Decodes one UTF-8 character.
+; Input  : RDI = pointer to it, RSI = end of the buffer
+; Output : RAX = its length in bytes (1-4), or 0 when it is malformed
+;          (truncated, bad continuation byte, overlong form, a UTF-16
+;          surrogate or above U+10FFFF); RDX = the code point
+; Clobbers: RCX, R8, R9
 global str_utf8_decode
 str_utf8_decode:
+    xor     edx, edx
+    cmp     rdi, rsi
+    jae     .bad
     movzx   eax, byte [rdi]
-    mov     rdx, 1
-    ; Very basic: only 1-byte support for now
+    cmp     eax, 0x80
+    jb      .ascii
+    cmp     eax, 0xC2
+    jb      .bad                   ; continuation byte, or overlong C0/C1
+    cmp     eax, 0xE0
+    jb      .two
+    cmp     eax, 0xF0
+    jb      .three
+    cmp     eax, 0xF4
+    ja      .bad                   ; above U+10FFFF
+    ; 4 bytes: 11110xxx
+    and     eax, 0x07
+    mov     edx, eax
+    mov     ecx, 4
+    jmp     .cont
+.three:
+    and     eax, 0x0F
+    mov     edx, eax
+    mov     ecx, 3
+    jmp     .cont
+.two:
+    and     eax, 0x1F
+    mov     edx, eax
+    mov     ecx, 2
+.cont:
+    lea     r8, [rdi + rcx]
+    cmp     r8, rsi
+    ja      .bad                   ; truncated
+    mov     r8d, 1
+.cont_loop:
+    movzx   eax, byte [rdi + r8]
+    mov     r9d, eax
+    and     r9d, 0xC0
+    cmp     r9d, 0x80
+    jne     .bad                   ; not a continuation byte
+    shl     edx, 6
+    and     eax, 0x3F
+    or      edx, eax
+    inc     r8d
+    cmp     r8d, ecx
+    jb      .cont_loop
+    ; the shortest form only, no surrogates, nothing above U+10FFFF
+    cmp     ecx, 3
+    je      .check3
+    ja      .check4
+    jmp     .ok                    ; 2 bytes: C2 and up are never overlong
+.check3:
+    cmp     edx, 0x800
+    jb      .bad
+    cmp     edx, 0xD800
+    jb      .ok
+    cmp     edx, 0xDFFF
+    jbe     .bad
+    jmp     .ok
+.check4:
+    cmp     edx, 0x10000
+    jb      .bad
+    cmp     edx, 0x10FFFF
+    ja      .bad
+.ok:
+    mov     eax, ecx
+    ret
+.ascii:
+    mov     edx, eax
+    mov     eax, 1
+    ret
+.bad:
+    xor     eax, eax
     ret
