@@ -42,13 +42,19 @@ linker_run:
     mov     rdi, rbx
     call    relax_run
 
-    ; 0.5 A standalone executable: sections get their addresses now, so the
-    ;     relocations below resolve against them
+    ; 0.5 A standalone executable or a flat binary: sections get their
+    ;     addresses now, so the relocations below resolve against them
     IF byte [rbx + ASMCTX_standalone], e, 1
         extern  elf64_standalone_layout
         mov     rdi, rbx
         call    elf64_standalone_layout
         ENDIF
+    cmp     byte [rbx + ASMCTX_fmt], FMT_BIN
+    jne     .not_flat
+    extern  binary_layout
+    mov     rdi, rbx
+    call    binary_layout
+.not_flat:
 
     ; 1. Resolve all relocations
     extern  global_profstate
