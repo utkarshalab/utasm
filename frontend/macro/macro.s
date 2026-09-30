@@ -1147,6 +1147,36 @@ prep_handle_directive:
     jz      .do_substr
 
     mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_rotate]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_rotate
+
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_def_short]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_def
+
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_xdefine]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_def
+
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_inc_short]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_inc
+
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_undef]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_undef
+
+    mov     rdi, [r12 + TOKEN_value]
     lea     rsi, [dir_if]
     call    str_cmp
     test    rax, rax
@@ -1293,6 +1323,21 @@ prep_handle_directive:
     call    prep_handle_substr
     jmp     .done_cleanup
 
+.do_undef:
+    cmp     byte [rbx + PREP_skip_depth], 0
+    jne     .done_cleanup
+    mov     rdi, rbx
+    call    prep_handle_undef
+    jmp     .done_cleanup
+
+.do_rotate:
+    cmp     byte [rbx + PREP_skip_depth], 0
+    jne     .done_cleanup
+    mov     rdi, rbx
+    extern  prep_handle_rotate
+    call    prep_handle_rotate             ; frontend/macro/rotate.s
+    jmp     .done_cleanup
+
 
 
 
@@ -1363,6 +1408,32 @@ prep_handle_directive:
     jmp     .done_cleanup
 
 .discard_unknown:
+    ; A misspelt directive must not vanish silently. Inside a skipped %if
+    ; branch nothing is checked, and names that do not start with a letter
+    ; (%1, %{1..}) are macro parameter forms, left as before.
+    cmp     byte [rbx + PREP_skip_depth], 0
+    jne     .discard_quietly
+    mov     rax, [r12 + TOKEN_value]
+    test    rax, rax
+    jz      .discard_quietly
+    movzx   eax, byte [rax]
+    or      eax, 0x20
+    sub     eax, 'a'
+    cmp     eax, 25
+    ja      .discard_quietly
+    mov     rdi, 2
+    lea     rsi, [rel msg_unknown_dir]
+    extern  print_str
+    call    print_str
+    mov     rdi, 2
+    mov     rsi, [r12 + TOKEN_value]
+    call    print_str
+    mov     rdi, 2
+    lea     rsi, [rel msg_newline]
+    call    print_str
+    mov     rax, EXIT_UNEXPECTED_TOKEN
+    jmp     .done_cleanup
+.discard_quietly:
     sub     rsp, TOKEN_SIZE
 .discard_unknown_loop:
     mov     rdi, [rbx + PREP_lexer]
@@ -1590,6 +1661,13 @@ dir_elif:     db "elif", 0
 dir_error:    db "error", 0
 dir_strlen:   db "strlen", 0
 dir_substr:   db "substr", 0
+dir_rotate:   db "rotate", 0
+dir_def_short: db "def", 0          ; utasm short forms: %def, %inc
+dir_inc_short: db "inc", 0
+dir_xdefine:  db "xdefine", 0       ; %define is already expanded eagerly
+dir_undef:    db "undef", 0
+undef_name:   db 0                  ; the name of an %undef'd entry
+msg_unknown_dir: db "error: unknown preprocessor directive %", 0
 msg_prep_error: db "preprocessor %error directive reached", 10, 0
 dir_if:     db "if", 0
 dir_ifdef:  db "ifdef", 0
@@ -2059,6 +2137,39 @@ prep_raw_next:
     pop     r12
     pop     rbx
     epilogue
+
+; ---- prep_raw_peek ----------------------
+;
+; prep_raw_peek
+; Like prep_raw_next, without consuming the token: the next one of the
+; current macro expansion, else of the file.
+; Input    : rdi = PrepState, rsi = token to fill
+; Output   : rax = EXIT_OK or error
+;
+prep_raw_peek:
+    mov     rax, [rdi + PREP_ctx]
+    mov     rax, [rax + ASMCTX_mac_exp]
+    test    rax, rax
+    jz      .from_lexer
+    mov     rcx, [rax + MACROEXP_body]
+    mov     r9, [rax + MACROEXP_macro]
+    cmp     ecx, [r9 + MACRO_ntokens]
+    jge     .from_lexer
+    imul    rcx, TOKEN_SIZE
+    add     rcx, [r9 + MACRO_tokens]
+    push    rdi
+    push    rsi
+    mov     rdi, rsi
+    mov     rsi, rcx
+    mov     rcx, (TOKEN_SIZE / 8)
+    rep movsq
+    pop     rsi
+    pop     rdi
+    xor     eax, eax
+    ret
+.from_lexer:
+    mov     rdi, [rdi + PREP_lexer]
+    jmp     lexer_peek
 
 ; ---- prep_handle_unmacro ----------------
 ;
@@ -2721,6 +2832,42 @@ prep_handle_assign:
     pop     rbx
     epilogue
 
+; ---- prep_handle_undef ------------------
+;
+; prep_handle_undef
+; "%undef NAME" removes a %define. The symbol entry stays in the table (its
+; slot keeps later probes working) but gets an empty name, which no lookup
+; matches; a later %define NAME creates a fresh entry.
+; Input    : rdi = PrepState
+; Output   : rax = EXIT_OK or error
+;
+prep_handle_undef:
+    push    rbx
+    mov     rbx, rdi
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .bad
+    mov     rsi, [rdx + TOKEN_value]
+    mov     rdi, [rbx + PREP_ctx]
+    call    symbol_find
+    test    rax, rax
+    jnz     .ok                            ; not defined: nothing to remove
+    cmp     byte [rdx + SYMBOL_kind], SYM_CONSTANT
+    jne     .ok                            ; only %define/%assign names
+    lea     rax, [rel undef_name]
+    mov     [rdx + SYMBOL_name], rax
+.ok:
+    xor     eax, eax
+.ret:
+    pop     rbx
+    ret
+.bad:
+    mov     rax, EXIT_DEFINE
+    jmp     .ret
+
 ; ---- prep_handle_def --------------------
 ;
 ; prep_handle_def
@@ -3065,9 +3212,9 @@ prep_skip_macro_block:
     mov     r13, rsp               ; r13 = temp token buffer
 
 .loop:
-    mov     rdi, [rbx + PREP_lexer]
+    mov     rdi, rbx                   ; the expansion first, then the file
     mov     rsi, r13
-    call    lexer_next
+    call    prep_raw_next
     test    rax, rax
     jnz     .done                  ; stop on lexer error
     
@@ -3193,10 +3340,10 @@ macro_handle_def:
     sub     rsp, 96
     
     ; 1. Lex the macro name
-    mov     rdi, [rbx + PREP_lexer]
+    mov     rdi, rbx                   ; the expansion first, then the file
     lea     r12, [rsp]             ; r12 = name token
     mov     rsi, r12
-    call    lexer_next
+    call    prep_raw_next
     test    rax, rax
     jnz     .error
 
@@ -3204,10 +3351,10 @@ macro_handle_def:
     jne     .error_expected_ident
 
     ; 2. Lex the parameter count
-    mov     rdi, [rbx + PREP_lexer]
+    mov     rdi, rbx                   ; the expansion first, then the file
     lea     r13, [rsp + 32]        ; r13 = param count token
     mov     rsi, r13
-    call    lexer_next
+    call    prep_raw_next
     test    rax, rax
     jnz     .error
 
@@ -3225,21 +3372,21 @@ macro_handle_def:
     mov     r15, rdx               ; Default max = min
     
     ; Peek for hyphen '-'
-    mov     rdi, [rbx + PREP_lexer]
+    mov     rdi, rbx                   ; the expansion first, then the file
     lea     rsi, [rsp + 64]
-    call    lexer_peek
+    call    prep_raw_peek
     cmp     byte [rsp + 64 + TOKEN_kind], TOK_MINUS
     jne     .no_hyphen
     
     ; Consume hyphen
-    mov     rdi, [rbx + PREP_lexer]
+    mov     rdi, rbx                   ; the expansion first, then the file
     lea     rsi, [rsp + 64]
-    call    lexer_next
+    call    prep_raw_next
     
     ; Lex next for max
-    mov     rdi, [rbx + PREP_lexer]
+    mov     rdi, rbx                   ; the expansion first, then the file
     lea     rsi, [rsp + 64]
-    call    lexer_next
+    call    prep_raw_next
     
     cmp     byte [rsp + 64 + TOKEN_kind], TOK_NUMBER
     jne     .check_star
@@ -3309,9 +3456,9 @@ macro_handle_def:
     imul    rax, TOKEN_SIZE
     add     r12, rax               ; r12 = current token slot
 
-    mov     rdi, [rbx + PREP_lexer]
+    mov     rdi, rbx                   ; the expansion first, then the file
     mov     rsi, r12
-    call    lexer_next
+    call    prep_raw_next
     test    rax, rax
     jnz     .error
 
