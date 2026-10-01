@@ -480,7 +480,7 @@ ubf_type_names:
 [SECTION .bss]
 global ubf_enabled
 ubf_enabled:    resb 1              ; -f ubf
-align 8
+alignb 8
 ubf_extra:      resd 1              ; --ubf-add components
 ubf_next_sector: resd 1
 ubf_comp_type:  resd UBF_MAX_COMPONENTS
