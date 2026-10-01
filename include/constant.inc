@@ -54,6 +54,7 @@
 %define EXIT_DEFINE            20  ; invalid or malformed %define directive
 %define EXIT_INC_NAME          21  ; %include without a quoted file name
 %define EXIT_INC_DEPTH         22  ; %include nested deeper than MAX_INCLUDES
+%define EXIT_EQU_FORWARD       23  ; equ refers to a symbol defined later
 
 %define EXIT_UNKNOWN_INSTR     25  ; mnemonic does not match any known instruction
 %define EXIT_INVALID_OPERAND   26  ; operand syntax is not valid for instruction
@@ -397,6 +398,8 @@
 ; RELOC_flags
 %define RELOC_FLAG_SYM         0x01        ; "wrt ..sym": against the symbol itself,
                                            ; not its section's symbol
+%define RELOC_FLAG_SECTION     0x02        ; against the section named by RELOC_sym
+                                           ; (its section symbol): debug info
 
 ; "wrt ..name" (reloc_wrt): the relocation the next reloc_record makes
 %define WRT_NONE               0
@@ -1441,6 +1444,7 @@
 %define MACRO_FLAG_FUNC        0x01        ; %define NAME(a,b): arguments in parentheses
 %define MACRO_FLAG_GREEDY      0x02        ; %macro m 1+: the last parameter takes the rest
 %define MACRO_FLAG_DEFINE      0x04        ; a single-line macro (%define family)
+%define MACRO_FLAG_TIMES       0x08        ; the repeated statement of a times
 %define BIN_VSTART             0x01        ; SECTION_bin_flags: vstart= given
 %define BIN_START              0x02        ; start= given
 %define DEFINE_MAX_TOKENS      256         ; tokens in one %define body
