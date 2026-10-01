@@ -813,7 +813,7 @@ matrix; it can also be run alone:
 
 ```sh
 python3 scripts/compat/run_all.py build/gen1/utasm          # everything
-python3 scripts/compat/run_all.py build/gen1/utasm --quick  # skip the two slow suites
+python3 scripts/compat/run_all.py build/gen1/utasm --quick  # skip the three slow suites
 python3 scripts/compat/run_all.py build/gen1/utasm -v       # also list known differences
 ```
 
@@ -824,7 +824,11 @@ python3 scripts/compat/run_all.py build/gen1/utasm -v       # also list known di
 | data forms | `db`/`dw`/`dd`/`dq`/`dt`, strings and escapes, floats, `incbin`: the bytes, or both rejecting |
 | sections/link | section headers of objects; programs that are linked (`ld` or `--standalone`) and run |
 | label operands | labels as immediates and displacements: instruction lengths and relocation types |
+| ubf images | `-f ubf` images: every header and component field, the CRC and the SHA-256 digests |
+| diagnostics | sources NASM rejects: utasm must reject them too, with the first error at the same file and line |
+| command line | NASM's options (`-I`, `-D`, `-U`, `-p`, `--before`, `-M` and its variants, `-E`) on the same files: the same binary, or the same dependency rules |
 | encoder corpus | every instruction of `corpus.py` alone, byte for byte |
+| operand shapes | ~1,700 pairings of register and memory sizes for the general-purpose instructions: the same bytes as NASM, or rejected where NASM rejects them |
 | disassembler | `utasm --disasm` against `objdump -d -M intel` on the gen1 objects and the corpus |
 
 The sources live in `scripts/compat/cases.py` and `corpus.py`. A difference
