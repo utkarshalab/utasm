@@ -108,6 +108,12 @@ amd64_encode_instruction:
     jmp     .sym_op
 .sym_done:
 
+    ; 0-. Operands no form of the instruction takes ("mov bl, r9w")
+    extern  amd64_check_shape
+    call    amd64_check_shape
+    test    rax, rax
+    jnz     .done
+
     ; 0. VALIDATION: Check operand size consistency (A87: Hardened)
     ; Mnemonics with table forms (dispatch.s) check their operands per form:
     ; movd xmm0, eax or cvtsi2sd xmm0, rax mix sizes by design.
@@ -122,6 +128,16 @@ amd64_encode_instruction:
     cmp     ax, 1427               ; MOVSXD
     je      .no_size_check
     cmp     ax, 1430               ; MOVZX
+    je      .no_size_check
+    ; IN / OUT pair the accumulator with DX or an imm8; LAR / LSL take any
+    ; selector register: their encoders check the sizes themselves
+    cmp     ax, 1277               ; IN
+    je      .no_size_check
+    cmp     ax, 1445               ; OUT
+    je      .no_size_check
+    cmp     ax, 1351               ; LAR
+    je      .no_size_check
+    cmp     ax, 1375               ; LSL
     je      .no_size_check
 
     ; Shifts and rotates take their count in CL or as an imm8, so the two
@@ -229,6 +245,7 @@ amd64_encode_instruction:
     je      .encoded
     test    rax, rax
     jnz     .done
+
 
     ; 2c. Most encoders below take no label as an immediate (only MOV to a
     ;     register and the branches do). Give them a placeholder value that
@@ -2037,7 +2054,7 @@ amd64_fix_rip_addend:
     ret
 
 [SECTION .bss]
-align 8
+alignb 8
 amd64_rip_disp:    resq 1          ; displacement of this instruction's RIP operand
 amd64_rip_pending: resd 1          ; index + 1 of this instruction's RIP reloc
 amd64_relax_kind:  resb 1          ; RELAX_JMP/JCC: this branch may be shortened
@@ -2810,15 +2827,16 @@ amd64_encode_xchg:
 
 .rm_form:
     ; The register operand goes in ModRM.reg; the other becomes r/m. When both
-    ; are registers op0 takes the reg field, which is what NASM emits.
+    ; are registers op1 takes the reg field, which is what NASM emits
+    ; ("xchg bl, r9b" is 44 86 CB).
     lea     r10, [r12 + INST_op0]
     lea     r11, [r12 + INST_op1]
-    IF byte [r10 + OPERAND_kind], e, OP_REG
-        mov     r14, r10                   ; r14 = ModRM.reg operand
-        mov     r15, r11                   ; r15 = r/m operand
+    IF byte [r11 + OPERAND_kind], e, OP_REG
+        mov     r14, r11                   ; r14 = ModRM.reg operand
+        mov     r15, r10                   ; r15 = r/m operand
         ELSE
-        mov     r14, r11
-        mov     r15, r10
+        mov     r14, r10
+        mov     r15, r11
         ENDIF
 
     IF byte [r14 + OPERAND_kind], ne, OP_REG
@@ -3278,21 +3296,28 @@ amd64_encode_test:
         jmp .imm_form
         ENDIF
 
-    ; TEST r/m, reg  ->  85 /r (84 /r for byte operands)
-    mov     al, [r10 + OPERAND_size]
-    mov     rsi, r11               ; ModRM.reg = source register
-    mov     rdx, r10               ; r/m = destination
+    ; TEST r/m, reg  ->  85 /r (84 /r for byte operands). TEST is
+    ; symmetric: "test reg, [mem]" is the same instruction with the memory
+    ; in r/m, as NASM encodes it. The register gives the size.
+    IF byte [r11 + OPERAND_kind], e, OP_MEM
+        xchg    r10, r11
+        ENDIF
+    push    r10                    ; r/m
+    push    r11                    ; ModRM.reg
+    mov     al, [r11 + OPERAND_size]
+    mov     rsi, r11
+    mov     rdx, r10
     call    amd64_emit_prefixes
 
-    lea     r10, [r12 + INST_op0]
+    mov     r11, [rsp]
     mov     rax, r13               ; 0x85, one below for 8-bit
-    IF byte [r10 + OPERAND_size], e, 8
+    IF byte [r11 + OPERAND_size], e, 8
         dec al
         ENDIF
     call    amd64_emit_byte
 
-    lea     r10, [r12 + INST_op0]
-    lea     r11, [r12 + INST_op1]
+    pop     r11
+    pop     r10
     mov     al, [r11 + OPERAND_reg]
     mov     rdi, r10
     call    amd64_emit_modrm_sib
@@ -3769,26 +3794,14 @@ amd64_encode_system_00:
 ; ;
 amd64_encode_in:
     prologue
-    lea     r10, [r12 + INST_op0]
-    lea     r11, [r12 + INST_op1]
-    
-    ; Case: in al/eax, dx
-    IF byte [r11 + OPERAND_kind], e, OP_REG
-        mov al, 0xEC
-        IF byte [r10 + OPERAND_size], e, 4
-            mov al, 0xED
-            ENDIF
-        call    amd64_emit_byte
-        ELSE
-        ; Case: in al/eax, imm8
-        mov al, 0xE4
-        IF byte [r10 + OPERAND_size], e, 4
-            mov al, 0xE5
-            ENDIF
-        call    amd64_emit_byte
-        mov     rax, [r11 + OPERAND_imm]
-        call    amd64_emit_byte
+    ; in al/ax/eax, dx  ->  EC / ED;   in al/ax/eax, imm8  ->  E4 / E5 ib
+    lea     r10, [r12 + INST_op0]          ; the accumulator
+    lea     r11, [r12 + INST_op1]          ; the port
+    mov     r13d, 0xEC
+    IF byte [r11 + OPERAND_kind], ne, OP_REG
+        mov     r13d, 0xE4
         ENDIF
+    call    amd64_encode_io
     jmp     .done
 .done:
     epilogue
@@ -3798,27 +3811,68 @@ amd64_encode_in:
 ; ;
 amd64_encode_out:
     prologue
-    lea     r10, [r12 + INST_op0]
-    lea     r11, [r12 + INST_op1]
-    
-    IF byte [r10 + OPERAND_kind], e, OP_REG
-        mov al, 0xEE
-        IF byte [r11 + OPERAND_size], e, 4
-            mov al, 0xEF
-            ENDIF
-        call    amd64_emit_byte
-        ELSE
-        mov al, 0xE6
-        IF byte [r11 + OPERAND_size], e, 4
-            mov al, 0xE7
-            ENDIF
-        call    amd64_emit_byte
-        mov     rax, [r10 + OPERAND_imm]
-        call    amd64_emit_byte
+    ; out dx, al/ax/eax  ->  EE / EF;   out imm8, al/ax/eax  ->  E6 / E7 ib
+    lea     r10, [r12 + INST_op1]          ; the accumulator
+    lea     r11, [r12 + INST_op0]          ; the port
+    mov     r13d, 0xEE
+    IF byte [r11 + OPERAND_kind], ne, OP_REG
+        mov     r13d, 0xE6
         ENDIF
+    call    amd64_encode_io
     jmp     .done
 .done:
     epilogue
+
+;*
+; * [amd64_encode_io]
+; * IN / OUT: R10 = the accumulator operand, R11 = the port (DX or an
+; * imm8), R13 = the byte-sized opcode. The accumulator must be AL, AX or
+; * EAX and a register port DX.
+; ;
+amd64_encode_io:
+    push    r14
+    push    r15
+    mov     r14, r10
+    mov     r15, r11
+    cmp     byte [r14 + OPERAND_kind], OP_REG
+    jne     .bad
+    cmp     byte [r14 + OPERAND_reg], REG_RAX
+    jne     .bad
+    movzx   eax, byte [r14 + OPERAND_size]
+    cmp     eax, 64
+    je      .bad
+    cmp     byte [r15 + OPERAND_kind], OP_REG
+    jne     .size
+    cmp     byte [r15 + OPERAND_reg], REG_RDX
+    jne     .bad
+    cmp     byte [r15 + OPERAND_size], 16
+    jne     .bad
+.size:
+    cmp     eax, 16
+    jne     .no_osz
+    mov     al, 0x66
+    call    amd64_emit_byte
+.no_osz:
+    mov     eax, r13d
+    cmp     byte [r14 + OPERAND_size], 8
+    je      .opcode
+    inc     eax                            ; the 16/32-bit form
+.opcode:
+    call    amd64_emit_byte
+    cmp     byte [r15 + OPERAND_kind], OP_REG
+    je      .ok
+    mov     rax, [r15 + OPERAND_imm]
+    call    amd64_emit_byte
+.ok:
+    xor     eax, eax
+    pop     r15
+    pop     r14
+    ret
+.bad:
+    mov     eax, EXIT_ENCODE_FAIL
+    pop     r15
+    pop     r14
+    ret
 
 ;*
 ; * [amd64_encode_fpu]
@@ -4463,9 +4517,9 @@ amd64_encode_bt:
     lea     r10, [r12 + INST_op0]
     lea     r11, [r12 + INST_op1]
     
-    ; Case 1: BT r/m, reg
+    ; Case 1: BT r/m, reg (the register gives the size: "bt [rbx], bx")
     IF byte [r11 + OPERAND_kind], e, OP_REG
-        mov     al, [r10 + OPERAND_size]
+        mov     al, [r11 + OPERAND_size]
         mov rsi, r11
         mov rdx, r10
         call amd64_emit_prefixes
@@ -4816,7 +4870,11 @@ amd64_emit_reloc:
     mov     [rdx + RELOC_sym], r13
     mov     [rdx + RELOC_section], r15
     mov     [rdx + RELOC_pc_adjust], r14d
-    mov     dword [rdx + RELOC_pad1], 0
+    extern  error_loc_file, error_loc_line
+    mov     eax, [rel error_loc_line]      ; where it came from, for errors
+    mov     [rdx + RELOC_line], eax
+    mov     rax, [rel error_loc_file]
+    mov     [rdx + RELOC_file], rax
 
     ; "sym wrt ..plt" and friends (reloc_wrt): the type the statement asked
     ; for; the PC-relative addend above stays the same
@@ -6006,30 +6064,54 @@ amd64_encode_sse:
 ; ;
 amd64_encode_rm_r_0f:
     prologue
+    ; LAR / LSL reg16/32/64, r/m: 0F R13 /r. The destination gives the
+    ; operand size; the selector is a 16/32/64-bit register or a word in
+    ; memory, as NASM takes them ("lar ebx, r9w" is 41 0F 02 D9).
     lea     r10, [r12 + INST_op0]
     lea     r11, [r12 + INST_op1]
-    
-    ; REX.W
-    mov     al, 0x48
-    IF byte [r10 + OPERAND_reg], ge, 8
-        or  al, 0x04
-        ENDIF
-    IF byte [r11 + OPERAND_reg], ge, 8
-        or  al, 0x01
-        ENDIF
-    call    amd64_emit_byte
-    
-    ; 0F Escape
+    cmp     byte [r12 + INST_nops], 2
+    jne     .bad
+    cmp     byte [r10 + OPERAND_kind], OP_REG
+    jne     .bad
+    cmp     byte [r10 + OPERAND_reg], 16
+    jae     .bad
+    cmp     byte [r10 + OPERAND_size], 8
+    je      .bad
+    cmp     byte [r11 + OPERAND_kind], OP_MEM
+    je      .mem
+    cmp     byte [r11 + OPERAND_kind], OP_REG
+    jne     .bad
+    cmp     byte [r11 + OPERAND_reg], 16
+    jae     .bad
+    cmp     byte [r11 + OPERAND_size], 8
+    je      .bad
+    jmp     .emit
+.mem:
+    movzx   eax, byte [r11 + OPERAND_size]
+    test    eax, eax
+    jz      .emit
+    cmp     eax, 16
+    jne     .bad
+.emit:
+    mov     al, [r10 + OPERAND_size]
+    mov     rsi, r10
+    mov     rdx, r11
+    call    amd64_emit_prefixes
+
     mov     al, 0x0F
     call    amd64_emit_byte
-    
     mov     al, r13b
     call    amd64_emit_byte
-    
+
+    lea     r10, [r12 + INST_op0]          ; the calls above clobber r10/r11
+    lea     r11, [r12 + INST_op1]
     mov     al, [r10 + OPERAND_reg]
     mov     rdi, r11
     call    amd64_emit_modrm_sib
+    xor     eax, eax
     jmp     .done
+.bad:
+    mov     eax, EXIT_ENCODE_FAIL
 .done:
     epilogue
 
