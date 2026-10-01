@@ -28,6 +28,9 @@ extern aarch64_encode_instruction
 extern riscv64_encode_instruction
 extern linker_run
 extern inspect_file
+extern error_report_code
+extern error_deferred
+extern error_loc_file
 extern global_profstate
 
 [SECTION .bss]
@@ -184,6 +187,31 @@ _start:
     test    rax, rax
     jnz     .exit_error
 
+    ; the source is the first file the output depends on (-M, -MD)
+    lea     rbx, [rel global_ctx]
+    mov     rdi, [rbx + ASMCTX_input]
+    extern  deps_add
+    call    deps_add
+
+    ; -D, -U, -p, --before: read ahead of the source, as if included first
+    extern  cli_prelude, cli_prelude_len, prep_push_buffer
+    mov     edx, [rel cli_prelude_len]
+    test    edx, edx
+    jz      .no_prelude
+    lea     rdi, [rel global_prep]
+    lea     rsi, [rel cli_prelude]
+    lea     rcx, [rel msg_cmdline]
+    call    prep_push_buffer
+    test    rax, rax
+    jnz     .exit_error
+.no_prelude:
+
+    ; -E only runs the preprocessor (-M assembles, to see incbin too, but
+    ; writes the dependencies instead of the output)
+    extern  cli_mode
+    cmp     byte [rel cli_mode], CLI_MODE_PREPROCESS
+    je      .preprocess_only
+
 .assembly_loop:
     ; PHASE_PARSER covers the whole frontend: the lexer and preprocessor are
     ; demand-driven from inside parser_parse_instruction, so this one span
@@ -271,11 +299,40 @@ _start:
     extern  parser_finish
     call    parser_finish
 
+    ; %error lines were reported as they were reached; no output after them
+    cmp     dword [rel error_deferred], 0
+    jne     .parser_failed
+
+    ; what fails from here on belongs to no one line
+    mov     qword [rel error_loc_file], 0
+
+    ; -M: the files read are the dependencies; no output
+    cmp     byte [rel cli_mode], CLI_MODE_DEPS
+    jne     .link
+    lea     rdi, [rel global_ctx]
+    extern  cli_write_deps
+    call    cli_write_deps
+    test    rax, rax
+    jnz     .error_in_linker
+    xor     eax, eax
+    jmp     .exit
+.link:
+
     lea     rbx, [rel global_ctx]
     mov     rdi, rbx
     call    linker_run
     test    rax, rax
     jnz     .error_in_linker
+
+    ; -MD: the dependencies, now that the output is written
+    extern  cli_deps
+    test    byte [rel cli_deps], CLI_DEPS_AFTER
+    jz      .no_deps
+    lea     rdi, [rel global_ctx]
+    call    cli_write_deps
+    test    rax, rax
+    jnz     .error_in_linker
+.no_deps:
 
     ; Profiler teardown. Both calls return immediately when profiling is off,
     ; so this needs no flag check of its own.
@@ -288,6 +345,32 @@ _start:
     call    profiler_report
 
     xor     rax, rax
+    jmp     .exit
+
+.preprocess_only:
+    ; -E: the preprocessed source, on stdout or into the -o file
+    mov     r12d, 1
+    extern  cli_output_given
+    cmp     byte [rel cli_output_given], 0
+    je      .dump
+    lea     rbx, [rel global_ctx]
+    mov     rdi, [rbx + ASMCTX_output]
+    mov     rsi, AMD64_O_WRONLY | AMD64_O_CREAT | AMD64_O_TRUNC
+    mov     rdx, 0o644
+    call    io_open
+    test    rax, rax
+    jnz     .error_in_linker
+    mov     r12d, edx
+.dump:
+    lea     rdi, [rel global_prep]
+    mov     esi, r12d
+    extern  prep_dump
+    call    prep_dump
+    test    rax, rax
+    jnz     .error_in_parser
+    cmp     dword [rel error_deferred], 0
+    jne     .parser_failed
+    xor     eax, eax
     jmp     .exit
 
 .show_usage:
@@ -361,145 +444,33 @@ _start:
     jmp     .exit
 
 .error_in_encoder:
+    ; "file:line: error: <message>" for the statement being encoded
     mov     r15, rax
-    mov     rdi, 2
-    lea     rsi, [rel msg_encoder_err]
-    call    print_str
-    mov     rdi, 2
-    mov     rsi, r15
-    call    print_num
-    
-    ; Print " at "
-    mov     rdi, 2
-    lea     rsi, [rel msg_at]
-    call    print_str
-    
-    ; Get current LexerState
-    lea     rbx, [rel global_prep]
-    mov     rbx, [rbx + PREP_lexer]
-    
-    ; Print filename if not NULL
-    mov     rsi, [rbx + LEXER_file]
-    test    rsi, rsi
-    jz      .enc_no_file
-    mov     rdi, 2
-    call    print_str
-    jmp     .enc_print_line_col
-.enc_no_file:
-    mov     rdi, 2
-    lea     rsi, [rel msg_unknown_file]
-    call    print_str
-
-.enc_print_line_col:
-    mov     rdi, 2
-    lea     rsi, [rel msg_colon]
-    call    print_str
-    
-    mov     esi, dword [rbx + LEXER_line]
-    mov     rdi, 2
-    call    print_num
-    
-    mov     rdi, 2
-    lea     rsi, [rel msg_colon]
-    call    print_str
-    
-    movzx   rsi, word [rbx + LEXER_col]
-    mov     rdi, 2
-    call    print_num
-    
-    mov     rdi, 2
-    lea     rsi, [rel msg_newline]
-    call    print_str
-    mov     rax, 5
+    mov     edi, eax
+    call    error_report_code
+    mov     rax, EXIT_ENCODER_ERROR
     jmp     .exit
 
 .error_in_linker:
-    mov     r15, rax
-    mov     rdi, 2
-    lea     rsi, [rel msg_linker_err]
-    call    print_str
-    mov     rdi, 2
-    mov     rsi, r15
-    call    print_num
-    mov     rdi, 2
-    lea     rsi, [rel msg_newline]
-    call    print_str
-    mov     rax, 6
+    ; located errors (undefined symbols) are reported where they are found;
+    ; what is left is about the program as a whole: "utasm: error: ..."
+    mov     edi, eax
+    call    error_report_code
+    mov     rax, EXIT_LINKER_ERROR
     jmp     .exit
 
 .error_in_parser:
-    mov     r15, rax                         ; Preserve error code in r15
-
     ; %fatal has printed its own message: nothing to add
     cmp     rax, EXIT_FATAL
-    jne     .report_parser_error
-    mov     rax, 4
+    je      .parser_failed
+    ; "file:line: error: <message>", then "hint: did you mean '...'?" if
+    ; the parser found a close match
+    mov     edi, eax
+    call    error_report_code
+.parser_failed:
+    mov     rax, EXIT_PARSER_ERROR
     jmp     .exit
-.report_parser_error:
-    
-    ; Print: "Parser error: "
-    mov     rdi, 2
-    lea     rsi, [rel msg_parser_err]
-    call    print_str
-    
-    ; Print the error code
-    mov     rdi, 2
-    mov     rsi, r15
-    call    print_num
-    
-    ; Print " at "
-    mov     rdi, 2
-    lea     rsi, [rel msg_at]
-    call    print_str
-    
-    ; Get current LexerState
-    lea     rbx, [rel global_prep]           ; rbx = PrepState
-    mov     rbx, [rbx + PREP_lexer]          ; rbx = active LexerState
-    
-    ; Print filename if not NULL
-    mov     rsi, [rbx + LEXER_file]
-    test    rsi, rsi
-    jz      .no_file
-    mov     rdi, 2
-    call    print_str
-    jmp     .print_line_col
-.no_file:
-    mov     rdi, 2
-    lea     rsi, [rel msg_unknown_file]
-    call    print_str
 
-.print_line_col:
-    ; Print ":"
-    mov     rdi, 2
-    lea     rsi, [rel msg_colon]
-    call    print_str
-    
-    ; Print line number
-    mov     esi, dword [rbx + LEXER_line]
-    mov     rdi, 2
-    call    print_num
-    
-    ; Print ":"
-    mov     rdi, 2
-    lea     rsi, [rel msg_colon]
-    call    print_str
-    
-    ; Print column number
-    movzx   rsi, word [rbx + LEXER_col]
-    mov     rdi, 2
-    call    print_num
-    
-    ; Print newline
-    mov     rdi, 2
-    lea     rsi, [rel msg_newline]
-    call    print_str
-
-    ; "hint: did you mean '...'?" if the parser found a close match
-    extern  error_hint_flush
-    call    error_hint_flush
-
-    mov     rax, 4
-    jmp     .exit
 
 .exit_error:
     mov     rax, 1
@@ -586,6 +557,16 @@ print_num:
                    db "  --verbose                 enable verbose diagnostics", 10
                    db "  --color | --no-color      control diagnostic color", 10
                    db "  -Werror                   treat warnings as errors", 10
+                   db "  -I dir, -i dir            add an include search directory", 10
+                   db "  -D name[=value], -U name  define / undefine a macro ahead of the source", 10
+                   db "  -p file, --include file   include a file ahead of the source", 10
+                   db "  --before text             a line ahead of the source", 10
+                   db "  -E                        preprocess only (to stdout, or the -o file)", 10
+                   db "  -M, -MD, -MF file, -MT t, -MQ t, -MP", 10
+                   db "                            Makefile dependencies, as NASM writes them", 10
+                   db "  -w+error                  warnings are errors (other -w/-W accepted)", 10
+                   db "  -X gnu | -X vc            message style: file:line: | file(line) :", 10
+                   db "  -s, -Z file               messages on stdout / into a file", 10
                    db "  -O0 | -O1 | -O2           jumps: as written | shortest, like NASM", 10
                    db "                            (default) | also remove and merge jumps", 10
                    db "  --inspect                 inspect an ELF file instead of assembling", 10
@@ -603,11 +584,6 @@ print_num:
     msg_insp_other: db "could not read the file", 10, 0
     msg_version:   db "utasm 0.1.0", 10, 0
     msg_crit_init: db "CRITICAL: Initialization failed", 10, 0
-    msg_parser_err:   db "Parser error: ", 0
-    msg_encoder_err:  db "Encoder error: ", 0
-    msg_linker_err:   db "Linker error: ", 0
-    msg_at:           db " at ", 0
-    msg_unknown_file: db "<unknown>", 0
-    msg_colon:        db ":", 0
     msg_newline:      db 10, 0
+    msg_cmdline:      db "command line", 0
 
