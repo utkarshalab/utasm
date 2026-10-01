@@ -269,7 +269,17 @@ BIN_PROBES = {'basic_no_section': 'nop\nret\n',
  'ins_str_imm': "mov eax, 'abcd'\npush 'ab'\n",
  'ins_empty_lines_comments': '; only comment\n\n   nop ; trailing\n',
  'ins_multiple_prefix': 'lock xchg [rax], ebx\n',
- 'ins_times_label': 'tbl: times 4 dd tbl\n'}
+ 'ins_times_label': 'tbl: times 4 dd tbl\n',
+ # %ifdef with %else: a true %ifdef used to let the %else branch through
+ 'pp_ifdef_else': '%define F\n%ifdef F\ndb 1\n%else\ndb 2\n%endif\ndb 3\n',
+ 'pp_ifndef_else': '%define F\n%ifndef F\ndb 1\n%else\ndb 2\n%endif\n',
+ 'pp_elifdef_taken': '%define G\n%ifdef F\ndb 1\n%elifdef G\ndb 2\n%else\ndb 3\n%endif\n',
+ 'pp_elifndef': '%ifdef F\ndb 1\n%elifndef G\ndb 2\n%else\ndb 3\n%endif\n',
+ 'pp_ifdef_in_skip': '%if 0\n%ifdef F\ndb 1\n%else\ndb 2\n%endif\ndb 4\n%endif\ndb 5\n',
+ 'pp_ifdef_label': 'lbl: db 0\n%ifdef lbl\ndb 1\n%else\ndb 2\n%endif\n',
+ 'pp_ifdef_file': '%ifdef __FILE__\ndb 1\n%else\ndb 2\n%endif\n',
+ 'pp_ifdef_assign': '%assign A 3\n%ifdef A\ndb A\n%endif\n',
+ 'pp_ifdef_mline': '%macro mm 0\nnop\n%endmacro\n%ifdef mm\ndb 1\n%else\ndb 2\n%endif\n'}
 
 # ELF objects: section contents, relocations and symbols are compared
 ELF_PROBES = {'elf_global_function': 'global f:function\n'
@@ -386,3 +396,92 @@ SECTION_CASES = ['section .x\n nop\n',
  'nop\nsection .data\n dd 1\nsection .text\n nop\nsection .x\n db 1\n',
  'section .x\n db 1\nsection .rodata\n db 2\nsection .bss\n resb 1\nsection .data\n db 3\n',
  'start:\nsection .data\n dq start\n']
+
+# operand shapes: the general-purpose instructions with every pairing of
+# register and memory sizes; NASM's verdict (bytes, or an error) is the
+# reference, so the cases NASM rejects count too
+SHAPE_OPS = ["mov", "add", "adc", "sub", "cmp", "test", "xchg", "xadd", "cmpxchg",
+             "bsf", "popcnt", "lzcnt", "imul", "cmovz", "movbe", "bt", "bts",
+             "shld", "andn", "movsx", "movzx", "movsxd", "crc32", "lar", "lsl",
+             "adcx", "in", "out"]
+SHAPE_REGS = {8: "bl", 16: "bx", 32: "ebx", 64: "rbx"}
+SHAPE_SRC = {8: "r9b", 16: "r9w", 32: "r9d", 64: "r9"}
+SHAPE_MEM = {0: "[rbx]", 8: "byte [rbx]", 16: "word [rbx]", 32: "dword [rbx]", 64: "qword [rbx]"}
+
+
+def shape_lines():
+    out = []
+    for op in SHAPE_OPS:
+        for a in SHAPE_REGS:
+            for b in SHAPE_SRC:
+                out.append("%s %s, %s" % (op, SHAPE_REGS[a], SHAPE_SRC[b]))
+            for m in SHAPE_MEM.values():
+                out.append("%s %s, %s" % (op, SHAPE_REGS[a], m))
+                out.append("%s %s, %s" % (op, m, SHAPE_REGS[a]))
+            out.append("%s %s, %s, %s" % (op, SHAPE_REGS[a], SHAPE_SRC[a], "[rbx]"))
+            out.append("%s %s, %s, cl" % (op, SHAPE_REGS[a], SHAPE_SRC[a]))
+            out.append("%s %s, %s, 3" % (op, SHAPE_REGS[a], SHAPE_SRC[a]))
+        out += ["%s al, cl" % op, "%s rax, cl" % op, "%s al, dx" % op, "%s ax, dx" % op,
+                "%s eax, dx" % op, "%s dx, al" % op, "%s dx, eax" % op, "%s al, 5" % op,
+                "%s 5, al" % op, "%s rbx, 5" % op, "%s bx, 5" % op]
+    return out
+
+
+# diagnostics: sources NASM rejects; utasm must reject them too and report
+# the first error at the same file and line. A case is the main source, or
+# a dict of file name -> text with the main source under "main.s".
+DIAG_CASES = [
+    ("unknown instruction", "mov eax, 1\nfoo eax\nnop\n"),
+    ("unclosed bracket", "mov eax, 1\nmov eax, [\nnop\n"),
+    ("dangling operator", "nop\nmov eax, 1 +\n"),
+    ("macro arity", "%macro m 2\nnop\n%endmacro\nm 1\n"),
+    ("operand sizes", "nop\nmov al, rax\n"),
+    ("operand kinds", "nop\nnop\nbsf [rbx], bx\n"),
+    ("include missing", "nop\n%include \"nofile.inc\"\n"),
+    ("include name", "%include nofile\n"),
+    ("label redefined", "nop\ndb 1\nx: nop\nx: nop\n"),
+    ("%error", "nop\n%error custom message\nnop\n"),
+    ("%fatal", "nop\n%fatal stop here\nnop\n"),
+    ("%error then more", "%error first\nnop\nfoo\n"),
+    ("undefined symbol", "nop\njmp nowhere\n"),
+    ("global undefined", "global foo\nnop\ncall foo\n"),
+    ("undefined in data", "extern foo\ncall foo\nbar: dq baz\n"),
+    ("undefined in macro", "%macro m 0\n call missing\n%endmacro\nnop\nm\n"),
+    ("error in macro", "%macro m 0\nnop\nfoo\n%endmacro\nnop\nm\n"),
+    ("error in %rep", "%rep 2\nnop\nmov al, bx\n%endrep\n"),
+    ("error in include", {"main.s": "nop\n%include \"part.inc\"\nnop\n",
+                          "part.inc": "nop\nnop\nmov al, rax\n"}),
+    ("after include", {"main.s": "%include \"part.inc\"\nnop\nfoo\n",
+                       "part.inc": "nop\n"}),
+]
+
+
+# the command line: NASM's options, each run with NASM and with utasm on
+# the same files. (name, arguments, what is compared: "bin" the flat
+# binary, "deps" the -M output, "pp" -E output assembled again)
+CLI_FILES = {
+    "main.s": 'bits 64\n%include "defs.inc"\n%ifdef FAST\nmov eax, VAL\n%else\nnop\n%endif\n'
+              'incbin "data.bin"\nmsg: db "hi", 0\n',
+    "inc/defs.inc": "times 2 nop\n",
+    "inc/data.bin": "XY",
+    "pre.inc": "%define VAL 9\n%define FAST\n",
+    "long.s": '%include "x.inc"\n%include "defs.inc"\nnop\n',
+    "inc/a_rather_long_directory_name_for_wrapping/x.inc": "nop\n",
+    "pp.s": 'bits 64\n%macro two 1\n mov eax, %1\n add eax, [rbx+%1]\n%endmacro\n'
+            'lbl:  two 3\n%define N 4\ndd N*2, (N+1)\n%rep 2\n nop\n%endrep\n'
+            'msg: db "hi", 0, `a\\tb`, "q\'s"\n',
+}
+CLI_CASES = [
+    ("-I", ["-f", "bin", "main.s", "-Iinc"], "bin"),
+    ("-I with a slash", ["-f", "bin", "main.s", "-I", "inc/"], "bin"),
+    ("-D", ["-f", "bin", "main.s", "-Iinc", "-DFAST", "-DVAL=7"], "bin"),
+    ("-d -U", ["-f", "bin", "main.s", "-Iinc", "-dFAST", "-dVAL=0x10", "-UFAST"], "bin"),
+    ("--before", ["-f", "bin", "-Iinc", "--before", "%define FAST", "-DVAL=3", "main.s"], "bin"),
+    ("-p", ["-f", "bin", "main.s", "-Iinc", "-p", "pre.inc"], "bin"),
+    ("--include", ["-f", "bin", "main.s", "-Iinc", "--include", "pre.inc"], "bin"),
+    ("-M", ["-M", "-f", "elf64", "-Iinc", "main.s"], "deps"),
+    ("-M -MT -MP", ["-M", "-MT", "x", "-MP", "-Iinc", "main.s"], "deps"),
+    ("-M -MQ", ["-M", "-f", "elf64", "-MQ", "y", "-Iinc", "main.s"], "deps"),
+    ("-M long lines", ["-M", "-f", "elf64", "-Iinc", "-Iinc/a_rather_long_directory_name_for_wrapping", "long.s"], "deps"),
+    ("-E", ["-f", "bin", "pp.s"], "pp"),
+]
