@@ -1,0 +1,482 @@
+;
+; ============================================
+; File     : error/codes.s
+; Project  : utasm
+; Author   : Utkarsha Lab
+; License  : Apache-2.0
+; ============================================
+;
+
+%include "include/constant.inc"
+%include "include/type.inc"
+%include "include/macro.inc"
+
+DEFAULT REL
+
+; ============================================================================
+; ERROR CODES AS MESSAGES, AT THE RIGHT LINE
+; ============================================================================
+; The frontend and the encoders fail with an EXIT_* code. This module turns
+; that code into a NASM-style diagnostic:
+;
+;   prog.s:12: error: invalid combination of opcode and operands
+;   prog.s:4: ... from macro `m' defined here
+;
+; The line is the one the failing statement came from, tracked as the
+; preprocessor hands out tokens (error_track_token):
+;
+;   - a token read from a file sets the location to its own file and line;
+;   - a token from a %rep (or times) body sets it to the body line;
+;   - a token from a multi-line macro keeps the invocation line and records
+;     the body line for the "... from macro" note;
+;   - a token from a single-line macro (%define) changes nothing.
+;
+;   error_track_token(tok, mexp)   called by the preprocessor per token
+;   error_report_code(code)        prints the diagnostic (and any hint)
+;   error_report_text(sev, text)   "file:line: <sev>: text" for %warning,
+;                                  %error and %fatal
+;   error_code_message(code)       the message text of an EXIT_* code
+;   error_set_subject(name)        what the next error is about: a label,
+;                                  a file, a macro ("label `x' ...")
+;   error_set_location(file, line) where an error found later belongs
+;
+; error_style (-X) chooses "file:line: " (gnu, the default) or
+; "file(line) : " (vc).
+;
+; error_deferred counts errors that do not stop the assembly (%error): the
+; source is read to the end, so every one is reported, but no output file
+; is written.
+
+extern print_str
+extern print_num
+extern error_hint_flush
+
+[SECTION .bss]
+alignb 8
+global error_loc_file
+global error_loc_line
+global error_deferred
+error_loc_file:  resq 1                 ; file of the current statement, or 0
+error_mac_name:  resq 1                 ; macro being expanded, or 0
+error_mac_file:  resq 1                 ; its body line: file ...
+error_subject:   resq 1                 ; name for the message, or 0
+error_loc_line:  resd 1                 ; ... and line of the statement
+error_mac_line:  resd 1                 ; ... and line in the macro body
+error_deferred:  resd 1                 ; %error count
+global error_style
+error_style:     resb 1                 ; 0 file:line: (gnu), 1 file(line) : (vc)
+
+[SECTION .text]
+
+; ---- error_track_token ------------------
+;
+; Input    : rdi = TOKEN* just produced
+;            rsi = MACROEXP* it came from, or 0 when it came from a file
+; Output   : none
+; Clobbers : nothing (the preprocessor calls it mid-flight)
+;
+global error_track_token
+error_track_token:
+    push    rax
+    push    rcx
+    mov     ecx, [rdi + TOKEN_line]
+    test    ecx, ecx
+    jz      .done                          ; a made-up token: no position
+    test    rsi, rsi
+    jz      .file
+    mov     rax, [rsi + MACROEXP_macro]
+    test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE
+    jnz     .done                          ; %define: stays on its line
+    mov     rax, [rax + MACRO_name]
+    test    rax, rax
+    jz      .body                          ; %rep body: the body line
+    mov     [rel error_mac_name], rax
+    mov     rax, [rdi + TOKEN_file]
+    mov     [rel error_mac_file], rax
+    mov     [rel error_mac_line], ecx
+    jmp     .done
+.file:
+    mov     qword [rel error_mac_name], 0
+.body:
+    mov     rax, [rdi + TOKEN_file]
+    mov     [rel error_loc_file], rax
+    mov     [rel error_loc_line], ecx
+.done:
+    pop     rcx
+    pop     rax
+    ret
+
+; ---- error_set_subject ------------------
+;
+; Names what the error about to be returned is about; the message then
+; says it: "label `x' inconsistently redefined".
+; Input    : rdi = NUL-terminated name (kept by pointer, not copied)
+; Clobbers : nothing
+;
+global error_set_subject
+error_set_subject:
+    mov     [rel error_subject], rdi
+    ret
+
+; ---- error_set_location -----------------
+;
+; For errors found after the source is read (undefined symbols): the
+; position the failing statement was recorded with.
+; Input    : rdi = file (0 = none), esi = line
+; Clobbers : nothing
+;
+global error_set_location
+error_set_location:
+    mov     [rel error_loc_file], rdi
+    mov     [rel error_loc_line], esi
+    mov     qword [rel error_mac_name], 0
+    ret
+
+; ---- error_code_message -----------------
+;
+; Input    : edi = EXIT_* code
+; Output   : rax = its message (NUL-terminated), 0 when it has none
+;            rdx = its message naming the subject, where '^' stands for
+;                  the name, or 0 when it has no such form
+; Clobbers : rcx
+;
+global error_code_message
+error_code_message:
+    lea     rcx, [rel code_table]
+.scan:
+    mov     eax, [rcx]
+    test    eax, eax
+    jz      .none
+    cmp     eax, edi
+    je      .found
+    add     rcx, 24
+    jmp     .scan
+.found:
+    mov     rax, [rcx + 8]
+    mov     rdx, [rcx + 16]
+    ret
+.none:
+    xor     eax, eax
+    xor     edx, edx
+    ret
+
+; ---- error_report_code ------------------
+;
+; Prints "file:line: error: <message>" for an EXIT_* code, the macro note
+; when the statement came from a macro, then any pending hint.
+; Input    : edi = EXIT_* code
+; Output   : none
+;
+global error_report_code
+error_report_code:
+    push    rbx
+    mov     ebx, edi
+    lea     rdi, [rel sev_error]
+    xor     esi, esi
+    call    report_head
+    mov     edi, ebx
+    call    error_code_message
+    test    rax, rax
+    jz      .numbered
+    cmp     qword [rel error_subject], 0
+    je      .plain
+    test    rdx, rdx
+    jnz     .template
+.plain:
+    mov     rdi, 2
+    mov     rsi, rax
+    call    print_str
+    jmp     .tail
+.template:
+    ; print the template in pieces, the subject in place of each '^'
+    push    r12
+    push    r13
+    mov     r12, rdx
+.piece:
+    mov     r13, r12
+.find:
+    mov     al, [r13]
+    test    al, al
+    jz      .last
+    cmp     al, '^'
+    je      .cut
+    inc     r13
+    jmp     .find
+.cut:
+    mov     byte [r13], 0
+    mov     rdi, 2
+    mov     rsi, r12
+    call    print_str
+    mov     byte [r13], '^'
+    mov     rdi, 2
+    mov     rsi, [rel error_subject]
+    call    print_str
+    lea     r12, [r13 + 1]
+    jmp     .piece
+.last:
+    mov     rdi, 2
+    mov     rsi, r12
+    call    print_str
+    pop     r13
+    pop     r12
+    jmp     .tail
+.numbered:
+    mov     rdi, 2
+    lea     rsi, [rel msg_code]
+    call    print_str
+    mov     rdi, 2
+    mov     esi, ebx
+    call    print_num
+.tail:
+    call    report_tail
+    call    error_hint_flush
+    mov     qword [rel error_subject], 0
+    pop     rbx
+    ret
+
+; ---- error_report_text ------------------
+;
+; Starts a diagnostic of the given severity at the current statement:
+; "file:line: <severity>: ". The caller prints the text; error_report_end
+; ends the line and adds the macro note.
+; Input    : edi = 0 warning, 1 error, 2 fatal
+;
+global error_report_text
+error_report_text:
+    lea     rax, [rel sev_warning]
+    cmp     edi, 1
+    jb      .go
+    lea     rax, [rel sev_error]
+    je      .go
+    lea     rax, [rel sev_fatal]
+.go:
+    mov     rdi, rax
+    jmp     report_head
+
+global error_report_end
+error_report_end:
+    jmp     report_tail
+
+; report_head: "file:line: " (or "utasm: " with no position) and the
+; severity at rdi.
+report_head:
+    push    rbx
+    mov     rbx, rdi
+    mov     rsi, [rel error_loc_file]
+    test    rsi, rsi
+    jz      .anon
+    mov     edx, [rel error_loc_line]
+    call    report_position
+    jmp     .sev
+.anon:
+    mov     rdi, 2
+    lea     rsi, [rel msg_utasm]
+    call    print_str
+.sev:
+    mov     rdi, 2
+    mov     rsi, rbx
+    call    print_str
+    pop     rbx
+    ret
+
+; report_position: "file:line: ", or "file(line) : " in the -X vc style
+; (rsi = file, edx = line)
+report_position:
+    push    rbx
+    mov     ebx, edx
+    mov     rdi, 2
+    call    print_str
+    mov     rdi, 2
+    lea     rsi, [rel msg_colon]
+    cmp     byte [rel error_style], 0
+    je      .open
+    lea     rsi, [rel msg_paren]
+.open:
+    call    print_str
+    mov     rdi, 2
+    mov     esi, ebx
+    call    print_num
+    mov     rdi, 2
+    lea     rsi, [rel msg_colon_sp]
+    cmp     byte [rel error_style], 0
+    je      .close
+    lea     rsi, [rel msg_paren_sp]
+.close:
+    call    print_str
+    pop     rbx
+    ret
+
+; report_tail: the newline, then "file:line: ... from macro `m' defined
+; here" when the statement came from a macro.
+report_tail:
+    sub     rsp, 8
+    mov     rdi, 2
+    lea     rsi, [rel msg_newline]
+    call    print_str
+    cmp     qword [rel error_mac_name], 0
+    je      .done
+    mov     rsi, [rel error_mac_file]
+    test    rsi, rsi
+    jz      .done
+    mov     edx, [rel error_mac_line]
+    call    report_position
+    mov     rdi, 2
+    lea     rsi, [rel msg_from_macro]
+    call    print_str
+    mov     rdi, 2
+    mov     rsi, [rel error_mac_name]
+    call    print_str
+    mov     rdi, 2
+    lea     rsi, [rel msg_defined_here]
+    call    print_str
+.done:
+    add     rsp, 8
+    ret
+
+[SECTION .data]
+
+; code (dd, padded to 8), message (dq), message naming the subject (dq,
+; 0 when there is none); a zero code ends the table
+%macro code_msg 2-3 0
+    dd %1, 0
+    dq %2, %3
+%endmacro
+
+align 8
+code_table:
+    code_msg EXIT_ERROR,             m_error
+    code_msg EXIT_OOM,               m_oom
+    code_msg EXIT_IO_ERROR,          m_io
+    code_msg EXIT_PARSER_ERROR,      m_parse
+    code_msg EXIT_ENCODER_ERROR,     m_combination
+    code_msg EXIT_LINKER_ERROR,      m_link
+    code_msg EXIT_INTERNAL,          m_internal
+    code_msg EXIT_ASSERTION,         m_assert
+    code_msg EXIT_SIGNAL,            m_signal
+    code_msg EXIT_FILE_NOT_FOUND,    m_no_file, t_no_file
+    code_msg EXIT_FILE_PERM,         m_perm
+    code_msg EXIT_FILE_READ,         m_read, t_read
+    code_msg EXIT_FILE_WRITE,        m_write
+    code_msg EXIT_INVALID_FORMAT,    m_format
+    code_msg EXIT_INC_NOT_FOUND,     m_include, t_include
+    code_msg EXIT_MACRO_DEF,         m_macro_def
+    code_msg EXIT_MACRO_EXP,         m_macro_exp
+    code_msg EXIT_MACRO_RECURSION,   m_macro_deep
+    code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
+    code_msg EXIT_DEFINE,            m_define
+    code_msg EXIT_INC_NAME,          m_inc_name
+    code_msg EXIT_INC_DEPTH,         m_inc_depth
+    code_msg EXIT_UNKNOWN_INSTR,     m_instr, t_instr
+    code_msg EXIT_INVALID_OPERAND,   m_operand
+    code_msg EXIT_INVALID_REG,       m_reg
+    code_msg EXIT_INVALID_IMM,       m_imm
+    code_msg EXIT_INVALID_ADDR,      m_addr
+    code_msg EXIT_UNEXPECTED_TOKEN,  m_token
+    code_msg EXIT_UNEXPECTED_EOF,    m_eof
+    code_msg EXIT_EXPR_TOO_DEEP,     m_deep
+    code_msg EXIT_INVALID_EXPR,      m_expr
+    code_msg EXIT_INVALID_SECTION_FLAGS, m_sect_flags
+    code_msg EXIT_ENCODE_FAIL,       m_combination
+    code_msg EXIT_IMM_RANGE,         m_imm_range
+    code_msg EXIT_OFFSET_RANGE,      m_offset_range
+    code_msg EXIT_UNSUPPORTED_INSTR, m_unsupported
+    code_msg EXIT_ALIGN_ERROR,       m_align
+    code_msg EXIT_STRUCT_BOUNDS,     m_struct
+    code_msg EXIT_UNDEF_SYMBOL,      m_undef, t_undef
+    code_msg EXIT_DUP_SYMBOL,        m_dup, t_dup
+    code_msg EXIT_SYMBOL_RANGE,      m_sym_range
+    code_msg EXIT_CIRCULAR_REF,      m_circular
+    code_msg EXIT_LD_SCRIPT_404,     m_ld_404
+    code_msg EXIT_LD_SCRIPT_PARSE,   m_ld_parse
+    code_msg EXIT_SECTION_OVERLAP,   m_overlap
+    code_msg EXIT_RELOC_ERROR,       m_reloc
+    code_msg EXIT_UNDEF_REF,         m_undef, t_undef
+    code_msg EXIT_MULTI_DEF,         m_multi, t_multi
+    code_msg EXIT_INVALID_SECTION,   m_section
+    code_msg EXIT_OUT_CREATE,        m_out_create
+    code_msg EXIT_ELF_WRITE,         m_elf_write
+    code_msg EXIT_BIN_WRITE,         m_bin_write
+    code_msg EXIT_ASSERT,            m_assert
+    code_msg EXIT_UNREACHABLE,       m_unreachable
+    code_msg EXIT_NOT_IMPLEMENTED,   m_not_impl
+    code_msg EXIT_UBF_EMPTY,         m_ubf_empty
+    code_msg EXIT_UBF_TOO_BIG,       m_ubf_big
+    dd 0, 0
+    dq 0, 0
+
+m_error:        db "error", 0
+m_oom:          db "out of memory", 0
+m_io:           db "input/output error", 0
+m_parse:        db "syntax error", 0
+m_link:         db "cannot link the program", 0
+m_internal:     db "internal error (a utasm bug)", 0
+m_assert:       db "assertion failed", 0
+m_signal:       db "interrupted", 0
+m_no_file:      db "no such file", 0
+m_perm:         db "permission denied", 0
+m_read:         db "error reading a file", 0
+m_write:        db "error writing a file", 0
+m_format:       db "invalid file format", 0
+m_include:      db "unable to open include file", 0
+m_macro_def:    db "invalid macro definition", 0
+m_macro_exp:    db "error expanding a macro", 0
+m_macro_deep:   db "macros nested too deeply (runaway recursion?)", 0
+m_macro_arity:  db "no macro of this name takes this number of parameters", 0
+m_define:       db "invalid %define", 0
+m_inc_name:     db "`%include' expects a quoted file name", 0
+m_inc_depth:    db "includes nested too deeply (does a file include itself?)", 0
+m_instr:        db "parser: instruction expected", 0
+m_operand:      db "invalid operand", 0
+m_reg:          db "invalid register", 0
+m_imm:          db "invalid immediate value", 0
+m_addr:         db "invalid effective address", 0
+m_token:        db "unexpected token (comma, colon or end of line expected?)", 0
+m_eof:          db "unexpected end of file", 0
+m_deep:         db "expression too deeply nested", 0
+m_expr:         db "expression syntax error", 0
+m_sect_flags:   db "invalid section attributes", 0
+m_combination:  db "invalid combination of opcode and operands", 0
+m_imm_range:    db "value out of range for the operand size", 0
+m_offset_range: db "jump or displacement out of range", 0
+m_unsupported:  db "instruction not supported for this target", 0
+m_align:        db "invalid alignment (not a power of two?)", 0
+m_struct:       db "operand larger than the structure field", 0
+m_undef:        db "undefined symbol", 0
+m_dup:          db "label inconsistently redefined", 0
+m_sym_range:    db "symbol value out of range", 0
+m_circular:     db "circular symbol definition", 0
+m_ld_404:       db "linker script not found", 0
+m_ld_parse:     db "linker script syntax error", 0
+m_overlap:      db "sections overlap", 0
+m_reloc:        db "relocation out of range or not supported", 0
+m_multi:        db "symbol defined more than once", 0
+m_section:      db "invalid section", 0
+m_out_create:   db "unable to create the output file", 0
+m_elf_write:    db "error writing the ELF output", 0
+m_bin_write:    db "error writing the binary output", 0
+m_unreachable:  db "internal error: unreachable code reached", 0
+m_not_impl:     db "not implemented yet", 0
+m_ubf_empty:    db "-f ubf: the program has no bytes to boot", 0
+m_ubf_big:      db "-f ubf: a component is larger than 4 GiB", 0
+
+t_no_file:      db "unable to open `^': no such file", 0
+t_read:         db "error reading `^'", 0
+t_include:      db "unable to open include file `^'", 0
+t_macro_arity:  db "multi-line macro `^' does not take this number of parameters", 0
+t_undef:        db "symbol `^' not defined", 0
+t_dup:          db "label `^' inconsistently redefined", 0
+t_multi:        db "symbol `^' defined more than once", 0
+t_instr:        db "parser: instruction expected, found `^'", 0
+
+sev_warning:    db "warning: ", 0
+sev_error:      db "error: ", 0
+sev_fatal:      db "fatal: ", 0
+msg_code:       db "error ", 0
+msg_utasm:      db "utasm: ", 0
+msg_colon:      db ":", 0
+msg_colon_sp:   db ": ", 0
+msg_newline:    db 10, 0
+msg_from_macro: db "... from macro `", 0
+msg_paren:      db "(", 0
+msg_paren_sp:   db ") : ", 0
+msg_defined_here: db "' defined here", 10, 0
