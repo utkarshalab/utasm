@@ -50,6 +50,11 @@ DEFAULT REL
 extern print_str
 extern print_num
 extern error_hint_flush
+extern lst_note
+extern lst_line_end
+extern lst_rep_tick
+extern lst_parent_exp
+extern global_ctx
 
 [SECTION .bss]
 alignb 8
@@ -63,6 +68,8 @@ error_subject:   resq 1                 ; name for the message, or 0
 error_loc_line:  resd 1                 ; ... and line of the statement
 error_mac_line:  resd 1                 ; ... and line in the macro body
 error_deferred:  resd 1                 ; %error count
+alignb 8
+exp_parent:      resq 1                 ; .expansion_depth's second one
 global error_style
 error_style:     resb 1                 ; 0 file:line: (gnu), 1 file(line) : (vc)
 
@@ -79,31 +86,134 @@ global error_track_token
 error_track_token:
     push    rax
     push    rcx
+    push    rdx
+    push    rsi
+    push    rdi
+    push    r8
+    push    r9
+    push    r10
     mov     ecx, [rdi + TOKEN_line]
     test    ecx, ecx
     jz      .done                          ; a made-up token: no position
     test    rsi, rsi
     jz      .file
-    mov     rax, [rsi + MACROEXP_macro]
-    test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE
+    mov     r8, [rsi + MACROEXP_macro]
+    test    byte [r8 + MACRO_flags], MACRO_FLAG_DEFINE
     jnz     .done                          ; %define: stays on its line
-    mov     rax, [rax + MACRO_name]
+    test    byte [r8 + MACRO_flags], MACRO_FLAG_TIMES
+    jnz     .times
+    ; A body line lies within the body's own lines, in its file: from its
+    ; first token (a %rep body) or after it (a macro's: its first token
+    ; is the %macro line's newline, and default arguments come from that
+    ; line) up to its last. Anything else is a macro argument.
+    mov     r9, [r8 + MACRO_tokens]
+    test    r9, r9
+    jz      .done
+    mov     rdx, [rdi + TOKEN_file]
+    cmp     rdx, [r9 + TOKEN_file]
+    jne     .done
+    cmp     ecx, [r9 + TOKEN_line]
+    jb      .done
+    ja      .after_first
+    cmp     qword [r8 + MACRO_name], 0
+    jne     .done
+.after_first:
+    mov     r10d, [r8 + MACRO_ntokens]
+    test    r10d, r10d
+    jz      .done
+    dec     r10d
+    imul    r10, r10, TOKEN_SIZE
+    cmp     ecx, [r9 + r10 + TOKEN_line]
+    ja      .done
+    mov     rax, [r8 + MACRO_name]
     test    rax, rax
     jz      .body                          ; %rep body: the body line
+    ; a multi-line macro: the statement stays at the invocation line, the
+    ; body line is remembered for the "... from macro" note
     mov     [rel error_mac_name], rax
-    mov     rax, [rdi + TOKEN_file]
-    mov     [rel error_mac_file], rax
+    mov     [rel error_mac_file], rdx
     mov     [rel error_mac_line], ecx
+    jmp     .listed_body
+
+.body:
+    ; a %rep body: its lines are where the statements are
+    mov     [rel error_loc_file], rdx
+    mov     [rel error_loc_line], ecx
+.listed_body:
+    ; the listing: a body line, marked with the expansions around it (<N>)
+    cmp     byte [rdi + TOKEN_kind], TOK_NEWLINE
+    je      .body_line_end
+    call    .expansion_depth
+    mov     [rel lst_parent_exp], r9       ; the enclosing body, if any
+    mov     rdi, rdx
+    mov     esi, ecx
+    mov     edx, r8d
+    mov     ecx, 1
+    call    lst_note
     jmp     .done
+.body_line_end:
+    call    lst_line_end
+    jmp     .done
+
+.times:
+    ; times: the statement's own line again; nothing moves, the listing
+    ; counts the repetitions
+    cmp     byte [rdi + TOKEN_kind], TOK_NEWLINE
+    jne     .done
+    call    lst_rep_tick
+    jmp     .done
+
 .file:
     mov     qword [rel error_mac_name], 0
-.body:
     mov     rax, [rdi + TOKEN_file]
     mov     [rel error_loc_file], rax
     mov     [rel error_loc_line], ecx
+    ; the listing: an include's lines are marked with their depth
+    xor     edx, edx
+    lea     rax, [rel global_ctx]
+    mov     rax, [rax + ASMCTX_inc_ctx]
+    test    rax, rax
+    jz      .note_file
+    movzx   edx, byte [rax + INCLUDECTX_depth]
+    inc     edx
+.note_file:
+    mov     rdi, [rel error_loc_file]
+    mov     esi, ecx
+    xor     ecx, ecx
+    call    lst_note
 .done:
+    pop     r10
+    pop     r9
+    pop     r8
+    pop     rdi
+    pop     rsi
+    pop     rdx
     pop     rcx
     pop     rax
+    ret
+
+; .expansion_depth: r8d = how many macro and %rep expansions are open
+; around the token (rsi = the innermost), the listing's <N>; r9 = the
+; nearest one around rsi's own (0 when none)
+.expansion_depth:
+    xor     r8d, r8d
+    mov     r9, rsi
+    mov     qword [rel exp_parent], 0
+.depth_up:
+    test    r9, r9
+    jz      .depth_done
+    mov     r10, [r9 + MACROEXP_macro]
+    test    byte [r10 + MACRO_flags], MACRO_FLAG_DEFINE | MACRO_FLAG_TIMES
+    jnz     .depth_next
+    inc     r8d
+    cmp     r8d, 2
+    jne     .depth_next
+    mov     [rel exp_parent], r9
+.depth_next:
+    mov     r9, [r9 + MACROEXP_parent]
+    jmp     .depth_up
+.depth_done:
+    mov     r9, [rel exp_parent]
     ret
 
 ; ---- error_set_subject ------------------
@@ -366,6 +476,7 @@ code_table:
     code_msg EXIT_DEFINE,            m_define
     code_msg EXIT_INC_NAME,          m_inc_name
     code_msg EXIT_INC_DEPTH,         m_inc_depth
+    code_msg EXIT_EQU_FORWARD,       m_equ_fwd, t_equ_fwd
     code_msg EXIT_UNKNOWN_INSTR,     m_instr, t_instr
     code_msg EXIT_INVALID_OPERAND,   m_operand
     code_msg EXIT_INVALID_REG,       m_reg
@@ -425,6 +536,7 @@ m_macro_arity:  db "no macro of this name takes this number of parameters", 0
 m_define:       db "invalid %define", 0
 m_inc_name:     db "`%include' expects a quoted file name", 0
 m_inc_depth:    db "includes nested too deeply (does a file include itself?)", 0
+m_equ_fwd:      db "equ refers to a symbol defined later (utasm reads the source once)", 0
 m_instr:        db "parser: instruction expected", 0
 m_operand:      db "invalid operand", 0
 m_reg:          db "invalid register", 0
@@ -461,6 +573,7 @@ m_ubf_big:      db "-f ubf: a component is larger than 4 GiB", 0
 
 t_no_file:      db "unable to open `^': no such file", 0
 t_read:         db "error reading `^'", 0
+t_equ_fwd:      db "equ refers to `^', defined later (utasm reads the source once)", 0
 t_include:      db "unable to open include file `^'", 0
 t_macro_arity:  db "multi-line macro `^' does not take this number of parameters", 0
 t_undef:        db "symbol `^' not defined", 0
