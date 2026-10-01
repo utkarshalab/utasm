@@ -2932,6 +2932,12 @@ parser_parse_struc:
     call    parser_evaluate_expression
     check_err_to .error
     imul    rdx, [rbp - 64]
+    mov     rdi, [rbp - 48]                ; the listing: its offset, size
+    mov     rsi, rdx
+    push    rdx
+    extern  lst_field
+    call    lst_field
+    pop     rdx
     add     [rbp - 48], rdx
     jmp     .field_loop
 .nasm_alignb:
@@ -2942,7 +2948,11 @@ parser_parse_struc:
     lea     rax, [rax + rdx - 1]
     neg     rdx
     and     rax, rdx
+    mov     rdi, [rbp - 48]
+    mov     rsi, rax
+    sub     rsi, rdi
     mov     [rbp - 48], rax
+    call    lst_field
     jmp     .field_loop
 
 .register_struct:
@@ -3438,6 +3448,27 @@ parser_handle_pseudo_op:
     add     r13, 10
     jmp     .ignored_word
 .ignored_hit:
+    ; [list -] / [list +]: the listing stops and goes on
+    mov     rdi, r12
+    lea     rsi, [rel str_list]
+    call    str_cmp
+    test    rax, rax
+    jnz     .ignored_rest
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ignored_rest
+    movzx   eax, byte [rdx + TOKEN_kind]
+    mov     edi, 1
+    cmp     eax, TOK_PLUS
+    je      .list_switch
+    xor     edi, edi
+    cmp     eax, TOK_MINUS
+    jne     .ignored_rest
+.list_switch:
+    extern  lst_listing
+    call    lst_listing
+.ignored_rest:
     call    parser_skip_to_eol
     mov     rax, 1
     jmp     .check_handler_result
@@ -3912,6 +3943,9 @@ parser_incbin:
 .close:
     mov     rdi, r15
     call    io_close
+    mov     edi, 1                         ; the listing: <bin Nh>
+    extern  lst_mark
+    call    lst_mark
     xor     eax, eax
     jmp     .ret
 .close_error:
@@ -3937,6 +3971,7 @@ parser_incbin:
 
 [SECTION .rodata]
 str_incbin:    db "incbin", 0
+str_list:      db "list", 0
 ; name (15 bytes) + FLT_* format
 float_fn_names: db "__float16__", 0, 0,0,0, FLT_HALF
                db "__float32__", 0, 0,0,0, FLT_SINGLE
@@ -4095,6 +4130,7 @@ attr_vstart:   db "vstart", 0
 attr_start:    db "start", 0
 attr_follows:  db "follows", 0
 [SECTION .bss]
+global abs_section
 abs_section:   resq 1              ; the "absolute" pseudo-section
 [SECTION .text]
 
@@ -4392,6 +4428,7 @@ parser_handle_times:
     test    rax, rax
     jnz     .ret
     mov     byte [rdx + MACRO_tag], TAG_MACRO
+    mov     byte [rdx + MACRO_flags], MACRO_FLAG_TIMES
     mov     qword [rdx + MACRO_name], 0    ; anonymous, like a %rep body
     mov     [rdx + MACRO_ntokens], r13d
     mov     [rdx + MACRO_tokens], r12
@@ -4574,6 +4611,9 @@ parser_handle_align:
 .auto_fill:
     call    asm_ctx_align
 .aligned:
+    mov     edi, 2                         ; the listing: 90<rep Nh>
+    extern  lst_mark
+    call    lst_mark
 
     ; all three: popping only r12 handed the caller back a wrong r12 and a
     ; clobbered r13/r14, which crashed right after "align 4, <fill>"
@@ -4617,34 +4657,55 @@ parser_handle_org:
 parser_handle_equ:
     prologue
     push    r12
-    
-    ; Evaluate expression
-    call    parser_evaluate_expression
-    check_err
-    ; "x equ label" copies a position into a constant: keep the label's
-    ; section from moving (optimizer/jump.s).
-    mov     rdi, r11
-    mov     rsi, rcx
-    call    relax_freeze_symref
-    mov     r12, rdx               ; r12 = value
-    
-    ; Get last symbol
-    mov     rax, [rbx + PREP_ctx]
-    mov     rax, [rax + ASMCTX_last_symbol]
-    IF rax, e, 0
-        mov     rax, EXIT_UNDEF_SYMBOL
-        jmp     .error
-        ENDIF
-    
-    ; Override value and make it absolute (SHN_ABS = 0xFFF1)
-    mov     [rax + SYMBOL_value], r12
-    mov     word [rax + SYMBOL_section], 0xFFF1
-    
-    pop     r12
-    mov     rax, OK
-    epilogue
+    push    r13
 
+    ; the name this line defines: taken before the expression, whose
+    ; symbols would otherwise be taken for it
+    mov     rax, [rbx + PREP_ctx]
+    mov     r13, [rax + ASMCTX_last_symbol]
+    test    r13, r13
+    jz      .no_name
+
+    call    parser_evaluate_expression
+    check_err_to .error
+    mov     r12, rdx               ; r12 = value
+
+    ; a symbol not defined yet: its value is unknown here, and utasm reads
+    ; the source once
+    test    rcx, rcx
+    jnz     .forward
+
+    ; "x equ label [+ n]": x is a label of the same section (NASM's alias),
+    ; moved with it when jumps are shortened. Anything else - a number, a
+    ; difference of two labels ("$ - msg"), a constant - is a constant.
+    mov     word [r13 + SYMBOL_section], 0xFFF1      ; SHN_ABS
+    test    r11, r11
+    jz      .set
+    cmp     byte [r11], TAG_SYMBOL
+    jne     .set
+    cmp     byte [r11 + SYMBOL_kind], SYM_LABEL
+    jne     .set
+    movzx   eax, word [r11 + SYMBOL_section]
+    test    eax, eax
+    jz      .set
+    cmp     eax, 0xFF00
+    jae     .set
+    mov     [r13 + SYMBOL_section], ax
+    mov     byte [r13 + SYMBOL_kind], SYM_LABEL
+.set:
+    mov     [r13 + SYMBOL_value], r12
+    xor     eax, eax
+    jmp     .error
+
+.forward:
+    mov     rdi, rcx               ; "equ: `y' is not defined yet"
+    call    error_set_subject
+    mov     rax, EXIT_EQU_FORWARD
+    jmp     .error
+.no_name:
+    mov     rax, EXIT_UNDEF_SYMBOL
 .error:
+    pop     r13
     pop     r12
     epilogue
 
