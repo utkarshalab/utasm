@@ -396,3 +396,107 @@ def ubf(utasm, verbose=False):
         bad = run([utasm, "-f", "ubf", k, "--ubf-add", "nosuch=cfg.txt", "-o", img], cwd=d)
         s.result("ubf bad --ubf-add", bad.returncode != 0, "accepted an unknown component type")
     return s
+
+
+# ---------------------------------------------------------------------------
+# operand shapes: valid and invalid operand pairings, NASM's verdict
+# ---------------------------------------------------------------------------
+def operand_shapes(utasm, verbose=False):
+    s = Suite("operand shapes", verbose)
+
+    def one(line):
+        with tempdir() as d:
+            nb, ub, ru = assemble_bin(utasm, "bits 64\n" + line + "\n", d)
+            return line, nb, ub, ru
+
+    with cf.ThreadPoolExecutor(JOBS) as ex:
+        for line, nb, ub, ru in ex.map(one, cases.shape_lines()):
+            if nb is None:
+                s.result(line, ub is None, "NASM rejects it, utasm gives " + (ub or b"").hex())
+            elif ub is None:
+                s.result(line, False, "utasm error: " + first_line(ru))
+            else:
+                s.result(line, nb == ub, "nasm %s | utasm %s" % (nb.hex(), ub.hex()))
+    return s
+
+
+# ---------------------------------------------------------------------------
+# diagnostics: the first error at the same file and line as NASM's
+# ---------------------------------------------------------------------------
+def _first_error(r):
+    for line in re.sub(r"\x1b\[[0-9;]*m", "", (r.stdout or "") + (r.stderr or "")).splitlines():
+        m = re.match(r"(\S+?):(\d+): (?:error|fatal): ", line)
+        if m:
+            return "%s:%s" % (os.path.basename(m.group(1)), m.group(2))
+    return None
+
+
+def diagnostics(utasm, verbose=False):
+    s = Suite("diagnostics", verbose)
+
+    def one(case):
+        name, files = case
+        if isinstance(files, str):
+            files = {"main.s": files}
+        with tempdir() as d:
+            for fn, text in files.items():
+                open(os.path.join(d, fn), "w").write(text)
+            rn = run(["nasm", "-f", "elf64", "main.s", "-o", "n.o"], cwd=d)
+            ru = run([utasm, "-f", "elf64", "main.s", "-o", "u.o"], cwd=d)
+            return name, rn, ru
+
+    with cf.ThreadPoolExecutor(JOBS) as ex:
+        for name, rn, ru in ex.map(one, cases.DIAG_CASES):
+            if rn.returncode == 0:
+                s.skip()
+            elif ru.returncode == 0:
+                s.result(name, False, "utasm accepts it; NASM: " + first_line(rn))
+            else:
+                want, got = _first_error(rn), _first_error(ru)
+                s.result(name, want == got, "nasm %s | utasm %s (%s)" % (want, got, first_line(ru)))
+    return s
+
+
+# ---------------------------------------------------------------------------
+# the command line: NASM's options give NASM's results
+# ---------------------------------------------------------------------------
+def command_line(utasm, verbose=False):
+    s = Suite("command line", verbose)
+
+    def one(case):
+        name, args, kind = case
+        with tempdir() as d:
+            for fn, text in cases.CLI_FILES.items():
+                p = os.path.join(d, fn)
+                os.makedirs(os.path.dirname(p), exist_ok=True)
+                open(p, "w").write(text)
+            if kind == "bin":
+                rn = run(["nasm"] + args + ["-o", "n.bin"], cwd=d)
+                ru = run([utasm] + args + ["-o", "u.bin"], cwd=d)
+                a = open(os.path.join(d, "n.bin"), "rb").read() if rn.returncode == 0 else None
+                b = open(os.path.join(d, "u.bin"), "rb").read() if ru.returncode == 0 else None
+                return name, a, b, ru
+            if kind == "deps":
+                rn = run(["nasm"] + args, cwd=d)
+                ru = run([utasm] + args, cwd=d)
+                return name, rn.stdout if rn.returncode == 0 else None, \
+                    ru.stdout if ru.returncode == 0 else None, ru
+            # -E: the preprocessed text must assemble to NASM's binary
+            src = args[-1]
+            rn = run(["nasm"] + args + ["-o", "n.bin"], cwd=d)
+            ru = run([utasm, "-E", src, "-o", "pp.s.out"], cwd=d)
+            if ru.returncode == 0:
+                ru = run([utasm, "-f", "bin", "pp.s.out", "-o", "u.bin"], cwd=d)
+            a = open(os.path.join(d, "n.bin"), "rb").read() if rn.returncode == 0 else None
+            b = open(os.path.join(d, "u.bin"), "rb").read() if ru.returncode == 0 else None
+            return name, a, b, ru
+
+    with cf.ThreadPoolExecutor(JOBS) as ex:
+        for name, a, b, ru in ex.map(one, cases.CLI_CASES):
+            if a is None:
+                s.skip()
+            elif b is None:
+                s.result(name, False, "utasm error: " + first_line(ru))
+            else:
+                s.result(name, a == b, "nasm %r | utasm %r" % (a[:60], b[:60]))
+    return s
