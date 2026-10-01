@@ -1996,8 +1996,11 @@ amd64_branch_fits_rel8:
     jne     .ret                           ; raw name: forward reference
     cmp     byte [rsi + SYMBOL_kind], SYM_LABEL
     jne     .ret
-    cmp     byte [rsi + SYMBOL_vis], VIS_LOCAL
-    jne     .ret                           ; exported: left to the linker
+    ; a label of this section, global or not, as NASM shortens it; but
+    ; "wrt ..plt" and the like ask for their relocation
+    extern  reloc_wrt
+    cmp     byte [rel reloc_wrt], 0
+    jne     .ret
     mov     rcx, [rbx + ASMCTX_curr_sec]
     test    rcx, rcx
     jz      .ret
@@ -2305,8 +2308,21 @@ amd64_encode_mov:
                 and cl, 0x07
                 add al, cl
                 call amd64_emit_byte
-                mov rdi, [r14 + OPERAND_imm]   ; emit_word takes its value in RDI
-                call amd64_emit_word
+                IF byte [r14 + OPERAND_kind], e, OP_SYMBOL
+                    ; a label or a constant defined later: relocated
+                    mov rdi, rbx
+                    mov rsi, [rbx + ASMCTX_curr_sec]
+                    mov rsi, [rsi + SECTION_size]
+                    mov rdx, [r14 + OPERAND_sym]
+                    mov rcx, [r14 + OPERAND_imm]      ; Addend
+                    mov r8, R_X86_64_16
+                    call reloc_record
+                    xor rdi, rdi
+                    call amd64_emit_word
+                    ELSE
+                    mov rdi, [r14 + OPERAND_imm]   ; emit_word takes its value in RDI
+                    call amd64_emit_word
+                    ENDIF
                 jmp .done
                 ENDIF
             
@@ -2321,8 +2337,20 @@ amd64_encode_mov:
                 and cl, 0x07
                 add al, cl
                 call amd64_emit_byte
-                mov rax, [r14 + OPERAND_imm]
-                call amd64_emit_byte
+                IF byte [r14 + OPERAND_kind], e, OP_SYMBOL
+                    mov rdi, rbx
+                    mov rsi, [rbx + ASMCTX_curr_sec]
+                    mov rsi, [rsi + SECTION_size]
+                    mov rdx, [r14 + OPERAND_sym]
+                    mov rcx, [r14 + OPERAND_imm]      ; Addend
+                    mov r8, R_X86_64_8
+                    call reloc_record
+                    xor eax, eax
+                    call amd64_emit_byte
+                    ELSE
+                    mov rax, [r14 + OPERAND_imm]
+                    call amd64_emit_byte
+                    ENDIF
                 jmp .done
                 ENDIF
     .not_imm:
@@ -4672,8 +4700,8 @@ amd64_emit_branch_disp:
     jne     .relocate              ; a raw name means a forward reference
     cmp     byte [r15 + SYMBOL_kind], SYM_LABEL
     jne     .relocate
-    cmp     byte [r15 + SYMBOL_vis], VIS_LOCAL
-    jne     .relocate              ; an exported symbol stays the linker's job
+    cmp     byte [rel reloc_wrt], 0
+    jne     .relocate              ; "wrt ..plt": its relocation, as asked
 
     mov     r8, [rbx + ASMCTX_curr_sec]
     test    r8, r8
