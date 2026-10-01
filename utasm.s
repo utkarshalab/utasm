@@ -317,6 +317,8 @@ _start:
     xor     eax, eax
     jmp     .exit
 .link:
+    extern  lst_close
+    call    lst_close                      ; the listing's last line
 
     lea     rbx, [rel global_ctx]
     mov     rdi, rbx
@@ -333,6 +335,16 @@ _start:
     test    rax, rax
     jnz     .error_in_linker
 .no_deps:
+
+    ; -l: the listing, with the final offsets and bytes
+    extern  lst_file, lst_write
+    cmp     qword [rel lst_file], 0
+    je      .no_listing
+    lea     rdi, [rel global_ctx]
+    call    lst_write
+    test    rax, rax
+    jnz     .error_in_linker
+.no_listing:
 
     ; Profiler teardown. Both calls return immediately when profiling is off,
     ; so this needs no flag check of its own.
@@ -562,6 +574,8 @@ print_num:
                    db "  -p file, --include file   include a file ahead of the source", 10
                    db "  --before text             a line ahead of the source", 10
                    db "  -E                        preprocess only (to stdout, or the -o file)", 10
+                   db "  -l file                   write a listing (lines, offsets, bytes)", 10
+                   db "  -g                        DWARF debug information (line table)", 10
                    db "  -M, -MD, -MF file, -MT t, -MQ t, -MP", 10
                    db "                            Makefile dependencies, as NASM writes them", 10
                    db "  -w+error                  warnings are errors (other -w/-W accepted)", 10
