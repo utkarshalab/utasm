@@ -674,7 +674,8 @@ cli_parse.exit:
 ;   -w+x, -w-x, -Wx, -Wno-x warning classes: accepted; -w+error is -Werror
 ;   -X gnu | -X vc          message style: file:line: / file(line) :
 ;   -s                      messages on stdout; -Z file: into a file
-;   -g, -F format           debug information: not generated yet (a warning)
+;   -l file                 the listing: lines, offsets and bytes
+;   -g, -F dwarf            DWARF debug information (ELF objects)
 ;   --no-line, --reproducible, --keep-all: accepted
 ; Input    : rdi = the argument (it starts with '-'), rsi = the next
 ;            argument or 0
@@ -721,6 +722,8 @@ cli_nasm_option:
     je      .to_file
     cmp     eax, 'g'
     je      .debug
+    cmp     eax, 'l'
+    je      .listing
     cmp     eax, 'F'
     je      .debug_format
     cmp     eax, '-'
@@ -917,22 +920,31 @@ cli_nasm_option:
     pop     rdx
     jmp     .bad
 
+.listing:
+    call    .value                         ; -l file: the listing
+    test    rax, rax
+    jz      .missing
+    extern  lst_file, lst_enabled
+    mov     [rel lst_file], rax
+    mov     byte [rel lst_enabled], 1
+    mov     eax, edx
+    jmp     .ret
+
 .debug:
+    ; -g: DWARF debug information (line table, compile unit, ranges)
     cmp     byte [rbx], 0
     jne     .none
-    mov     rdi, 2
-    lea     rsi, [rel .s_no_debug]
-    call    print_str
+    extern  dbg_enabled
+    mov     byte [rel dbg_enabled], 1
+    mov     byte [rel lst_enabled], 1      ; its rows come from these entries
     jmp     .taken
 .debug_format:
+    ; -F dwarf (the only format there is for ELF here; -F stabs is taken
+    ; as dwarf)
     call    .value
     test    rax, rax
     jz      .missing
-    push    rdx
-    mov     rdi, 2
-    lea     rsi, [rel .s_no_debug]
-    call    print_str
-    pop     rax
+    mov     eax, edx
     jmp     .ret
 
 .long:
@@ -1213,7 +1225,6 @@ cli_nasm_option.s_pragma:     db "--pragma", 0
 cli_nasm_option.s_no_line:    db "--no-line", 0
 cli_nasm_option.s_reproducible: db "--reproducible", 0
 cli_nasm_option.s_keep_all:   db "--keep-all", 0
-cli_nasm_option.s_no_debug:   db "utasm: warning: no debug information is generated yet (-g, -F)", 10, 0
 cli_write_deps.s_dot_d:       db ".d", 0
 
 [SECTION .bss]
