@@ -447,6 +447,24 @@ my_const    equ 100                 ; alternative constant — same as %define
 %assign counter counter + 1
 ```
 
+`equ` gives its label the value of the expression, as in NASM:
+
+```asm
+msg:     db "hello", 10
+msg_len  equ $ - msg                ; a constant: 6
+mid      equ msg + 3                ; a label in msg's section, msg + 3
+```
+
+A difference of two labels of one section (`$ - msg`, `end - start`) or
+any other number is a constant; a label plus or minus a number is that
+label's section again (it is relocated like a label, and moves with it
+when jumps are shortened). A constant may be used before its `equ` line
+(`mov ecx, msg_len` above `msg_len equ ...`): its value is written in place
+when the object is finished. utasm reads the source once, though, so the
+`equ` expression itself cannot use a label defined after it
+(`len equ end - start` above `end:`): that is an error naming the label,
+where NASM, which reads the source again, would accept it.
+
 ---
 
 ### Macros
