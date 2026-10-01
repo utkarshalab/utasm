@@ -46,8 +46,9 @@ DEFAULT REL
 ; would no longer reach, the section is left unchanged.
 ;
 ; Only x86-64 output, only local labels in the same section (exported
-; labels stay the linker's job, as in amd64_emit_branch_disp), and never
-; when debug info is requested.
+; labels stay long, as in amd64_emit_branch_disp), and never under
+; CTX_FLAG_DEBUG / CTX_FLAG_DWARF. -g keeps it on: the listing (-l) and
+; the DWARF line table follow the moved code (lst_remap).
 ;
 ; Optimization levels (ASMCTX_opt, set by -O0/-O1/-O2):
 ;   -O0  nothing: every jump stays as the encoder wrote it
@@ -569,9 +570,7 @@ rx_prepare_candidate:
     test    rax, rax
     jnz     .done
     cmp     byte [rdx + SYMBOL_kind], SYM_LABEL
-    jne     .done
-    cmp     byte [rdx + SYMBOL_vis], VIS_LOCAL
-    jne     .done
+    jne     .done                          ; (global or not, as NASM does)
     mov     rax, [rel rw_sec]
     mov     eax, [rax + SECTION_index]
     cmp     ax, [rdx + SYMBOL_section]
@@ -891,6 +890,12 @@ rx_new:
     add     rax, rdi
     ret
 
+; relax_map_offset: rx_new for the listing (lst_remap), while rx_apply
+; rewrites a section
+global relax_map_offset
+relax_map_offset:
+    jmp     rx_new
+
 ; ---- rx_short_disp (internal) -----------
 ;
 ; The rel8 displacement a candidate would have in the current layout.
@@ -1110,7 +1115,7 @@ rx_apply:
     xor     r15d, r15d
 .syms:
     cmp     r15d, [rbx + ASMCTX_symcount]
-    jae     .out
+    jae     .listing
     cmp     [r13 + SYMBOL_section], r14w
     jne     .syms_next
     mov     rdi, [r13 + SYMBOL_value]
@@ -1120,6 +1125,12 @@ rx_apply:
     add     r13, SYMBOL_SIZE
     inc     r15
     jmp     .syms
+
+.listing:
+    ; and the listing's lines (-l)
+    mov     rdi, r12
+    extern  lst_remap
+    call    lst_remap
 
 .out:
     add     rsp, 8
