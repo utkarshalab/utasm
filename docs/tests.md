@@ -826,6 +826,8 @@ python3 scripts/compat/run_all.py build/gen1/utasm -v       # also list known di
 | label operands | labels as immediates and displacements: instruction lengths and relocation types |
 | ubf images | `-f ubf` images: every header and component field, the CRC and the SHA-256 digests |
 | diagnostics | sources NASM rejects: utasm must reject them too, with the first error at the same file and line |
+| listings | `-l` on every bin probe (as an ELF object): the same listing file as NASM's, line for line |
+| dwarf line tables | `-g` objects: the same decoded line table rows (file, line, address) as NASM's |
 | command line | NASM's options (`-I`, `-D`, `-U`, `-p`, `--before`, `-M` and its variants, `-E`) on the same files: the same binary, or the same dependency rules |
 | encoder corpus | every instruction of `corpus.py` alone, byte for byte |
 | operand shapes | ~1,700 pairings of register and memory sizes for the general-purpose instructions: the same bytes as NASM, or rejected where NASM rejects them |
