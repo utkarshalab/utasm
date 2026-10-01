@@ -42,6 +42,12 @@ linker_run:
     mov     rdi, rbx
     call    relax_run
 
+    ; 0.2 -g: the debug sections, from the code as it now is
+    extern  dwarf_generate
+    mov     rdi, rbx
+    call    dwarf_generate
+    check_err
+
     ; 0.5 A standalone executable or a flat binary: sections get their
     ;     addresses now, so the relocations below resolve against them
     IF byte [rbx + ASMCTX_standalone], e, 1
