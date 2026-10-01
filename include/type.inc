@@ -109,7 +109,8 @@ struc SYMBOL
                             ; ("global f:function" / ":data")
     field eother,   1       ; ELF visibility: default, internal, hidden,
                             ; protected
-    field pad0,     3       ; alignment padding
+    field pflags,   1       ; SYMF_*: how the preprocessor made it
+    field pad0,     2       ; alignment padding
     field name,     8       ; pointer to name string
     field value,    8       ; address or constant value
     field size,     8       ; size in bytes
@@ -166,7 +167,8 @@ struc RELOC
     field sym,         8       ; pointer to symbol name string
     field section,     8       ; pointer to target section
     field pc_adjust,   4       ; adjustment for PC-relative relocs
-    field pad1,        4       ; alignment padding (maintains multiple of 8)
+    field line,        4       ; source line of the statement (for errors)
+    field file,        8       ; ... and its file, or 0
 endstruc
 
 ; ============================================================================
