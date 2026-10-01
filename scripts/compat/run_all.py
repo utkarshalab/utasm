@@ -4,11 +4,13 @@
 Assembles the same sources with NASM and utasm and compares the results:
 feature probes (flat binaries), ELF objects (sections, relocations,
 symbols), data directives and floats, section layouts and linked programs,
-labels as instruction operands, UBF boot images, the encoder corpus, and
-the disassembler against objdump.
+labels as instruction operands, UBF boot images, error messages (the file
+and line of the first error), NASM's command-line options, the encoder corpus, operand shapes (valid and
+invalid pairings), and the disassembler against objdump.
 
 usage: scripts/compat/run_all.py [utasm-binary] [--quick] [-v]
-       --quick  skips the encoder corpus and the disassembler (the slow ones)
+       --quick  skips the encoder corpus, the operand shapes and the disassembler
+                (the slow ones)
        -v       also lists the known differences (common.KNOWN)
 
 Exits 0 when everything matches or is a known difference, 1 otherwise, and
@@ -35,9 +37,10 @@ def main(argv):
         print("  no utasm binary at %s" % utasm)
         return 1
     runs = [suites.bin_probes, suites.elf_probes, suites.data_forms,
-            suites.sections, suites.symbol_imm, suites.ubf]
+            suites.sections, suites.symbol_imm, suites.ubf, suites.diagnostics,
+            suites.command_line]
     if not quick:
-        runs.append(suites.encoder)
+        runs += [suites.encoder, suites.operand_shapes]
     good = True
     for fn in runs:
         good = fn(utasm, verbose).report() and good
