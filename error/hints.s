@@ -30,7 +30,7 @@ DEFAULT REL
 ; the caller. So the finders only remember the best match, and the code
 ; that prints the error calls error_hint_flush afterwards:
 ;
-;     Parser error: 25 at 3:5
+;     prog.s:3: error: parser: instruction expected, found `mvo'
 ;     hint: did you mean 'mov'?
 ;
 ; Mnemonic candidates come from error/mnemonic_names.inc, generated from
