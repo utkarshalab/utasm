@@ -18,6 +18,11 @@ extern  mem_zero
 extern  symbol_find
 extern  arena_alloc
 
+%define RELOC_DELETED_TYPE 0xFFFFFFFF   ; a relocation written in place
+
+[SECTION .bss]
+resolved_here:  resb 1                  ; some were written in place
+
 [SECTION .text]
 
 ; ============================================================================
@@ -193,13 +198,16 @@ reloc_resolve_all:
     mov     r14, [rbx + ASMCTX_relocs]
     mov     r15d, [rbx + ASMCTX_nrelocs]
     xor     r12d, r12d
+    mov     byte [rel resolved_here], 0
 .check_next:
     cmp     r12d, r15d
-    jge     .done
+    jge     .check_done
     mov     r13, r12
     imul    r13, RELOC_SIZE
     add     r13, r14
     inc     r12d
+    test    byte [r13 + RELOC_flags], RELOC_FLAG_SECTION
+    jnz     .check_next                    ; against a section: always there
     mov     rsi, [r13 + RELOC_sym]
     test    rsi, rsi
     jz      .check_next
@@ -208,12 +216,176 @@ reloc_resolve_all:
     test    rax, rax
     jnz     .undef
     cmp     word [rdx + SYMBOL_section], 0
-    jne     .check_next
+    jne     .check_local
     cmp     byte [rdx + SYMBOL_kind], SYM_EXTERN
     je      .check_next
     cmp     byte [rdx + SYMBOL_kind], SYM_COMMON
     je      .check_next
     jmp     .undef
+
+.check_local:
+    ; A constant used before its "equ" ("mov ecx, len"): its value, written
+    ; in place, as NASM (which reads the source more than once) has it
+    cmp     word [rdx + SYMBOL_section], SHN_ABS
+    jne     .check_pcrel
+    mov     eax, [r13 + RELOC_type]
+    mov     ecx, 8
+    cmp     eax, R_X86_64_64
+    je      .abs_width
+    mov     ecx, 4
+    cmp     eax, R_X86_64_32
+    je      .abs_width
+    cmp     eax, R_X86_64_32S
+    je      .abs_width
+    mov     ecx, 2
+    cmp     eax, 12                        ; R_X86_64_16
+    je      .abs_width
+    mov     ecx, 1
+    cmp     eax, 14                        ; R_X86_64_8
+    jne     .check_next
+.abs_width:
+    mov     r8, [r13 + RELOC_section]
+    test    r8, r8
+    jz      .check_next
+    mov     r9, [r8 + SECTION_data]
+    test    r9, r9
+    jz      .check_next
+    add     r9, [r13 + RELOC_offset]
+    mov     rax, [rdx + SYMBOL_value]
+    add     rax, [r13 + RELOC_addend]
+    cmp     ecx, 8
+    jne     .abs_narrow
+    mov     [r9], rax
+    jmp     .local_done
+.abs_narrow:
+    cmp     ecx, 4
+    jne     .abs_16
+    ; 32: zero-extended (R_X86_64_32) or sign-extended (32S) must hold it
+    mov     r10d, eax
+    cmp     dword [r13 + RELOC_type], R_X86_64_32S
+    jne     .abs_32_check
+    movsxd  r10, eax
+.abs_32_check:
+    cmp     r10, rax
+    jne     .local_range
+    mov     [r9], eax
+    jmp     .local_done
+.abs_16:
+    mov     r10, rax                       ; 16 / 8: either signedness
+    sar     r10, 15
+    cmp     ecx, 2
+    je      .abs_check_small
+    mov     r10, rax
+    sar     r10, 7
+.abs_check_small:
+    inc     r10
+    cmp     r10, 1
+    jbe     .abs_small_ok
+    ; or as unsigned
+    mov     r10, rax
+    shl     ecx, 3
+    shr     r10, cl
+    shr     ecx, 3
+    test    r10, r10
+    jnz     .local_range
+.abs_small_ok:
+    cmp     ecx, 2
+    jne     .abs_byte
+    mov     [r9], ax
+    jmp     .local_done
+.abs_byte:
+    mov     [r9], al
+    jmp     .local_done
+
+.check_pcrel:
+    ; A PC-relative reference to a symbol of its own section is a fixed
+    ; distance: NASM writes it in place and leaves no relocation ("call f",
+    ; "jmp l", "[rel x]", global or not). So does utasm.
+    mov     eax, [r13 + RELOC_type]
+    mov     ecx, 4
+    cmp     eax, R_X86_64_PC32
+    je      .local_width
+    mov     ecx, 1
+    cmp     eax, R_X86_64_PC8
+    je      .local_width
+    mov     ecx, 2
+    cmp     eax, 13                        ; R_X86_64_PC16
+    jne     .check_next
+.local_width:
+    mov     r8, [r13 + RELOC_section]
+    test    r8, r8
+    jz      .check_next
+    movzx   eax, word [rdx + SYMBOL_section]
+    cmp     eax, [r8 + SECTION_index]
+    jne     .check_next
+    ; S + A - P, written in the code
+    mov     rax, [rdx + SYMBOL_value]
+    add     rax, [r13 + RELOC_addend]
+    sub     rax, [r13 + RELOC_offset]
+    mov     r9, [r8 + SECTION_data]
+    test    r9, r9
+    jz      .check_next
+    add     r9, [r13 + RELOC_offset]
+    cmp     ecx, 4
+    jne     .local_narrow
+    movsxd  r10, eax
+    cmp     r10, rax
+    jne     .local_range
+    mov     [r9], eax
+    jmp     .local_done
+.local_narrow:
+    cmp     ecx, 2
+    jne     .local_byte
+    movsx   r10, ax
+    cmp     r10, rax
+    jne     .local_range
+    mov     [r9], ax
+    jmp     .local_done
+.local_byte:
+    movsx   r10, al
+    cmp     r10, rax
+    jne     .local_range
+    mov     [r9], al
+.local_done:
+    mov     dword [r13 + RELOC_type], RELOC_DELETED_TYPE
+    mov     byte [rel resolved_here], 1
+    jmp     .check_next
+.local_range:
+    mov     rdi, [r13 + RELOC_file]        ; "jmp short" too far, at its line
+    mov     esi, [r13 + RELOC_line]
+    extern  error_set_location
+    call    error_set_location
+    mov     rax, EXIT_OFFSET_RANGE
+    jmp     .ret
+
+.check_done:
+    ; drop the relocations written in place, keeping the others in order
+    cmp     byte [rel resolved_here], 0
+    je      .done
+    xor     ecx, ecx                       ; read index
+    xor     edx, edx                       ; write index
+.compact:
+    cmp     ecx, [rbx + ASMCTX_nrelocs]
+    jae     .compacted
+    imul    rsi, rcx, RELOC_SIZE
+    add     rsi, r14
+    inc     ecx
+    cmp     dword [rsi + RELOC_type], RELOC_DELETED_TYPE
+    je      .compact
+    imul    rdi, rdx, RELOC_SIZE
+    add     rdi, r14
+    inc     edx
+    cmp     rdi, rsi
+    je      .compact
+    push    rcx
+    mov     ecx, RELOC_SIZE
+    cld
+    rep     movsb
+    pop     rcx
+    jmp     .compact
+.compacted:
+    mov     [rbx + ASMCTX_nrelocs], edx
+    jmp     .done
 
 .patch:
 
