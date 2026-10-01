@@ -282,7 +282,27 @@ BIN_PROBES = {'basic_no_section': 'nop\nret\n',
  'pp_ifdef_mline': '%macro mm 0\nnop\n%endmacro\n%ifdef mm\ndb 1\n%else\ndb 2\n%endif\n'}
 
 # ELF objects: section contents, relocations and symbols are compared
-ELF_PROBES = {'elf_global_function': 'global f:function\n'
+ELF_PROBES = {
+ # same-section PC-relative references are written in place, as NASM does
+ 'elf_rel_same_fwd': 'mov eax, [rel x]\nx: dd 1\n',
+ 'elf_rel_same_back': 'x: dd 1\nmov eax, [rel x]\n',
+ 'elf_rel_same_offset': 'lea rax, [rel x+4]\nx: dq 0\n',
+ 'elf_jmp_short_fwd': 'jmp short l\nl: ret\n',
+ 'elf_call_global_same': 'global f\nf: ret\ncall f\njmp f\njz f\n',
+ 'elf_call_global_fwd': 'call f\njmp f\nglobal f\nf: ret\n',
+ 'elf_rel_other_section': 'section .data\ny: dd 0\nsection .text\nlea rax, [rel y]\n',
+ # equ: constants, label differences, aliases, used before or after
+ 'elf_equ_diff_back': 'section .rodata\nx: db 1,2,3\nlen equ $ - x\nsection .text\nmov ecx, len\n',
+ 'elf_equ_diff_fwd': 'section .text\nmov ecx, len\nsection .rodata\nx: db 1,2,3\nlen equ $ - x\n',
+ 'elf_equ_const_fwd': 'mov ecx, len\nlen equ 7\n',
+ 'elf_equ_in_data': 'mov ecx, len\ndd len\nx: db 1,2,3\nlen equ $ - x\n',
+ 'elf_equ_alias_fwd': 'section .text\nmov eax, alias\nx: db 1\nsection .data\ny: dd 0\nalias equ y+4\n',
+ 'elf_equ_alias_back': 'section .data\ny: dd 0\nalias equ y+4\nsection .text\nmov eax, alias\nlea rax, [rel alias]\n',
+ 'elf_equ_small_fwd': 'mov ax, w\nmov al, b\nw equ 0xFFFF\nb equ -1\n',
+ 'elf_equ_forward_ref': 'mov ecx, len\nx: db 1,2,3\nlen equ y - x\ny:\n',
+ # mov to a 16/8-bit register from a symbol: relocated
+ 'elf_mov_small_extern': 'extern w, b\nmov ax, w\nmov al, b\nadd ax, w\nmov word [rax], w\n',
+ 'elf_global_function': 'global f:function\n'
                         'global d:data\n'
                         'section .text\n'
                         'f: ret\n'
@@ -485,3 +505,23 @@ CLI_CASES = [
     ("-M long lines", ["-M", "-f", "elf64", "-Iinc", "-Iinc/a_rather_long_directory_name_for_wrapping", "long.s"], "deps"),
     ("-E", ["-f", "bin", "pp.s"], "pp"),
 ]
+
+
+# DWARF line tables (-g): programs whose decoded line rows (file, line,
+# address) must be NASM's
+DWARF_FILES = {
+    "inc.s": "    nop\n    add eax, 1\n",
+}
+DWARF_CASES = {
+    "macro, include, loop":
+        "global _start\nsection .text\n%macro exit 1\n    mov eax, 60\n    mov edi, %1\n"
+        "    syscall\n%endmacro\n_start:\n    mov ecx, 3\n.loop:\n    call work\n"
+        "    dec ecx\n    jnz .loop\n    exit 0\nwork:\n    %include \"inc.s\"\n    ret\n",
+    "rep and times":
+        "section .text\nf:\n%rep 2\n    nop\n    inc eax\n%endrep\n    times 3 nop\n    ret\n",
+    "two code sections":
+        "section .text\na: mov eax, 1\n    ret\nsection .init exec\nb: xor eax, eax\n    ret\n"
+        "section .data\nd: dd 5\nsection .text\n    nop\n",
+    "short jumps":
+        "section .text\nl1: jmp l2\n    nop\nl2: jz l1\n    times 200 nop\n    jmp l1\n",
+}
