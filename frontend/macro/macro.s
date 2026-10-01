@@ -17,6 +17,7 @@
 %define IFT_ID      3
 %define IFT_EMPTY   4
 %define IFT_MACRO   5
+%define IFT_DEF     6                      ; %ifdef: a single-line macro
 extern asm_bits
 extern user_sect_name
 
@@ -77,6 +78,8 @@ prep_init:
     xor     rax, rax
     ret
 
+extern error_track_token
+extern error_set_subject
 global preprocessor_next_token
 global prep_internal_next
 global prep_handle_directive
@@ -277,7 +280,7 @@ prep_internal_next:
     mov     rsi, r12
     call    prep_expand_next
     test    rax, rax
-    jz      .check_token           ; produced a token: process it like any other
+    jz      .from_body             ; produced a token: process it like any other
     ; if expansion finished, try again (checks for parent or falls to lexer)
     jmp     .next
 
@@ -291,6 +294,18 @@ prep_internal_next:
     ; handle EOF
     cmp     byte [r12 + TOKEN_kind], TOK_EOF
     je      .handle_eof
+
+    ; where the statement comes from, for error messages
+    mov     rdi, r12
+    xor     esi, esi
+    call    error_track_token
+    jmp     .check_token
+
+.from_body:
+    mov     rdi, r12
+    mov     rsi, [rbx + PREP_ctx]
+    mov     rsi, [rsi + ASMCTX_mac_exp]
+    call    error_track_token
 
 .check_token:
     ; Tokens from a macro or %rep body get the same treatment as file tokens:
@@ -435,6 +450,340 @@ prep_internal_next:
     pop     r12
     pop     rbx
     epilogue
+    ret
+
+; ---- prep_dump --------------------------
+;
+; prep_dump
+; Runs the preprocessor over the rest of the source and writes what it
+; produces as text (-E): macros expanded, conditionals resolved, includes
+; read, one output line per line. Tokens are separated by a blank where the
+; source had one; strings are written back in quotes that read back to the
+; same bytes. With fd -1 nothing is written (-M only needs the includes
+; read).
+; Input    : rdi = PrepState, esi = fd, or -1
+; Output   : rax = EXIT_OK or the preprocessor's error
+;
+global prep_dump
+prep_dump:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    mov     rbx, rdi
+    mov     r12d, esi
+    xor     r13d, r13d                     ; 1: the line has a token already
+.token:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret
+    mov     r14, rdx
+    movzx   eax, byte [r14 + TOKEN_kind]
+    cmp     eax, TOK_EOF
+    je      .ok
+    cmp     eax, TOK_NEWLINE
+    jne     .text
+    lea     rsi, [rel dump_newline]
+    mov     edx, 1
+    call    .write
+    xor     r13d, r13d
+    jmp     .token
+
+.text:
+    test    r13d, r13d
+    jz      .first
+    ; no blank before , ) ] or after ( [; else a blank where the source
+    ; had one
+    movzx   eax, byte [r14 + TOKEN_kind]
+    cmp     eax, TOK_COMMA
+    je      .first
+    cmp     eax, TOK_RPAREN
+    je      .first
+    cmp     eax, TOK_RBRACKET
+    je      .first
+    movzx   eax, byte [rel dump_prev_kind]
+    cmp     eax, TOK_LPAREN
+    je      .first
+    cmp     eax, TOK_LBRACKET
+    je      .first
+    mov     eax, [r14 + TOKEN_line]
+    cmp     eax, [rel dump_prev_line]
+    jne     .blank
+    movzx   eax, word [r14 + TOKEN_col]
+    cmp     eax, [rel dump_prev_end]
+    jbe     .first
+.blank:
+    lea     rsi, [rel dump_blank]
+    mov     edx, 1
+    call    .write
+.first:
+    mov     r13d, 1
+    movzx   eax, byte [r14 + TOKEN_kind]
+    mov     [rel dump_prev_kind], al
+    mov     eax, [r14 + TOKEN_line]
+    mov     [rel dump_prev_line], eax
+    movzx   eax, word [r14 + TOKEN_col]
+    movzx   ecx, word [r14 + TOKEN_len]
+    add     eax, ecx
+    mov     [rel dump_prev_end], eax
+
+    movzx   eax, byte [r14 + TOKEN_kind]
+    cmp     eax, TOK_STRING
+    je      .string
+    cmp     eax, TOK_CHAR
+    je      .char
+    mov     rdx, r14
+    call    prep_idn_text
+    mov     rsi, rax
+    call    .write_str
+    cmp     byte [r14 + TOKEN_kind], TOK_LABEL
+    jne     .token
+    lea     rsi, [rel dump_colon]          ; "name:" comes as one token
+    mov     edx, 1
+    call    .write
+    jmp     .token
+
+.char:
+    ; 'ab': the bytes of the constant, in single quotes
+    mov     rdx, r14
+    call    prep_token_text
+    test    rax, rax
+    jz      .token
+    mov     r15, rax
+    movzx   ecx, word [r14 + TOKEN_len]
+    mov     rsi, r15
+    mov     edx, ecx
+    mov     r8d, 39                        ; '
+    call    .quoted
+    jmp     .token
+
+.string:
+    mov     r15, [r14 + TOKEN_value]
+    movzx   ecx, word [r14 + TOKEN_len]
+    test    byte [r14 + TOKEN_flags], TOK_FLAG_COUNTED
+    jnz     .string_len
+    mov     rdi, r15
+    call    str_len
+    mov     ecx, eax
+.string_len:
+    ; "..." when every byte is printable and none is ", else '...' when
+    ; none is ', else `...` with escapes
+    mov     r8d, 34                        ; "
+    mov     r9d, 39                        ; '
+    xor     edx, edx
+.scan:
+    cmp     edx, ecx
+    jae     .scanned
+    movzx   eax, byte [r15 + rdx]
+    inc     edx
+    cmp     eax, 32
+    jb      .backquote
+    cmp     eax, 126
+    ja      .backquote
+    cmp     eax, 34
+    jne     .not_dq
+    xor     r8d, r8d
+.not_dq:
+    cmp     eax, 39
+    jne     .scan
+    xor     r9d, r9d
+    jmp     .scan
+.scanned:
+    test    r8d, r8d
+    jnz     .plain
+    mov     r8d, r9d
+    test    r8d, r8d
+    jz      .backquote
+.plain:
+    mov     rsi, r15
+    mov     edx, ecx
+    call    .quoted
+    jmp     .token
+.backquote:
+    push    rcx
+    lea     rsi, [rel dump_bq]
+    mov     edx, 1
+    call    .write
+    pop     rcx
+    xor     edx, edx
+.bq_byte:
+    cmp     edx, ecx
+    jae     .bq_end
+    movzx   eax, byte [r15 + rdx]
+    inc     edx
+    push    rcx
+    push    rdx
+    cmp     eax, 32
+    jb      .bq_hex
+    cmp     eax, 126
+    ja      .bq_hex
+    cmp     eax, '`'
+    je      .bq_hex
+    cmp     eax, 92                        ; backslash
+    je      .bq_hex
+    mov     [rel dump_hex], al
+    lea     rsi, [rel dump_hex]
+    mov     edx, 1
+    call    .write
+    jmp     .bq_next
+.bq_hex:
+    ; \xHH
+    mov     ecx, eax
+    shr     ecx, 4
+    lea     rdi, [rel dump_digits]
+    mov     cl, [rdi + rcx]
+    mov     [rel dump_hex + 2], cl
+    and     eax, 15
+    mov     al, [rdi + rax]
+    mov     [rel dump_hex + 3], al
+    mov     byte [rel dump_hex], 92
+    mov     byte [rel dump_hex + 1], 'x'
+    lea     rsi, [rel dump_hex]
+    mov     edx, 4
+    call    .write
+.bq_next:
+    pop     rdx
+    pop     rcx
+    jmp     .bq_byte
+.bq_end:
+    lea     rsi, [rel dump_bq]
+    mov     edx, 1
+    call    .write
+    jmp     .token
+
+.ok:
+    xor     eax, eax
+.ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+; .quoted: rsi = bytes, edx = count, r8b = the quote around them
+.quoted:
+    push    rsi
+    push    rdx
+    mov     [rel dump_quote], r8b
+    lea     rsi, [rel dump_quote]
+    mov     edx, 1
+    call    .write
+    pop     rdx
+    pop     rsi
+    call    .write
+    lea     rsi, [rel dump_quote]
+    mov     edx, 1
+    jmp     .write
+
+; .write_str: the NUL-terminated rsi
+.write_str:
+    push    rsi
+    mov     rdi, rsi
+    call    str_len
+    pop     rsi
+    mov     edx, eax
+; .write: rsi = bytes, edx = count, to fd r12d (nothing for -1)
+.write:
+    test    r12d, r12d
+    js      .write_none
+    test    edx, edx
+    jz      .write_none
+    mov     edi, r12d
+    extern  io_write
+    jmp     io_write
+.write_none:
+    ret
+
+; ---- prep_push_buffer -------------------
+;
+; prep_push_buffer
+; Reads the given text next, as if a file holding it were %included at
+; this point: the command line's -D, -U and -p (cli_prelude) come in this
+; way, ahead of the source. The text is copied into its own mapping, since
+; the end of an included file unmaps its buffer.
+; Input    : rdi = PrepState, rsi = text, rdx = length, rcx = the name it
+;            is reported under
+; Output   : rax = EXIT_OK or error
+;
+global prep_push_buffer
+prep_push_buffer:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    mov     rbx, rdi
+    mov     r13, rsi
+    mov     r14, rdx
+    mov     r12, rcx
+    test    r14, r14
+    jz      .ok
+
+    xor     edi, edi
+    mov     rsi, r14
+    mov     edx, PROT_READ | PROT_WRITE
+    mov     ecx, MAP_PRIVATE | MAP_ANONYMOUS
+    mov     r8, -1
+    xor     r9d, r9d
+    extern  io_mmap
+    call    io_mmap
+    test    rax, rax
+    jnz     .ret
+    mov     r15, rdx
+    mov     rdi, r15
+    mov     rsi, r13
+    mov     rcx, r14
+    rep movsb
+
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, LEXER_SIZE
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     r13, rdx                       ; r13 = the new lexer
+    mov     rdi, r13
+    mov     rsi, r15
+    mov     rdx, r14
+    mov     rcx, r12
+    mov     r8, [rbx + PREP_ctx]
+    mov     r9, [rbx + PREP_arena]
+    call    lexer_init
+    test    rax, rax
+    jnz     .ret
+
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, INCLUDECTX_SIZE
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     byte [rdx + INCLUDECTX_tag], TAG_INCLUDE_CTX
+    mov     r10, [rbx + PREP_ctx]
+    mov     r11, [r10 + ASMCTX_inc_ctx]
+    mov     [rdx + INCLUDECTX_parent], r11
+    mov     [r10 + ASMCTX_inc_ctx], rdx
+    mov     [rdx + INCLUDECTX_buf], r15
+    mov     [rdx + INCLUDECTX_size], r14
+    mov     rax, [rbx + PREP_lexer]
+    mov     [rdx + INCLUDECTX_lexer], rax
+    xor     eax, eax                       ; depth: one below the parent's
+    test    r11, r11
+    jz      .depth
+    movzx   eax, byte [r11 + INCLUDECTX_depth]
+    inc     eax
+.depth:
+    mov     [rdx + INCLUDECTX_depth], al
+    mov     [rbx + PREP_lexer], r13
+.ok:
+    xor     eax, eax
+.ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
     ret
 
 ; ---- prep_expand_start ------------------
@@ -771,6 +1120,9 @@ prep_expand_start:
 
 .error_too_few_args:
 .error_too_many_args:
+    mov     rdi, [r13 + MACROEXP_macro]    ; "multi-line macro `m' does not
+    mov     rdi, [rdi + MACRO_name]        ;  take this number of parameters"
+    call    error_set_subject
     mov     rax, EXIT_MACRO_ARITY_FAIL
     jmp     .error
 
@@ -1899,12 +2251,16 @@ prep_handle_directive:
 
 .do_ifdef:
     mov     rdi, rbx
-    call    prep_handle_ifdef
+    mov     esi, IFT_DEF
+    xor     edx, edx
+    call    prep_handle_iftest
     jmp     .done_cleanup
 
 .do_ifndef:
     mov     rdi, rbx
-    call    prep_handle_ifndef
+    mov     esi, IFT_DEF
+    mov     edx, 1                         ; negated
+    call    prep_handle_iftest
     jmp     .done_cleanup
 
 .do_else:
@@ -2064,15 +2420,13 @@ prep_handle_inc:
 .depth_ok:
     mov     [rsp + 56], r14         ; save depth at [rsp+56]
 
-    ; 3. Open file
-
+    ; 3. Open file: as named, then in each -I directory
     mov     rdi, r12
-    xor     rsi, rsi               ; rsi = O_RDONLY (0)
-    call    io_open
-
-
+    extern  incpath_open
+    call    incpath_open
     test    rax, rax
     jnz     .error_open
+    mov     r12, rcx               ; the name it was found under
     mov     r13, rdx               ; r13 = fd
 
     ; 4. Get file size
@@ -2155,36 +2509,32 @@ prep_handle_inc:
     jmp     .done
 
 .error_oom:
-    mov     rax, 101
+    mov     rax, EXIT_OOM
     jmp     .done
 
 .error_expected_string:
-    mov     rax, 102
+    mov     rax, EXIT_INC_NAME
     jmp     .done
 
 .error_too_deep:
-    mov     rax, 103
+    mov     rax, EXIT_INC_DEPTH
     jmp     .done
 
 .error_open:
-    ; Keep rax if non-zero, otherwise set 104
-    test    rax, rax
-    jnz     .error_open_done
-    mov     rax, 104
-.error_open_done:
+    mov     rdi, r12                   ; "unable to open include file `x'"
+    call    error_set_subject
+    mov     rax, EXIT_INC_NOT_FOUND
     jmp     .done
 
 .error_size:
-    mov     rax, 105
-    jmp     .done
-
 .error_mmap:
-    mov     rax, 106
+    mov     rdi, r12
+    call    error_set_subject
+    mov     rax, EXIT_FILE_READ
     jmp     .done
 
 .error:
-    mov     rax, 107
-    jmp     .done
+    jmp     .done                      ; the lexer's own code
 
 .done:
     add     rsp, 64                ; Clean up our stack frame
@@ -2259,8 +2609,9 @@ dir_more:     db "ifidn", 0, 0,0,0,0,0,0,0,0,0, 0
               db "ifnmacro", 0, 0, 0, 0, 0, 0, 0, 85
               db "elifmacro", 0, 0, 0, 0, 0, 0, 86
               db "elifnmacro", 0, 0, 0, 0, 0, 87
+              db "elifdef", 0, 0, 0, 0, 0, 0, 0, 0, 90
+              db "elifndef", 0, 0, 0, 0, 0, 0, 0, 91
               db 0
-msg_warning:  db "warning: ", 0
 ; ---- predefined macro names ---------------
 %define DYN_LINE    1
 %define DYN_FILE    2
@@ -2505,13 +2856,11 @@ dyn_table:
     dq dn_sect_q, DYN_SECT
     dq 0
 str_nolist:   db ".nolist", 0
-msg_fatal:    db "error: ", 0
 msg_space:    db " ", 0
 ; "0".."9" for the %N references of a function-like %define
 def_digits:   db "0", 0, "1", 0, "2", 0, "3", 0, "4", 0, "5", 0, "6", 0, "7", 0, "8", 0, "9", 0
 undef_name:   db 0                  ; the name of an %undef'd entry
 msg_unknown_dir: db "error: unknown preprocessor directive %", 0
-msg_prep_error: db "preprocessor %error directive reached", 10, 0
 dir_if:     db "if", 0
 dir_ifdef:  db "ifdef", 0
 dir_ifndef: db "ifndef", 0
@@ -3025,23 +3374,12 @@ prep_handle_error:
     cmp     byte [rbx + PREP_skip_depth], 0
     jne     .done
 
-    mov     rdi, 2
-    lea     rsi, [rel msg_prep_error]
+    ; "file:line: error: message"; the assembly goes on to report any
+    ; further errors, but fails at the end
     extern  print_str
-    call    print_str
-
-.drain:
     mov     rdi, rbx
-    call    preprocessor_peek_token
-    test    rax, rax
-    jnz     .done
-    cmp     byte [rdx + TOKEN_kind], TOK_NEWLINE
-    je      .done
-    cmp     byte [rdx + TOKEN_kind], TOK_EOF
-    je      .done
-    mov     rdi, rbx
-    call    preprocessor_next_token
-    jmp     .drain
+    mov     esi, 2
+    call    prep_handle_message
 
 .done:
     xor     rax, rax
@@ -3262,6 +3600,7 @@ prep_define_const:
 
     mov     byte [rdi + SYMBOL_tag], TAG_SYMBOL
     mov     byte [rdi + SYMBOL_kind], SYM_CONSTANT
+    mov     byte [rdi + SYMBOL_pflags], SYMF_ASSIGN
     mov     [rdi + SYMBOL_name], r12
     mov     [rdi + SYMBOL_value], r13
 
@@ -3912,6 +4251,7 @@ prep_handle_assign:
     test    rax, rax
     jnz     .create
     mov     byte [rdx + SYMBOL_kind], SYM_CONSTANT
+    or      byte [rdx + SYMBOL_pflags], SYMF_ASSIGN
     mov     [rdx + SYMBOL_value], r14
     xor     rax, rax
     jmp     .done
@@ -3926,6 +4266,7 @@ prep_handle_assign:
 
     mov     byte [rdi + SYMBOL_tag], TAG_SYMBOL
     mov     byte [rdi + SYMBOL_kind], SYM_CONSTANT
+    mov     byte [rdi + SYMBOL_pflags], SYMF_ASSIGN
     mov     [rdi + SYMBOL_name], r13
     mov     [rdi + SYMBOL_value], r14
 
@@ -4298,11 +4639,13 @@ prep_handle_elifidn:
     pop     rbx
     ret
 
-; ---- %warning / %fatal ------------------
+; ---- %warning / %error / %fatal ---------
 ;
-; Print the rest of the line as a message on stderr: "warning: ..." and go
-; on, or "error: ..." and stop (%fatal).
-; Input    : rdi = PrepState, esi = 0 warning / 1 fatal
+; Print the rest of the line as a message on stderr, at the line it is on:
+; "file:line: warning: ..." and go on (%warning), "file:line: error: ..."
+; and go on but fail at the end (%error), or "file:line: fatal: ..." and
+; stop (%fatal).
+; Input    : rdi = PrepState, esi = 0 warning / 1 fatal / 2 error
 ;
 prep_handle_message:
     push    rbx
@@ -4310,13 +4653,15 @@ prep_handle_message:
     push    r13
     mov     rbx, rdi
     mov     r13d, esi
-    mov     rdi, 2
-    lea     rsi, [rel msg_warning]
-    test    r13d, r13d
-    jz      .head
-    lea     rsi, [rel msg_fatal]
+    mov     edi, 2                         ; severity: fatal
+    cmp     r13d, 1
+    je      .head
+    mov     edi, 1                         ; error
+    ja      .head
+    xor     edi, edi                       ; warning
 .head:
-    call    print_str
+    extern  error_report_text
+    call    error_report_text
     xor     r12d, r12d                     ; words printed
 .word:
     mov     rdi, rbx
@@ -4336,7 +4681,17 @@ prep_handle_message:
     cmp     eax, TOK_STRING
     je      .text
     cmp     eax, TOK_CHAR
+    je      .text
+    cmp     eax, TOK_NUMBER
     jne     .word
+    mov     rsi, [rdx + TOKEN_value]       ; a number: as written
+    push    rsi
+    call    .space
+    pop     rsi
+    mov     rdi, 2
+    call    print_str
+    inc     r12d
+    jmp     .word
 .text:
     call    prep_token_text
     test    rax, rax
@@ -4354,17 +4709,31 @@ prep_handle_message:
     inc     r12d
     jmp     .word
 .end:
-    mov     rdi, 2
-    lea     rsi, [rel msg_newline]
-    call    print_str
+    extern  error_report_end
+    call    error_report_end
     xor     eax, eax
-    test    r13d, r13d
-    jz      .ret
+    cmp     r13d, 1
+    jb      .ret
+    ja      .counted
     mov     rax, EXIT_FATAL                ; %fatal stops the assembly
+    jmp     .ret
+.counted:
+    extern  error_deferred
+    inc     dword [rel error_deferred]     ; %error fails the assembly later
 .ret:
     pop     r13
     pop     r12
     pop     rbx
+    ret
+
+; a space before every word but the first
+.space:
+    test    r12d, r12d
+    jz      .space_done
+    mov     rdi, 2
+    lea     rsi, [rel msg_space]
+    call    print_str
+.space_done:
     ret
 
 ; ---- %exitrep ---------------------------
@@ -4487,11 +4856,13 @@ prep_handle_exit:
     pop     rbx
     ret
 
-; ---- %ifnum / %ifstr / %ifid / %ifempty / %ifmacro --------
+; ---- %ifnum / %ifstr / %ifid / %ifempty / %ifmacro / %ifdef ----
 ;
 ; prep_handle_iftest
-; What the operand is: a number, a string, an identifier, nothing, or the
-; name of a multi-line macro. The rest of the line belongs to the directive.
+; What the operand is: a number, a string, an identifier, nothing, the
+; name of a multi-line macro, or the name of a single-line one (%ifdef:
+; %define, %assign and the like, and the dynamic __LINE__, __FILE__, ...;
+; a label is not). The rest of the line belongs to the directive.
 ; Input    : rdi = PrepState, esi = IFT_*, edx = bit 0 negate, bit 1 %elif
 ;
 prep_handle_iftest:
@@ -4508,7 +4879,7 @@ prep_handle_iftest:
     mov     rdi, rbx
     call    prep_drop_stale_newline
     cmp     r12d, IFT_MACRO
-    jne     .peek
+    jb      .peek
     mov     byte [rel prep_noexpand], 1        ; a name, not its expansion
 .peek:
     mov     rdi, rbx
@@ -4546,6 +4917,8 @@ prep_handle_iftest:
     je      .true
     jmp     .decided
 .t_macro:
+    cmp     r12d, IFT_DEF
+    je      .t_def
     cmp     eax, TOK_IDENT
     jne     .decided
     mov     rsi, [rdx + TOKEN_value]
@@ -4558,6 +4931,47 @@ prep_handle_iftest:
     mov     rax, [rdx + SYMBOL_value]
     test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE
     jnz     .decided
+    jmp     .true
+.t_def:
+    cmp     eax, TOK_IDENT
+    jne     .decided
+    push    rdx
+    mov     rsi, [rdx + TOKEN_value]
+    mov     rdi, [rbx + PREP_ctx]
+    call    symbol_find
+    test    rax, rax
+    jnz     .t_dynamic
+    pop     rax
+    test    byte [rdx + SYMBOL_pflags], SYMF_ASSIGN
+    jnz     .true                          ; %assign
+    cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
+    jne     .decided
+    mov     rax, [rdx + SYMBOL_value]
+    test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE
+    jnz     .true
+    jmp     .decided
+.t_dynamic:
+    ; __LINE__, __FILE__, __BITS__ ...: made up as they are used
+    lea     r8, [rel dyn_table]
+.t_dyn_name:
+    mov     rsi, [r8]
+    test    rsi, rsi
+    jz      .t_dyn_none
+    mov     rdi, [rsp]
+    mov     rdi, [rdi + TOKEN_value]
+    push    r8
+    call    str_cmp
+    pop     r8
+    test    rax, rax
+    jz      .t_dyn_hit
+    add     r8, 16
+    jmp     .t_dyn_name
+.t_dyn_hit:
+    pop     rdx
+    jmp     .true
+.t_dyn_none:
+    pop     rdx
+    jmp     .decided
 .true:
     mov     r15d, 1
 .decided:
@@ -5378,111 +5792,6 @@ prep_handle_if:
     pop     rbx
     epilogue
 
-; ---- prep_handle_ifdef ------------------
-;
-; prep_handle_ifdef
-; Handles the %ifdef directive.
-;
-prep_handle_ifdef:
-    prologue
-    push    rbx
-    push    r12
-    mov     rbx, rdi
-
-    ; increment total depth
-    inc     byte [rbx + PREP_depth]
-
-    ; if already skipping, just increment skip depth and return
-    cmp     byte [rbx + PREP_skip_depth], 0
-    jz      .ifdef_not_skipping
-    inc     byte [rbx + PREP_skip_depth]
-    jmp     .done_no_pop
-.ifdef_not_skipping:
-
-    ; next token must be an identifier
-    mov     rdi, [rbx + PREP_lexer]
-    sub     rsp, TOKEN_SIZE
-    mov     r12, rsp
-    mov     rsi, r12
-    call    lexer_next
-    test    rax, rax
-    jnz     .error
-
-    cmp     byte [r12 + TOKEN_kind], TOK_IDENT
-    jne     .expected_ident
-
-    ; check if symbol exists
-    mov     rdi, [rbx + PREP_ctx]
-    mov     rsi, [r12 + TOKEN_value]
-    call    symbol_find
-    test    rax, rax
-    jz      .done                  ; found (0) -> condition true -> don't skip
-    
-    ; not found -> start skipping
-    inc     byte [rbx + PREP_skip_depth]
-
-.done:
-    add     rsp, TOKEN_SIZE
-.done_no_pop:
-    xor     rax, rax
-    pop     r12
-    pop     rbx
-    epilogue
-
-.error:
-.expected_ident:
-    mov     rax, EXIT_ERROR
-    jmp     .done
-
-; ---- prep_handle_ifndef -----------------
-prep_handle_ifndef:
-    prologue
-    push    rbx
-    push    r12
-    mov     rbx, rdi
-
-    inc     byte [rbx + PREP_depth]
-
-    ; if already skipping, just increment skip depth and return
-    cmp     byte [rbx + PREP_skip_depth], 0
-    jz      .ifndef_not_skipping
-    inc     byte [rbx + PREP_skip_depth]
-    jmp     .done_no_pop
-.ifndef_not_skipping:
-
-    mov     rdi, [rbx + PREP_lexer]
-    sub     rsp, TOKEN_SIZE
-    mov     r12, rsp
-    mov     rsi, r12
-    call    lexer_next
-    test    rax, rax
-    jnz     .error
-
-    cmp     byte [r12 + TOKEN_kind], TOK_IDENT
-    jne     .expected_ident
-
-    mov     rdi, [rbx + PREP_ctx]
-    mov     rsi, [r12 + TOKEN_value]
-    call    symbol_find
-    test    rax, rax
-    jnz     .done                  ; not found (non-zero) -> condition true -> don't skip
-
-    ; found -> start skipping (since it's ifndef)
-    inc     byte [rbx + PREP_skip_depth]
-
-.done:
-    add     rsp, TOKEN_SIZE
-.done_no_pop:
-    xor     rax, rax
-    pop     r12
-    pop     rbx
-    epilogue
-
-.error:
-.expected_ident:
-    mov     rax, EXIT_ERROR
-    jmp     .done
-
 ; ---- prep_handle_else -------------------
 prep_handle_else:
     prologue
@@ -6180,3 +6489,18 @@ rng_b:         resq 1
 rng_owner:     resq 1
 rng_total:     resq 1
 rng_buf:       resq 1
+
+[SECTION .data]
+dump_newline:   db 10
+dump_colon:     db ":"
+dump_blank:     db " "
+dump_bq:        db "`"
+dump_quote:     db 0
+dump_hex:       db 0, 0, 0, 0
+dump_digits:    db "0123456789abcdef"
+
+[SECTION .bss]
+alignb 4
+dump_prev_line: resd 1                  ; line and end column of the token
+dump_prev_end:  resd 1                  ; written last (-E spacing)
+dump_prev_kind: resb 1                  ; ... and its kind
