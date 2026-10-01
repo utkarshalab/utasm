@@ -1,6 +1,6 @@
 """The NASM compatibility suites. Each takes the utasm binary and returns a
 common.Suite; scripts/compat/run_all.py runs them all."""
-import collections, concurrent.futures as cf, hashlib, os, platform, re, struct, zlib
+import collections, concurrent.futures as cf, difflib, hashlib, os, platform, re, struct, zlib
 
 from common import Suite, assemble_bin, first_line, run, tempdir
 import cases, corpus
@@ -499,4 +499,71 @@ def command_line(utasm, verbose=False):
                 s.result(name, False, "utasm error: " + first_line(ru))
             else:
                 s.result(name, a == b, "nasm %r | utasm %r" % (a[:60], b[:60]))
+    return s
+
+
+# ---------------------------------------------------------------------------
+# listings (-l): line for line what NASM writes
+# ---------------------------------------------------------------------------
+def listing(utasm, verbose=False):
+    s = Suite("listings", verbose)
+
+    def one(item):
+        name, src = item
+        with tempdir() as d:
+            open(os.path.join(d, "p.s"), "w").write(src)
+            open(os.path.join(d, "inc.bin"), "wb").write(bytes(range(16)))
+            rn = run(["nasm", "-f", "elf64", "p.s", "-l", "n.lst", "-o", "n.o"], cwd=d)
+            ru = run([utasm, "-f", "elf64", "p.s", "-l", "u.lst", "-o", "u.o"], cwd=d)
+            a = open(os.path.join(d, "n.lst")).read() if rn.returncode == 0 else None
+            b = open(os.path.join(d, "u.lst")).read() if ru.returncode == 0 else None
+            return name, a, b, ru
+
+    with cf.ThreadPoolExecutor(JOBS) as ex:
+        for name, a, b, ru in ex.map(one, sorted(cases.BIN_PROBES.items())):
+            case = "listing " + name
+            if a is None:
+                s.skip()
+            elif b is None:
+                s.result(case, False, "utasm error: " + first_line(ru))
+            else:
+                diff = [l for l in difflib.unified_diff(a.splitlines(), b.splitlines(), n=0, lineterm="")][2:4]
+                s.result(case, a == b, " | ".join(diff))
+    return s
+
+
+# ---------------------------------------------------------------------------
+# DWARF (-g): the decoded line table rows NASM writes
+# ---------------------------------------------------------------------------
+def _line_rows(obj):
+    out = run(["objdump", "--dwarf=decodedline", obj]).stdout
+    return [" ".join(l.split()[:3]) for l in out.splitlines()
+            if re.match(r"^\S+\s+(\d+|-)\s+(0x[0-9a-f]+|0)\b", l)]
+
+
+def dwarf(utasm, verbose=False):
+    s = Suite("dwarf line tables", verbose)
+
+    def one(item):
+        name, src = item
+        with tempdir() as d:
+            for fn, text in cases.DWARF_FILES.items():
+                open(os.path.join(d, fn), "w").write(text)
+            open(os.path.join(d, "p.s"), "w").write(src)
+            rn = run(["nasm", "-g", "-F", "dwarf", "-f", "elf64", "p.s", "-o", "n.o"], cwd=d)
+            ru = run([utasm, "-g", "-f", "elf64", "p.s", "-o", "u.o"], cwd=d)
+            if rn.returncode != 0:
+                return name, None, None, ru
+            if ru.returncode != 0:
+                return name, _line_rows(os.path.join(d, "n.o")), None, ru
+            return name, _line_rows(os.path.join(d, "n.o")), _line_rows(os.path.join(d, "u.o")), ru
+
+    with cf.ThreadPoolExecutor(JOBS) as ex:
+        for name, a, b, ru in ex.map(one, sorted(cases.DWARF_CASES.items())):
+            if a is None:
+                s.skip()
+            elif b is None:
+                s.result(name, False, "utasm error: " + first_line(ru))
+            else:
+                s.result(name, a == b, "nasm %s | utasm %s" % (a[:6], b[:6]))
     return s
