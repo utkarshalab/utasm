@@ -17,6 +17,29 @@ KNOWN = {
     # bits 16 / bits 32 set __BITS__ but code is still encoded for 64-bit mode
     "basic_bits16": "bits 16 encoding",
     "dir_bits32_mix": "bits 32 encoding",
+    # one pass: an equ cannot use a symbol defined after it (an error)
+    "elf_equ_forward_ref": "equ with a forward reference",
+    # listings (-l): the encoding differences above show there too
+    "listing basic_bits16": "bits 16 encoding",
+    "listing dir_bits32_mix": "bits 32 encoding",
+    "listing op_cmp3": "NASM's <=> disagrees with its own manual",
+    "listing op_signed_div": "// is a comment in utasm",
+    "listing ins_mem_scale_forms": "number-first scale",
+    "listing pp_paste": "top-level %+ paste",
+    # NASM lists its warnings; utasm does not give these warnings yet
+    "listing basic_warning_dir": "%warning text in the listing",
+    "listing dir_db_question": "warning: uninitialized space in a non-BSS section",
+    "listing dir_dw_question": "warning: uninitialized space in a non-BSS section",
+    "listing dir_times_question": "warning: uninitialized space in a non-BSS section",
+    "listing dir_section_follows": "warning: unknown section attribute",
+    "listing dir_section_vstart": "warning: unknown section attribute",
+    "listing ins_multiple_prefix": "warning: superfluous LOCK prefix on XCHG",
+    "listing op_shifts": "warning: dword data exceeds bounds",
+    # listing details not reproduced
+    "listing basic_exitrep": "lines after %exitrep are listed by NASM",
+    "listing pp_line": "%line: the text of the renumbered line",
+    "listing pp_macro_range": "NASM shows %{2:3} as %2:3",
+    "listing pp_nested_macro_def": "a macro defined by a macro: its body lines",
 }
 
 
