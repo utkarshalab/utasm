@@ -1491,6 +1491,17 @@ elf64_symbol_is_emitted:
     je      .skip
     cmp     al, SYM_STRUCT_FIELD
     je      .skip
+    ; the hidden labels "$" makes ("L@here.N", parser_pos_label): NASM's
+    ; "$" leaves no symbol, and relocations use the section's symbol
+    mov     rax, [r8 + SYMBOL_name]
+    test    rax, rax
+    jz      .emit
+    cmp     dword [rax], 'L@he'
+    jne     .emit
+    cmp     word [rax + 4], 're'
+    jne     .emit
+    cmp     byte [rax + 6], '.'
+    je      .skip
 .emit:
     mov     rax, 1
     ret
@@ -2149,6 +2160,28 @@ elf64_write_rela:
     mov     r15, rdi               ; r15 = RELOC*
     
     ; r_info: (sym_index << 32)
+    xor     r9d, r9d                       ; added to the addend
+    ; against a section itself (debug info): that section's symbol, whose
+    ; index is the section's
+    test    byte [r15 + RELOC_flags], RELOC_FLAG_SECTION
+    jz      .by_symbol
+    mov     rsi, [r15 + RELOC_sym]
+    mov     r8, [r12 + ASMCTX_sections]
+    movzx   r10d, word [r12 + ASMCTX_seccount]
+    xor     eax, eax
+.find_sec:
+    test    r10d, r10d
+    jz      .sym_ready
+    mov     rdx, [r8]
+    cmp     [rdx + SECTION_name], rsi
+    je      .found_sec
+    add     r8, 8
+    dec     r10d
+    jmp     .find_sec
+.found_sec:
+    mov     eax, [rdx + SECTION_index]
+    jmp     .sym_ready
+.by_symbol:
     mov     rsi, [r15 + RELOC_sym]
     mov     rdi, r12               ; symbol_find takes the AsmCtx
     push    rcx                    ; loop index: the callee clobbers rcx
