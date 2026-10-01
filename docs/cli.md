@@ -25,6 +25,8 @@ after the source file (for example, `source.s` becomes `source.o`).
 | `-I dir`, `-i dir` | Add a directory to the include search path (see [NASM's options](#nasms-options)). |
 | `-D name[=value]`, `-U name`, `-p file`, `--before text` | Define, undefine, include or add a line ahead of the source. |
 | `-E` | Preprocess only. |
+| `-l file` | Write a listing: every source line with its offset and bytes (see [Listings](#listings)). |
+| `-g`, `-F dwarf` | DWARF debug information in ELF objects (see [Debug information](#debug-information)). |
 | `-M`, `-MD`, `-MF`, `-MT`, `-MQ`, `-MP` | Makefile dependencies. |
 | `-w...`, `-W...`, `-X`, `-s`, `-Z file` | Warnings, message style and destination. |
 | `--inspect` | Print an existing ELF file instead of assembling (see below). |
@@ -200,12 +202,59 @@ works with `NASM=utasm`:
 | `-w+error`, `-w+error=class` | Warnings are errors, like `-Werror`. Other `-w+class`, `-w-class`, `-Wclass`, `-Wno-class` are accepted. |
 | `-X gnu`, `-X vc` | Message style: `file:line: error: ...` (the default) or `file(line) : error: ...`. |
 | `-s`, `-Z file` | Messages on stdout, or into a file. |
-| `-g`, `-F format` | Accepted with a warning: no debug information is generated yet. |
+| `-l file` | The listing (see [Listings](#listings)). |
+| `-g`, `-F dwarf` | DWARF debug information (see [Debug information](#debug-information)); `-F` takes any format name and gives DWARF. |
 | `--no-line`, `--reproducible`, `--keep-all` | Accepted. |
 
 `-D`, `-U`, `-p` and `--before` are read in the order given, as if a file
 holding those lines were included at the top of the source; an error in
 one is reported at `command line:N`.
+
+## Listings
+
+`-l file` writes every source line with the offset and the bytes it
+produced, in NASM's layout (`nasm -l` and `utasm -l` give the same file for
+the same source):
+
+```
+     5 00000000 B801000000                  mov eax, 1
+     6 00000005 EB09                        jmp done
+    14                                      two
+    11 00000007 90                  <1>  nop
+    15 00000009 90<rep 3h>                  times 3 nop
+    21 00000010 48B888776655443322-         mov rax, qword 0x1122334455667788
+    21 00000019 11
+    23 00000036 488D35(00000000)            lea rsi, [rel msg]
+    29 00000000 <res 40h>               buf: resb 64
+```
+
+The columns are the line number, the offset in the section, the bytes (9
+to a row; a `-` continues the next row), and the source text. Lines of a
+macro or `%rep` body follow the line that expanded them, marked `<1>`
+(`<2>` one level deeper), as are the lines of an included file. A
+relocated field shows its value in `(...)` when it is PC-relative and in
+`[...]` otherwise; `times` and `align` show one repetition and `<rep Nh>`,
+`incbin` `<bin Nh>`, reserved space `??` a byte or `<res Nh>`. The offsets
+are final: jumps shortened after the line was assembled are listed short.
+`[list -]` and `[list +]` stop and resume the listing.
+
+## Debug information
+
+`-g` (with or without `-F dwarf`) adds DWARF to an ELF object, so a
+debugger can show the source and step through it line by line:
+
+| Section | Contents |
+| --- | --- |
+| `.debug_line` | The line table: the address of every line that produced code, with its file and line. A macro's or `%rep` body's code is at its body line, an included file's in that file, as in NASM's (the decoded rows are the same). |
+| `.debug_info`, `.debug_abbrev` | One compile unit: the source file, `utasm 0.1.0`, `DW_LANG_Mips_Assembler`, the line table, the first code section's range. |
+| `.debug_aranges` | The address range of every code section. |
+
+```sh
+utasm -g prog.s -o prog.o && ld prog.o -o prog
+gdb ./prog        # break work / next / bt: at inc.s:2, p.s:11, ...
+```
+
+Flat binaries and `--standalone` executables carry no debug information.
 
 ## Diagnostics
 
@@ -268,8 +317,10 @@ surprise you when reading a disassembly. That is why it is opt-in.
 Jumps written `jmp short`, `jmp near` or `strict` keep the size you wrote.
 Code in a section that turns a position into a number (`$`, a difference
 of two labels, or `equ` of a label) is never moved, since that number
-could not be updated. Jumps to exported (`global`) labels stay long and
-are left to the linker.
+could not be updated. Jumps to a label of the same section are shortened
+whether the label is `global` or not, and a PC-relative reference to it
+(`call f`, `[rel x]`) is written in place with no relocation, as NASM does;
+`wrt ..plt` and the like keep their relocation.
 
 On utasm's own 276 source files, `-O1` produces 7.3% less code than no
 optimization (within 0.3% of NASM), and a utasm built with `-O2` has 68
