@@ -19,4 +19,4 @@ endstruc
     // z: align 16 (offset 16), size 8. next offset 24.
     // total size = 24.
     
-    mov rbx, Point.z        // Should be 16
+    mov rbx, Point_z        // Should be 16 (fields are named Struct_field)
