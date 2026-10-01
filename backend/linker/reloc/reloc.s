@@ -106,6 +106,11 @@ reloc_record:
     mov     [rdx + RELOC_addend], r14
     mov     [rdx + RELOC_type],   r8d
     mov     [rdx + RELOC_flags],  r9b
+    extern  error_loc_file, error_loc_line
+    mov     eax, [rel error_loc_line]      ; where it came from, for errors
+    mov     [rdx + RELOC_line], eax
+    mov     rax, [rel error_loc_file]
+    mov     [rdx + RELOC_file], rax
 
     ; Target section: the one currently being emitted into
     mov     rcx, [rbx + ASMCTX_curr_sec]
@@ -181,8 +186,35 @@ reloc_resolve_all:
     je      .patch
     cmp     byte [rbx + ASMCTX_standalone], 1
     je      .patch
-    xor     eax, eax
-    jmp     .ret
+
+    ; A relocatable object is not patched, but what it refers to must
+    ; still be defined here or declared extern (or common), as in NASM:
+    ; "symbol `x' not defined".
+    mov     r14, [rbx + ASMCTX_relocs]
+    mov     r15d, [rbx + ASMCTX_nrelocs]
+    xor     r12d, r12d
+.check_next:
+    cmp     r12d, r15d
+    jge     .done
+    mov     r13, r12
+    imul    r13, RELOC_SIZE
+    add     r13, r14
+    inc     r12d
+    mov     rsi, [r13 + RELOC_sym]
+    test    rsi, rsi
+    jz      .check_next
+    mov     rdi, rbx
+    call    symbol_find
+    test    rax, rax
+    jnz     .undef
+    cmp     word [rdx + SYMBOL_section], 0
+    jne     .check_next
+    cmp     byte [rdx + SYMBOL_kind], SYM_EXTERN
+    je      .check_next
+    cmp     byte [rdx + SYMBOL_kind], SYM_COMMON
+    je      .check_next
+    jmp     .undef
+
 .patch:
 
     mov     r14, [rbx + ASMCTX_relocs]
@@ -213,6 +245,8 @@ reloc_resolve_all:
         ; longer become stale after repeated -f options.
         cmp     byte [rbx + ASMCTX_fmt], FMT_BIN
         je      .undef
+        cmp     byte [r10 + SYMBOL_kind], SYM_EXTERN
+        jne     .undef                     ; neither defined nor extern
         jmp     .next                      ; Skip patching, keep for .rela
         ENDIF
     
@@ -270,21 +304,21 @@ reloc_resolve_all:
     jmp     .ret
 
 .check_undef:
-    cmp     byte [rbx + ASMCTX_fmt], FMT_BIN
-    je      .undef
-    jmp     .next
-
 .undef:
-    ; Report undefined symbol
-    mov     rdi, rbx               ; AsmCtx
-    xor     rsi, rsi               ; no filename
-    xor     rdx, rdx               ; no line
-    xor     rcx, rcx               ; no col
-    mov     r8, [r13 + RELOC_sym]  ; symbol name
-    extern  error_emit_undefined_symbol
-    call    error_emit_undefined_symbol    ; error, then "did you mean" hint
-    
-    mov     rax, EXIT_UNDEF_REF
+    ; "file:line: error: symbol `x' not defined" at the statement that
+    ; used it, then "did you mean" (utasm.s prints both)
+    mov     rdi, [r13 + RELOC_file]
+    mov     esi, [r13 + RELOC_line]
+    extern  error_set_location
+    call    error_set_location
+    mov     rdi, [r13 + RELOC_sym]
+    extern  error_set_subject
+    call    error_set_subject
+    mov     rdi, rbx
+    mov     rsi, [r13 + RELOC_sym]
+    extern  error_hint_symbol
+    call    error_hint_symbol
+    mov     rax, EXIT_UNDEF_SYMBOL
     jmp     .ret
 
 .range_err:
