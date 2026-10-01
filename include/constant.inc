@@ -52,6 +52,8 @@
 %define EXIT_MACRO_RECURSION   18  ; nested macro depth exceeded limit
 %define EXIT_MACRO_ARITY_FAIL  19  ; wrong number of macro arguments
 %define EXIT_DEFINE            20  ; invalid or malformed %define directive
+%define EXIT_INC_NAME          21  ; %include without a quoted file name
+%define EXIT_INC_DEPTH         22  ; %include nested deeper than MAX_INCLUDES
 
 %define EXIT_UNKNOWN_INSTR     25  ; mnemonic does not match any known instruction
 %define EXIT_INVALID_OPERAND   26  ; operand syntax is not valid for instruction
@@ -296,6 +298,9 @@
 %define SYM_BUILTIN            0x0B        ; compiler built-in constants (e.g. $, $$)
 %define SYM_PROC               0x0C        ; PROC-scoped executable subroutine symbol
 %define SYM_LOCAL_LABEL        0x0D        ; .local label scoped to parent Proc
+
+; SYMBOL_pflags
+%define SYMF_ASSIGN            0x01        ; a %assign value: a single-line macro
 %define SYM_SET                0x0E        ; mutable variable defined via %assign or SET
 %define SYM_EQU                0x0F        ; immutable assembler constant defined via EQU
 %define SYM_IFUNC              0x10        ; ELF indirect function symbol
@@ -666,6 +671,16 @@
 %define OPT_SPEED              3           ; optimize strictly for execution speed
 %define OPT_FULL               4           ; execute all optimization sweeps
 %define OPT_AGGRESSIVE         5           ; maximum aggressive cross-section optimization
+
+; ============================================================================
+; COMMAND-LINE MODES (cli.s: NASM's -E, -M, -MD, -MP, -D/-U/-p)
+; ============================================================================
+%define CLI_MODE_ASSEMBLE      0           ; assemble (the default)
+%define CLI_MODE_PREPROCESS    1           ; -E: write the preprocessed source
+%define CLI_MODE_DEPS          2           ; -M: write the dependencies only
+%define CLI_DEPS_AFTER         1           ; -MD: dependencies after assembling
+%define CLI_DEPS_PHONY         2           ; -MP: an empty rule per dependency
+%define CLI_PRELUDE_MAX        16384       ; bytes of -D / -U / -p / --before lines
 
 ; ============================================================================
 ; LOG LEVELS
