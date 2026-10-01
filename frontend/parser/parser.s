@@ -473,8 +473,10 @@ parser_parse_instruction:
     jmp     .get_mnemonic
 .no_label:
     ; Remember the closest known instruction/directive; utasm.s prints it
-    ; as a hint after the "Parser error" line.
+    ; as a hint after the error line.
     mov     rdi, [r12 + TOKEN_value]
+    extern  error_set_subject
+    call    error_set_subject              ; "... expected, found `x'"
     call    error_hint_mnemonic
     mov     rax, EXIT_UNKNOWN_INSTR
     jmp     .done
@@ -710,48 +712,7 @@ parser_parse_operand:
         jmp     .success
         ENDIF
 
-    ; Debug print inside fallback
-    push    rax
-    push    rdi
-    push    rsi
-    
-    ; Print: "Fallback error at token kind: "
-    mov     rdi, 2
-    lea     rsi, [rel msg_fallback_error]
-    call    print_str
-    
-    ; Print token kind
-    movzx   rsi, byte [r13 + TOKEN_kind]
-    mov     rdi, 2
-    call    print_num
-    
-    mov     rdi, 2
-    lea     rsi, [rel msg_newline]
-    call    print_str
-    
-    ; If TOK_IDENT/TOK_STRING/TOK_CHAR, print value
-    mov     al, [r13 + TOKEN_kind]
-    IF al, e, TOK_IDENT
-        mov     rdi, 2
-        mov     rsi, [r13 + TOKEN_value]
-        call    print_str
-        mov     rdi, 2
-        lea     rsi, [rel msg_newline]
-        call    print_str
-    ELSEIF al, e, TOK_STRING
-        mov     rdi, 2
-        mov     rsi, [r13 + TOKEN_value]
-        call    print_str
-        mov     rdi, 2
-        lea     rsi, [rel msg_newline]
-        call    print_str
-        ENDIF
-
-    pop     rsi
-    pop     rdi
-    pop     rax
-    
-    mov     rax, 211
+    ; not an operand: the expression evaluator's code says why
     jmp     .error
 
 .success:
@@ -2902,6 +2863,7 @@ parser_parse_struc:
     mov     byte [rsi + SYMBOL_tag],  TAG_SYMBOL
     mov     byte [rsi + SYMBOL_kind], SYM_STRUCT_FIELD
     mov     byte [rsi + SYMBOL_vis],  VIS_LOCAL
+    mov     word [rsi + SYMBOL_section], SHN_ABS ; a number, as for equ
     mov     [rsi + SYMBOL_name],  r12      ; qualified field name
     mov     rax, [rbp - 48]
     mov     [rsi + SYMBOL_value], rax      ; byte offset
@@ -2995,6 +2957,7 @@ parser_parse_struc:
     mov     byte [rsi + SYMBOL_tag],  TAG_SYMBOL
     mov     byte [rsi + SYMBOL_kind], SYM_STRUCT
     mov     byte [rsi + SYMBOL_vis],  VIS_LOCAL
+    mov     word [rsi + SYMBOL_section], SHN_ABS ; a number, as for equ
     mov     [rsi + SYMBOL_name],  r13     ; struct name ptr
     mov     qword [rsi + SYMBOL_value], 0
     mov     rax, [rbp - 48]
@@ -3113,6 +3076,8 @@ parser_define_label:
         je      .define_existing
         
         ; Otherwise, it's defined already! Duplicate symbol!
+        mov     rdi, [rsp]                 ; "label `x' inconsistently
+        call    error_set_subject          ;  redefined"
         mov     rax, EXIT_DUP_SYMBOL
         jmp     .error_no_stack
         ENDIF
@@ -3907,12 +3872,11 @@ parser_incbin:
     jnz     .ret
     mov     r14, rdx
 .open:
-    mov     rdi, r12
-    xor     esi, esi                       ; O_RDONLY
-    xor     edx, edx
-    call    io_open
+    mov     rdi, r12                       ; as named, then in each -I dir
+    extern  incpath_open
+    call    incpath_open
     test    rax, rax
-    jnz     .ret
+    jnz     .not_found
     mov     r15, rdx                       ; fd
     mov     rdi, r15
     mov     rsi, r13
@@ -3955,6 +3919,12 @@ parser_incbin:
     mov     rdi, r15
     call    io_close
     mov     rax, r13
+    jmp     .ret
+.not_found:
+    push    rax                            ; "unable to open `x': no such file"
+    mov     rdi, r12
+    call    error_set_subject
+    pop     rax
     jmp     .ret
 .bad:
     mov     rax, EXIT_UNEXPECTED_TOKEN
@@ -6140,7 +6110,6 @@ str_near:   db "near", 0
 str_short:  db "short", 0
 str_far:    db "far", 0
 msg_debug_token_kind: db "Debug token kind: ", 0
-msg_fallback_error: db "Fallback error at token kind: ", 0
 msg_size_spec_bracket: db "Size specifier expected '[' but got kind: ", 0
 
 [SECTION .text]
