@@ -5,7 +5,8 @@ Assembles the same sources with NASM and utasm and compares the results:
 feature probes (flat binaries), ELF objects (sections, relocations,
 symbols), data directives and floats, section layouts and linked programs,
 labels as instruction operands, UBF boot images, error messages (the file
-and line of the first error), NASM's command-line options, the encoder corpus, operand shapes (valid and
+and line of the first error), NASM's command-line options, listings (-l),
+DWARF line tables (-g), the encoder corpus, operand shapes (valid and
 invalid pairings), and the disassembler against objdump.
 
 usage: scripts/compat/run_all.py [utasm-binary] [--quick] [-v]
@@ -38,7 +39,7 @@ def main(argv):
         return 1
     runs = [suites.bin_probes, suites.elf_probes, suites.data_forms,
             suites.sections, suites.symbol_imm, suites.ubf, suites.diagnostics,
-            suites.command_line]
+            suites.command_line, suites.listing, suites.dwarf]
     if not quick:
         runs += [suites.encoder, suites.operand_shapes]
     good = True
