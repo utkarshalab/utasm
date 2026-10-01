@@ -18,6 +18,7 @@ DEFAULT REL
 extern str_cmp
 extern arena_alloc
 extern print_str
+extern global_ctx
 
 [SECTION .text]
     global cli_parse
@@ -224,6 +225,26 @@ cli_parse:
     test    rax, rax
     jz      .handle_disasm
 
+    ; NASM's options (-I, -D, -U, -p, -E, -M..., -w, -X, -s, -Z, ...)
+    cmp     byte [r14], '-'
+    jne     .not_nasm
+    mov     rdi, r14
+    xor     esi, esi
+    cmp     r12, 1
+    jle     .no_next
+    mov     rsi, [r13 + 8]
+.no_next:
+    call    cli_nasm_option
+    cmp     eax, 1
+    je      .next_arg
+    cmp     eax, 2
+    je      .took_value
+    cmp     eax, 3
+    je      .missing_val
+    cmp     eax, 4
+    je      .unknown_val
+.not_nasm:
+
     ; If it starts with '-', it's an unknown flag
     cmp     byte [r14], '-'
     je      .unknown_flag
@@ -251,6 +272,12 @@ cli_parse:
     add     r13, 8
     mov     rax, [r13]
     mov     [rbx + ASMCTX_output], rax
+    mov     byte [rel cli_output_given], 1
+    jmp     .next_arg
+
+.took_value:
+    add     r13, 8                         ; the option's value
+    dec     r12
     jmp     .next_arg
 
 .handle_format:
@@ -628,6 +655,511 @@ cli_parse.exit:
     pop     rbx
     ret
 
+; ---- cli_nasm_option -------------------
+;
+; NASM's options:
+;   -I dir, -i dir          include search directory (also -Idir)
+;   -D name[=value], -d     %define name value, ahead of the source
+;   -U name, -u             %undef name
+;   -p file, --include file %include "file" ahead of the source
+;   --before text           the line "text" ahead of the source
+;   --pragma text           %pragma text
+;   -E, -e                  preprocess only: the expanded source on stdout
+;                           (or into the -o file)
+;   -M, -MG                 Makefile dependencies on stdout, no assembly
+;   -MD                     the dependencies too, after assembling
+;   -MF file                where they go; -MT / -MQ target: the rule's
+;                           target; -MP an empty rule per dependency;
+;                           -MW is accepted
+;   -w+x, -w-x, -Wx, -Wno-x warning classes: accepted; -w+error is -Werror
+;   -X gnu | -X vc          message style: file:line: / file(line) :
+;   -s                      messages on stdout; -Z file: into a file
+;   -g, -F format           debug information: not generated yet (a warning)
+;   --no-line, --reproducible, --keep-all: accepted
+; Input    : rdi = the argument (it starts with '-'), rsi = the next
+;            argument or 0
+; Output   : eax = 0 not one of these, 1 taken, 2 taken with the next
+;            argument, 3 its value is missing, 4 a bad value
+;
+cli_nasm_option:
+    push    rbx
+    push    r12
+    push    r13
+    mov     r12, rdi
+    mov     r13, rsi
+    lea     rbx, [r12 + 2]                 ; a value written on ("-Idir")
+    movzx   eax, byte [r12 + 1]
+    cmp     eax, 'I'
+    je      .inc
+    cmp     eax, 'i'
+    je      .inc
+    cmp     eax, 'D'
+    je      .def
+    cmp     eax, 'd'
+    je      .def
+    cmp     eax, 'U'
+    je      .undef
+    cmp     eax, 'u'
+    je      .undef
+    cmp     eax, 'p'
+    je      .pre
+    cmp     eax, 'E'
+    je      .pp_only
+    cmp     eax, 'e'
+    je      .pp_only
+    cmp     eax, 'M'
+    je      .deps
+    cmp     eax, 'w'
+    je      .warn
+    cmp     eax, 'W'
+    je      .taken
+    cmp     eax, 'X'
+    je      .style
+    cmp     eax, 's'
+    je      .to_stdout
+    cmp     eax, 'Z'
+    je      .to_file
+    cmp     eax, 'g'
+    je      .debug
+    cmp     eax, 'F'
+    je      .debug_format
+    cmp     eax, '-'
+    je      .long
+.none:
+    xor     eax, eax
+    jmp     .ret
+
+.inc:
+    call    .value
+    test    rax, rax
+    jz      .missing
+    push    rdx
+    mov     rdi, rax
+    extern  incpath_add
+    call    incpath_add
+    pop     rdx
+    test    eax, eax
+    jnz     .bad
+    mov     eax, edx
+    jmp     .ret
+
+; a prelude line: r8 = its start, the value, then the end of the line;
+; r9 = 0 as written, 1 "name=value" (the = becomes a blank), 2 in quotes
+.def:
+    lea     r8, [rel .s_define]
+    mov     r9d, 1
+    jmp     .line
+.undef:
+    lea     r8, [rel .s_undef]
+    xor     r9d, r9d
+    jmp     .line
+.pre:
+    lea     r8, [rel .s_include]
+    mov     r9d, 2
+.line:
+    call    .value
+    test    rax, rax
+    jz      .missing
+    push    rdx
+    push    rax
+    push    r9
+    mov     rdi, r8
+    xor     esi, esi
+    call    cli_prelude_add
+    pop     rsi
+    pop     rdi
+    push    rsi
+    and     esi, 1
+    call    cli_prelude_add
+    pop     rsi
+    lea     rdi, [rel .s_newline]
+    cmp     esi, 2
+    jne     .line_end
+    lea     rdi, [rel .s_quote_nl]
+.line_end:
+    xor     esi, esi
+    call    cli_prelude_add
+    pop     rdx
+    cmp     byte [rel cli_prelude_full], 0
+    jne     .bad
+    mov     eax, edx
+    jmp     .ret
+
+.pp_only:
+    cmp     byte [rbx], 0
+    jne     .none
+    mov     byte [rel cli_mode], CLI_MODE_PREPROCESS
+    jmp     .taken
+
+.deps:
+    lea     rbx, [r12 + 3]
+    movzx   eax, byte [r12 + 2]
+    test    eax, eax
+    jz      .deps_only
+    cmp     byte [rbx], 0
+    jne     .deps_value
+    cmp     eax, 'G'
+    je      .deps_only
+    cmp     eax, 'D'
+    je      .deps_after
+    cmp     eax, 'P'
+    je      .deps_phony
+    cmp     eax, 'W'
+    je      .taken
+.deps_value:
+    cmp     eax, 'F'
+    je      .deps_file
+    cmp     eax, 'T'
+    je      .deps_target
+    cmp     eax, 'Q'
+    je      .deps_target
+    jmp     .none
+.deps_only:
+    mov     byte [rel cli_mode], CLI_MODE_DEPS
+    jmp     .taken
+.deps_after:
+    or      byte [rel cli_deps], CLI_DEPS_AFTER
+    jmp     .taken
+.deps_phony:
+    or      byte [rel cli_deps], CLI_DEPS_PHONY
+    jmp     .taken
+.deps_file:
+    call    .value
+    test    rax, rax
+    jz      .missing
+    mov     [rel cli_deps_file], rax
+    mov     eax, edx
+    jmp     .ret
+.deps_target:
+    call    .value
+    test    rax, rax
+    jz      .missing
+    mov     [rel cli_deps_target], rax
+    mov     eax, edx
+    jmp     .ret
+
+.warn:
+    ; -w+error (or -w+error=class): warnings are errors; the other classes
+    ; are accepted and change nothing yet
+    cmp     dword [r12 + 2], '+err'
+    jne     .taken
+    cmp     word [r12 + 6], 'or'
+    jne     .taken
+    movzx   eax, byte [r12 + 8]
+    test    eax, eax
+    jz      .werror
+    cmp     eax, '='
+    jne     .taken
+.werror:
+    lea     rax, [rel global_ctx]
+    or      dword [rax + ASMCTX_flags], CTX_FLAG_WERROR
+    jmp     .taken
+
+.style:
+    call    .value
+    test    rax, rax
+    jz      .missing
+    push    rdx
+    push    rax
+    mov     rdi, rax
+    lea     rsi, [rel .s_gnu]
+    call    str_cmp
+    xor     ecx, ecx
+    test    rax, rax
+    jz      .style_set
+    mov     rdi, [rsp]
+    lea     rsi, [rel .s_vc]
+    call    str_cmp
+    mov     ecx, 1
+    test    rax, rax
+    jnz     .style_bad
+.style_set:
+    extern  error_style
+    mov     [rel error_style], cl
+    pop     rax
+    pop     rdx
+    mov     eax, edx
+    jmp     .ret
+.style_bad:
+    pop     rax
+    pop     rdx
+    jmp     .bad
+
+.to_stdout:
+    cmp     byte [rbx], 0
+    jne     .none
+    mov     eax, 33                        ; dup2(1, 2)
+    mov     edi, 1
+    mov     esi, 2
+    syscall
+    jmp     .taken
+
+.to_file:
+    call    .value
+    test    rax, rax
+    jz      .missing
+    push    rdx
+    mov     rdi, rax
+    mov     rsi, AMD64_O_WRONLY | AMD64_O_CREAT | AMD64_O_TRUNC
+    mov     rdx, 0o644
+    extern  io_open
+    call    io_open
+    test    rax, rax
+    jnz     .to_file_bad
+    mov     edi, edx                       ; dup2(fd, 2)
+    mov     esi, 2
+    mov     eax, 33
+    syscall
+    pop     rdx
+    mov     eax, edx
+    jmp     .ret
+.to_file_bad:
+    pop     rdx
+    jmp     .bad
+
+.debug:
+    cmp     byte [rbx], 0
+    jne     .none
+    mov     rdi, 2
+    lea     rsi, [rel .s_no_debug]
+    call    print_str
+    jmp     .taken
+.debug_format:
+    call    .value
+    test    rax, rax
+    jz      .missing
+    push    rdx
+    mov     rdi, 2
+    lea     rsi, [rel .s_no_debug]
+    call    print_str
+    pop     rax
+    jmp     .ret
+
+.long:
+    mov     rdi, r12
+    lea     rsi, [rel .s_before]
+    call    str_cmp
+    test    rax, rax
+    jz      .before
+    mov     rdi, r12
+    lea     rsi, [rel .s_long_include]
+    call    str_cmp
+    test    rax, rax
+    jz      .long_include
+    mov     rdi, r12
+    lea     rsi, [rel .s_pragma]
+    call    str_cmp
+    test    rax, rax
+    jz      .long_pragma
+    mov     rdi, r12
+    lea     rsi, [rel .s_no_line]
+    call    str_cmp
+    test    rax, rax
+    jz      .taken
+    mov     rdi, r12
+    lea     rsi, [rel .s_reproducible]
+    call    str_cmp
+    test    rax, rax
+    jz      .taken
+    mov     rdi, r12
+    lea     rsi, [rel .s_keep_all]
+    call    str_cmp
+    test    rax, rax
+    jz      .taken
+    jmp     .none
+.before:
+    lea     r8, [rel .s_empty]
+    xor     r9d, r9d
+    jmp     .long_line
+.long_include:
+    lea     r8, [rel .s_include]
+    mov     r9d, 2
+    jmp     .long_line
+.long_pragma:
+    lea     r8, [rel .s_pragma_line]
+    xor     r9d, r9d
+.long_line:
+    lea     rbx, [rel .s_empty]            ; the value is the next argument
+    jmp     .line
+
+.taken:
+    mov     eax, 1
+    jmp     .ret
+.missing:
+    mov     eax, 3
+    jmp     .ret
+.bad:
+    mov     eax, 4
+.ret:
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+; .value: rax = the option's value (written on, else the next argument;
+; 0 when there is none), edx = how many arguments that takes (1 / 2)
+.value:
+    cmp     byte [rbx], 0
+    je      .value_next
+    mov     rax, rbx
+    mov     edx, 1
+    ret
+.value_next:
+    mov     rax, r13
+    mov     edx, 2
+    ret
+
+;
+; cli_prelude_add
+; Appends text to the prelude (cli_prelude); sets cli_prelude_full when
+; it does not fit.
+; Input    : rdi = NUL-terminated text, esi = 1: the first '=' becomes a
+;            blank ("-DNAME=value")
+; Clobbers : rax, rcx, rdx, rsi, rdi
+;
+cli_prelude_add:
+    mov     ecx, [rel cli_prelude_len]
+    lea     rdx, [rel cli_prelude]
+.byte:
+    movzx   eax, byte [rdi]
+    test    eax, eax
+    jz      .done
+    cmp     ecx, CLI_PRELUDE_MAX - 1
+    jae     .full
+    test    esi, esi
+    jz      .put
+    cmp     eax, '='
+    jne     .put
+    mov     eax, ' '
+    xor     esi, esi
+.put:
+    mov     [rdx + rcx], al
+    inc     ecx
+    inc     rdi
+    jmp     .byte
+.full:
+    mov     byte [rel cli_prelude_full], 1
+.done:
+    mov     [rel cli_prelude_len], ecx
+    ret
+
+;
+; cli_write_deps
+; Writes the Makefile rule for -M / -MD: into the -MF file, else on stdout
+; for -M and into the output's name with .d for -MD. The target is the
+; -MT / -MQ name, else the output file.
+; Input    : rdi = AsmCtx
+; Output   : rax = EXIT_OK or an error
+;
+global cli_write_deps
+cli_write_deps:
+    push    rbx
+    push    r12
+    push    r13
+    mov     rbx, rdi
+    mov     r12d, 1                        ; stdout
+    mov     rdi, [rel cli_deps_file]
+    test    rdi, rdi
+    jnz     .open
+    cmp     byte [rel cli_mode], CLI_MODE_DEPS
+    je      .write
+    ; -MD without -MF: the output's name with .d for its extension
+    mov     rdi, rbx
+    lea     rsi, [rel .s_dot_d]
+    call    cli_with_suffix
+    test    rax, rax
+    jnz     .ret
+    mov     rdi, rdx
+.open:
+    mov     rsi, AMD64_O_WRONLY | AMD64_O_CREAT | AMD64_O_TRUNC
+    mov     rdx, 0o644
+    call    io_open
+    test    rax, rax
+    jnz     .ret
+    mov     r12d, edx
+.write:
+    mov     rsi, [rel cli_deps_target]
+    test    rsi, rsi
+    jnz     .target
+    mov     rsi, [rbx + ASMCTX_output]
+.target:
+    mov     edi, r12d
+    xor     edx, edx
+    test    byte [rel cli_deps], CLI_DEPS_PHONY
+    setnz   dl
+    extern  deps_write
+    call    deps_write
+    mov     r13, rax
+    cmp     r12d, 1
+    je      .written
+    mov     edi, r12d
+    extern  io_close
+    call    io_close
+.written:
+    mov     rax, r13
+.ret:
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+;
+; cli_with_suffix
+; The output file's name with its extension replaced by a suffix (or the
+; suffix added, when it has none), in the arena.
+; Input    : rdi = AsmCtx, rsi = suffix (".d")
+; Output   : rax = EXIT_OK or EXIT_OOM, rdx = the name
+;
+cli_with_suffix:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    mov     rbx, rdi
+    mov     r12, rsi
+    mov     r13, [rbx + ASMCTX_output]
+    mov     rdi, r13
+    extern  str_len
+    call    str_len
+    mov     r14, rax                       ; r14 = the length kept
+    mov     rcx, rax
+.scan:
+    test    rcx, rcx
+    jz      .alloc
+    dec     rcx
+    cmp     byte [r13 + rcx], '/'
+    je      .alloc
+    cmp     byte [r13 + rcx], '.'
+    jne     .scan
+    test    rcx, rcx
+    jz      .alloc                         ; ".name": not an extension
+    cmp     byte [r13 + rcx - 1], '/'
+    je      .alloc
+    mov     r14, rcx
+.alloc:
+    mov     rdi, [rbx + ASMCTX_arena]
+    lea     rsi, [r14 + 16]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     rdi, rdx
+    mov     rsi, r13
+    mov     rcx, r14
+    rep movsb
+    mov     rsi, r12
+.suffix:
+    lodsb
+    stosb
+    test    al, al
+    jnz     .suffix
+    xor     eax, eax
+.ret:
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
 [SECTION .rodata]
 cli_parse.flag_help:    db "--help", 0
 cli_parse.flag_help_short: db "-h", 0
@@ -666,6 +1198,41 @@ cli_parse.msg_newline: db 10, 0
 cli_parse.flag_inspect: db "--inspect", 0
 cli_parse.flag_inspect_only: db "--inspect-only", 0
 cli_parse.flag_disasm: db "--disasm", 0
+cli_nasm_option.s_define:     db "%define ", 0
+cli_nasm_option.s_undef:      db "%undef ", 0
+cli_nasm_option.s_include:    db "%include ", 34, 0
+cli_nasm_option.s_pragma_line: db "%pragma ", 0
+cli_nasm_option.s_newline:    db 10, 0
+cli_nasm_option.s_quote_nl:   db 34, 10, 0
+cli_nasm_option.s_empty:      db 0
+cli_nasm_option.s_gnu:        db "gnu", 0
+cli_nasm_option.s_vc:         db "vc", 0
+cli_nasm_option.s_before:     db "--before", 0
+cli_nasm_option.s_long_include: db "--include", 0
+cli_nasm_option.s_pragma:     db "--pragma", 0
+cli_nasm_option.s_no_line:    db "--no-line", 0
+cli_nasm_option.s_reproducible: db "--reproducible", 0
+cli_nasm_option.s_keep_all:   db "--keep-all", 0
+cli_nasm_option.s_no_debug:   db "utasm: warning: no debug information is generated yet (-g, -F)", 10, 0
+cli_write_deps.s_dot_d:       db ".d", 0
+
+[SECTION .bss]
+global cli_mode
+global cli_prelude
+global cli_prelude_len
+global cli_output_given
+global cli_deps
+alignb 8
+cli_deps_file:    resq 1                ; -MF file, or 0
+cli_deps_target:  resq 1                ; -MT / -MQ target, or 0
+cli_prelude_len:  resd 1
+cli_mode:         resb 1                ; CLI_MODE_*
+cli_deps:         resb 1                ; CLI_DEPS_* (-MD, -MP)
+cli_prelude_full: resb 1
+cli_output_given: resb 1                ; -o was given
+cli_prelude:      resb CLI_PRELUDE_MAX  ; the -D / -U / -p / --before lines
+
+[SECTION .rodata]
 
 ; --inspect-only part names: mask byte, then NUL-terminated name
 cli_inspect_part_table:
