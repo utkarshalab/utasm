@@ -2650,6 +2650,7 @@ dyn_sect_name: db "__SECT__", 0
 dn_sect_q:   db "__?SECT?__", 0
 dyn_fmt_bin: db "bin", 0
 dyn_fmt_elf64: db "elf64", 0
+dyn_fmt_elf32: db "elf32", 0
 dyn_section_word: db "section", 0
 dyn_no_file: db 0
 use_altreg:  db "altreg", 0
@@ -4476,6 +4477,11 @@ prep_dynamic_macro:
     jmp     .as_token
 .format:
     lea     rax, [rel dyn_fmt_elf64]
+    extern  elf32_enabled
+    cmp     byte [rel elf32_enabled], 0
+    je      .format_class
+    lea     rax, [rel dyn_fmt_elf32]
+.format_class:
     mov     rcx, [rbx + PREP_ctx]
     cmp     byte [rcx + ASMCTX_fmt], FMT_BIN
     jne     .have_format
