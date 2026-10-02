@@ -109,6 +109,8 @@ te_high:    resb 4                  ; AH/CH/DH/BH
 te_size:    resw 4                  ; size in bits (0 = not written)
 te_vsib:    resb 4                  ; memory with a vector index: 1 xmm, 2 ymm, 3 zmm
 te_osz:     resb 1                  ; operand size the v-types chose (0 = none)
+te_osz_v:   resb 1                  ; ... and one of them was 16/32/64 (SP_V),
+                                    ; not 32/64 by REX.W alone (SP_DQ)
 te_regop:   resb 1                  ; operand index for each role, 0xFF = none
 te_rmop:    resb 1
 te_plusop:  resb 1
@@ -357,6 +359,7 @@ te_classify:
 te_match:
     push    rbx
     mov     byte [rel te_osz], 0
+    mov     byte [rel te_osz_v], 0
     cmp     byte [rel te_evex], 0
     je      .enc_ok
     movzx   eax, byte [r13 + FM_PFX]
@@ -612,6 +615,10 @@ te_match:
     jne     .vs_no
 .vs_set:
     mov     [rel te_osz], r9b
+    movzx   eax, byte [rbx + TY_SPECIAL]
+    cmp     eax, SP_V
+    jne     .vs_ok
+    mov     byte [rel te_osz_v], 1         ; a 16/32/64 operand: 66 can apply
 .vs_ok:
     mov     eax, 1
     ret
@@ -672,13 +679,39 @@ te_emit:
     je      .vex
     cmp     eax, ENC_EVEX
     je      .evex
-    ; operand-size prefix
+    ; operand-size prefix: a 16-bit operation (32-bit in bits 16) - unless
+    ; the operand is sized 32/64 by REX.W alone behind a mandatory prefix
+    ; (cvttsd2si eax: F2, adcx eax: 66), which the operand size is not
     test    byte [r13 + FM_FLAGS], TF_OSZ
+    jz      .fixed_66
+    cmp     byte [rel te_osz_v], 0
+    jne     .osz_size
+    test    byte [r13 + FM_PFX], 15
+    jnz     .no_66
+.osz_size:
+    mov     al, [rel te_osz]
+    test    al, al
     jz      .no_66
-    cmp     byte [rel te_osz], 16
+    extern  amd64_osz66
+    call    amd64_osz66
+    test    eax, eax
+    jz      .no_66
+    jmp     .put_66
+.fixed_66:
+    ; crc32 r32, r/m32: its 32-bit source is an operand size, which in
+    ; bits 16 takes the prefix
+    cmp     word [r12 + INST_op_id], 1091
     jne     .no_66
-    mov     al, 0x66
-    call    amd64_emit_byte
+    lea     rdx, [rel te_size]
+    cmp     word [rdx + 2], 32
+    jne     .no_66
+    mov     al, 32
+    call    amd64_osz66
+    test    eax, eax
+    jz      .no_66
+.put_66:
+    extern  amd64_emit_osz_prefix
+    call    amd64_emit_osz_prefix
 .no_66:
     ; mandatory prefix
     movzx   eax, byte [r13 + FM_PFX]
