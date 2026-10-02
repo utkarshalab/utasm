@@ -14,14 +14,9 @@ KNOWN = {
     "pp_paste": "top-level %+ paste",
     # [2*rbx]: a scale written before the register
     "ins_mem_scale_forms": "number-first scale",
-    # bits 16 / bits 32 set __BITS__ but code is still encoded for 64-bit mode
-    "basic_bits16": "bits 16 encoding",
-    "dir_bits32_mix": "bits 32 encoding",
     # one pass: an equ cannot use a symbol defined after it (an error)
     "elf_equ_forward_ref": "equ with a forward reference",
     # listings (-l): the encoding differences above show there too
-    "listing basic_bits16": "bits 16 encoding",
-    "listing dir_bits32_mix": "bits 32 encoding",
     "listing op_cmp3": "NASM's <=> disagrees with its own manual",
     "listing op_signed_div": "// is a comment in utasm",
     "listing ins_mem_scale_forms": "number-first scale",
