@@ -304,9 +304,30 @@ cli_parse:
     test    rax, rax
     jz      .set_ubf
 
+    mov     rdi, r14
+    lea     rsi, [rel .val_elf32]
+    call    str_cmp
+    test    rax, rax
+    jz      .set_elf32
+    mov     rdi, r14
+    lea     rsi, [rel .val_elf]
+    call    str_cmp
+    test    rax, rax
+    jz      .set_elf32
+
     jmp     .unknown_val
 
+.set_elf32:
+    ; an i386 object (backend/output/elf/elf32.s), in bits 32 by default
+    extern  elf32_enabled, asm_bits
+    mov     byte [rel elf32_enabled], 1
+    mov     byte [rel asm_bits], 32
+    jmp     .set_elf
 .set_elf64:
+    extern  elf32_enabled, asm_bits
+    mov     byte [rel elf32_enabled], 0
+    mov     byte [rel asm_bits], 64
+.set_elf:
     mov     byte [rbx + ASMCTX_fmt], FMT_ELF64
     and     dword [rbx + ASMCTX_flags], ~(CTX_FLAG_FORMAT_BIN | CTX_FLAG_FORMAT_ELF)
     or      dword [rbx + ASMCTX_flags], CTX_FLAG_FORMAT_ELF
@@ -1187,6 +1208,8 @@ cli_parse.flag_standalone: db "--standalone", 0
 cli_parse.flag_verbose_long: db "--verbose", 0
 cli_parse.val_elf64:    db "elf64", 0
 cli_parse.val_bin:      db "bin", 0
+cli_parse.val_elf32:    db "elf32", 0
+cli_parse.val_elf:      db "elf", 0
 cli_parse.val_ubf:      db "ubf", 0
 cli_parse.flag_ubf_add: db "--ubf-add", 0
 cli_parse.suffix_ubf:   db ".ubf", 0
