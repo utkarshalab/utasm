@@ -2,7 +2,7 @@
 common.Suite; scripts/compat/run_all.py runs them all."""
 import collections, concurrent.futures as cf, difflib, hashlib, os, platform, re, struct, zlib
 
-from common import Suite, assemble_bin, first_line, run, tempdir
+from common import Suite, assemble_bin, first_line, have, run, tempdir
 import cases, corpus
 
 JOBS = os.cpu_count() or 4
@@ -566,4 +566,90 @@ def dwarf(utasm, verbose=False):
                 s.result(name, False, "utasm error: " + first_line(ru))
             else:
                 s.result(name, a == b, "nasm %s | utasm %s" % (a[:6], b[:6]))
+    return s
+
+
+# ---------------------------------------------------------------------------
+# bits 32 / bits 16: the encoder corpus in the other modes
+# ---------------------------------------------------------------------------
+# NASM takes some registers that do not exist outside 64-bit mode in VEX and
+# EVEX instructions (vmovq rax, xmm16 ...); utasm rejects them, which counts
+# as agreeing.
+_WIDE = re.compile(r"\b(r[a-ds]x|r[sd]i|r[sb]p|r\d+[dwb]?|[xyz]mm(1[6-9]|2\d|3[01])|kmovq)\b")
+
+
+def modes(utasm, verbose=False):
+    s = Suite("bits 32 / bits 16", verbose)
+    lines = [l for l in corpus_lines()]
+
+    def one(item):
+        bits, line = item
+        with tempdir() as d:
+            nb, ub, ru = assemble_bin(utasm, "bits %d\n%s\n" % (bits, line), d)
+            return bits, line, nb, ub, ru
+
+    items = [(b, l) for b in (32, 16) for l in lines]
+    with cf.ThreadPoolExecutor(JOBS) as ex:
+        for bits, line, nb, ub, ru in ex.map(one, items):
+            name = "bits %d: %s" % (bits, line)
+            if nb is None:
+                s.result(name, ub is None, "NASM rejects it, utasm gives " + (ub or b"").hex())
+            elif ub is None:
+                s.result(name, bool(_WIDE.search(line)), "utasm error: " + first_line(ru))
+            else:
+                s.result(name, nb == ub, "nasm %s | utasm %s" % (nb.hex(), ub.hex()))
+    return s
+
+
+# ---------------------------------------------------------------------------
+# -f elf32: i386 objects, contents and relocations as NASM writes them
+# ---------------------------------------------------------------------------
+def _elf32_view(obj):
+    d = run(["objdump", "-dr", "-s", obj]).stdout.splitlines()[3:]
+    syms = sorted(" ".join(l.split()[3:5] + l.split()[7:8]) for l in
+                  run(["readelf", "-sW", obj]).stdout.splitlines()
+                  if re.match(r"\s*\d+:", l) and "FILE" not in l and "SECTION" not in l)
+    return "\n".join(d), syms
+
+
+def elf32(utasm, verbose=False):
+    s = Suite("elf32 objects", verbose)
+
+    def one(item):
+        name, src = item
+        with tempdir() as d:
+            p = os.path.join(d, "p.s")
+            open(p, "w").write(src)
+            rn = run(["nasm", "-f", "elf32", p, "-o", os.path.join(d, "n.o")])
+            ru = run([utasm, "-f", "elf32", p, "-o", os.path.join(d, "u.o")])
+            if rn.returncode:
+                return name, None, None, ru
+            if ru.returncode:
+                return name, _elf32_view(os.path.join(d, "n.o")), None, ru
+            return name, _elf32_view(os.path.join(d, "n.o")), _elf32_view(os.path.join(d, "u.o")), ru
+
+    with cf.ThreadPoolExecutor(JOBS) as ex:
+        for name, a, b, ru in ex.map(one, sorted(cases.ELF32_CASES.items())):
+            if a is None:
+                s.skip()
+            elif b is None:
+                s.result(name, False, "utasm error: " + first_line(ru))
+            else:
+                s.result(name, a == b, "contents %s, symbols %s" %
+                         ("same" if a[0] == b[0] else "differ", "same" if a[1] == b[1] else "%s | %s" % (a[1], b[1])))
+    # a program that runs
+    if have("ld"):
+        with tempdir() as d:
+            p = os.path.join(d, "h.s")
+            open(p, "w").write(cases.ELF32_HELLO)
+            ru = run([utasm, "-f", "elf32", p, "-o", os.path.join(d, "h.o")])
+            rl = run(["ld", "-m", "elf_i386", os.path.join(d, "h.o"), "-o", os.path.join(d, "h")])
+            if ru.returncode == 0 and rl.returncode == 0:
+                rr = run([os.path.join(d, "h")])
+                s.result("elf32 program runs", rr.returncode == 42 and rr.stdout == "elf32\n",
+                         "exit %d, output %r" % (rr.returncode, rr.stdout))
+            elif ru.returncode:
+                s.result("elf32 program runs", False, "utasm error: " + first_line(ru))
+            else:
+                s.skip()
     return s
