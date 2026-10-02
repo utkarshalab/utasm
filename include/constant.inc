@@ -73,6 +73,7 @@
 %define EXIT_UNSUPPORTED_INSTR 43  ; valid instruction not supported by target
 %define EXIT_ALIGN_ERROR       44  ; alignment directive could not be satisfied
 %define EXIT_STRUCT_BOUNDS     45  ; memory write size exceeds struct field byte width
+%define EXIT_BITS_MODE         46  ; not encodable in the current bits 16/32/64 mode
 
 %define EXIT_UNDEF_SYMBOL      50  ; referenced symbol has no definition
 %define EXIT_DUP_SYMBOL        51  ; symbol defined more than once
@@ -394,6 +395,7 @@
 %define OP_FLAG_SHORT          0x10        ; SHORT keyword applied to a branch target
 %define OP_FLAG_ADDR32         0x20        ; memory addressed by 32-bit registers (67 prefix)
 %define OP_FLAG_FAR            0x40        ; FAR: an indirect far jump / call (m16:32)
+%define OP_FLAG_ADDR16         0x80        ; memory addressed by 16-bit registers ([bx+si])
 
 ; RELOC_flags
 %define RELOC_FLAG_SYM         0x01        ; "wrt ..sym": against the symbol itself,
