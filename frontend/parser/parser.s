@@ -1800,9 +1800,14 @@ parser_parse_mem_operand:
         mov     [r12 + OPERAND_size], cl        ; a memory operand keeps its own size
         IF rax, ne, ERR
             ; 32-bit address registers ([eax], [r14d+1]) need the 67 prefix
+            ; in 64-bit mode; 16-bit ones ([bx+si]) are 16-bit addressing
             cmp     r8d, 32
-            jne     .addr64
+            jne     .addr_not32
             or      byte [r12 + OPERAND_flags], OP_FLAG_ADDR32
+        .addr_not32:
+            cmp     r8d, 16
+            jne     .addr64
+            or      byte [r12 + OPERAND_flags], OP_FLAG_ADDR16
         .addr64:
             ; A vector register is the index of a gather/scatter address
             ; ([rbx + xmm1*4]); record whether it is xmm, ymm or zmm
