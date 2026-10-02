@@ -559,6 +559,8 @@ reloc_apply_one:
 
     cmp     r11d, R_X86_64_PC8
     je      .pc8
+    cmp     r11d, 13                       ; R_X86_64_PC16: bits 16 branches
+    je      .pc16
 
     ; Default: PC-relative (x86_64 PC32, etc)
     ; The addend already carries -pc_adjust (see amd64_emit_reloc).
@@ -589,6 +591,16 @@ reloc_apply_one:
     cmp     rcx, rax
     jne     .range_err             ; target out of short-jump reach
     mov     [r8], al
+    jmp     .done_patch
+
+.pc16:
+    ; a near branch in bits 16: a 2-byte PC-relative field
+    sub     rax, r9
+    add     rax, [rbx + RELOC_addend]
+    movsx   rcx, ax
+    cmp     rcx, rax
+    jne     .range_err
+    mov     [r8], ax
     jmp     .done_patch
 
 .abs64:
