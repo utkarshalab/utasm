@@ -559,7 +559,7 @@ print_num:
                    db "Usage: utasm [options] <source.s>", 10
                    db "       utasm --inspect [--inspect-only <parts>] <file>", 10, 10
                    db "Options:", 10
-                   db "  -f, --format <format>     elf64 (default), bin, ubf (a UBF boot image)", 10
+                   db "  -f, --format <format>     elf64 (default), elf32, bin, ubf (a UBF boot image)", 10
                    db "  -o <file>                 output path (default: source.o / .bin / .ubf)", 10
                    db "  --ubf-add TYPE=FILE[@ADDR]  -f ubf: add a component (initrd, dtb,", 10
                    db "                            config, module, firmware) loaded at ADDR", 10
