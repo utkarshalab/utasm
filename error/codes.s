@@ -493,6 +493,7 @@ code_table:
     code_msg EXIT_UNSUPPORTED_INSTR, m_unsupported
     code_msg EXIT_ALIGN_ERROR,       m_align
     code_msg EXIT_STRUCT_BOUNDS,     m_struct
+    code_msg EXIT_BITS_MODE,         m_bits_mode
     code_msg EXIT_UNDEF_SYMBOL,      m_undef, t_undef
     code_msg EXIT_DUP_SYMBOL,        m_dup, t_dup
     code_msg EXIT_SYMBOL_RANGE,      m_sym_range
@@ -553,6 +554,7 @@ m_offset_range: db "jump or displacement out of range", 0
 m_unsupported:  db "instruction not supported for this target", 0
 m_align:        db "invalid alignment (not a power of two?)", 0
 m_struct:       db "operand larger than the structure field", 0
+m_bits_mode:    db "instruction not supported in this bits mode (16/32/64)", 0
 m_undef:        db "undefined symbol", 0
 m_dup:          db "label inconsistently redefined", 0
 m_sym_range:    db "symbol value out of range", 0
