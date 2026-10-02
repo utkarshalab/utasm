@@ -828,6 +828,8 @@ python3 scripts/compat/run_all.py build/gen1/utasm -v       # also list known di
 | diagnostics | sources NASM rejects: utasm must reject them too, with the first error at the same file and line |
 | listings | `-l` on every bin probe (as an ELF object): the same listing file as NASM's, line for line |
 | dwarf line tables | `-g` objects: the same decoded line table rows (file, line, address) as NASM's |
+| elf32 objects | `-f elf32`: the same contents, relocations (types and in-place addends) and symbols as NASM's i386 objects, and a program linked with `ld -m elf_i386` that runs |
+| bits 32 / bits 16 | the encoder corpus assembled in 32- and 16-bit mode: the same bytes as NASM, or rejected where NASM rejects it (and where NASM takes registers those modes do not have) |
 | command line | NASM's options (`-I`, `-D`, `-U`, `-p`, `--before`, `-M` and its variants, `-E`) on the same files: the same binary, or the same dependency rules |
 | encoder corpus | every instruction of `corpus.py` alone, byte for byte |
 | operand shapes | ~1,700 pairings of register and memory sizes for the general-purpose instructions: the same bytes as NASM, or rejected where NASM rejects them |
