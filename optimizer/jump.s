@@ -537,27 +537,37 @@ rx_prepare_candidate:
     mov     byte [r12 + RX_state], RS_NO
     mov     byte [r12 + RX_flags], 0
 
-    mov     eax, 5                         ; jmp E9 rel32
+    ; jmp E9 rel32 (5) / jcc 0F 8x rel32 (6); in bits 16 (RX_cc bit 7)
+    ; rel16: 3 / 4
+    mov     eax, 5
     cmp     byte [r12 + RX_kind], RELAX_JMP
     je      .have_len
-    mov     eax, 6                         ; jcc 0F 8x rel32
+    mov     eax, 6
 .have_len:
+    mov     ecx, 4                         ; the displacement's width
+    mov     edx, R_X86_64_PC32
+    test    byte [r12 + RX_cc], 0x80
+    jz      .have_width
+    sub     eax, 2
+    mov     ecx, 2
+    mov     edx, 13                        ; R_X86_64_PC16
+.have_width:
     add     rax, [r12 + RX_pos]
     mov     [r12 + RX_end], rax
 
-    ; its relocation: PC32, in this section, on the jump's displacement
+    ; its relocation: PC32 (PC16), in this section, on the displacement
     mov     eax, [r12 + RX_aux32]
     cmp     eax, [rbx + ASMCTX_nrelocs]
     jae     .done
     imul    r13, rax, RELOC_SIZE
     add     r13, [rbx + ASMCTX_relocs]     ; r13 = RELOC*
-    cmp     dword [r13 + RELOC_type], R_X86_64_PC32
+    cmp     [r13 + RELOC_type], edx
     jne     .done
     mov     rax, [rel rw_sec]
     cmp     [r13 + RELOC_section], rax
     jne     .done
     mov     rax, [r12 + RX_end]
-    sub     rax, 4
+    sub     rax, rcx
     cmp     [r13 + RELOC_offset], rax
     jne     .done
 
@@ -601,6 +611,29 @@ rx_o2:
     push    r13
     push    r14
     push    r15
+
+    ; its rewrites are written for rel32 jumps: a section with bits 16 code
+    ; (rel16 jumps) keeps to shortening
+    xor     r15d, r15d
+.w16:
+    cmp     r15, [rel rw_n]
+    jae     .w16_none
+    mov     rax, [rel rw_recs]
+    mov     rax, [rax + r15*8]
+    inc     r15
+    movzx   ecx, byte [rax + RX_kind]
+    cmp     ecx, RELAX_FIXED
+    je      .w16_fixed
+    cmp     ecx, RELAX_JCC
+    ja      .w16
+    test    byte [rax + RX_cc], 0x80
+    jnz     .o2_done
+    jmp     .w16
+.w16_fixed:
+    cmp     byte [rax + RX_cc], 2
+    je      .o2_done
+    jmp     .w16
+.w16_none:
 
     ; ---- 1. jcc over a jmp ----
     xor     r15d, r15d
@@ -705,6 +738,7 @@ rx_o2:
     jmp     .next_loop
 
 .done:
+.o2_done:
     pop     r15
     pop     r14
     pop     r13
@@ -1072,8 +1106,13 @@ rx_apply:
     add     rax, rdx                       ; end of the displacement
     sub     rcx, rax
     cmp     edx, 1
-    jne     .fixed32
+    jne     .fixed_wide
     mov     [rbp + r8], cl
+    jmp     .fixed_next
+.fixed_wide:
+    cmp     edx, 2
+    jne     .fixed32
+    mov     [rbp + r8], cx                 ; bits 16: a rel16
     jmp     .fixed_next
 .fixed32:
     mov     [rbp + r8], ecx
