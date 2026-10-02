@@ -33,6 +33,7 @@ extern  reloc_record
 extern  str_len
 extern  lst_base
 extern  lst_count
+extern  elf32_enabled
 
 %define DW_MAX_FILES    256
 %define DW_MAX_CODE     32
@@ -297,18 +298,19 @@ dw_write_line:
     ; DW_LNE_set_address: the section's start, relocated
     mov     eax, 0
     call    dw_u8
-    mov     eax, 9
+    call    dw_addr_size
+    inc     eax                            ; the opcode and the address
     call    dw_u8
     mov     eax, 2
     call    dw_u8
     mov     rsi, r14
     xor     edx, edx
-    mov     r8d, R_X86_64_64
+    call    dw_addr_type
     call    dw_sec_reloc
     test    rax, rax
     jnz     .ret
     xor     eax, eax
-    call    dw_u64
+    call    dw_address
     mov     qword [rel dw_addr], 0
     mov     qword [rel dw_line], 1
     mov     qword [rel dw_file], 1
@@ -432,7 +434,7 @@ dw_write_info:
     jnz     .ret
     xor     eax, eax
     call    dw_u32
-    mov     eax, 8
+    call    dw_addr_size
     call    dw_u8                          ; address_size
     mov     eax, 1
     call    dw_uleb                        ; the compile unit DIE
@@ -454,20 +456,20 @@ dw_write_info:
     mov     rbx, [rel dw_code]             ; DW_AT_low_pc / high_pc: the
     mov     rsi, rbx                       ; first code section
     xor     edx, edx
-    mov     r8d, R_X86_64_64
+    call    dw_addr_type
     call    dw_sec_reloc
     test    rax, rax
     jnz     .ret
     xor     eax, eax
-    call    dw_u64
+    call    dw_address
     mov     rsi, rbx
     mov     rdx, [rbx + SECTION_size]
-    mov     r8d, R_X86_64_64
+    call    dw_addr_type
     call    dw_sec_reloc
     test    rax, rax
     jnz     .ret
     xor     eax, eax
-    call    dw_u64
+    call    dw_address
     mov     rax, [rel dw_info_sec]
     mov     rcx, [rax + SECTION_size]
     sub     rcx, 4
@@ -497,7 +499,7 @@ dw_write_aranges:
     jnz     .ret
     xor     eax, eax
     call    dw_u32
-    mov     eax, 8
+    call    dw_addr_size
     call    dw_u8                          ; address_size
     xor     eax, eax
     call    dw_u8                          ; segment_size
@@ -511,21 +513,21 @@ dw_write_aranges:
     mov     rbx, [rax + r12*8]
     mov     rsi, rbx
     xor     edx, edx
-    mov     r8d, R_X86_64_64
+    call    dw_addr_type
     call    dw_sec_reloc
     test    rax, rax
     jnz     .ret
     xor     eax, eax
-    call    dw_u64
+    call    dw_address
     mov     rax, [rbx + SECTION_size]
-    call    dw_u64
+    call    dw_address
     inc     r12
     jmp     .range
 .ranges_done:
     xor     eax, eax
-    call    dw_u64
+    call    dw_address
     xor     eax, eax
-    call    dw_u64
+    call    dw_address
     mov     rax, [rel dw_aranges_sec]
     mov     rcx, [rax + SECTION_size]
     sub     rcx, 4
@@ -597,6 +599,29 @@ dw_u64:
     call    dw_u32
     pop     rax
     shr     rax, 32
+    jmp     dw_u32
+
+; addresses: 8 bytes (R_X86_64_64), or 4 (R_X86_64_32) in an ELF32 object
+dw_addr_size:
+    mov     eax, 8
+    cmp     byte [rel elf32_enabled], 0
+    je      .size
+    mov     eax, 4
+.size:
+    ret
+
+dw_addr_type:
+    mov     r8d, R_X86_64_64
+    cmp     byte [rel elf32_enabled], 0
+    je      .type
+    mov     r8d, R_X86_64_32
+.type:
+    ret
+
+; dw_address: rax as an address
+dw_address:
+    cmp     byte [rel elf32_enabled], 0
+    je      dw_u64
     jmp     dw_u32
 
 ; dw_uleb / dw_sleb: rax as (un)signed LEB128
