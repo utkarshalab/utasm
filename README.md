@@ -19,7 +19,8 @@
 - **CPU Profiles** — Named CPU targets with per-instruction feature validation
 - **DWARF v5** — Full debug symbol emission (`.debug_info`, `.debug_abbrev`, `.debug_line`, `.debug_frame`)
 - **io\_uring I/O** — Asynchronous file I/O for ultra-fast multi-megabyte builds
-- **Multiple Output Formats** — ELF64 (objects and standalone executables), flat binary, `.ubf` boot images for Tattva OS ([docs/ubf.md](docs/ubf.md)); PE32+ (UEFI) and `.upk` packages are planned
+- **Multiple Output Formats** — ELF64 (objects and standalone executables), ELF32 i386 objects, flat binary, `.ubf` boot images for Tattva OS ([docs/ubf.md](docs/ubf.md)); PE32+ (UEFI) and `.upk` packages are planned
+- **16-, 32- and 64-bit code** — `bits 16` / `bits 32` / `bits 64` encode as NASM does in each mode (operand- and address-size prefixes, 16-bit addressing, rel16 branches, the instructions each mode has)
 - **Built-in Tools** — Disassembler, object inspector, symbol dumper — no external tools required
 - **Zero Dependencies** — No libc, no runtime, raw syscalls only
 
