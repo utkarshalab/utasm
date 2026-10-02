@@ -694,6 +694,7 @@ mov rcx, [rbx + my_point.y]
 bits 64                         ; 64-bit mode (default for AMD64)
 bits 32                         ; 32-bit mode
 bits 16                         ; 16-bit mode (bootloader/real mode)
+use16 / use32 / use64           ; the same
 
 ; [GEN2] → cpu generic / cpu x86_64_v3 etc
 cpu generic                     ; x86-64 baseline (SSE2 only)
@@ -717,6 +718,18 @@ align 16                        ; align to 16-byte boundary (NOP fill)
 align 4                         ; align to 4-byte boundary
 align 64                        ; align to cache line
 ```
+
+`bits 16` and `bits 32` encode for those modes, as NASM does: the operand-
+size prefix `66` marks the size that is not the mode's (16-bit operands in
+32-bit mode, 32-bit ones in 16-bit mode), `67` the address size likewise;
+16-bit code has 16-bit addressing (`[bx+si]`, `[bp+di+4]`, `[si]`) and
+rel16 near branches (shortened to rel8 like any other); `inc`/`dec` of a
+register take their one-byte forms, `push`/`pop` the mode's width, and
+`pusha`, `daa`, `aam`, `bound`, `les`, `push es` and the other instructions
+that exist only there are available. What a mode does not have - 64-bit
+registers, r8-r15, `sil`/`dil`, `[rax]`, RIP-relative addressing outside
+64-bit mode; 16-bit addressing in it - is an error. `-f bin` starts in
+`bits 64` (NASM's starts in `bits 16`), `-f elf32` in `bits 32`.
 
 ---
 
