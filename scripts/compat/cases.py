@@ -525,3 +525,30 @@ DWARF_CASES = {
     "short jumps":
         "section .text\nl1: jmp l2\n    nop\nl2: jz l1\n    times 200 nop\n    jmp l1\n",
 }
+
+
+# -f elf32: i386 objects (contents, relocations with their in-place
+# addends, symbols) and a program linked with ld -m elf_i386
+ELF32_CASES = {
+    "elf32_data_refs":
+        "section .text\nmov eax, msg\nmov ecx, [msg+4]\nlea esi, [table+ebx*4]\npush msg\n"
+        "section .data\nmsg: db 'hello', 0\ntable: dd 1, 2, msg, msg+3\n",
+    "elf32_externs":
+        "extern ext_fn, ext_var\nglobal f\nsection .text\nf: call ext_fn\nmov eax, [ext_var]\n"
+        "mov eax, ext_var+8\njmp near ext_fn\ndw ext_var\ndb 0\nsection .data\np: dd f, ext_var, p+4\n",
+    "elf32_local_branches":
+        "global f\nsection .text\nf: call g\njmp f\njz h\ng: ret\nh: call f\nloop f\n",
+    "elf32_bss_and_common":
+        "section .text\nmov eax, [buf]\nmov [buf+4], ecx\ncommon cc 8\nmov eax, cc\nsection .bss\nbuf: resb 16\n",
+    "elf32_mixed_bits":
+        "section .text\nbits 16\nmov ax, word_v\nbits 32\nmov eax, word_v\npush word 5\n"
+        "section .data\nword_v: dw 7\n",
+    "elf32_equ_and_sizes":
+        "global main:function\nsection .text\nmain: mov eax, len\nret\n.end:\nsection .rodata\n"
+        "s: db 'abc'\nlen equ $ - s\n",
+}
+ELF32_HELLO = (
+    "global _start\nsection .text\n_start:\n    mov eax, 4\n    mov ebx, 1\n    mov ecx, msg\n"
+    "    mov edx, len\n    int 0x80\n    call done\ndone:\n    mov eax, 1\n    mov ebx, 42\n    int 0x80\n"
+    "section .data\nmsg: db 'elf32', 10\nlen equ $ - msg\n"
+)
