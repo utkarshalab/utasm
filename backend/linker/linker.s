@@ -155,6 +155,20 @@ linker_run:
     call    io_close
     mov     rax, r13
     check_err
+
+    ; -f elf32: the ELF64 object just written, rewritten as ELF32
+    extern  elf32_enabled
+    cmp     byte [rel elf32_enabled], 0
+    je      .done
+    extern  global_ctx
+    lea     rbx, [rel global_ctx]          ; (elf64_emit does not keep rbx)
+    cmp     byte [rbx + ASMCTX_fmt], FMT_ELF64
+    jne     .done
+    cmp     byte [rbx + ASMCTX_standalone], 0
+    jne     .done
+    mov     rdi, [rbx + ASMCTX_output]
+    extern  elf32_convert
+    call    elf32_convert
     jmp     .done
 
 .error_no_output:
