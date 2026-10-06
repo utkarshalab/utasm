@@ -955,6 +955,33 @@
     mov     %2, rax
 %endmacro
 
+;*
+; * [hash_fnv1a_64_ci]
+; * Purpose: hash_fnv1a_64 of the string in lower case (ASCII): mnemonics
+; *   and registers are found in any letter case, as NASM finds them.
+; ;
+%macro hash_fnv1a_64_ci 2
+    mov     rax, 0xcbf29ce484222325 ; FNV offset basis
+    mov     rcx, %1                 ; source string
+    mov     r11, 0x100000001b3      ; FNV prime
+%%loop:
+    movzx   rdx, byte [rcx]
+    test    dl, dl
+    jz      %%done
+    cmp     dl, 'A'
+    jb      %%mix
+    cmp     dl, 'Z'
+    ja      %%mix
+    or      dl, 0x20
+%%mix:
+    xor     al, dl                  ; FNV-1a: XOR then MUL
+    imul    rax, r11
+    inc     rcx
+    jmp     %%loop
+%%done:
+    mov     %2, rax
+%endmacro
+
 ; ============================================================================
 ; 7. ATOMICS & SYNCHRONIZATION
 ; ============================================================================
