@@ -177,8 +177,8 @@ endstruc
 
 struc INCLUDECTX
     field tag,      1       ; always TAG_INCLUDE_CTX
-    field depth,    1       ; nesting depth
-    field pad0,     6       ; alignment padding
+    field depth,    2       ; nesting depth (up to MAX_INCLUDES)
+    field pad0,     5       ; alignment padding
     field file,     8       ; filename pointer
     field parent,   8       ; parent IncludeCtx pointer
     field buf,      8       ; mapped file buffer pointer
@@ -195,10 +195,10 @@ endstruc
 
 struc MACRO
     field tag,      1       ; always TAG_MACRO
-    field min_params, 1     ; minimum required parameters
-    field max_params, 1     ; maximum allowed parameters (0xFF = variadic)
     field flags,     1       ; MACRO_FLAG_* (function-like %define)
-    field pad0,      4       ; alignment padding
+    field min_params, 2     ; minimum required parameters
+    field max_params, 2     ; maximum allowed parameters (MACRO_VARIADIC: any)
+    field pad0,      2       ; alignment padding
     field name,     8       ; macro name pointer
     field ntokens,  4       ; token count in body
     field pad1,     4       ; explicit padding to align tokens to 8-byte boundary
@@ -216,19 +216,20 @@ endstruc
 struc MACROEXP
     field tag,      1       ; always TAG_MACRO_EXP
     field depth,    1       ; nesting depth
-    field nparams,  1       ; parameter count
-    field pad0,      1       ; explicit padding to align rep_count to 4-byte boundary
+    field nparams,  2       ; parameter count
     field rep_count, 4      ; repetitions remaining (for %rep)
     field macro,    8       ; pointer to Macro symbol
     field parent,   8       ; parent MacroExpansion pointer
     field params,   8       ; array of pointers to each argument's first token
     field body,     8       ; current body position token pointer
     field line,     4       ; invocation line number
-    field argcap,   4       ; token slots of the argument buffer (it grows)
-    field arglens,  8       ; per-argument token counts (byte array)
+    field pad1,     4       ; alignment padding
+    field arglens,  8       ; per-argument token counts (dword array)
     field pend_ptr, 8       ; next token of the argument being substituted
     field pend_cnt, 4       ; tokens still to emit from that argument
     field exp_id,   4       ; id used by %%locals (shared with %rep bodies)
+    field pcap,     4       ; entries of params[] and arglens[] (they grow)
+    field pad2,     4
 endstruc
 
 ; ============================================================================
@@ -321,18 +322,17 @@ endstruc
 
 struc PREP
     field tag,          1       ; always TAG_PREPROCESSOR
-    field depth,        1       ; conditional depth
-    field skip_depth,   1       ; skipping depth
     field has_peek,     1       ; TRUE if peek is valid
-    field mac_depth,    1       ; macro recursion depth (A83)
-    field pad0,         3       ; alignment padding
+    field depth,        2       ; conditional depth (up to PREP_COND_MAX)
+    field skip_depth,   2       ; skipping depth
+    field mac_depth,    2       ; macro recursion depth (up to MAX_MACRO_DEPTH)
     field line,         4       ; current source line number
     field col,          4       ; current source column number
     field peek,         TOKEN_SIZE ; peek buffer token
     field lexer,        8       ; current LexerState pointer
     field ctx,          8       ; pointer to AsmCtx
     field arena,        8       ; pointer to Arena
-    field cond_taken,   PREP_CTX_MAX ; per level: a branch already fired here
+    field cond_taken,   PREP_COND_MAX + 1 ; per level: a branch already fired here
     field ctx_depth,    4       ; %push context stack depth
     field ctx_next_id,  4       ; next unique context id
     field ctx_ids,      PREP_CTX_MAX * 4   ; unique id per stacked context
