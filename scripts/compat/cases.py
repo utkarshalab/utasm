@@ -552,3 +552,107 @@ ELF32_HELLO = (
     "    mov edx, len\n    int 0x80\n    call done\ndone:\n    mov eax, 1\n    mov ebx, 42\n    int 0x80\n"
     "section .data\nmsg: db 'elf32', 10\nlen equ $ - msg\n"
 )
+
+# ---------------------------------------------------------------------------
+# expressions: labels defined later in arithmetic (worked out at the end) and
+# NASM's rule that a label is an address, not a scalar
+# ---------------------------------------------------------------------------
+_T = "\nl1: dd 1, 2\nl2:\nl3: dw 7\nl4:\n"           # l2 - l1 = 8, l4 - l3 = 2
+EXPR_BIN = {
+    "div": "bits 32\ndd (l2 - l1) / 4" + _T,
+    "shr": "bits 32\ndw (l2 - l1) >> 1" + _T,
+    "mul_add": "bits 32\ndd (l2 - l1) * 2 + 1" + _T,
+    "neg": "bits 32\ndd -(l2 - l1)" + _T,
+    "not": "bits 32\ndd ~(l2 - l1)" + _T,
+    "db_mul": "bits 32\ndb (l2 - l1) * 2" + _T,
+    "db_distance": "bits 32\ndb l2 - l1, l2 - $$" + _T,
+    "dq_shl": "bits 32\ndq (l2 - l1) << 3" + _T,
+    "sum_of_diffs": "bits 32\ndd ((l2 - l1) + (l4 - l3)) / 2" + _T,
+    "diff_of_diffs": "bits 32\ndd (l2 - l1) - (l4 - l3)" + _T,
+    "mod": "bits 32\ndd (l2 - l1) % 3" + _T,
+    "cmp": "bits 32\ndb ((l2 - l1) == 8), ((l2 - l1) < 4)" + _T,
+    "ternary": "bits 32\ndd (l2 - l1) > 4 ? 10 : 20" + _T,
+    "items": "bits 32\ndd (l2 - l1) / 4, (l4 - l3) * 3, 5" + _T,
+    "and_or": "bits 32\ndd ((l2 - l1) | 0x100) & 0xFFF" + _T,
+    "number_minus": "bits 32\norg 0x100\ndd 0x500 - l1" + _T,
+    "dollar": "bits 32\ndd (l2 - $) / 4" + _T,
+    "dollar2": "bits 32\nnop\ndd (l2 - $$) / 2" + _T,
+    "mov_imm": "bits 32\nmov eax, (l2 - l1) / 4" + _T,
+    "mov_imm64": "bits 64\nmov rax, (l2 - l1) * 3" + _T,
+    "mem_disp": "bits 64\nmov eax, [rbx + (l2 - l1) * 32]" + _T,
+    "push_imm": "bits 32\npush dword (l2 - l1) / 4" + _T,
+    "local": "bits 32\nf:\ndd (.e - .s) / 4\n.s: dd 1, 2, 3\n.e:\n",
+    "local_after": "bits 32\nf:\ndd (.e - .s) / 4\n.s: dd 1, 2, 3\n.e:\ng:\n.s: dd 9\n.e:\n",
+    "macro_local": "bits 32\n%macro tbl 0\ndd (%%e - %%s) / 4\n%%s: dd 1, 2\n%%e:\n%endmacro\ntbl\ntbl\n",
+    "in_rep": "bits 32\n%assign i 0\n%rep 3\ndd (e%[i] - s%[i]) / 4\ns%[i]: times i+1 dd 0\ne%[i]:\n"
+              "%assign i i+1\n%endrep\n",
+    "jump_shrinks": "bits 32\ndd (le - ls) / 1\nls: jmp lt\nlt: nop\nle:\n",
+    "jumps_between": "bits 64\ndw (le - ls) * 2\nls:\n" + "".join("jz e%d\nnop\ne%d:\n" % (i, i) for i in range(20)) + "le:\n",
+    "define": "bits 32\n%define SZ ((l2 - l1) / 4)\ndd SZ, SZ * 2" + _T,
+    "fn_define": "bits 32\n%define CNT(a, b) (((b) - (a)) / 4)\ndd CNT(l1, l2)" + _T,
+    "backward_too": "bits 32\nl0: dd 0\ndd (l2 - l0) / 4" + _T,
+    "global_first": "bits 32\nglobal x, y\ndd (y - x) / 2\nx: dd 1\ny:\n",
+}
+EXPR_ELF = {
+    "elf_data": "section .data\ndd (l2 - l1) / 4\nl1: dd 1, 2\nl2:\n",
+    "elf_text": "section .text\nmov eax, (l2 - l1) / 4\nl1: dd 1, 2\nl2:\n",
+    "elf_two_items": "section .data\ndq (l2 - l1) * 8, (l2 - l1)\nl1: dd 1, 2\nl2:\n",
+}
+# NASM, which reads the source again, takes these; utasm cannot (the value
+# is needed when the line is read): an error, never a wrong value
+EXPR_REJECT = {
+    "times_count": "bits 32\ntimes (l2 - l1) / 4 db 0" + _T,
+    "resb_count": "bits 32\nsection .bss\nresb (l2 - l1) / 4\nsection .text" + _T,
+    "equ_before": "bits 32\nn equ (l2 - l1) / 4\ndd n" + _T,
+}
+# each with the label defined before and after it, as bin and elf64
+SCALAR_EXPRS = ["l1 * 2", "2 * l1", "-l1", "~l1", "!l1", "l1 | 1", "l1 ^ 1", "l1 & 0xff",
+                "l1 >> 1", "l1 << 2", "l1 / 2", "l1 %% 2", "l1 < 2", "l1 <=> 1", "l1 == l1",
+                "l1 && 1", "l1 || 0", "l1 + l1", "2 - l1", "+l1", "l1 - l1", "l1 ? 1 : 2",
+                "(l1 - $$) >> 1"]
+
+
+# ---------------------------------------------------------------------------
+# limits: inputs past utasm's old fixed limits (name -> source, files, format)
+# ---------------------------------------------------------------------------
+def limit_cases():
+    nl = lambda lines: "\n".join(lines) + "\n"
+    long = "x" * 700
+    c = {
+        "times_line_300_items": ("times 3 db " + ", ".join(str(i % 256) for i in range(300)) + "\n", {}, "bin"),
+        "times_db_string": ("times 1000 db 'ab'\n", {}, "bin"),
+        "ifidn_long": (nl(["%%ifidn %s, %s" % (long, long), "db 1", "%else", "db 2", "%endif"]), {}, "bin"),
+        "ifidn_long_differ": (nl(["%%ifidn %sA, %sB" % (long, long), "db 1", "%else", "db 2", "%endif"]), {}, "bin"),
+        "defstr_long": (nl(["%defstr S " + " ".join(["w"] * 1500), "db S"]), {}, "bin"),
+        "utf16_long": ("db __utf16__('" + "u" * 10000 + "')\n", {}, "bin"),
+        "macro_40_params": (nl(["%macro m 40", "db %1, %20, %40", "%endmacro",
+                                "m " + ", ".join(str(i) for i in range(1, 41))]), {}, "bin"),
+        "macro_100_params": (nl(["%macro m 100", "db %1, %50, %100, %0", "%endmacro",
+                                 "m " + ", ".join(str(i % 256) for i in range(1, 101))]), {}, "bin"),
+        "macro_varargs_200": (nl(["%macro m 1-*", "%rep %0", "db %1", "%rotate 1", "%endrep", "%endmacro",
+                                  "m " + ", ".join(str(i % 256) for i in range(200))]), {}, "bin"),
+        "macro_body_2000_tokens": (nl(["%macro m 0"] + ["db 1, 2, 3, 4, 5, 6, 7, 8, 9, 10"] * 100
+                                      + ["%endmacro", "m", "m"]), {}, "bin"),
+        "macro_arg_500_tokens": (nl(["%macro m 1", "db %1", "%endmacro", "m " + "+".join(["1"] * 250)]), {}, "bin"),
+        "macro_nest_100": (nl(["%%macro m%d 0\nm%d\n%%endmacro" % (i, i + 1) for i in range(100)]
+                              + ["%macro m100 0\ndb 7\n%endmacro", "m0"]), {}, "bin"),
+        "macro_recursion_200": (nl(["%assign n 0", "%rmacro r 0", "db n", "%assign n n+1", "%if n < 200", "r",
+                                    "%endif", "%endmacro", "r"]), {}, "bin"),
+        "rotate_100": (nl(["%macro m 1-*", "%rotate 60", "db %1", "%endmacro",
+                           "m " + ", ".join(str(i) for i in range(100))]), {}, "bin"),
+        "define_1000_tokens": (nl(["%define D " + " + ".join(["1"] * 500), "dd D"]), {}, "bin"),
+        "define_nest_200": (nl(["%define D0 1"] + ["%%define D%d (D%d + 1)" % (i, i - 1) for i in range(1, 200)]
+                               + ["dd D199"]), {}, "bin"),
+        "interp_long": (nl(["%%define %s1 5" % ("p" * 300), "%assign k 1", "db %s%%[k]" % ("p" * 300)]), {}, "bin"),
+        "rep_body_3000_tokens": (nl(["%rep 3"] + ["db 1, 2, 3, 4, 5, 6, 7, 8, 9, 10"] * 150 + ["%endrep"]), {}, "bin"),
+        "push_100": (nl(["%%push c%d" % i for i in range(100)] + ["%pop"] * 100 + ["db 1"]), {}, "bin"),
+        "if_nest_300": (nl(["%if 1"] * 300 + ["db 1"] + ["%endif"] * 300), {}, "bin"),
+        "parens_3000": ("dd " + "(" * 3000 + "1" + ")" * 3000 + "\n", {}, "bin"),
+        "line_10000_chars": ("db " + ", ".join(["1"] * 3400) + "\n", {}, "bin"),
+        "sections_300_elf64": (nl(["section s%d\ndb %d" % (i, i % 256) for i in range(300)]), {}, "elf64"),
+        "sections_300_elf32": (nl(["section s%d\ndb %d" % (i, i % 256) for i in range(300)]), {}, "elf32"),
+    }
+    inc = {"i%d.inc" % i: "db %d\n%%include \"i%d.inc\"\n" % (i % 256, i + 1) for i in range(300)}
+    inc["i300.inc"] = "db 0\n"
+    c["include_nest_300"] = ('%include "i0.inc"\n', inc, "bin")
+    return c
