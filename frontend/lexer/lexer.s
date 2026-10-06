@@ -59,6 +59,25 @@ extern symbol_find
 
 [SECTION .text]
 
+; ---- lexer_next_line ---------------------
+;
+; The next source line: the line number goes up by lexer_line_step (1, or
+; what "%line N+step" set). Preserves every register and the flags but CF.
+; Input    : rbx = LexerState
+;
+global lexer_line_step
+lexer_next_line:
+    push    rax
+    mov     eax, [rel lexer_line_step]
+    add     [rbx + LEXER_line], eax
+    pop     rax
+    ret
+
+[SECTION .data]
+lexer_line_step: dd 1
+
+[SECTION .text]
+
 ; ---- lexer_init -------------------------
 ;
 ; lexer_init
@@ -352,7 +371,7 @@ lexer_next:
     ; advance past LF
     inc     qword [rbx + LEXER_pos]
     ; increment line, reset col
-    inc     dword [rbx + LEXER_line]
+    call    lexer_next_line
     mov     word  [rbx + LEXER_col], 1
     xor     rax, rax
     mov     rdx, r12
@@ -415,6 +434,17 @@ lexer_next:
     jmp     .done
 
 .emit_single_question:
+    ; "?" followed by a name character starts an identifier (?x, __?x?__
+    ; are names); alone it is "db ?" or the conditional operator
+    mov     r10, [rbx + LEXER_pos]
+    lea     r11, [r10 + 1]
+    cmp     r11, [rbx + LEXER_end]
+    jge     .question_alone
+    movzx   edi, byte [r11]
+    call    str_is_ident_char
+    cmp     rax, TRUE
+    je      .lex_ident
+.question_alone:
     call    .token_begin
     mov     byte [r12 + TOKEN_kind], TOK_QUESTION
     jmp     .advance_single
@@ -525,7 +555,13 @@ lexer_next:
     lea     r11, [r10 + 1]
     cmp     r11, [rbx + LEXER_end]
     jge     .dollar_alone
+    ; "$name": a name even when it is a register or a keyword ($eax: is a
+    ; label); the symbol table drops the $ (middle/symtable)
     movzx   eax, byte [r11]
+    cmp     al, '?'
+    je      .lex_ident
+    test    byte [lexer_char_props + rax], CHAR_IS_IDENT_START
+    jnz     .lex_ident
     sub     eax, '0'
     cmp     eax, 9
     ja      .dollar_alone
@@ -747,16 +783,11 @@ lexer_next:
 
 .lex_ident_done:
     ; An identifier run that stops at "%[" continues through interpolation,
-    ; e.g. REG_ZMM%[i] is one identifier whose text depends on i.
+    ; e.g. REG_ZMM%[i] is one identifier whose text depends on i; so does
+    ; one glued to a macro parameter or local, isr_%1, x_%{2}, a%%b, which
+    ; NASM pastes into one name.
     mov     r10, [rbx + LEXER_pos]
-    cmp     r10, [rbx + LEXER_end]
-    jge     .lex_ident_plain
-    cmp     byte [r10], '%'
-    jne     .lex_ident_plain
-    lea     r11, [r10 + 1]
-    cmp     r11, [rbx + LEXER_end]
-    jge     .lex_ident_plain
-    cmp     byte [r11], '['
+    call    .glue_follows
     je      .lex_ident_interp
 
 .lex_ident_plain:
@@ -936,6 +967,17 @@ lexer_next:
     lea     r11, [r10 + 1]
     cmp     r11, [rbx + LEXER_end]
     jge     .interp_finish
+    ; %1 / %{1} / %%name / %$name: the preprocessor substitutes them
+    movzx   eax, byte [r11]
+    cmp     al, '{'
+    je      .interp_brace
+    cmp     al, '%'
+    je      .interp_two
+    cmp     al, '$'
+    je      .interp_two
+    sub     eax, '0'
+    cmp     eax, 9
+    jbe     .interp_digits
     cmp     byte [r11], '['
     jne     .interp_finish
 
@@ -956,6 +998,68 @@ lexer_next:
     inc     qword [rbx + LEXER_pos]
     inc     word  [rbx + LEXER_col]
     jmp     .interp_scan
+
+.interp_two:
+    ; "%%" / "%$": the name that follows is scanned on
+    add     qword [rbx + LEXER_pos], 2
+    add     word  [rbx + LEXER_col], 2
+    jmp     .interp_scan
+.interp_digits:
+    ; "%12": the parameter's digits (the scan takes them on anyway)
+    inc     qword [rbx + LEXER_pos]
+    inc     word  [rbx + LEXER_col]
+    jmp     .interp_scan
+.interp_brace:
+    ; "%{1}": up to the brace
+    add     qword [rbx + LEXER_pos], 2
+    add     word  [rbx + LEXER_col], 2
+.interp_brace_loop:
+    mov     r10, [rbx + LEXER_pos]
+    cmp     r10, [rbx + LEXER_end]
+    jge     .interp_finish
+    inc     qword [rbx + LEXER_pos]
+    inc     word  [rbx + LEXER_col]
+    cmp     byte [r10], '}'
+    jne     .interp_brace_loop
+    jmp     .interp_scan
+
+; .glue_follows: ZF set when the text at r10 continues a name by
+; interpolation: %[...], %N, %{...}, %%name. Clobbers rax, r11.
+.glue_follows:
+    cmp     r10, [rbx + LEXER_end]
+    jae     .glue_no
+    cmp     byte [r10], '%'
+    jne     .glue_no
+    lea     r11, [r10 + 1]
+    cmp     r11, [rbx + LEXER_end]
+    jae     .glue_no
+    movzx   eax, byte [r11]
+    cmp     al, '['
+    je      .glue_yes
+    cmp     al, '{'
+    je      .glue_yes
+    cmp     al, '%'
+    je      .glue_local
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .glue_no
+.glue_yes:
+    cmp     eax, eax
+    ret
+.glue_local:
+    ; "%%" then a name (not the "%%" modulo operator)
+    lea     r11, [r10 + 2]
+    cmp     r11, [rbx + LEXER_end]
+    jae     .glue_no
+    push    rdi
+    movzx   edi, byte [r11]
+    call    str_is_ident_char
+    pop     rdi
+    cmp     rax, TRUE
+    ret
+.glue_no:
+    test    rsp, rsp                       ; ZF clear
+    ret
 
 .interp_finish:
     mov     r10, [rbx + LEXER_pos]
@@ -1098,6 +1202,13 @@ lexer_next:
     jmp     .lex_number_loop
 
 .lex_number_done:
+    ; "0x%1": the parameter's digits are pasted on
+    test    r15, r15
+    jnz     .number_unglued
+    mov     r10, [rbx + LEXER_pos]
+    call    .glue_follows
+    je      .lex_ident_interp
+.number_unglued:
     mov     r10, [rbx + LEXER_pos]
     test    r15, r15
     jz      .lex_number_len
@@ -1270,7 +1381,7 @@ lexer_next:
     ; Check for line continuation (A66)
     IF rcx, e, 10
         inc     qword [rbx + LEXER_pos]
-        inc     dword [rbx + LEXER_line]
+        call    lexer_next_line
         mov     word  [rbx + LEXER_col], 1
         jmp     .lex_string_loop
     ELSEIF rcx, e, 13
@@ -1282,7 +1393,7 @@ lexer_next:
         
         IF byte [rax], e, 10
             add     qword [rbx + LEXER_pos], 2
-            inc     dword [rbx + LEXER_line]
+            call    lexer_next_line
             mov     word  [rbx + LEXER_col], 1
             jmp     .lex_string_loop
             ENDIF
@@ -1737,6 +1848,13 @@ lexer_next:
     jmp     .lex_macro_local_loop
 
 .lex_macro_local_done:
+    ; "%%x_%1": the parameter is pasted on (the preprocessor resolves both)
+    mov     r10, [rbx + LEXER_pos]
+    call    .glue_follows
+    jne     .lex_macro_local_plain
+    sub     r13, 2                         ; the text starts at the %%
+    jmp     .lex_ident_interp
+.lex_macro_local_plain:
     mov     r10, [rbx + LEXER_pos]
     sub     r10, r13               ; length
     mov     rdi, [rbx + LEXER_arena]
@@ -1817,7 +1935,7 @@ lexer_next:
     sub     r10, r13               ; length
     inc     qword [rbx + LEXER_pos] ; skip }
     inc     word  [rbx + LEXER_col]
-    jmp     .lex_directive_done
+    jmp     .dir_name               ; (not a parameter with a name glued on)
 
 .lex_braced_unterminated:
     mov     rdi, [rbx + LEXER_ctx]
@@ -1830,6 +1948,30 @@ lexer_next:
     jmp     .fail
 
 .lex_directive_done:
+    ; a parameter with a name or another reference glued on (%1_end, %1h,
+    ; %1%2): one interpolated name, from the %
+    movzx   eax, byte [r13]
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .dir_name                      ; a directive, not a parameter
+    mov     r10, r13
+.dir_digit:
+    cmp     r10, [rbx + LEXER_pos]
+    jae     .dir_digits_only
+    movzx   eax, byte [r10]
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .dir_glued                     ; name characters after the digits
+    inc     r10
+    jmp     .dir_digit
+.dir_digits_only:
+    mov     r10, [rbx + LEXER_pos]
+    call    .glue_follows
+    jne     .dir_name
+.dir_glued:
+    dec     r13                            ; the text starts at the %
+    jmp     .lex_ident_interp
+.dir_name:
     mov     r10, [rbx + LEXER_pos]
     sub     r10, r13               ; length
 
@@ -1840,6 +1982,21 @@ lexer_next:
     test    rax, rax
     jnz     .fail
 
+    ; directive names in any letter case: %DEFINE is %define
+    xor     ecx, ecx
+.directive_lc:
+    cmp     rcx, r10
+    jae     .directive_lc_done
+    mov     al, [rdx + rcx]
+    cmp     al, 'A'
+    jb      .directive_lc_next
+    cmp     al, 'Z'
+    ja      .directive_lc_next
+    or      byte [rdx + rcx], 0x20
+.directive_lc_next:
+    inc     rcx
+    jmp     .directive_lc
+.directive_lc_done:
     mov     byte [r12 + TOKEN_kind], TOK_DIRECTIVE
     mov     [r12 + TOKEN_value], rdx
     mov     word [r12 + TOKEN_len], r10w
@@ -1933,7 +2090,7 @@ lexer_next:
 .cont_join:
     lea     rax, [r11 + 1]
     mov     [rbx + LEXER_pos], rax
-    inc     dword [rbx + LEXER_line]
+    call    lexer_next_line
     mov     word [rbx + LEXER_col], 1
     jmp     .skip_loop
 .not_continuation:
