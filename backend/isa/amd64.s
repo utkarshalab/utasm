@@ -1291,6 +1291,7 @@ mnc_tb_x64:
     mnc_ent "vmwrite", 0, 5009
     mnc_ent "invept", 0, 5010
     mnc_ent "invvpid", 0, 5011
+    mnc_ent "vmfunc", 0, 6535
     
     ; AMD-V (SVM) Suite
     mnc_ent "vmrun", 0, 5012
