@@ -18,8 +18,9 @@
 %include "include/constant.inc"
 %include "include/type.inc"
 
-%define MAX_INCPATHS    32
-%define MAX_DEPS        512
+; bss: only the pages used are committed
+%define MAX_INCPATHS    (1 << 16)       ; -I directories (argv strings)
+%define MAX_DEPS        (1 << 18)       ; files read (%include, incbin)
 
 extern  io_open
 extern  io_write
