@@ -250,9 +250,19 @@ FIXED = [   # name, prefix, map, opcode, fixed ModRM (or M_NONE), flags
     ("xgetbv", "", "0f", 0x01, 0xD0, 0), ("xsetbv", "", "0f", 0x01, 0xD1, 0), ("xend", "", "0f", 0x01, 0xD5, 0),
     ("xtest", "", "0f", 0x01, 0xD6, 0), ("serialize", "", "0f", 0x01, 0xE8, 0), ("rdpkru", "", "0f", 0x01, 0xEE, 0),
     ("wrpkru", "", "0f", 0x01, 0xEF, 0), ("swapgs", "", "0f", 0x01, 0xF8, 0), ("rdtscp", "", "0f", 0x01, 0xF9, 0),
+    ("vmfunc", "", "0f", 0x01, 0xD4, 0),
 ]
 for n, p, mp, op, m, fl in FIXED:
     form(n, [], p, mp, op, m, [], fl)
+
+# VMX: vmread r/m, r and vmwrite r, r/m take the mode's width (r64 in
+# 64-bit mode, no REX.W); the VMCS pointer instructions a memory operand
+form("vmread", "RM64 R64", "", "0f", 0x78, M_R, "rm reg")
+form("vmread", "RM32 R32", "", "0f", 0x78, M_R, "rm reg")
+form("vmwrite", "R64 RM64", "", "0f", 0x79, M_R, "reg rm")
+form("vmwrite", "R32 RM32", "", "0f", 0x79, M_R, "reg rm")
+for n, p, r in (("vmptrld", "", 6), ("vmptrst", "", 7), ("vmclear", "66", 6), ("vmxon", "F3", 6)):
+    form(n, "M", p, "0f", 0xC7, r, "rm")
 
 for n, code in (("bsf", 0xBC), ("bsr", 0xBD)):
     form(n, "RV RMV", "", "0f", code, M_R, "reg rm", F_OSZ)
@@ -282,6 +292,13 @@ form("smsw", "RV", "", "0f", 0x01, 4, "rm", F_OSZ)
 form("smsw", "M16", "", "0f", 0x01, 4, "rm")
 form("lmsw", "RM16", "", "0f", 0x01, 6, "rm")
 form("invlpg", "M", "", "0f", 0x01, 7, "rm")
+# VMX / PCID TLB invalidation: a register (r64 in 64-bit mode) and a
+# 128-bit descriptor in memory; NASM writes invpcid r64 with REX.W
+for n, op in (("invept", 0x80), ("invvpid", 0x81)):
+    form(n, "R64 M", "66", "38", op, M_R, "reg rm")
+    form(n, "R32 M", "66", "38", op, M_R, "reg rm")
+form("invpcid", "R64 M", "66", "38", 0x82, M_R, "reg rm", F_W)
+form("invpcid", "R32 M", "66", "38", 0x82, M_R, "reg rm")
 # NASM writes str r64 with REX.W but sldt r64 without it
 form("sldt", "RV", "", "0f", 0x00, 0, "rm", F_OSZ | F_D64)
 form("str", "RV", "", "0f", 0x00, 1, "rm", F_OSZ)
@@ -660,6 +677,17 @@ for n, code, w, ev in SCATTERS:
     wf = F_W if w else 0
     for L, (d, a) in enumerate(ev):
         eform(n, [a, d], "66", "38", code, M_R, "rm reg", wf, L=L, n8=8 if w else 4)
+
+# ---- AVX-512 broadcasts from a general register (vpbroadcastb zmm1, al):
+# EVEX 7A / 7B / 7C, the register in r/m; NASM takes the byte and word
+# ones from a register of that size or wider ----
+for n, code, w, srcs in (("vpbroadcastb", 0x7A, 0, ("R8", "R16", "R32")),
+                         ("vpbroadcastw", 0x7B, 0, ("R16", "R32")),
+                         ("vpbroadcastd", 0x7C, 0, ("R32",)),
+                         ("vpbroadcastq", 0x7C, 1, ("R64",))):
+    for L, d in enumerate(("X", "Y", "Z")):
+        for s in srcs:
+            eform(n, [d, s], "66", "38", code, M_R, "reg rm", F_W if w else 0, L=L)
 
 # ---- the VEX mask-register instructions (kmov, kand, kortest, ...) ----
 def kop_forms():
