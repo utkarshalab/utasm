@@ -494,6 +494,9 @@ code_table:
     code_msg EXIT_ALIGN_ERROR,       m_align
     code_msg EXIT_STRUCT_BOUNDS,     m_struct
     code_msg EXIT_BITS_MODE,         m_bits_mode
+    code_msg EXIT_USE_PACKAGE,       m_use, t_use
+    code_msg EXIT_ALIGN_MODE,        m_align_mode, t_align_mode
+    code_msg EXIT_REG_SIZE,          m_reg_size
     code_msg EXIT_UNDEF_SYMBOL,      m_undef, t_undef
     code_msg EXIT_DUP_SYMBOL,        m_dup, t_dup
     code_msg EXIT_SYMBOL_RANGE,      m_sym_range
@@ -555,6 +558,9 @@ m_unsupported:  db "instruction not supported for this target", 0
 m_align:        db "invalid alignment (not a power of two?)", 0
 m_struct:       db "operand larger than the structure field", 0
 m_bits_mode:    db "instruction not supported in this bits mode (16/32/64)", 0
+m_use:          db "unknown `%use' package", 0
+m_align_mode:   db "unknown alignment mode", 0
+m_reg_size:     db "invalid register size specification", 0
 m_undef:        db "undefined symbol", 0
 m_dup:          db "label inconsistently redefined", 0
 m_sym_range:    db "symbol value out of range", 0
@@ -582,6 +588,8 @@ t_undef:        db "symbol `^' not defined", 0
 t_dup:          db "label `^' inconsistently redefined", 0
 t_multi:        db "symbol `^' defined more than once", 0
 t_instr:        db "parser: instruction expected, found `^'", 0
+t_use:          db "unknown `%use' package `^'", 0
+t_align_mode:   db "unknown alignment mode: ^", 0
 
 sev_warning:    db "warning: ", 0
 sev_error:      db "error: ", 0
