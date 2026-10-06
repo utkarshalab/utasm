@@ -24,6 +24,10 @@
 ;     bound/arpl/les/lds, cbw/cwde/cwd/cdq and the string instructions,
 ;     mov between the accumulator and an absolute address (A0-A3), and
 ;     xchg eax, eax (90)
+;
+;   In every mode: mov to and from a segment register (8E / 8C), and
+;   segment registers anywhere else rejected (amd64_mode_check) - the
+;   encoders know registers 0-15 only, and took ds for r9.
 ; ============================================================================
 ;
 
@@ -147,6 +151,8 @@ sized_ops:
 ; fs/gs: 0, encoded as in 64-bit mode; pop cs does not exist)
 seg_push_by_id: db 0x0E, 0x1E, 0x06, 0, 0, 0x16
 seg_pop_by_id:  db 0x00, 0x1F, 0x07, 0, 0, 0x17
+; the ModRM reg field of each (es 0, cs 1, ss 2, ds 3, fs 4, gs 5)
+seg_modrm_by_id: db 1, 3, 0, 4, 5, 2
 
 [SECTION .data]
 amd64_a67_at:   dq -1                   ; where this instruction's 67 is
@@ -232,6 +238,42 @@ amd64_emit_osz_prefix:
 ; ;
 global amd64_mode_check
 amd64_mode_check:
+    ; segment registers: operands of mov, push and pop only
+    xor     ecx, ecx
+.seg_op:
+    movzx   eax, byte [r12 + INST_nops]
+    cmp     ecx, eax
+    jae     .seg_done
+    imul    rdi, rcx, OPERAND_SIZE
+    lea     rdi, [r12 + INST_op0 + rdi]
+    inc     ecx
+    cmp     byte [rdi + OPERAND_kind], OP_REG
+    jne     .seg_op
+    movzx   eax, byte [rdi + OPERAND_reg]
+    sub     eax, 24
+    cmp     eax, 5
+    ja      .seg_op
+    movzx   edx, word [r12 + INST_op_id]
+    cmp     edx, ID_MOV
+    je      .seg_op
+    cmp     edx, ID_PUSH
+    je      .seg_stack
+    cmp     edx, ID_POP
+    jne     .combination
+    cmp     eax, 0
+    je      .fail                          ; pop cs
+.seg_stack:
+    cmp     byte [rel asm_bits], 64
+    jne     .seg_op
+    cmp     eax, 3
+    jb      .fail                          ; cs ds es: not in 64-bit mode
+    cmp     eax, 5
+    je      .fail                          ; ss
+    jmp     .seg_op
+.combination:
+    mov     eax, EXIT_ENCODE_FAIL
+    ret
+.seg_done:
     movzx   eax, word [r12 + INST_op_id]
     cmp     byte [rel asm_bits], 64
     je      .mode64
@@ -350,6 +392,77 @@ amd64_mode_check:
     ret
 
 ;*
+; * [amd64_imm_canon]
+; * Purpose: An immediate of a 16- or 32-bit operation written as the
+; *   unsigned value of its bits (0xFFFF, 0xFFFFFF80) is that negative
+; *   number to the operation (-1, -128): stored so, the encoders choose
+; *   the sign-extended imm8 forms (83 /n ib, 6B, 6A) as NASM does. The
+; *   width is the first general register's or memory operand's, else the
+; *   immediate's own (push word 0xFFFF).
+; * Input  : R12 = INST
+; ;
+global amd64_imm_canon
+amd64_imm_canon:
+    push    rbx
+    xor     ebx, ebx                       ; the operation's width
+    xor     ecx, ecx
+.width:
+    movzx   eax, byte [r12 + INST_nops]
+    cmp     ecx, eax
+    jae     .imms
+    imul    rdi, rcx, OPERAND_SIZE
+    lea     rdi, [r12 + INST_op0 + rdi]
+    inc     ecx
+    movzx   eax, byte [rdi + OPERAND_kind]
+    cmp     eax, OP_MEM
+    je      .found
+    cmp     eax, OP_REG
+    jne     .width
+    cmp     byte [rdi + OPERAND_reg], 16
+    jae     .imms                          ; xmm, segment ...: leave it
+.found:
+    movzx   ebx, byte [rdi + OPERAND_size]
+.imms:
+    xor     ecx, ecx
+.imm:
+    movzx   eax, byte [r12 + INST_nops]
+    cmp     ecx, eax
+    jae     .done
+    imul    rdi, rcx, OPERAND_SIZE
+    lea     rdi, [r12 + INST_op0 + rdi]
+    inc     ecx
+    cmp     byte [rdi + OPERAND_kind], OP_IMM
+    jne     .imm
+    mov     edx, ebx
+    test    edx, edx
+    jnz     .sized
+    movzx   edx, byte [rdi + OPERAND_size]
+.sized:
+    mov     rax, [rdi + OPERAND_imm]
+    cmp     edx, 16
+    je      .w16
+    cmp     edx, 32
+    jne     .imm
+    mov     rsi, rax
+    shr     rsi, 31
+    cmp     rsi, 1                         ; 0x80000000 - 0xFFFFFFFF
+    jne     .imm
+    movsxd  rax, eax
+    mov     [rdi + OPERAND_imm], rax
+    jmp     .imm
+.w16:
+    mov     rsi, rax
+    shr     rsi, 15
+    cmp     rsi, 1                         ; 0x8000 - 0xFFFF
+    jne     .imm
+    movsx   rax, ax
+    mov     [rdi + OPERAND_imm], rax
+    jmp     .imm
+.done:
+    pop     rbx
+    ret
+
+;*
 ; * [amd64_rex_scan]
 ; * Purpose: Outside 64-bit mode, the instruction just encoded must not
 ; *          carry a REX prefix (it would be inc/dec there).
@@ -419,6 +532,37 @@ amd64_mode_special:
     push    r14
     push    r15
     movzx   r13d, word [r12 + INST_op_id]
+    cmp     r13d, ID_MOV
+    jne     .not_mov_sreg
+    cmp     byte [r12 + INST_nops], 2
+    jne     .not_mov_sreg
+    lea     r14, [r12 + INST_op0]
+    lea     r15, [r12 + INST_op1]
+    mov     rdi, r14
+    call    .is_sreg
+    je      .mov_sreg
+    mov     rdi, r15
+    call    .is_sreg
+    je      .mov_sreg
+.not_mov_sreg:
+    ; jmp / call SEG:OFFSET (two operands, the segment marked OP_FLAG_FAR)
+    cmp     r13d, ID_JMP
+    je      .far_check
+    cmp     r13d, ID_CALL
+    jne     .not_far
+.far_check:
+    cmp     byte [r12 + INST_nops], 2
+    jne     .not_far
+    lea     r14, [r12 + INST_op0]
+    lea     r15, [r12 + INST_op1]
+    test    byte [r14 + OPERAND_flags], OP_FLAG_FAR
+    jz      .not_far
+    movzx   eax, byte [r14 + OPERAND_kind]
+    cmp     eax, OP_IMM
+    je      .far_direct
+    cmp     eax, OP_SYMBOL
+    je      .far_direct
+.not_far:
     cmp     byte [rel asm_bits], 64
     jne     .any_mode
     ; 64-bit mode: only ins / outs, which the encoders do not have
@@ -810,8 +954,6 @@ amd64_mode_special:
     jne     .none
     cmp     byte [rdi + OPERAND_index], 0xFF
     jne     .none
-    test    byte [rdi + OPERAND_flags], OP_FLAG_ADDR32 | OP_FLAG_ADDR16
-    jnz     .none
     mov     al, [rsi + OPERAND_size]
     cmp     al, 8
     je      .mov_acc8
@@ -829,8 +971,16 @@ amd64_mode_special:
     mov     eax, r13d
     call    amd64_emit_byte
     pop     rdi
-    ; the address: the mode's width
+    ; the address: the mode's width, or the one written ([dword x])
     call    amd64_mode_default
+    test    byte [rdi + OPERAND_flags], OP_FLAG_ADDR32
+    jz      .mov_addr16
+    mov     eax, 32
+.mov_addr16:
+    test    byte [rdi + OPERAND_flags], OP_FLAG_ADDR16
+    jz      .mov_addr_width
+    mov     eax, 16
+.mov_addr_width:
     mov     r15d, eax
     mov     rsi, [rdi + OPERAND_sym]
     test    rsi, rsi
@@ -940,6 +1090,218 @@ amd64_mode_special:
     mov     rdi, r14
     call    amd64_emit_modrm_sib
     jmp     .done
+
+; ---- mov sreg, r/m: 8E /r; mov r/m, sreg: 8C /r (every mode) ----
+; A register: 16, 32 or 64 bits, the prefix 66 only for the 16/32-bit
+; size stored to a register that is not the mode's; memory: a word, or a
+; qword with REX.W.
+.mov_sreg:
+    mov     r13d, 0x8E                     ; load: mov sreg, r/m
+    mov     rdi, r14
+    call    .is_sreg
+    je      .mov_sreg_dir
+    mov     r13d, 0x8C                     ; store: mov r/m, sreg
+    xchg    r14, r15
+.mov_sreg_dir:
+    ; r14 = the segment register, r15 = the r/m operand
+    mov     rdi, r15
+    call    .is_sreg
+    je      .mov_sreg_bad                  ; mov ds, es
+    xor     r8d, r8d                       ; r8 = REX bits
+    movzx   eax, byte [r15 + OPERAND_kind]
+    cmp     eax, OP_REG
+    je      .mov_sreg_reg
+    cmp     eax, OP_MEM
+    jne     .mov_sreg_bad
+    mov     al, [r15 + OPERAND_size]
+    test    al, al
+    jz      .mov_sreg_mem
+    cmp     al, 16
+    je      .mov_sreg_mem
+    cmp     al, 64
+    jne     .mov_sreg_bad
+    cmp     byte [rel asm_bits], 64
+    jne     .mov_sreg_bad
+    or      r8d, 8                         ; qword: REX.W
+.mov_sreg_mem:
+    movzx   eax, byte [r15 + OPERAND_base]
+    cmp     eax, 16
+    jae     .mov_sreg_index
+    cmp     eax, 8
+    jb      .mov_sreg_index
+    or      r8d, 1                         ; REX.B
+.mov_sreg_index:
+    movzx   eax, byte [r15 + OPERAND_index]
+    cmp     eax, 16
+    jae     .mov_sreg_rex
+    cmp     eax, 8
+    jb      .mov_sreg_rex
+    or      r8d, 2                         ; REX.X
+    jmp     .mov_sreg_rex
+.mov_sreg_reg:
+    movzx   eax, byte [r15 + OPERAND_reg]
+    cmp     eax, 16
+    jae     .mov_sreg_bad                  ; not a general register
+    cmp     eax, 8
+    jb      .mov_sreg_size
+    or      r8d, 1                         ; r8 - r15: REX.B
+.mov_sreg_size:
+    mov     al, [r15 + OPERAND_size]
+    cmp     al, 64
+    je      .mov_sreg_rex
+    cmp     al, 16
+    je      .mov_sreg_osz
+    cmp     al, 32
+    jne     .mov_sreg_bad
+.mov_sreg_osz:
+    cmp     r13d, 0x8C
+    jne     .mov_sreg_rex                  ; loading takes any width as is
+    push    r8
+    call    .osz
+    pop     r8
+.mov_sreg_rex:
+    test    r8d, r8d
+    jz      .mov_sreg_op
+    lea     eax, [r8 + 0x40]
+    call    amd64_emit_byte
+.mov_sreg_op:
+    mov     eax, r13d
+    call    amd64_emit_byte
+    movzx   eax, byte [r14 + OPERAND_reg]
+    lea     rsi, [rel seg_modrm_by_id]
+    movzx   eax, byte [rsi + rax - 24]
+    mov     rdi, r15
+    call    amd64_emit_modrm_sib
+    jmp     .done
+.mov_sreg_bad:
+    mov     eax, EXIT_ENCODE_FAIL
+    jmp     .ret
+
+; ---- jmp / call SEG:OFFSET: EA / 9A, the offset then the segment ----
+; The offset is the mode's width, or the size written ("jmp dword 8:x" in
+; bits 16, with 66). Not in 64-bit mode.
+.far_direct:
+    cmp     byte [rel asm_bits], 64
+    je      .fail
+    movzx   eax, byte [r15 + OPERAND_kind]
+    cmp     eax, OP_IMM
+    je      .far_offset
+    cmp     eax, OP_SYMBOL
+    jne     .mov_sreg_bad
+.far_offset:
+    mov     al, [r14 + OPERAND_size]
+    test    al, al
+    jnz     .far_sized
+    mov     al, [r15 + OPERAND_size]
+    test    al, al
+    jnz     .far_sized
+    call    amd64_mode_default
+.far_sized:
+    cmp     al, 16
+    je      .far_width
+    cmp     al, 32
+    jne     .mov_sreg_bad
+.far_width:
+    movzx   eax, al
+    push    rax
+    call    .osz
+    mov     al, 0xEA
+    cmp     r13d, ID_JMP
+    je      .far_op
+    mov     al, 0x9A
+.far_op:
+    call    amd64_emit_byte
+    pop     rax
+    mov     rdi, r15
+    call    .far_value                     ; the offset
+    mov     eax, 16
+    mov     rdi, r14
+    call    .far_value                     ; the segment
+    jmp     .done
+
+; .far_value: operand rdi as an eax-bit (16 or 32) field: its number, or
+; a label's address (relocated)
+.far_value:
+    push    r15
+    push    r13
+    mov     r15d, eax
+    mov     r13, rdi
+    mov     rsi, [r13 + OPERAND_sym]
+    test    rsi, rsi
+    jz      .far_plain
+    cmp     byte [r13 + OPERAND_kind], OP_SYMBOL
+    je      .far_symbol
+    ; a label defined earlier comes as its value (jmp / call keep labels
+    ; as they are for distances): an address all the same, relocated
+    cmp     byte [r13 + OPERAND_kind], OP_IMM
+    jne     .far_plain
+    cmp     byte [rsi], TAG_SYMBOL
+    jne     .far_plain
+    cmp     word [rsi + SYMBOL_section], SHN_ABS
+    je      .far_plain                     ; "SEL equ 8": a number
+    movzx   eax, byte [rsi + SYMBOL_kind]
+    cmp     eax, SYM_LABEL
+    je      .far_symbol
+    cmp     eax, SYM_DATA
+    je      .far_symbol
+    cmp     eax, SYM_EXTERN
+    je      .far_symbol
+    cmp     eax, SYM_COMMON
+    jne     .far_plain
+.far_symbol:
+    cmp     byte [rsi], TAG_SYMBOL
+    jne     .far_name
+    mov     rsi, [rsi + SYMBOL_name]
+.far_name:
+    xor     edx, edx
+    mov     al, R_X86_64_32
+    cmp     r15d, 16
+    jne     .far_rel
+    mov     al, 12                         ; R_X86_64_16
+.far_rel:
+    call    amd64_emit_reloc
+    mov     ecx, [rbx + ASMCTX_nrelocs]
+    dec     ecx
+    imul    rcx, rcx, RELOC_SIZE
+    add     rcx, [rbx + ASMCTX_relocs]
+    mov     rax, [r13 + OPERAND_imm]
+    mov     rsi, [r13 + OPERAND_sym]
+    cmp     byte [rsi], TAG_SYMBOL
+    jne     .far_addend
+    sub     rax, [rsi + SYMBOL_value]
+.far_addend:
+    mov     [rcx + RELOC_addend], rax
+    xor     edi, edi
+    jmp     .far_emit
+.far_plain:
+    mov     rdi, [r13 + OPERAND_imm]
+.far_emit:
+    cmp     r15d, 16
+    jne     .far_dword
+    call    amd64_emit_word
+    jmp     .far_out
+.far_dword:
+    call    amd64_emit_dword
+.far_out:
+    pop     r13
+    pop     r15
+    ret
+
+; .is_sreg: ZF set when operand rdi is a segment register
+.is_sreg:
+    cmp     byte [rdi + OPERAND_kind], OP_REG
+    jne     .is_sreg_ret
+    movzx   eax, byte [rdi + OPERAND_reg]
+    cmp     eax, 24
+    jb      .is_sreg_no
+    cmp     eax, 29
+    ja      .is_sreg_no
+    cmp     eax, eax                       ; ZF set
+    ret
+.is_sreg_no:
+    test    rdi, rdi                       ; ZF clear (rdi is not 0)
+.is_sreg_ret:
+    ret
 
 ; .osz: the operand-size prefix for an operation of size al, if it needs one
 .osz:
