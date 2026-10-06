@@ -35,8 +35,9 @@ extern  lst_base
 extern  lst_count
 extern  elf32_enabled
 
-%define DW_MAX_FILES    256
-%define DW_MAX_CODE     32
+; bss: only the pages used are committed
+%define DW_MAX_FILES    (1 << 16)
+%define DW_MAX_CODE     (1 << 16)
 
 [SECTION .bss]
 alignb 8
@@ -44,6 +45,8 @@ global dbg_enabled
 dw_ctx:         resq 1
 dw_files:       resq DW_MAX_FILES   ; file names, index + 1 = DWARF file
 dw_nfiles:      resq 1
+dw_last_name:   resq 1              ; dw_file_index's last lookup: the name
+dw_last_index:  resq 1              ; ... and its number
 dw_code:        resq DW_MAX_CODE    ; the code sections
 dw_ncode:       resq 1
 dw_line_sec:    resq 1
@@ -184,6 +187,7 @@ dw_collect_files:
     push    rbx
     push    r12
     mov     qword [rel dw_nfiles], 0
+    mov     qword [rel dw_last_name], 0
     ; the source itself first
     mov     rax, [rel dw_ctx]
     mov     rdi, [rax + ASMCTX_input]
@@ -210,8 +214,14 @@ dw_collect_files:
     ret
 
 ; dw_file_index: rax = the DWARF file number (1-based) of name rdi, added
-; when new; 0 when the table is full
+; when new; 0 when the table is full. Entries in a row come from one file
+; mostly, so the last lookup is kept.
 dw_file_index:
+    cmp     rdi, [rel dw_last_name]
+    jne     .search
+    mov     rax, [rel dw_last_index]
+    ret
+.search:
     xor     ecx, ecx
     lea     rdx, [rel dw_files]
 .find:
@@ -228,6 +238,8 @@ dw_file_index:
     inc     qword [rel dw_nfiles]
 .hit:
     lea     rax, [rcx + 1]
+    mov     [rel dw_last_name], rdi
+    mov     [rel dw_last_index], rax
     ret
 .full:
     xor     eax, eax
