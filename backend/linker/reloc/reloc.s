@@ -211,6 +211,16 @@ reloc_resolve_all:
     mov     rsi, [r13 + RELOC_sym]
     test    rsi, rsi
     jz      .check_next
+    cmp     byte [rsi], RELOC_EXPR_MARK
+    jne     .not_expr
+    ; an expression kept until every label is placed
+    mov     rdi, rbx
+    mov     rsi, r13
+    call    reloc_expr_write
+    test    rax, rax
+    jnz     .ret
+    jmp     .local_done
+.not_expr:
     cmp     byte [rsi], RELOC_OFFSET_MARK
     jne     .check_symbol
     ; "later - $$": an offset in the section, written here
@@ -415,6 +425,16 @@ reloc_resolve_all:
     mov     rsi, [r13 + RELOC_sym]
     test    rsi, rsi
     jz      .resolve
+    cmp     byte [rsi], RELOC_EXPR_MARK
+    jne     .not_expr2
+    ; an expression kept until every label is placed
+    mov     rdi, rbx
+    mov     rsi, r13
+    call    reloc_expr_write
+    test    rax, rax
+    jnz     .ret
+    jmp     .next
+.not_expr2:
     cmp     byte [rsi], RELOC_OFFSET_MARK
     jne     .resolve
     mov     rdi, rbx
@@ -528,6 +548,80 @@ reloc_resolve_all:
     pop     r12
     pop     rbx
     epilogue
+
+;*
+; * [reloc_expr_write]
+; * Purpose: Writes in place the value of an expression kept until every
+; *   label is placed (RELOC_EXPR_MARK: "dd (end - start) / 4"), plus the
+; *   addend, in the relocation's width. A label left in the value is an
+; *   address, which an object file cannot hold this way.
+; * Input  : RDI = AsmCtx, RSI = RELOC
+; * Output : RAX = OK or an error
+; ;
+reloc_expr_write:
+    extern  error_set_location
+    push    rbx
+    push    r12
+    push    r13
+    mov     rbx, rdi
+    mov     r13, rsi
+    mov     rdi, [r13 + RELOC_file]
+    mov     esi, [r13 + RELOC_line]
+    call    error_set_location
+    mov     rdi, [r13 + RELOC_sym]
+    extern  parser_deferred_value
+    call    parser_deferred_value
+    test    rax, rax
+    jnz     .ret
+    test    r11, r11
+    jz      .number
+    cmp     word [r11 + SYMBOL_section], 0xFFF1     ; SHN_ABS: a number
+    je      .number
+    cmp     byte [rbx + ASMCTX_fmt], FMT_BIN
+    je      .number                        ; addresses are numbers there
+    cmp     byte [rbx + ASMCTX_standalone], 0
+    jne     .number
+    jmp     .bad
+.number:
+    add     rdx, [r13 + RELOC_addend]
+    mov     r8, [r13 + RELOC_section]
+    test    r8, r8
+    jz      .bad
+    mov     r9, [r8 + SECTION_data]
+    test    r9, r9
+    jz      .ok                            ; nobits: nothing to write
+    add     r9, [r13 + RELOC_offset]
+    mov     ecx, [r13 + RELOC_type]
+    cmp     ecx, R_X86_64_64
+    je      .q
+    cmp     ecx, R_X86_64_32
+    je      .d
+    cmp     ecx, R_X86_64_32S
+    je      .d
+    cmp     ecx, 12                        ; R_X86_64_16
+    je      .w
+    cmp     ecx, 14                        ; R_X86_64_8
+    jne     .bad                           ; (relative to the place: not here)
+    mov     [r9], dl
+    jmp     .ok
+.w:
+    mov     [r9], dx
+    jmp     .ok
+.d:
+    mov     [r9], edx
+    jmp     .ok
+.q:
+    mov     [r9], rdx
+.ok:
+    xor     eax, eax
+    jmp     .ret
+.bad:
+    mov     eax, EXIT_INVALID_EXPR
+.ret:
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
 
 ;*
 ; * [reloc_offset_write]
