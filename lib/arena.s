@@ -11,6 +11,9 @@
 %include "include/type.inc"
 %include "include/macro.inc"
 
+%define AMD64_SYS_MADVISE      28
+%define MADV_DONTDUMP          16          ; madvise: leave out of a core dump
+
 DEFAULT REL
 
 ; ============================================================================
@@ -86,6 +89,17 @@ arena_init:
     cmp     rax, -4095
     jae     .mmap_failed
 
+    ; left out of a core dump: the reservation is gigabytes of pages never
+    ; touched, which a crash handler may write out in full (WSL's did:
+    ; several GB per crash)
+    push    rax
+    mov     rdi, rax
+    mov     rsi, r12
+    mov     edx, MADV_DONTDUMP
+    mov     eax, AMD64_SYS_MADVISE
+    syscall
+    pop     rax
+
     ; write TAG_ARENA at offset 0
     mov     byte [rbx + ARENA_tag], TAG_ARENA
 
@@ -137,12 +151,20 @@ mem_reserve:
     xor     r9d, r9d
     mov     eax, AMD64_SYS_MMAP
     syscall
-    pop     rdi
     cmp     rax, -4095
-    jae     .fail
-    mov     rdx, rax
+    jae     .fail_pop
+    ; not in a core dump either (arena_init)
+    push    rax
+    mov     rdi, rax                       ; (rsi: the size, kept by syscall)
+    mov     edx, MADV_DONTDUMP
+    mov     eax, AMD64_SYS_MADVISE
+    syscall
+    pop     rdx
+    pop     rdi
     xor     eax, eax
     ret
+.fail_pop:
+    pop     rdi
 .fail:
     mov     eax, EXIT_OOM
     xor     edx, edx
