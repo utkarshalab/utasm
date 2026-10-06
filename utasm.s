@@ -85,9 +85,12 @@ _start:
     mov     [rbx + ASMCTX_arena], rax
     mov     byte [rbx + ASMCTX_tag], TAG_ASM_CTX
     
-    ; Allocate sections array (64 * 8 = 512 bytes)
+    ; Allocate sections array: MAX_SECTIONS pointers, as many as
+    ; asm_ctx_create_section allows (it was 64, and the 65th section wrote
+    ; past it into what the arena handed out next). The arena commits the
+    ; pages as they are used.
     mov     rdi, rax               ; rdi = &global_arena
-    mov     rsi, 512
+    mov     rsi, MAX_SECTIONS * 8
     call    arena_alloc
     test    rax, rax
     jnz     .exit_oom
