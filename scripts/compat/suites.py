@@ -653,3 +653,104 @@ def elf32(utasm, verbose=False):
             else:
                 s.skip()
     return s
+
+
+# ---------------------------------------------------------------------------
+# expressions: labels defined later in arithmetic, and NASM's scalar rule
+# ---------------------------------------------------------------------------
+def _error_text(r):
+    for line in re.sub(r"\x1b\[[0-9;]*m", "", (r.stdout or "") + (r.stderr or "")).splitlines():
+        m = re.search(r"error: (.*)", line)
+        if m:
+            return m.group(1).strip()
+    return ""
+
+
+def _crashed(r):
+    return r.returncode < 0 or r.returncode >= 128 and r.returncode != 124
+
+
+def _object_view(path):
+    out = run(["objdump", "-s", "-r", path]).stdout
+    return [l for l in out.splitlines()[2:] if l.strip()]
+
+
+def _compare_one(utasm, name, fmt, src, files=None):
+    """NASM and utasm on one source: (name, nasm result, utasm result, nasm
+    output view, utasm output view); the views are None unless both
+    assembled it."""
+    with tempdir() as d:
+        for fn, text in (files or {}).items():
+            open(os.path.join(d, fn), "w").write(text)
+        open(os.path.join(d, "p.s"), "w").write(src)
+        rn = run(["nasm", "-f", fmt, "p.s", "-o", "n.out"], cwd=d)
+        ru = run([utasm, "-f", fmt, "p.s", "-o", "u.out"], cwd=d)
+        if rn.returncode or ru.returncode:
+            return name, rn, ru, None, None
+        if fmt == "bin":
+            a = open(os.path.join(d, "n.out"), "rb").read().hex()
+            b = open(os.path.join(d, "u.out"), "rb").read().hex()
+        else:
+            a, b = _object_view(os.path.join(d, "n.out")), _object_view(os.path.join(d, "u.out"))
+        return name, rn, ru, a, b
+
+
+def expressions(utasm, verbose=False):
+    s = Suite("expressions", verbose)
+    jobs = [("expr " + n, "bin", src) for n, src in cases.EXPR_BIN.items()]
+    jobs += [("expr " + n, "elf64", src) for n, src in cases.EXPR_ELF.items()]
+    scalar = set()
+    for e in cases.SCALAR_EXPRS:
+        for where, src in (("back", "nop\nl1: dd 0\ndd %s\n" % e), ("fwd", "dd %s\nnop\nl1: dd 0\n" % e)):
+            for fmt in ("bin", "elf64"):
+                name = "scalar %s %s %s" % (e, where, fmt)
+                scalar.add(name)
+                jobs.append((name, fmt, ("org 0x100\n" if fmt == "bin" else "") + src))
+
+    with cf.ThreadPoolExecutor(JOBS) as ex:
+        for name, rn, ru, a, b in ex.map(lambda j: _compare_one(utasm, *j), jobs):
+            if _crashed(ru):
+                s.result(name, False, "utasm crashed")
+            elif rn.returncode and ru.returncode:
+                # both refuse it: the same message (NASM's scalar errors)
+                want, got = _error_text(rn), _error_text(ru)
+                s.result(name, want == got or name not in scalar, "nasm: %s | utasm: %s" % (want, got))
+            elif rn.returncode:
+                if name in scalar:
+                    s.result(name, False, "NASM: %s; utasm accepts it" % _error_text(rn))
+                else:
+                    s.skip()
+            elif ru.returncode:
+                s.result(name, False, "utasm: " + first_line(ru))
+            else:
+                s.result(name, a == b, "nasm %s | utasm %s" % (str(a)[:60], str(b)[:60]))
+
+    # where the value is needed when the line is read, utasm (one pass)
+    # refuses a label defined later - an error, never a wrong value
+    for name, src in cases.EXPR_REJECT.items():
+        with tempdir() as d:
+            open(os.path.join(d, "p.s"), "w").write(src)
+            ru = run([utasm, "-f", "bin", "p.s", "-o", "u.out"], cwd=d)
+        s.result("expr " + name, ru.returncode != 0 and not _crashed(ru),
+                 "crashed" if _crashed(ru) else "accepted: it must be an error")
+    return s
+
+
+# ---------------------------------------------------------------------------
+# limits: inputs past utasm's old fixed limits (tokens on a times line, macro
+# parameters, body sizes, nesting depths, buffer lengths, section counts)
+# ---------------------------------------------------------------------------
+def limits(utasm, verbose=False):
+    s = Suite("limits", verbose)
+    jobs = [(n, fmt, src, files) for n, (src, files, fmt) in cases.limit_cases().items()]
+    with cf.ThreadPoolExecutor(JOBS) as ex:
+        for name, rn, ru, a, b in ex.map(lambda j: _compare_one(utasm, *j), jobs):
+            if _crashed(ru):
+                s.result(name, False, "utasm crashed")
+            elif rn.returncode:
+                s.skip()
+            elif ru.returncode:
+                s.result(name, False, "utasm: " + first_line(ru))
+            else:
+                s.result(name, a == b, "outputs differ")
+    return s
