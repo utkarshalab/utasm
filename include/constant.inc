@@ -68,6 +68,9 @@
 %define EXIT_INVALID_SECTION_FLAGS 34 ; section flags are invalid or incompatible
 %define EXIT_COND_DEPTH        35  ; %if blocks nested deeper than PREP_COND_MAX
 %define EXIT_CTX_DEPTH         36  ; %push contexts nested deeper than PREP_CTX_MAX
+%define EXIT_NOT_SIMPLE        37  ; a label multiplied, or two labels added
+%define EXIT_NONSCALAR_OP      38  ; | ^ & ~ ! with a label (an address) in it
+%define EXIT_NONSCALAR_DIV     39  ; / // % %% with a label in it
 
 %define EXIT_ENCODE_FAIL       40  ; instruction encoding could not be generated
 %define EXIT_IMM_RANGE         41  ; immediate value exceeds allowed bit width
@@ -84,6 +87,11 @@
 %define EXIT_DUP_SYMBOL        51  ; symbol defined more than once
 %define EXIT_SYMBOL_RANGE      52  ; symbol value exceeds representable range
 %define EXIT_CIRCULAR_REF      53  ; circular dependency detected between symbols
+%define EXIT_NONSCALAR_SHIFT   54  ; a shift with a label in it
+%define EXIT_NONSCALAR_CMP     55  ; a comparison of a label and a number
+%define EXIT_NONSCALAR_COND    56  ; label ? a : b
+%define EXIT_TIMES_NONCONST    57  ; times with a count not known yet
+%define EXIT_RES_NONCONST      58  ; resb with a count not known yet
 
 %define EXIT_LD_SCRIPT_404     60  ; linker script file not found
 %define EXIT_LD_SCRIPT_PARSE   61  ; linker script contains syntax errors
@@ -416,6 +424,12 @@
 ; offset in its section ("later - $$"), not its address: it is written in
 ; place once the symbol is defined, never left in an object.
 %define RELOC_OFFSET_MARK      0x1F        ; (not a TAG_*: names and SYMBOL* share fields)
+; A relocation whose name starts with this byte is an expression that could
+; not be worked out when it was read: a label not defined yet went into
+; arithmetic ("dd (end - start) / 4"). The name is a record (parser.s,
+; parser_defer_record) holding its tokens, which the relocation pass
+; evaluates once every label is placed.
+%define RELOC_EXPR_MARK        0x1E
 
 ; "wrt ..name" (reloc_wrt): the relocation the next reloc_record makes
 %define WRT_NONE               0
