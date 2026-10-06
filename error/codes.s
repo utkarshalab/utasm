@@ -174,7 +174,7 @@ error_track_token:
     mov     rax, [rax + ASMCTX_inc_ctx]
     test    rax, rax
     jz      .note_file
-    movzx   edx, byte [rax + INCLUDECTX_depth]
+    movzx   edx, word [rax + INCLUDECTX_depth]
     inc     edx
 .note_file:
     mov     rdi, [rel error_loc_file]
@@ -472,6 +472,8 @@ code_table:
     code_msg EXIT_MACRO_DEF,         m_macro_def
     code_msg EXIT_MACRO_EXP,         m_macro_exp
     code_msg EXIT_MACRO_RECURSION,   m_macro_deep
+    code_msg EXIT_COND_DEPTH,        m_cond_deep
+    code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
     code_msg EXIT_INC_NAME,          m_inc_name
@@ -559,6 +561,8 @@ m_align:        db "invalid alignment (not a power of two?)", 0
 m_struct:       db "operand larger than the structure field", 0
 m_bits_mode:    db "instruction not supported in this bits mode (16/32/64)", 0
 m_use:          db "unknown `%use' package", 0
+m_cond_deep:    db "conditionals nested too deeply", 0
+m_ctx_deep:     db "context stack nested too deeply", 0
 m_align_mode:   db "unknown alignment mode", 0
 m_reg_size:     db "invalid register size specification", 0
 m_undef:        db "undefined symbol", 0
