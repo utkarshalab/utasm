@@ -205,6 +205,30 @@ incpath_open:
     ret
 
 ;*
+; * [incpath_find]
+; * Purpose: Where %include would find a file (%pathsearch).
+; * Input  : RDI = file name
+; * Output : RAX = its path (as named, or in a -I directory), 0 when none
+; ;
+global incpath_find
+incpath_find:
+    push    rbx
+    call    incpath_open
+    test    rax, rax
+    jnz     .none
+    mov     rbx, rcx
+    mov     rdi, rdx
+    extern  io_close
+    call    io_close
+    mov     rax, rbx
+    pop     rbx
+    ret
+.none:
+    xor     eax, eax
+    pop     rbx
+    ret
+
+;*
 ; * [deps_write]
 ; * Purpose: Write the Makefile rule as NASM does: "target : dep dep ...",
 ; *          lines wrapped with a backslash before column 62, a blank line
