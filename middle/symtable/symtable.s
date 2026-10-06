@@ -31,30 +31,21 @@ symbol_init:
     push    rbx
     mov     rbx, rdi
 
-    ; 1. Allocate Linear Symbol Array (Sequential storage)
-    mov     rdi, [rbx + ASMCTX_arena]
+    ; 1. Linear Symbol Array (Sequential storage) and 2. the hash table:
+    ;    MAX_SYMBOL slots each, reserved and committed as they are used
+    ;    (a 500,000-line kernel has hundreds of thousands of symbols)
+    extern  mem_reserve
     mov     rsi, SYMBOL_SIZE
     imul    rsi, MAX_SYMBOL
-    call    arena_alloc
+    call    mem_reserve
     check_err
     mov     [rbx + ASMCTX_symtab], rdx
     mov     dword [rbx + ASMCTX_symcount], 0
-
-    ; 2. Allocate Hash Table (Bucket index)
-    ; 64k entries * 8 bytes/entry = 512KB
-    mov     rdi, [rbx + ASMCTX_arena]
     mov     rsi, 8
     imul    rsi, MAX_SYMBOL
-    call    arena_alloc
+    call    mem_reserve                    ; zeroed: every bucket empty
     check_err
     mov     [rbx + ASMCTX_symhash], rdx
-
-    ; 3. Zero the hash table
-    mov     rdi, rdx
-    mov     rsi, 8
-    imul    rsi, MAX_SYMBOL
-    extern  mem_zero
-    call    mem_zero
 
     xor     rax, rax
     pop     rbx
@@ -85,6 +76,37 @@ symbol_hash:
     pop     rsi
     epilogue
 
+; ---- symbol_unescape --------------------
+; rdi = a name -> rax = the name without the $ of "$name" (a $ before a
+; letter, '_', '.' or '?'). Clobbers nothing else.
+symbol_unescape:
+    mov     rax, rdi
+    test    rdi, rdi
+    jz      .ret
+    cmp     byte [rdi], '$'
+    jne     .ret
+    push    rcx
+    movzx   ecx, byte [rdi + 1]
+    or      cl, 0x20               ; ASCII letters to lower case
+    cmp     cl, 'a'
+    jb      .other
+    cmp     cl, 'z'
+    jbe     .strip
+.other:
+    movzx   ecx, byte [rdi + 1]
+    cmp     cl, '_'
+    je      .strip
+    cmp     cl, '.'
+    je      .strip
+    cmp     cl, '?'
+    jne     .keep
+.strip:
+    inc     rax
+.keep:
+    pop     rcx
+.ret:
+    ret
+
 ; ---- symbol_add -------------------------
 global symbol_add
 symbol_add:
@@ -94,7 +116,12 @@ symbol_add:
     push    r13
     mov     rbx, rdi               ; AsmCtx
     mov     r12, rsi               ; Template symbol
-    
+    ; "$name" is the symbol "name" (NASM's escape for names that are
+    ; registers or keywords)
+    mov     rdi, [r12 + SYMBOL_name]
+    call    symbol_unescape
+    mov     [r12 + SYMBOL_name], rax
+
     ; 1. Check if it already exists (Hash lookup)
     mov     rdi, rbx
     mov     rsi, [r12 + SYMBOL_name]
@@ -107,8 +134,8 @@ symbol_add:
     ; 2. Add to Linear Array
     mov     eax, [rbx + ASMCTX_symcount]
     
-    ; Check load factor (limit to 50000 / 65536 ~= 76%)
-    IF rax, g, 50000
+    ; Check load factor (limit to 3/4 of MAX_SYMBOL)
+    IF rax, g, MAX_SYMBOL / 4 * 3
         mov     rax, EXIT_SYMBOL_RANGE
         jmp     .done
         ENDIF
@@ -176,8 +203,11 @@ symbol_find:
     push    rbx
     push    r12
     mov     rbx, rdi
+    mov     rdi, rsi
+    call    symbol_unescape        ; "$name" is "name"
+    mov     rsi, rax
     mov     r12, rsi               ; Name to find
-    
+
     call    symbol_hash
     mov     r10, rax
     and     r10, (MAX_SYMBOL - 1)
