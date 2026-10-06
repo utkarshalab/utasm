@@ -16,6 +16,12 @@ KNOWN = {
     "ins_mem_scale_forms": "number-first scale",
     # one pass: an equ cannot use a symbol defined after it (an error)
     "elf_equ_forward_ref": "equ with a forward reference",
+    # one pass: a value worked out at the end keeps room for any value
+    "expr push_imm": "push dword: 68 imm32 (NASM: 6A ib once it knows the value)",
+    "expr mov_imm64": "mov rax: the 64-bit immediate (NASM: mov eax once it knows the value)",
+    # NASM writes a meaningless number for a negated address in an object
+    "scalar -l1 back elf64": "NASM's value for -label in an object",
+    "scalar 2 - l1 back elf64": "NASM's value for n - label in an object",
     # listings (-l): the encoding differences above show there too
     "listing op_cmp3": "NASM's <=> disagrees with its own manual",
     "listing op_signed_div": "// is a comment in utasm",
