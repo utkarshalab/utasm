@@ -141,6 +141,48 @@ str_cmp:
     pop     rdi
     ret
 
+; ---- str_cmp_kw -------------------------
+;
+; str_cmp_kw
+; Is a source word a keyword, in any letter case? ("DWORD", "Bits")
+; Input    : rdi = the word, rsi = the keyword, in lower case
+; Output   : rax = 0 equal, 1 not
+; Clobbers : nothing else
+;
+global str_cmp_kw
+str_cmp_kw:
+    push    rdi
+    push    rsi
+    push    rcx
+    test    rdi, rdi
+    jz      .differ
+    test    rsi, rsi
+    jz      .differ
+.loop:
+    movzx   ecx, byte [rdi]
+    lea     eax, [rcx - 'A']
+    cmp     eax, 'Z' - 'A'
+    ja      .folded
+    or      ecx, 0x20
+.folded:
+    cmp     cl, [rsi]
+    jne     .differ
+    test    cl, cl
+    jz      .equal
+    inc     rdi
+    inc     rsi
+    jmp     .loop
+.equal:
+    xor     eax, eax
+    jmp     .ret
+.differ:
+    mov     eax, 1
+.ret:
+    pop     rcx
+    pop     rsi
+    pop     rdi
+    ret
+
 ; ---- str_cmp_n --------------------------
 ;
 ; str_cmp_n
@@ -1461,6 +1503,8 @@ str_is_ident_char:
     cmp     dil, '@'                   ; NASM: ..@x, and names with @ in them
     je      .yes
     cmp     dil, '$'
+    je      .yes
+    cmp     dil, '?'                   ; NASM: __?float32?__, a?b
     je      .yes
     xor     rax, rax
     ret
