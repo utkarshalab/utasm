@@ -66,6 +66,8 @@
 %define EXIT_EXPR_TOO_DEEP     32  ; expression recursion depth exceeded limit
 %define EXIT_INVALID_EXPR      33  ; expression syntax or evaluation error
 %define EXIT_INVALID_SECTION_FLAGS 34 ; section flags are invalid or incompatible
+%define EXIT_COND_DEPTH        35  ; %if blocks nested deeper than PREP_COND_MAX
+%define EXIT_CTX_DEPTH         36  ; %push contexts nested deeper than PREP_CTX_MAX
 
 %define EXIT_ENCODE_FAIL       40  ; instruction encoding could not be generated
 %define EXIT_IMM_RANGE         41  ; immediate value exceeds allowed bit width
@@ -137,9 +139,9 @@
 %define MAX_TOKEN              4096        ; maximum single token length (matched to macro limits)
 %define MAX_SYMBOL             (1 << 22)   ; symbol table slots (reserved, committed as used)
 %define MAX_SECTIONS           65535       ; maximum ELF sections per object (aligned to standard ELF limits)
-%define MAX_INCLUDES           256         ; maximum nested include depth
+%define MAX_INCLUDES           4096        ; nested %include depth (a file including itself)
 %define MAX_MACRO_PARAMS       32          ; maximum parameters per macro
-%define MAX_MACRO_DEPTH        64          ; maximum nested macro expansion depth
+%define MAX_MACRO_DEPTH        10000       ; nested macro expansions (NASM's default limit)
 %define MAX_REP_COUNT          65536       ; maximum iterations per %rep block
 %define MAX_ERRORS             100         ; fatal hard stop threshold for error count (consistent with docs/workflow.md and docs/error_reference.md)
 %define MAX_ERRORS_SOFT        100         ; soft threshold for warning count reporting
@@ -699,7 +701,8 @@
 %define CLI_MODE_DEPS          2           ; -M: write the dependencies only
 %define CLI_DEPS_AFTER         1           ; -MD: dependencies after assembling
 %define CLI_DEPS_PHONY         2           ; -MP: an empty rule per dependency
-%define CLI_PRELUDE_MAX        16384       ; bytes of -D / -U / -p / --before lines
+%define CLI_PRELUDE_MAX        (16 << 20)  ; bytes of -D / -U / -p / --before lines (bss:
+                                           ; committed as used; argv is smaller)
 
 ; ============================================================================
 ; LOG LEVELS
@@ -1453,10 +1456,10 @@
 ; ============================================================================
 ; MACRO ENGINE CONSTANTS
 ; ============================================================================
-%define MACRO_MAX_BODY_TOKENS  4096        ; absolute token capacity in macro body expansion
-%define MACRO_BODY_CAPACITY    1024        ; token slots reserved per %macro definition
-%define REP_BODY_CAPACITY      256         ; token slots reserved per %rep execution
-%define MACRO_ARG_CAPACITY     64          ; token slots reserved for one invocation's arguments
+; (%macro / %rep / times bodies and macro arguments have no fixed capacity:
+; they are read into the capture area, frontend/macro/macro.s)
+%define MACRO_VARIADIC         0xFFFF      ; MACRO_max_params of "%macro m 1-*"
+%define MACRO_PARAMS_MAX       0xFFFE      ; parameters a macro may declare or take
 %define MACRO_FLAG_FUNC        0x01        ; %define NAME(a,b): arguments in parentheses
 %define MACRO_FLAG_GREEDY      0x02        ; %macro m 1+: the last parameter takes the rest
 %define MACRO_FLAG_DEFINE      0x04        ; a single-line macro (%define family)
@@ -1465,7 +1468,10 @@
 %define BIN_START              0x02        ; start= given
 %define DEFINE_MAX_TOKENS      256         ; tokens in one %define body
 %define LEX_INTERP_BUF         256         ; work buffer for %[...] identifier interpolation
-%define PREP_CTX_MAX           64          ; maximum nesting depth of %push contexts
+%define PREP_CTX_MAX           4096        ; nesting of %push contexts
+%define PREP_COND_MAX          65535       ; nesting of %if blocks (a recursive macro
+                                           ; keeps one open per level)
+%define EXPR_MAX_DEPTH         4096        ; nested parentheses / operators in an expression
 %define MACRO_TABLE_INIT_CAP   128         ; starting capacity of macro parser maps
 
 ; ============================================================================
