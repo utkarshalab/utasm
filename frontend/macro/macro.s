@@ -149,6 +149,10 @@ preprocessor_next_token:
     
     mov     rdx, r12
 .done:
+    test    rax, rax
+    jnz     .unrecorded
+    call    prep_rec_note                  ; (an expression being recorded)
+.unrecorded:
     mov     r15, [rbp - 40]
     mov     r14, [rbp - 32]
     mov     r13, [rbp - 24]
@@ -189,6 +193,7 @@ preprocessor_unread_token:
 
 global preprocessor_putback_token
 preprocessor_putback_token:
+    call    prep_rec_unnote
     prologue
     push    rbx
     push    r12
@@ -810,6 +815,7 @@ prep_expand_start:
     and     rsp, -16               ; 16-byte alignment
     mov     rbx, rdi               ; rbx = PrepState
     mov     r12, rsi               ; r12 = MACRO struct
+    inc     dword [rel rec_suspend]        ; (the arguments: not an expression's)
 
     ; 0. Check recursion depth (A99)
     inc     word [rbx + PREP_mac_depth]
@@ -1232,6 +1238,7 @@ prep_expand_start:
     jmp     .done
 
 .done:
+    dec     dword [rel rec_suspend]
     mov     r15, [rbp - 40]
     mov     r14, [rbp - 32]
     mov     r13, [rbp - 24]
@@ -7449,6 +7456,226 @@ prep_cap_take:
     ret
 
 ;*
+; * [prep_rec_begin]
+; * Purpose: Start recording the tokens preprocessor_next_token hands out,
+; *   into the capture area: parser_evaluate_expression keeps an expression
+; *   it cannot work out yet, to work it out at the end. Tokens read for a
+; *   macro call's arguments are not recorded (the expansion's are).
+; * Output : RAX = OK or an error
+; * Clobbers: RCX, RDX, RSI, RDI, R8-R11
+; ;
+global prep_rec_begin
+prep_rec_begin:
+    call    prep_cap_base
+    test    rax, rax
+    jnz     .ret
+    mov     [rel rec_base], rdx
+    mov     qword [rel rec_n], 0
+    mov     byte [rel rec_on], 1
+    mov     byte [rel rec_overflow], 0
+.ret:
+    ret
+
+;*
+; * [prep_rec_end]
+; * Purpose: Stop recording. The tokens stay in the capture area until
+; *   prep_cap_take copies them out or prep_rec_drop lets them go.
+; * Output : RDX = the tokens, RCX = how many, RAX = 1 when the capture
+; *          area filled (some are missing), else 0
+; ;
+global prep_rec_end
+prep_rec_end:
+    mov     byte [rel rec_on], 0
+    mov     rdx, [rel rec_base]
+    mov     rcx, [rel rec_n]
+    movzx   eax, byte [rel rec_overflow]
+    ret
+
+; prep_rec_drop: the recorded tokens let go (the capture area's top back to
+; where they began). Preserves every register.
+global prep_rec_drop
+prep_rec_drop:
+    push    rax
+    mov     rax, [rel rec_base]
+    mov     [rel cap_top], rax
+    pop     rax
+    ret
+
+; prep_rec_note: rdx = a token handed out; recorded when a recording is on
+; and no macro call is reading its arguments. Preserves every register.
+prep_rec_note:
+    cmp     byte [rel rec_on], 0
+    je      .ret
+    cmp     dword [rel rec_suspend], 0
+    jne     .ret
+    push    rax
+    push    rcx
+    push    rdx
+    push    rsi
+    push    rdi
+    mov     rdi, [rel rec_base]
+    mov     rsi, [rel rec_n]
+    call    prep_cap_slot
+    test    rax, rax
+    jnz     .full
+    mov     rdi, rdx
+    mov     rsi, [rsp + 16]                ; the token
+    mov     ecx, TOKEN_SIZE / 8
+    rep movsq
+    inc     qword [rel rec_n]
+    jmp     .done
+.full:
+    mov     byte [rel rec_on], 0           ; too long to keep
+    mov     byte [rel rec_overflow], 1
+.done:
+    pop     rdi
+    pop     rsi
+    pop     rdx
+    pop     rcx
+    pop     rax
+.ret:
+    ret
+
+; prep_rec_unnote: rsi = a token handed back (putback): when it is the last
+; one recorded, it is not part of the expression any more (it is handed out
+; again). Preserves every register.
+prep_rec_unnote:
+    cmp     byte [rel rec_on], 0
+    je      .ret
+    cmp     dword [rel rec_suspend], 0
+    jne     .ret
+    push    rax
+    push    rcx
+    push    rdx
+    mov     rax, [rel rec_n]
+    test    rax, rax
+    jz      .done
+    dec     rax
+    imul    rcx, rax, TOKEN_SIZE
+    add     rcx, [rel rec_base]
+    mov     dl, [rcx + TOKEN_kind]
+    cmp     dl, [rsi + TOKEN_kind]
+    jne     .done
+    mov     rdx, [rcx + TOKEN_value]
+    cmp     rdx, [rsi + TOKEN_value]
+    jne     .done
+    mov     [rel rec_n], rax
+    mov     [rel cap_top], rcx
+.done:
+    pop     rdx
+    pop     rcx
+    pop     rax
+.ret:
+    ret
+
+;*
+; * [prep_rec_rename]
+; * Purpose: The last COUNT tokens recorded become one name: "$" / "$$" the
+; *   label they stand for, ".x" its full name, "1f" the label it means - so
+; *   a kept expression means the same at the end.
+; * Input  : RDI = COUNT, RSI = the name
+; * Preserves every register.
+; ;
+global prep_rec_rename
+prep_rec_rename:
+    cmp     byte [rel rec_on], 0
+    je      .ret
+    cmp     dword [rel rec_suspend], 0
+    jne     .ret
+    push    rax
+    push    rcx
+    mov     rax, [rel rec_n]
+    cmp     rax, rdi
+    jb      .done                          ; (not all of them recorded)
+    sub     rax, rdi
+    imul    rcx, rax, TOKEN_SIZE
+    add     rcx, [rel rec_base]            ; the first of them stays, renamed
+    mov     byte [rcx + TOKEN_kind], TOK_IDENT
+    mov     [rcx + TOKEN_value], rsi
+    mov     byte [rcx + TOKEN_flags], 0
+    inc     rax
+    mov     [rel rec_n], rax
+    add     rcx, TOKEN_SIZE
+    mov     [rel cap_top], rcx
+.done:
+    pop     rcx
+    pop     rax
+.ret:
+    ret
+
+;*
+; * [prep_tokens_text]
+; * Purpose: The text of N tokens, a blank between each two (a kept
+; *   expression's, for messages).
+; * Input  : RDI = PrepState, RSI = tokens, RDX = N
+; * Output : RAX = OK or an error, RDX = the text
+; ;
+global prep_tokens_text
+prep_tokens_text:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    mov     rbx, rdi
+    mov     r12, rsi
+    mov     r13, rdx
+    xor     r14d, r14d                     ; the length
+    xor     r15d, r15d
+.len:
+    cmp     r15, r13
+    jae     .alloc
+    imul    rdx, r15, TOKEN_SIZE
+    add     rdx, r12
+    call    prep_idn_text
+    mov     rdi, rax
+    call    str_len
+    lea     r14, [r14 + rax + 1]
+    inc     r15
+    jmp     .len
+.alloc:
+    mov     rdi, [rbx + PREP_arena]
+    lea     rsi, [r14 + 1]
+    call    arena_alloc                    ; zeroed: the text ends in NUL
+    test    rax, rax
+    jnz     .ret
+    push    rdx
+    mov     r14, rdx                       ; where the next text goes
+    xor     r15d, r15d
+.put:
+    cmp     r15, r13
+    jae     .put_done
+    test    r15, r15
+    jz      .no_blank
+    mov     byte [r14], ' '
+    inc     r14
+.no_blank:
+    imul    rdx, r15, TOKEN_SIZE
+    add     rdx, r12
+    call    prep_idn_text
+.copy:
+    mov     cl, [rax]
+    test    cl, cl
+    jz      .copied
+    mov     [r14], cl
+    inc     r14
+    inc     rax
+    jmp     .copy
+.copied:
+    inc     r15
+    jmp     .put
+.put_done:
+    pop     rdx
+    xor     eax, eax
+.ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+;*
 ; * [prep_tokbuf_grow]
 ; * Purpose: A token array twice the size, the tokens so far copied over.
 ; *   Bodies are single arrays reserved in one block (the lexer allocates
@@ -7627,6 +7854,7 @@ prep_handle_rep:
     ret
 
 [SECTION .bss]
+global prep_noexpand
 prep_noexpand: resb 1              ; 1: identifiers are not macro calls (a directive reads a name)
 def_eager:     resb 1              ; 1: %xdefine, expand the body now
 def_func:      resb 1              ; MACRO_FLAG_FUNC for NAME(a, b)
@@ -7636,6 +7864,11 @@ def_pnames:    resq 9              ; parameter names of a function-like %define
 def_scratch:   resb DEFINE_MAX_TOKENS * TOKEN_SIZE
 alignb 8
 def_cap:       resq 1              ; their capacity
+rec_base:      resq 1              ; prep_rec_begin: the tokens recorded
+rec_n:         resq 1              ; ... how many
+rec_suspend:   resd 1              ; > 0 while a macro call reads its arguments
+rec_on:        resb 1              ; recording
+rec_overflow:  resb 1              ; the capture area filled
 cap_top:       resq 1              ; the capture area: its top (prep_cap_base)
 cap_end:       resq 1              ; ... and its end
 def_icase:     resb 1              ; 1: %idefine
