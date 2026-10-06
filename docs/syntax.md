@@ -415,6 +415,37 @@ mov rax, $ - my_label       ; $ = current address
 mov rax, $$ - $$            ; $$ = section start
 ```
 
+### Labels in expressions
+
+A label is an address, not a number. As in NASM, the difference of two
+labels of one section (`end - start`, `$ - $$`) is a number and can go
+into any operator, while a label on its own may only be added to or
+subtracted from. These are errors, with NASM's messages:
+
+```asm
+dd label * 2                ; expression is not simple or relocatable
+dd label / 2                ; division operator may only be applied to scalar values
+dd label >> 4               ; shift operator may only be applied to scalar values
+dd label & 0xFF             ; `&' operator may only be applied to scalar values
+dd label < 2                ; `<': operands differ by a non-scalar
+dd (end - start) / 4        ; fine: a distance is a number
+```
+
+A label may be used before the line that defines it, in arithmetic too:
+
+```asm
+count:  dd (table_end - table) / 4      ; 2
+table:  dd 1, 2
+table_end:
+```
+
+utasm reads the source once, so such a value is worked out at the end, once
+every label is placed, and written in place. An instruction keeps room for
+any value there: `push dword (table_end - table) / 4` is `68 imm32` where
+NASM, which reads the source again, writes `6A ib`. Where the value is
+needed when the line is read - the count of `times` or `resb`, an `equ` -
+a label defined later is an error.
+
 ---
 
 ## Directives
