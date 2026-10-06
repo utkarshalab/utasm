@@ -17,8 +17,8 @@ DEFAULT REL
 ; FLOATING-POINT CONSTANTS
 ; ============================================================================
 ; float_encode turns the text of a floating-point constant ("1.5", "1.0e3",
-; "0x1.8p3") into IEEE 754 bits: binary16 (dw), binary32 (dd), binary64 (dq)
-; or the x87 80-bit extended format (dt). The result is correctly rounded
+; "0x1.8p3") into IEEE 754 bits: binary16 (dw), binary32 (dd), binary64 (dq),
+; binary128 (do) or the x87 80-bit extended format (dt). The result is correctly rounded
 ; (round half to even), exactly as NASM produces it.
 ;
 ; Method: the constant is exactly M * 10^E (or H * 2^K for a hex float), M an
@@ -46,10 +46,13 @@ DEFAULT REL
 ; float_encode
 ; Input    : rdi = text of the constant (NUL-terminated)
 ;            esi = 1 for a negative constant
-;            edx = format: FLT_HALF 1, FLT_SINGLE 2, FLT_DOUBLE 3, FLT_EXT 4
+;            edx = format: FLT_HALF 1, FLT_SINGLE 2, FLT_DOUBLE 3, FLT_EXT 4,
+;                  FLT_QUAD 5
 ; Output   : rax = EXIT_OK or EXIT_INVALID_OPERAND
-;            rdx = the bits (for the 80-bit format: the 64-bit significand)
-;            rcx = the 80-bit format's sign and exponent word, else 0
+;            rdx = the bits (for the 80-bit format: the 64-bit significand;
+;                  binary128: the low 64 bits)
+;            rcx = the 80-bit format's sign and exponent word, binary128's
+;                  high 64 bits, else 0
 ;
 global float_encode
 float_encode:
@@ -63,7 +66,7 @@ float_encode:
 
     ; the format's precision, exponent bias and width
     dec     edx
-    cmp     edx, 3
+    cmp     edx, 4
     ja      .bad
     lea     rax, [rel f_formats]
     imul    ecx, edx, 12
@@ -346,14 +349,22 @@ float_encode:
     mov     byte [rel f_sticky], 1
     jmp     .round
 
-    ; ---- X * 2^k with X a big integer: keep its top 66 bits in T ----
+    ; ---- X * 2^k with X a big integer: keep its top bits in T (66, or
+    ; P + 2 for binary128) ----
 .reduce:
     lea     rdi, [rel f_a]
     mov     rsi, [rel f_alen]
     call    bn_bitlen
-    cmp     rax, 66
+    mov     rcx, 66
+    cmp     qword [rel f_prec], 64
+    jbe     .keep
+    mov     rcx, [rel f_prec]
+    add     rcx, 2
+.keep:
+    cmp     rax, rcx
     jbe     .small
-    lea     rcx, [rax - 66]
+    sub     rax, rcx
+    mov     rcx, rax
     add     r13, rcx
     call    f_extract
     jmp     .round
@@ -394,6 +405,8 @@ float_encode:
 .u_ok:
     mov     [rel f_u], rax
     sub     rax, r13                       ; cut = u - k
+    cmp     qword [rel f_prec], 64
+    ja      .q_round                       ; binary128: 128-bit significand
     test    rax, rax
     jg      .cut
     ; exact: the significand is T shifted up
@@ -453,6 +466,8 @@ float_encode:
     cmp     rdx, r8
     jl      .encode
 .inf:
+    cmp     qword [rel f_prec], 64
+    ja      .q_inf
     mov     rdx, [rel f_bias]
     add     rdx, rdx
     inc     rdx
@@ -462,6 +477,8 @@ float_encode:
     mov     r12, 0x8000000000000000        ; the explicit integer bit
     jmp     .encode
 .zero:
+    cmp     qword [rel f_prec], 64
+    ja      .q_zero
     xor     r12d, r12d
     xor     edx, edx
 
@@ -497,6 +514,110 @@ float_encode:
     mov     rdx, r12
     xor     eax, eax
     jmp     .ret
+    ; ---- binary128: the significand S in r11:r12 ----
+.q_round:
+    test    rax, rax
+    jg      .q_cut
+    ; exact: T shifted up by -cut
+    neg     rax
+    mov     ecx, eax
+    mov     r12, [rel t_lo]
+    mov     r11, [rel t_hi]
+    cmp     ecx, 64
+    jb      .q_shl
+    mov     r11, r12
+    xor     r12d, r12d
+    sub     ecx, 64
+    shl     r11, cl
+    jmp     .q_rounded
+.q_shl:
+    shld    r11, r12, cl
+    shl     r12, cl
+    jmp     .q_rounded
+.q_cut:
+    mov     r14, rax
+    lea     rdi, [rax - 1]
+    call    f_t_bit                        ; the guard bit
+    mov     ebx, eax
+    lea     rdi, [r14 - 1]
+    call    f_t_low_nonzero
+    or      [rel f_sticky], al
+    ; S = T >> cut
+    mov     r12, [rel t_lo]
+    mov     r11, [rel t_hi]
+    mov     rcx, r14
+    cmp     rcx, 128
+    jb      .q_shr
+    xor     r12d, r12d
+    xor     r11d, r11d
+    jmp     .q_guard
+.q_shr:
+    cmp     ecx, 64
+    jb      .q_shr_small
+    mov     r12, r11
+    xor     r11d, r11d
+    sub     ecx, 64
+    shr     r12, cl
+    jmp     .q_guard
+.q_shr_small:
+    shrd    r12, r11, cl
+    shr     r11, cl
+.q_guard:
+    test    ebx, ebx
+    jz      .q_rounded
+    cmp     byte [rel f_sticky], 0
+    jne     .q_up
+    test    r12, 1
+    jz      .q_rounded                     ; a tie goes to even
+.q_up:
+    add     r12, 1
+    adc     r11, 0
+    mov     rax, 1
+    shl     rax, 49                        ; 2^113: one more exponent
+    cmp     r11, rax
+    jne     .q_rounded
+    test    r12, r12
+    jnz     .q_rounded
+    shrd    r12, r11, 1
+    shr     r11, 1
+    inc     qword [rel f_u]
+.q_rounded:
+    ; normal when bit 112 is set, else subnormal (exponent 0)
+    xor     edx, edx
+    mov     rax, 1
+    shl     rax, 48
+    cmp     r11, rax
+    jb      .q_encode
+    mov     rdx, [rel f_u]
+    add     rdx, 112
+    add     rdx, [rel f_bias]
+    cmp     rdx, 32767
+    jge     .q_inf
+.q_encode:
+    mov     rax, 1
+    shl     rax, 48
+    dec     rax
+    and     r11, rax                       ; the fraction's high 48 bits
+    shl     rdx, 48
+    or      r11, rdx
+    jmp     .q_sign
+.q_inf:
+    mov     r11, 0x7FFF000000000000
+    xor     r12d, r12d
+    jmp     .q_sign
+.q_zero:
+    xor     r11d, r11d
+    xor     r12d, r12d
+.q_sign:
+    cmp     byte [rel f_sign], 0
+    je      .q_out
+    bts     r11, 63
+.q_out:
+    mov     rdx, r12
+    mov     rcx, r11
+    xor     eax, eax
+    jmp     .ret
+
 .bad:
     mov     rax, EXIT_INVALID_OPERAND
     xor     edx, edx
@@ -507,6 +628,71 @@ float_encode:
     pop     r13
     pop     r12
     pop     rbx
+    ret
+
+;
+; float_special
+; __Infinity__, __QNaN__ and __SNaN__ in a format: the exponent all ones,
+; the fraction 0, its top bit, or 1.
+; Input    : edx = FLT_* format, esi = 0 infinity, 1 quiet NaN, 2 signalling
+; Output   : rdx, rcx as float_encode's
+;
+global float_special
+float_special:
+    dec     edx
+    lea     rax, [rel f_formats]
+    imul    ecx, edx, 12
+    mov     r8d, [rax + rcx]               ; P
+    mov     r9d, [rax + rcx + 8]           ; the width
+    cmp     edx, 3
+    je      .ext
+    cmp     edx, 4
+    je      .quad
+    ; exponent all ones at bits P-1 .. W-2
+    mov     ecx, r9d
+    sub     ecx, r8d                       ; exponent bits
+    mov     rax, 1
+    shl     rax, cl
+    dec     rax
+    lea     ecx, [r8 - 1]
+    shl     rax, cl
+    cmp     esi, 1
+    jne     .not_q
+    lea     ecx, [r8 - 2]
+    mov     r10, 1
+    shl     r10, cl
+    or      rax, r10
+.not_q:
+    cmp     esi, 2
+    jne     .out
+    or      rax, 1
+.out:
+    mov     rdx, rax
+    xor     ecx, ecx
+    ret
+.ext:
+    mov     rdx, 0x8000000000000000        ; the explicit integer bit
+    cmp     esi, 1
+    jne     .ext_s
+    bts     rdx, 62
+.ext_s:
+    cmp     esi, 2
+    jne     .ext_out
+    or      rdx, 1
+.ext_out:
+    mov     ecx, 0x7FFF
+    ret
+.quad:
+    mov     rcx, 0x7FFF000000000000
+    xor     edx, edx
+    cmp     esi, 1
+    jne     .quad_s
+    bts     rcx, 47
+.quad_s:
+    cmp     esi, 2
+    jne     .quad_out
+    mov     edx, 1
+.quad_out:
     ret
 
 ;
@@ -851,6 +1037,7 @@ f_formats:
     dd      24, 127, 32                    ; binary32  (dd)
     dd      53, 1023, 64                   ; binary64  (dq)
     dd      64, 16383, 80                  ; x87 extended (dt)
+    dd      113, 16383, 128                ; binary128 (do)
 
 [SECTION .bss]
 f_a:        resq FBN_LIMBS + 4             ; M, M * 10^E, or the hex digits
