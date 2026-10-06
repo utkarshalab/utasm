@@ -211,6 +211,16 @@ reloc_resolve_all:
     mov     rsi, [r13 + RELOC_sym]
     test    rsi, rsi
     jz      .check_next
+    cmp     byte [rsi], RELOC_OFFSET_MARK
+    jne     .check_symbol
+    ; "later - $$": an offset in the section, written here
+    mov     rdi, rbx
+    mov     rsi, r13
+    call    reloc_offset_write
+    test    rax, rax
+    jnz     .ret
+    jmp     .local_done
+.check_symbol:
     mov     rdi, rbx
     call    symbol_find
     test    rax, rax
@@ -401,6 +411,20 @@ reloc_resolve_all:
     imul    r13, RELOC_SIZE
     add     r13, r14                       ; r13 = RELOC* (survives calls)
 
+    ; "later - $$": the symbol's offset in its section
+    mov     rsi, [r13 + RELOC_sym]
+    test    rsi, rsi
+    jz      .resolve
+    cmp     byte [rsi], RELOC_OFFSET_MARK
+    jne     .resolve
+    mov     rdi, rbx
+    mov     rsi, r13
+    call    reloc_offset_write
+    test    rax, rax
+    jnz     .ret
+    jmp     .next
+.resolve:
+
     ; Resolve symbol
     mov     rdi, rbx
     mov     rsi, [r13 + RELOC_sym]         ; sym name ptr (symbol_find takes rsi)
@@ -504,6 +528,113 @@ reloc_resolve_all:
     pop     r12
     pop     rbx
     epilogue
+
+;*
+; * [reloc_offset_write]
+; * Purpose: Writes an "A - B" distance in place (parser_offset_name: the
+; *   name is MARK A MARK B), plus the addend. A and B must be in one
+; *   section (or both constants).
+; * Input  : RDI = AsmCtx, RSI = RELOC (its name marked RELOC_OFFSET_MARK)
+; * Output : RAX = OK or an error
+; ;
+reloc_offset_write:
+    extern  error_set_location
+    extern  error_set_subject
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    mov     rbx, rdi
+    mov     r13, rsi
+    ; split the name: A, then B after the second mark (a NUL there: the
+    ; relocation is resolved once)
+    mov     r12, [r13 + RELOC_sym]
+    inc     r12                            ; A
+    mov     r14, r12
+.split:
+    cmp     byte [r14], 0
+    je      .bad                           ; no B
+    cmp     byte [r14], RELOC_OFFSET_MARK
+    je      .split_done
+    inc     r14
+    jmp     .split
+.split_done:
+    mov     byte [r14], 0
+    inc     r14                            ; B
+    mov     rdi, rbx
+    mov     rsi, r12
+    call    symbol_find
+    test    rax, rax
+    jnz     .undef
+    cmp     word [rdx + SYMBOL_section], 0
+    je      .undef
+    mov     r15, rdx                       ; A's symbol
+    mov     r12, r14
+    mov     rdi, rbx
+    mov     rsi, r14
+    call    symbol_find
+    test    rax, rax
+    jnz     .undef
+    cmp     word [rdx + SYMBOL_section], 0
+    je      .undef
+    mov     ax, [r15 + SYMBOL_section]
+    cmp     ax, [rdx + SYMBOL_section]
+    jne     .bad                           ; not in one section
+    mov     r8, [r13 + RELOC_section]
+    test    r8, r8
+    jz      .bad
+    mov     rax, [r15 + SYMBOL_value]
+    sub     rax, [rdx + SYMBOL_value]
+    add     rax, [r13 + RELOC_addend]
+    mov     r9, [r8 + SECTION_data]
+    test    r9, r9
+    jz      .ok                            ; nobits: nothing to write
+    add     r9, [r13 + RELOC_offset]
+    mov     ecx, [r13 + RELOC_type]
+    cmp     ecx, R_X86_64_64
+    je      .q
+    cmp     ecx, R_X86_64_32
+    je      .d
+    cmp     ecx, R_X86_64_32S
+    je      .d
+    cmp     ecx, 12                        ; R_X86_64_16
+    je      .w
+    cmp     ecx, 14                        ; R_X86_64_8
+    jne     .bad
+    mov     [r9], al
+    jmp     .ok
+.w:
+    mov     [r9], ax
+    jmp     .ok
+.d:
+    mov     [r9], eax
+    jmp     .ok
+.q:
+    mov     [r9], rax
+.ok:
+    xor     eax, eax
+    jmp     .ret
+.undef:
+    mov     rdi, [r13 + RELOC_file]
+    mov     esi, [r13 + RELOC_line]
+    call    error_set_location
+    mov     rdi, r12
+    call    error_set_subject
+    mov     eax, EXIT_UNDEF_SYMBOL
+    jmp     .ret
+.bad:
+    mov     rdi, [r13 + RELOC_file]
+    mov     esi, [r13 + RELOC_line]
+    call    error_set_location
+    mov     eax, EXIT_INVALID_EXPR
+.ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
 
 ;*
 ; * [reloc_apply_one]
@@ -770,10 +901,10 @@ reloc_init:
     push    rbx
     mov     rbx, rdi
 
-    mov     rdi, [rbx + ASMCTX_arena]
     mov     rsi, RELOC_SIZE
     imul    rsi, MAX_RELOC
-    call    arena_alloc
+    extern  mem_reserve
+    call    mem_reserve                    ; committed as relocations are added
     check_err
 
     mov     [rbx + ASMCTX_relocs],   rdx
