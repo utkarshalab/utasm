@@ -34,7 +34,7 @@ extern  arena_alloc
 extern  mem_zero
 extern  global_ctx
 
-%define MAX_SECS        256
+%define MAX_SECS        (1 << 16)       ; bss: committed as used
 
 [SECTION .bss]
 alignb 8
