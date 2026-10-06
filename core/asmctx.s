@@ -81,6 +81,9 @@ asm_ctx_emit_byte:
 .grow_section:
     push    r13                    ; r13/r14 belong to the caller
     push    r14
+    push    rsi                    ; the byte to write: the calls below
+                                   ; take rsi (it came out as the low byte
+                                   ; of a pointer at each 64KB boundary)
 
     ; 1. Calculate new capacity (current * 2)
     mov     rax, [r12 + SECTION_cap]
@@ -119,12 +122,14 @@ asm_ctx_emit_byte:
     mov     [r12 + SECTION_data], r14
     mov     [r12 + SECTION_cap], r13
 
+    pop     rsi
     pop     r14
     pop     r13
     mov     rax, [r12 + SECTION_size]   ; .write expects rax = write offset
     jmp     .write
 
 .grow_error:
+    pop     rsi
     pop     r14
     pop     r13
 .error:
@@ -441,8 +446,17 @@ asm_ctx_align:
     cmp     r12, [r13 + SECTION_align]
     jbe     .calc_padding
     mov     [r13 + SECTION_align], r12
-    
+
 .calc_padding:
+    ; the fill: the source's byte, or the section's / smartalign's
+    test    r14, r14
+    jnz     .have_fill
+    mov     rdi, rbx
+    mov     rsi, r13
+    extern  align_fill_spec
+    call    align_fill_spec
+    mov     r14, rax
+.have_fill:
     ; 3. Calculate padding
     mov     rax, [r13 + SECTION_size]
     mov     rcx, r12
@@ -465,7 +479,7 @@ asm_ctx_align:
     test    rdx, rdx
     cmovz   rcx, rdx               ; ...or 0 when already aligned
     mov     rdx, r12               ; alignment
-    xor     r8d, r8d
+    mov     r8, r14                ; the fill spec, to pad again
     mov     edi, RELAX_ALIGN
     call    relax_note
     pop     r8
@@ -479,30 +493,27 @@ asm_ctx_align:
     
     sub     r12, rdx               ; padding = align - offset
     
-    ; 3. Determine fill byte
-    test    r14d, 0x100
-    jnz     .fill_loop             ; written by the source ("align 4, db 0xCC")
-    xor     r14, r14               ; Default: Zero-fill (safe for data/bss)
-    
-    mov     al, byte [r13 + SECTION_type]
-    cmp     al, SEC_TEXT
-    jne     .fill_loop
-    
-    ; Architecturally-aware NOP for .text sections
-    mov     al, [rbx + ASMCTX_target]
-    IF al, e, TARGET_AMD64
-        mov     r14b, 0x90     ; NOP (1 byte)
-    ELSEIF al, e, TARGET_AARCH64
-        ; AArch64 NOP is 0xD503201F. 
-        ; Since we emit byte-by-byte, we'll use a special loop if needed,
-        ; but for now, 0x00 is safer than a random byte.
-        ; Let's use 0x1F and ensure it's handled as part of a 4-byte NOP.
-        mov     r14b, 0x00     ; Default to 0 for now until 4-byte NOP loop implemented
-    ELSEIF al, e, TARGET_RISCV64
-        mov     r14b, 0x13     ; Part of NOP (addi x0, x0, 0)
-        or      r14b, 0x00
-    ENDIF
-    
+    ; 3. The bytes (optimizer/align.s): a byte repeated, or smartalign's
+    ; long NOPs
+    test    r14d, 0x200
+    jz      .fill_loop
+    lea     rdi, [rel align_buf]
+    mov     rsi, r12
+    mov     rdx, r14
+    extern  align_fill
+    call    align_fill
+    xor     r14d, r14d
+    extern  asm_ctx_emit_byte
+.smart_loop:
+    mov     rdi, rbx
+    lea     rax, [rel align_buf]
+    movzx   rsi, byte [rax + r14]
+    call    asm_ctx_emit_byte
+    inc     r14
+    cmp     r14, r12
+    jb      .smart_loop
+    jmp     .done
+
 .fill_loop:
     mov     rdi, rbx
     movzx   rsi, r14b
@@ -519,6 +530,52 @@ asm_ctx_align:
     epilogue
 
 ;*
+; * [asm_ctx_padto]
+; * Purpose: "times K-($-$$) db F": COUNT bytes F, noted (RELAX_PADTO) as
+; *   padding up to offset K = here + COUNT, which the jump optimizer
+; *   lengthens when it shortens code before it.
+; * Input  : RDI = AsmCtx, RSI = count, EDX = fill byte
+; * Output : RAX = OK or error
+; ;
+global asm_ctx_padto
+asm_ctx_padto:
+    push    rbx
+    push    r12
+    push    r13
+    mov     rbx, rdi
+    mov     r12, rsi
+    movzx   r13d, dl
+    mov     rax, [rbx + ASMCTX_curr_sec]
+    test    rax, rax
+    jz      .emit
+    push    rdi
+    push    rsi
+    mov     rsi, [rax + SECTION_size]      ; the padding's position
+    lea     rdx, [rsi + r12]               ; K
+    mov     ecx, r12d                      ; its length
+    mov     r8d, r13d
+    or      r8d, 0x100                     ; fill spec: the byte
+    mov     edi, RELAX_PADTO
+    call    relax_note
+    pop     rsi
+    pop     rdi
+.emit:
+    test    r12, r12
+    jz      .done
+    mov     rdi, rbx
+    mov     esi, r13d
+    call    asm_ctx_emit_byte
+    dec     r12
+    jmp     .emit
+.done:
+    xor     eax, eax
+.ret:
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+;*
 ; * [asm_ctx_align_fill]
 ; * Purpose: asm_ctx_align with the fill byte the source wrote.
 ; * Input  : RDI = AsmCtx, RSI = alignment, RDX = fill byte
@@ -532,6 +589,7 @@ asm_ctx_align_fill:
 
 [SECTION .bss]
 asm_align_fill: resw 1             ; 0x100 | fill byte, or 0 for the default
+align_buf:      resb 0x10000       ; smartalign's padding
 [SECTION .text]
 
 ;*
