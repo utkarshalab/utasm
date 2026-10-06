@@ -831,6 +831,8 @@ python3 scripts/compat/run_all.py build/gen1/utasm -v       # also list known di
 | elf32 objects | `-f elf32`: the same contents, relocations (types and in-place addends) and symbols as NASM's i386 objects, and a program linked with `ld -m elf_i386` that runs |
 | bits 32 / bits 16 | the encoder corpus assembled in 32- and 16-bit mode: the same bytes as NASM, or rejected where NASM rejects it (and where NASM takes registers those modes do not have) |
 | command line | NASM's options (`-I`, `-D`, `-U`, `-p`, `--before`, `-M` and its variants, `-E`) on the same files: the same binary, or the same dependency rules |
+| expressions | labels defined later in arithmetic (`dd (end - start) / 4`), as data, immediates and displacements, in flat binaries and objects: the same bytes; NASM's scalar rule (a label in `*`, `/`, shifts, `&`, comparisons...) before and after its definition: the same error messages; and `times` / `resb` / `equ` counts that utasm, reading once, must refuse |
+| limits | inputs past utasm's old fixed limits - long `times` lines, 100-parameter macros, long arguments and bodies, deep `%if` / `%push` / macro / include nesting, long `%ifidn` / `%defstr` / `%[...]` text, 300 sections: the same output as NASM |
 | encoder corpus | every instruction of `corpus.py` alone, byte for byte |
 | operand shapes | ~1,700 pairings of register and memory sizes for the general-purpose instructions: the same bytes as NASM, or rejected where NASM rejects them |
 | disassembler | `utasm --disasm` against `objdump -d -M intel` on the gen1 objects and the corpus |
