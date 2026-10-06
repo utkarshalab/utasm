@@ -401,7 +401,9 @@ parser_parse_instruction:
     call    parser_parse_operand
     test    rax, rax
     jnz     .error
-    
+    test    rdx, rdx
+    jz      .not_far_pointer       ; merged into the one before (", lsl #2")
+
     IF r14, ge, 4
         mov     rax, 210
         jmp     .error
@@ -749,8 +751,15 @@ parser_parse_operand:
                 mov  cl, [r12 + OPERAND_shift_imm]
                 mov  [rdi + OPERAND_shift_imm], cl
                 
-                ; Discard this temporary operand
-                xor  rax, rax
+                ; Discard this temporary operand: no operand for the
+                ; caller (rdx = 0); it returned the shift amount there, which
+                ; the caller copied an operand from, and skipped restoring
+                ; the registers it saved
+                xor     eax, eax
+                xor     edx, edx
+                pop     r13
+                pop     r12
+                pop     rbx
                 epilogue
                 ENDIF
                 ENDIF
@@ -1227,7 +1236,7 @@ parser_evaluate_expression:
     mov     rbx, rdi
     mov     r10, [rbx + PREP_ctx]
     inc     dword [r10 + ASMCTX_expr_depth]
-    cmp     dword [r10 + ASMCTX_expr_depth], 64
+    cmp     dword [r10 + ASMCTX_expr_depth], EXPR_MAX_DEPTH
     jg      .too_deep
     mov     rdi, rbx
     xor     esi, esi
@@ -4207,7 +4216,6 @@ parser_handle_pseudo_op:
 
 %define INCBIN_CHUNK 4096
 %define DS_UTF_SIZE  16384        ; __utf16__ / __utf32__ output
-%define TIMES_CAPACITY 256
 %define GSIZE_MAX      256          ; "global f:function (size)" per file
 %define GSIZE_TOKENS   64           ; tokens in one size expression
 
@@ -4321,7 +4329,7 @@ parser_data_string:
     call    parser_utf_encode
     test    rax, rax
     jnz     .ret
-    lea     r14, [rel ds_utf]
+    mov     r14, [rel ds_utf_buf]
     mov     r13, rdx
     jmp     .emit
 .utf_bad:
@@ -4419,10 +4427,10 @@ parser_utf_kind:
 ;*
 ; * [parser_utf_encode]
 ; * Purpose: UTF-8 text as UTF-16 (surrogate pairs above U+FFFF) or UTF-32,
-; *   little- or big-endian, into ds_utf.
+; *   little- or big-endian, into ds_utf_buf: at most four bytes for each
+; *   byte of text, so a bigger buffer is taken first when the text needs it.
 ; * Input  : RDI = text, RSI = its length, EDX = parser_utf_kind's form
-; * Output : RAX = OK or EXIT_INVALID_EXPR (not UTF-8, too long),
-; *          RDX = bytes written
+; * Output : RAX = OK or EXIT_INVALID_EXPR (not UTF-8), RDX = bytes written
 ; ;
 parser_utf_encode:
     push    r12
@@ -4432,13 +4440,23 @@ parser_utf_encode:
     mov     r12, rdi                       ; r12 = position
     lea     r13, [rdi + rsi]               ; r13 = end
     mov     r14d, edx                      ; r14 = form
-    lea     r15, [rel ds_utf]              ; r15 = output
+    lea     rax, [rsi * 4 + 8]
+    cmp     rax, [rel ds_utf_cap]
+    jbe     .room
+    mov     [rel ds_utf_cap], rax
+    mov     rsi, rax
+    extern  global_ctx
+    lea     rdi, [rel global_ctx]
+    mov     rdi, [rdi + ASMCTX_arena]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     [rel ds_utf_buf], rdx
+.room:
+    mov     r15, [rel ds_utf_buf]          ; r15 = output
 .char:
     cmp     r12, r13
     jae     .done
-    lea     rax, [rel ds_utf + DS_UTF_SIZE - 8]
-    cmp     r15, rax
-    jae     .bad
     movzx   edx, byte [r12]
     mov     eax, 1
     cmp     edx, 0x80
@@ -4476,7 +4494,7 @@ parser_utf_encode:
     add     r15, 4
     jmp     .char
 .done:
-    lea     rdx, [rel ds_utf]
+    mov     rdx, [rel ds_utf_buf]
     neg     rdx
     add     rdx, r15
     xor     eax, eax
@@ -4794,7 +4812,7 @@ ds_utf:        resb DS_UTF_SIZE    ; __utf16__ / __utf32__ text
 far_colon:     resb 1              ; a far pointer's colon came with its segment
 global expr_coeff
 expr_coeff:    resq 1              ; how the last value moves with $ (1: $ itself)
-times_newline: resq 1              ; the token that ends a times line
+times_newline: resq 1; the token that ends a times line
 times_padto:   resb 1              ; this times count is K - ($ - $$)
 equ_again:     resb 1              ; this equ defines a constant again
 pseudo_lc:     resb 64             ; a statement word in lower case
@@ -4829,6 +4847,9 @@ parser_handle_bits:
     ret
 
 [SECTION .data]
+align 8
+ds_utf_buf:    dq ds_utf           ; __utf16__ / __utf32__ output (it grows)
+ds_utf_cap:    dq DS_UTF_SIZE
 global asm_bits
 asm_bits:       db 64               ; bits 16 / 32 / 64
 align 8
@@ -5297,14 +5318,24 @@ parser_handle_times:
     ; 2. The statement to repeat, with the newline ending it, becomes a
     ;    %rep body: the parser then reads it N times, whether it is an
     ;    instruction or a directive, from a file or inside a macro.
-    mov     rdi, [rbx + PREP_arena]
-    mov     rsi, TIMES_CAPACITY * TOKEN_SIZE
-    call    arena_alloc
+    ; The line is read into the capture area (macro.s) and copied out at its
+    ; size at the end (a block for the longest line cost every pass of a
+    ; times inside a %rep its full size)
+    extern  prep_cap_base
+    extern  prep_cap_slot
+    extern  prep_cap_take
+    call    prep_cap_base
     test    rax, rax
     jnz     .ret
     mov     r12, rdx                   ; the tokens
     xor     r13d, r13d                 ; how many
 .token:
+    ; the slot first: a capture made while the token is read goes above
+    mov     rdi, r12
+    mov     esi, r13d
+    call    prep_cap_slot
+    test    rax, rax
+    jnz     .ret
     mov     rdi, rbx
     call    preprocessor_peek_token
     test    rax, rax
@@ -5314,8 +5345,6 @@ parser_handle_times:
     je      .captured
     cmp     eax, TOK_EOF
     je      .captured
-    cmp     r13d, TIMES_CAPACITY - 1
-    jae     .too_long
     mov     rdi, rbx
     call    preprocessor_next_token
     test    rax, rax
@@ -5329,6 +5358,15 @@ parser_handle_times:
     jmp     .token
 .captured:
     mov     [rel times_newline], rdx       ; the newline peeked
+    ; the tokens at their size (and a slot for the newline), out of the
+    ; capture area
+    mov     rdi, rbx
+    mov     rsi, r12
+    mov     edx, r13d
+    call    prep_cap_take
+    test    rax, rax
+    jnz     .ret
+    mov     r12, rdx
     ; "db F" with F a number or a character: written directly, N bytes
     ; (times 4194304 db 0 is a table, not four million statements); with a
     ; count K - ($ - $$) it is padding the jump optimizer can lengthen
@@ -5344,7 +5382,12 @@ parser_handle_times:
     movzx   eax, byte [r12 + TOKEN_SIZE + TOKEN_kind]
     mov     rdx, [r12 + TOKEN_SIZE + TOKEN_value]
     cmp     eax, TOK_CHAR
+    jne     .fill_number
+    ; one character only: 'ab' is two bytes and '' none (db writes them all)
+    cmp     word [r12 + TOKEN_SIZE + TOKEN_len], 1
     je      .padto_fill
+    jmp     .not_padto
+.fill_number:
     cmp     eax, TOK_NUMBER
     jne     .not_padto
     mov     rdi, rdx
@@ -5430,9 +5473,6 @@ parser_handle_times:
     pop     r12
     pop     rbx
     ret
-.too_long:
-    mov     rax, EXIT_UNEXPECTED_TOKEN
-    jmp     .ret
 
 ;*
 ; * [parser_drain_line]
@@ -5791,8 +5831,27 @@ parser_emit_data_8:
         mov     rdi, rbx
         call    parser_evaluate_expression
         check_err
+        ; a label in it is relocated, as dw / dd do it: "db later - $$",
+        ; "db end - start" with labels not defined yet were written as 0
+        mov     r10, rdx
+        mov     r8, r11
+        mov     r9, rcx
+        call    parser_data_symbol
+        test    rsi, rsi
+        jz      .plain8
+        mov     rdx, rsi               ; name
+        mov     rcx, rdi               ; addend
         mov     rdi, [rbx + PREP_ctx]
-        mov     rsi, rdx
+        mov     rax, [rdi + ASMCTX_curr_sec]
+        mov     rsi, [rax + SECTION_size]
+        mov     r8, R_X86_64_8
+        extern  reloc_record
+        call    reloc_record
+        check_err
+        xor     r10d, r10d
+.plain8:
+        mov     rdi, [rbx + PREP_ctx]
+        mov     rsi, r10
         extern  asmctx_emit_byte
         call    asmctx_emit_byte
         ENDIF
