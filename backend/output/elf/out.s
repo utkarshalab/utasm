@@ -65,11 +65,18 @@ elf64_emit:
     call    elf64_order_text
 .text_kept:
 
-    ; Allocate section info table (32 entries of {offset, size} = 512 bytes)
-    sub     rsp, 512
-    
+    ; The section info table, {offset, size} by section index, on the stack
+    ; (the code below addresses it at rsp): an entry for every section, its
+    ; .rela section and the ones made here. It was 32 entries, and a file
+    ; with 30 sections wrote past it over the saved registers.
+    movzx   eax, word [r12 + ASMCTX_seccount]
+    lea     rax, [rax * 2 + 16]
+    shl     rax, 4                         ; 16 bytes each (a multiple of 16)
+    mov     [rel elf_info_size], rax
+    sub     rsp, rax
+
     mov     rdi, rsp
-    mov     rsi, 512
+    mov     rsi, rax
     call    mem_zero
 
     ; ---- 0. Resolve Entry Point (Standalone only) ----
@@ -511,7 +518,7 @@ elf64_emit:
 .error:
     mov     rax, EXIT_ENCODE_FAIL
 .done:
-    add     rsp, 512
+    add     rsp, [rel elf_info_size]
     pop     r15
     pop     r14
     pop     r13
@@ -637,6 +644,7 @@ elf_sa_has_ro:  resb 1
 elf_sa_has_rw:  resb 1
 elf_sa_on:      resb 1              ; 1 while writing a standalone executable
 elf_sa_ctx:     resq 1
+elf_info_size:  resq 1              ; elf64_emit: its section table's size
 elf_sa_rw_off:  resq 1              ; file offset of the RW segment
 elf_sa_rw_end:  resq 1              ; its end in memory (.bss included), as offset
 elf_sa_text_end: resq 1             ; end of the R+X segment in the file
