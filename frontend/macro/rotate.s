@@ -22,7 +22,6 @@
 
 extern  parser_evaluate_expression
 
-%define ROT_MAX     32              ; macro arguments (MACRO_ARG_CAPACITY)
 
 [SECTION .text]
 
@@ -39,7 +38,6 @@ prep_handle_rotate:
     push    r13
     push    r14
     push    r15
-    sub     rsp, ROT_MAX * 8 + ROT_MAX     ; scratch: pointers, then lengths
     mov     rbx, rdi
 
     mov     rdi, rbx
@@ -55,14 +53,12 @@ prep_handle_rotate:
 .owner:
     test    r12, r12
     jz      .no_macro
-    cmp     byte [r12 + MACROEXP_nparams], 0
+    cmp     word [r12 + MACROEXP_nparams], 0
     jne     .found
     mov     r12, [r12 + MACROEXP_parent]
     jmp     .owner
 .found:
-    movzx   r13d, byte [r12 + MACROEXP_nparams]
-    cmp     r13d, ROT_MAX
-    ja      .no_macro
+    movzx   r13d, word [r12 + MACROEXP_nparams]
 
     ; k = n mod count, as a left rotation (negative n rotates right)
     mov     rax, r14
@@ -76,32 +72,18 @@ prep_handle_rotate:
     test    r15, r15
     jz      .ok
 
-    ; new[i] = old[(i + k) mod count], for the argument pointers and lengths
-    mov     r8, [r12 + MACROEXP_params]
-    mov     r9, [r12 + MACROEXP_arglens]
-    xor     ecx, ecx
-.copy:
-    mov     rax, [r8 + rcx*8]
-    mov     [rsp + rcx*8], rax
-    movzx   eax, byte [r9 + rcx]
-    mov     [rsp + ROT_MAX * 8 + rcx], al
-    inc     ecx
-    cmp     ecx, r13d
-    jb      .copy
-    xor     ecx, ecx
-.place:
-    lea     rax, [rcx + r15]
-    cmp     rax, r13
-    jb      .src_ok
-    sub     rax, r13
-.src_ok:
-    mov     rdx, [rsp + rax*8]
-    mov     [r8 + rcx*8], rdx
-    movzx   edx, byte [rsp + ROT_MAX * 8 + rax]
-    mov     [r9 + rcx], dl
-    inc     ecx
-    cmp     ecx, r13d
-    jb      .place
+    ; new[i] = old[(i + k) mod count], for the argument pointers and
+    ; lengths, in place: reverse [0, k), reverse [k, count), reverse it all
+    ; (any number of arguments, no scratch)
+    xor     edi, edi
+    mov     rsi, r15
+    call    .reverse
+    mov     rdi, r15
+    mov     rsi, r13
+    call    .reverse
+    xor     edi, edi
+    mov     rsi, r13
+    call    .reverse
 
 .ok:
     mov     rax, OK
@@ -109,10 +91,31 @@ prep_handle_rotate:
 .no_macro:
     mov     rax, EXIT_UNEXPECTED_TOKEN     ; %rotate outside a macro call
 .ret:
-    add     rsp, ROT_MAX * 8 + ROT_MAX
     pop     r15
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
+    ret
+
+; .reverse: entries [rdi, rsi) of params[] and arglens[] of r12 in reverse
+; order. Clobbers rax, rcx, rdx, rdi, rsi, r8, r9.
+.reverse:
+    mov     r8, [r12 + MACROEXP_params]
+    mov     r9, [r12 + MACROEXP_arglens]
+.rev_step:
+    dec     rsi
+    cmp     rdi, rsi
+    jge     .rev_done
+    mov     rax, [r8 + rdi*8]
+    mov     rdx, [r8 + rsi*8]
+    mov     [r8 + rdi*8], rdx
+    mov     [r8 + rsi*8], rax
+    mov     eax, [r9 + rdi*4]
+    mov     edx, [r9 + rsi*4]
+    mov     [r9 + rdi*4], edx
+    mov     [r9 + rsi*4], eax
+    inc     rdi
+    jmp     .rev_step
+.rev_done:
     ret
