@@ -75,7 +75,8 @@ arena_init:
     mov     rdx, PROT_READ         
     or      rdx, PROT_WRITE        ; prot = PROT_READ | PROT_WRITE
     mov     r10, MAP_PRIVATE
-    or      r10, MAP_ANONYMOUS     ; flags = MAP_PRIVATE | MAP_ANONYMOUS
+    or      r10, MAP_ANONYMOUS     ; flags = MAP_PRIVATE | MAP_ANONYMOUS, and
+    or      r10, MAP_NORESERVE     ; pages only taken as they are touched
     mov     r8,  -1                ; fd = -1
     xor     r9,  r9                ; offset = 0
     mov     rax, AMD64_SYS_MMAP
@@ -112,6 +113,39 @@ arena_init:
     pop     r12
     pop     rbx
     epilogue
+    ret
+
+; ---- mem_reserve -------------------------
+;
+; mem_reserve
+; A large zeroed table outside the arena: address space reserved with
+; MAP_NORESERVE, pages committed only as they are touched (the symbol
+; table, its hash, the relocations).
+; Input    : rsi = size in bytes
+; Output   : rax = EXIT_OK or EXIT_OOM, rdx = the memory
+; Clobbers : rcx, r8-r11
+;
+global mem_reserve
+mem_reserve:
+    push    rdi
+    xor     edi, edi
+    add     rsi, PAGE_SIZE - 1
+    and     rsi, ~(PAGE_SIZE - 1)
+    mov     edx, PROT_READ | PROT_WRITE
+    mov     r10d, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE
+    mov     r8, -1
+    xor     r9d, r9d
+    mov     eax, AMD64_SYS_MMAP
+    syscall
+    pop     rdi
+    cmp     rax, -4095
+    jae     .fail
+    mov     rdx, rax
+    xor     eax, eax
+    ret
+.fail:
+    mov     eax, EXIT_OOM
+    xor     edx, edx
     ret
 
 ; ---- arena_alloc -------------------------
