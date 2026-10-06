@@ -922,6 +922,9 @@ parser_evaluate_additive:
         mov     rsi, [rel expr_coeff]
         call    expr_coeff_sum
         mov     [rsp], rax
+        call    expr_plus_names            ; (one of two names not known yet)
+        test    rax, rax
+        jnz     .error                     ; ("label + label")
         ; "1 + label", "CONST + label": the label is the right-hand term's
         test    r14, r14
         jnz     .loop
@@ -968,7 +971,23 @@ parser_evaluate_additive:
         ; shortened - so nothing has to keep its size for it.
         mov     rax, r14
         or      rax, rcx
-        jz      .not_offset                ; both defined: a number now
+        jnz     .offset_names
+        ; "global x" before "x:": an entry with no section yet is not defined
+        ; yet either
+        push    rdi
+        mov     rdi, r15
+        call    expr_sym_class
+        cmp     eax, 2
+        je      .offset_undef
+        mov     rdi, r11
+        call    expr_sym_class
+        cmp     eax, 2
+        je      .offset_undef
+        pop     rdi
+        jmp     .not_offset                ; both defined: a number now
+.offset_undef:
+        pop     rdi
+.offset_names:
         test    r14, r14
         jz      .off_left_sym
         cmp     byte [r14], RELOC_OFFSET_MARK
@@ -1000,6 +1019,34 @@ parser_evaluate_additive:
         xor     r15d, r15d
         jmp     .loop
 .not_offset:
+        ; a label not defined yet that cannot be a distance here ("5 - later",
+        ; or one side a distance already), or "5 - label" (the label's
+        ; address): worked out at the end, keeping nothing from moving
+        mov     rax, r14
+        or      rax, rcx
+        jnz     .minus_lost
+        push    rdi
+        push    rsi
+        mov     rdi, r15
+        call    expr_sym_class
+        mov     esi, eax                   ; the left one
+        mov     rdi, r11
+        call    expr_sym_class             ; the right one
+        cmp     esi, 1
+        je      .minus_known               ; "label_b - label_a"
+        test    eax, eax
+        jz      .minus_known               ; "5 - CONST"
+        pop     rsi
+        pop     rdi
+        jmp     .minus_lost
+.minus_known:
+        pop     rsi
+        pop     rdi
+        jmp     .not_lost
+.minus_lost:
+        mov     byte [rel expr_lost], 1
+        jmp     .diff_number
+.not_lost:
 
         ; "b - a", both labels of one section: the distance is a number now,
         ; so the code between them must keep its size (a frozen range,
@@ -1074,6 +1121,52 @@ parser_evaluate_additive:
     mov     rax, EXIT_IMM_RANGE
     jmp     .error
 
+; expr_plus_names: a sum of two names (r14 / r15 the left one's, rcx / r11
+; the right one's). Two labels are not an address (NASM: "not simple"); one
+; not defined yet with another name: only one name can go on, so the sum is
+; worked out at the end (expr_lost).
+; Output: rax = OK or EXIT_NOT_SIMPLE. Preserves the others.
+expr_plus_names:
+    push    rdi
+    push    rsi
+    ; the left one: esi = 0 none, 1 an address, 2 not known yet
+    xor     esi, esi
+    test    r14, r14
+    jz      .left_sym
+    mov     esi, 2
+    jmp     .right
+.left_sym:
+    mov     rdi, r15
+    call    expr_sym_class
+    mov     esi, eax
+.right:
+    test    rcx, rcx
+    jz      .right_sym
+    mov     eax, 2
+    jmp     .both
+.right_sym:
+    mov     rdi, r11
+    call    expr_sym_class
+.both:
+    test    esi, esi
+    jz      .ok
+    test    eax, eax
+    jz      .ok
+    cmp     esi, 1
+    jne     .lost
+    cmp     eax, 1
+    jne     .lost
+    mov     eax, EXIT_NOT_SIMPLE           ; two addresses
+    jmp     .ret
+.lost:
+    mov     byte [rel expr_lost], 1
+.ok:
+    xor     eax, eax
+.ret:
+    pop     rsi
+    pop     rdi
+    ret
+
 ;*
 ; * [expr_coeff_sum]
 ; * Purpose: Adds two position coefficients (expr_coeff): how much a value
@@ -1102,11 +1195,38 @@ expr_coeff_sum:
 ; *   << >> & | ^ comparisons): the result is a plain number. A label in
 ; *   either is a position used as a number, which freezes its section;
 ; *   the coefficient is 0, or EXPR_NONLINEAR when either depended on $.
+; *   A label not defined yet in either: the value is worked out at the end
+; *   (expr_lost, parser_evaluate_expression).
 ; * Input  : RDI = left SYMBOL* (or 0), RSI = left deferred name (or 0),
-; *          RDX = left coefficient; right: R11, RCX, expr_coeff
+; *          R8 = left coefficient; right: R11, RCX, expr_coeff
 ; * Output : expr_coeff, RAX = the new coefficient. Preserves the others.
 ; ;
 expr_combine:
+    test    rsi, rsi
+    jnz     .lost
+    test    rcx, rcx
+    jnz     .lost
+    push    rax
+    call    expr_sym_class                 ; (rdi: the left SYMBOL*)
+    cmp     eax, 2
+    je      .lost_pop
+    push    rdi
+    mov     rdi, r11
+    call    expr_sym_class
+    pop     rdi
+    cmp     eax, 2
+    je      .lost_pop
+    pop     rax
+    jmp     .freeze
+.lost_pop:
+    pop     rax
+.lost:
+    mov     byte [rel expr_lost], 1
+.freeze:
+    ; worked out at the end, an expression keeps nothing from moving
+    cmp     byte [rel expr_lost], 0
+    jne     .coeff
+    push    r8
     push    rdi
     push    rsi
     call    relax_freeze_symref
@@ -1115,8 +1235,10 @@ expr_combine:
     call    relax_freeze_symref
     pop     rsi
     pop     rdi
+    pop     r8
+.coeff:
     xor     eax, eax
-    test    rdx, rdx
+    test    r8, r8
     jnz     .nonlinear
     cmp     qword [rel expr_coeff], 0
     je      .set
@@ -1124,6 +1246,25 @@ expr_combine:
     mov     rax, EXPR_NONLINEAR
 .set:
     mov     [rel expr_coeff], rax
+    ret
+
+; expr_unary_lost: - ~ ! of a label not defined yet (rcx, or r11 an entry
+; with no section yet), or - of a label (its address, known at the end):
+; worked out at the end (expr_lost). Preserves every register.
+expr_unary_lost:
+    test    rcx, rcx
+    jnz     .lost
+    push    rax
+    push    rdi
+    mov     rdi, r11
+    call    expr_sym_class
+    pop     rdi
+    test    eax, eax
+    pop     rax
+    jz      .ret
+.lost:
+    mov     byte [rel expr_lost], 1
+.ret:
     ret
 
 ; expr_coeff_taint: after ~ or !, a value that depended on $ no longer
@@ -1222,11 +1363,262 @@ parser_offset_name:
 
 ;*
 ; * [parser_evaluate_expression]
-; * Purpose: Entry point for expression evaluation: the binary levels
-; *   (parser_eval_level), then cond ? a : b.
+; * Purpose: Evaluates an expression (parser_eval_expr_body). At the
+; *   outermost level its tokens are recorded. When a label not defined yet
+; *   went into arithmetic ("dd (end - start) / 4", "-later"), utasm, which
+; *   reads the source once, cannot know the value here: the expression
+; *   comes back as a deferred name (RELOC_EXPR_MARK) - a forward reference
+; *   to every caller, which gives it its full width and a relocation - and
+; *   the relocation pass works it out once every label is placed
+; *   (parser_deferred_value). It was written as 0 before.
+; * Input  : RDI = PrepState
+; * Output : RAX = OK or an error, RDX = value, RCX = deferred name (0 if
+; *          none), R11 = resolved SYMBOL* (0 if none)
 ; ;
 global parser_evaluate_expression
 parser_evaluate_expression:
+    inc     dword [rel expr_level]
+    cmp     dword [rel expr_level], 1
+    jne     .inner
+    cmp     byte [rel expr_deferring], 0
+    jne     .inner                         ; (one kept, being worked out)
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    mov     rbx, rdi
+    mov     byte [rel expr_lost], 0
+    extern  prep_rec_begin
+    extern  prep_rec_end
+    extern  prep_rec_drop
+    call    prep_rec_begin
+    test    rax, rax
+    jnz     .top_ret
+    mov     rdi, rbx
+    call    parser_eval_expr_body
+    mov     r12, rax
+    mov     r13, rdx
+    mov     r14, rcx
+    mov     r15, r11
+    call    prep_rec_end                   ; rdx = tokens, rcx = count
+    test    r12, r12
+    jnz     .top_drop
+    cmp     byte [rel expr_lost], 0
+    je      .top_drop
+    test    eax, eax
+    jnz     .top_too_long
+    ; kept: a record of its own, under the deferred name
+    mov     rdi, rbx
+    mov     rsi, rdx
+    mov     rdx, rcx
+    call    parser_defer_record
+    test    rax, rax
+    jnz     .top_fail
+    mov     r14, rdx                       ; the deferred name
+    xor     r13d, r13d
+    xor     r15d, r15d
+    jmp     .top_out
+.top_too_long:
+    mov     r12, EXIT_EXPR_TOO_DEEP        ; (the capture area could not hold it)
+    jmp     .top_drop
+.top_fail:
+    mov     r12, rax
+.top_drop:
+    call    prep_rec_drop
+.top_out:
+    mov     rax, r12
+    mov     rdx, r13
+    mov     rcx, r14
+    mov     r11, r15
+.top_ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    dec     dword [rel expr_level]
+    ret
+.inner:
+    call    parser_eval_expr_body
+    dec     dword [rel expr_level]
+    ret
+
+;*
+; * [parser_defer_record]
+; * Purpose: The record a kept expression is known by: its first byte is
+; *   RELOC_EXPR_MARK (as a name: "\x1e"), then its text (for messages) and
+; *   its tokens, ended by a newline, out of the capture area.
+; *     +0 RELOC_EXPR_MARK, 0   +8 text   +16 tokens   +24 count (dword)
+; * Input  : RDI = PrepState, RSI = the recorded tokens, RDX = how many
+; * Output : RAX = OK or an error, RDX = the record
+; ;
+parser_defer_record:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    mov     rbx, rdi
+    mov     r12, rsi
+    mov     r13, rdx
+    extern  prep_tokens_text
+    call    prep_tokens_text
+    test    rax, rax
+    jnz     .ret
+    mov     r14, rdx                       ; the text
+    mov     rdi, rbx
+    mov     rsi, r12
+    mov     rdx, r13
+    extern  prep_cap_take
+    call    prep_cap_take                  ; (one slot more: the newline)
+    test    rax, rax
+    jnz     .ret
+    mov     r12, rdx
+    imul    rax, r13, TOKEN_SIZE
+    lea     rdi, [r12 + rax]               ; slot N: the last token, as a newline
+    lea     rsi, [rdi - TOKEN_SIZE]
+    mov     ecx, TOKEN_SIZE / 8
+    rep movsq
+    mov     byte [rdi - TOKEN_SIZE + TOKEN_kind], TOK_NEWLINE
+    mov     qword [rdi - TOKEN_SIZE + TOKEN_value], 0
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, 32
+    call    arena_alloc                    ; zeroed
+    test    rax, rax
+    jnz     .ret
+    mov     byte [rdx], RELOC_EXPR_MARK
+    mov     [rdx + 8], r14
+    mov     [rdx + 16], r12
+    lea     eax, [r13d + 1]
+    mov     [rdx + 24], eax
+    xor     eax, eax
+.ret:
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+;*
+; * [parser_deferred_value]
+; * Purpose: The value of an expression parser_evaluate_expression kept,
+; *   now that every label is placed: its tokens are read again, through an
+; *   expansion of their own, with no macro expanded and nothing recorded.
+; * Input  : RDI = the record
+; * Output : RAX = OK or an error, RDX = the value, R11 = a SYMBOL* still in
+; *          it (an address, not a number, in an object file)
+; ;
+global parser_deferred_value
+parser_deferred_value:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    sub     rsp, TOKEN_SIZE + 16           ; the peek slot set aside, its flag
+    mov     r12, rdi
+    extern  global_prep
+    lea     rbx, [rel global_prep]
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_mac_exp]
+    mov     [rsp + TOKEN_SIZE + 8], rax    ; the expansions there are now
+    ; the token waiting in the peek slot (the end of the file) kept aside
+    mov     al, [rbx + PREP_has_peek]
+    mov     [rsp + TOKEN_SIZE], al
+    lea     rsi, [rbx + PREP_peek]
+    mov     rdi, rsp
+    mov     ecx, TOKEN_SIZE / 8
+    rep movsq
+    mov     byte [rbx + PREP_has_peek], FALSE
+    ; an anonymous macro holding the tokens, expanded once
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, MACRO_SIZE
+    call    arena_alloc
+    test    rax, rax
+    jnz     .restore
+    mov     byte [rdx + MACRO_tag], TAG_MACRO
+    mov     byte [rdx + MACRO_flags], MACRO_FLAG_TIMES
+    mov     rax, [r12 + 16]
+    mov     [rdx + MACRO_tokens], rax
+    mov     eax, [r12 + 24]
+    mov     [rdx + MACRO_ntokens], eax
+    mov     rdi, rbx
+    mov     rsi, rdx
+    extern  prep_expand_start
+    call    prep_expand_start
+    test    rax, rax
+    jnz     .restore
+    mov     byte [rel expr_deferring], 1
+    extern  prep_noexpand
+    mov     byte [rel prep_noexpand], 1
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    mov     byte [rel prep_noexpand], 0
+    mov     byte [rel expr_deferring], 0
+    mov     r13, rax
+    mov     r14, rdx
+    mov     r15, r11
+    test    rax, rax
+    jnz     .drain
+    ; a name still not defined: the error an undefined symbol gets
+    test    rcx, rcx
+    jz      .ends
+    mov     rdi, rcx
+    call    error_set_subject
+    mov     r13, EXIT_UNDEF_SYMBOL
+    jmp     .drain
+.ends:
+    ; the whole of it read: the newline next
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .drain
+    cmp     byte [rdx + TOKEN_kind], TOK_NEWLINE
+    je      .drain
+    mov     r13, EXIT_INVALID_EXPR
+.drain:
+    ; the expansion done with, whatever was left of it
+    mov     byte [rbx + PREP_has_peek], FALSE
+.pop:
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_mac_exp]
+    cmp     rax, [rsp + TOKEN_SIZE + 8]
+    je      .popped
+    test    rax, rax
+    jz      .popped
+    mov     rdi, rbx
+    extern  prep_expand_pop
+    call    prep_expand_pop
+    jmp     .pop
+.popped:
+    mov     rax, r13
+    mov     rdx, r14
+    mov     r11, r15
+.restore:
+    push    rax
+    push    rdx
+    lea     rsi, [rsp + 16]
+    lea     rdi, [rbx + PREP_peek]
+    mov     ecx, TOKEN_SIZE / 8
+    rep movsq
+    mov     cl, [rsp + 16 + TOKEN_SIZE]
+    mov     [rbx + PREP_has_peek], cl
+    pop     rdx
+    pop     rax
+    add     rsp, TOKEN_SIZE + 16
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+;*
+; * [parser_eval_expr_body]
+; * Purpose: An expression: the binary levels (parser_eval_level), then
+; *   cond ? a : b.
+; ;
+parser_eval_expr_body:
     prologue
     push    rbx
     push    r12
@@ -1294,6 +1686,19 @@ parser_evaluate_expression:
     jne     .no_ternary
     mov     rdi, rbx
     call    preprocessor_next_token
+    test    r12, r12
+    jnz     .cond_lost
+    mov     rdi, r14
+    call    expr_sym_class
+    cmp     eax, 2
+    je      .cond_lost
+    test    eax, eax
+    jz      .cond_known
+    mov     rax, EXIT_NONSCALAR_COND       ; NASM: "label ? a : b"
+    jmp     .done
+.cond_lost:
+    mov     byte [rel expr_lost], 1        ; a condition not known yet
+.cond_known:
     mov     rdi, rbx
     call    parser_evaluate_expression     ; the "then" value
     check_err_to .done
@@ -1355,6 +1760,167 @@ parser_evaluate_expression:
 %define EOP_SHL   14
 %define EOP_SHR   15
 %define EOP_SAR   16
+%define EXP_MUL   17              ; (expr_scalar) * , / // % %% , ~ , !
+%define EXP_DIV   18
+%define EXP_NOT   19
+%define EXP_LNOT  20
+
+;*
+; * [expr_sym_class]
+; * Purpose: What a resolved symbol is to an operator, as NASM sees it.
+; * Input  : RDI = SYMBOL* or 0
+; * Output : EAX = 0 a number (none, a constant), 1 an address (a label,
+; *          data, an extern - not a scalar), 2 not defined yet (an entry
+; *          with no section yet, "global x" before "x:")
+; * Preserves the others.
+; ;
+expr_sym_class:
+    xor     eax, eax
+    test    rdi, rdi
+    jz      .ret
+    push    rcx
+    movzx   ecx, byte [rdi + SYMBOL_kind]
+    cmp     ecx, SYM_EXTERN
+    je      .address
+    cmp     ecx, SYM_COMMON
+    je      .address
+    ; the kinds a label has (an entry made before its definition: unknown)
+    cmp     ecx, SYM_UNKNOWN
+    je      .label
+    cmp     ecx, SYM_LABEL
+    je      .label
+    cmp     ecx, SYM_DATA
+    je      .label
+    cmp     ecx, SYM_FORWARD
+    je      .label
+    cmp     ecx, SYM_PROC
+    je      .label
+    cmp     ecx, SYM_LOCAL_LABEL
+    je      .label
+    jmp     .out                           ; a constant, %assign, equ, field
+.label:
+    movzx   ecx, word [rdi + SYMBOL_section]
+    cmp     ecx, SHN_ABS
+    je      .out                           ; (an absolute one is a number)
+    mov     eax, 2
+    test    ecx, ecx
+    jz      .out                           ; no section yet
+.address:
+    mov     eax, 1
+.out:
+    pop     rcx
+.ret:
+    ret
+
+; expr_deferred_addr: rdx = the value of label r15; when a kept expression
+; is worked out in a flat binary or an executable, the label's address:
+; its section's address added (sections are placed by then). Preserves the
+; others.
+expr_deferred_addr:
+    cmp     byte [rel expr_deferring], 0
+    je      .ret
+    push    rax
+    push    rcx
+    extern  global_ctx
+    lea     rax, [rel global_ctx]
+    cmp     byte [rax + ASMCTX_fmt], FMT_BIN
+    je      .placed
+    cmp     byte [rax + ASMCTX_standalone], 0
+    je      .out
+.placed:
+    movzx   ecx, word [r15 + SYMBOL_section]
+    test    ecx, ecx
+    jz      .out
+    cmp     ecx, 0xFF00
+    jae     .out
+    cmp     cx, [rax + ASMCTX_seccount]
+    ja      .out
+    mov     rax, [rax + ASMCTX_sections]
+    mov     rax, [rax + rcx * 8 - 8]
+    test    rax, rax
+    jz      .out
+    add     rdx, [rax + SECTION_addr]
+.out:
+    pop     rcx
+    pop     rax
+.ret:
+    ret
+
+;*
+; * [expr_scalar]
+; * Purpose: NASM's rule for an operator other than + and -: a label is an
+; *   address, not a scalar. Its error, or 0.
+; * Input  : EDI = what the operator is: EOP_* (parser_eval_level), or
+; *          EXP_MUL / EXP_DIV (* and / // % %%), EXP_NOT / EXP_LNOT (~ !);
+; *          RSI = the left operand's SYMBOL* (0 for a unary one), R11 = the
+; *          right one's
+; * Output : RAX = OK or the error (its subject the operator's text)
+; * Preserves the others.
+; ;
+expr_scalar:
+    push    rdi
+    push    rsi
+    push    rdx
+    push    rcx
+    mov     edx, edi                       ; the operator
+    mov     rdi, rsi
+    call    expr_sym_class
+    mov     ecx, eax                       ; left: 1 an address
+    mov     rdi, r11
+    call    expr_sym_class                 ; right
+    cmp     ecx, 2
+    je      .ok                            ; (not defined yet: at the end)
+    cmp     eax, 2
+    je      .ok
+    cmp     ecx, 1
+    je      .some
+    cmp     eax, 1
+    jne     .ok
+.some:
+    ; comparisons: of two labels in one section, the distance (a scalar)
+    cmp     edx, EOP_EQ
+    jb      .not_cmp
+    cmp     edx, EOP_CMP3
+    ja      .not_cmp
+    cmp     ecx, eax
+    jne     .cmp_bad
+    movzx   eax, word [rsi + SYMBOL_section]
+    cmp     ax, [r11 + SYMBOL_section]
+    je      .ok
+.cmp_bad:
+    lea     rcx, [rel eop_texts]
+    mov     rdi, [rcx + rdx * 8]
+    call    error_set_subject
+    mov     eax, EXIT_NONSCALAR_CMP
+    jmp     .ret
+.not_cmp:
+    mov     eax, EXIT_NOT_SIMPLE
+    cmp     edx, EXP_MUL
+    je      .ret
+    mov     eax, EXIT_NONSCALAR_DIV
+    cmp     edx, EXP_DIV
+    je      .ret
+    cmp     edx, EOP_SHL
+    jb      .op_text
+    cmp     edx, EOP_SAR
+    ja      .op_text
+    mov     eax, EXIT_NONSCALAR_SHIFT      ; << >> >>> <<<
+    jmp     .ret
+.op_text:
+    lea     rcx, [rel eop_texts]
+    mov     rdi, [rcx + rdx * 8]
+    call    error_set_subject
+    mov     eax, EXIT_NONSCALAR_OP
+    jmp     .ret
+.ok:
+    xor     eax, eax
+.ret:
+    pop     rcx
+    pop     rdx
+    pop     rsi
+    pop     rdi
+    ret
+
 
 ;*
 ; * [parser_eval_level]
@@ -1413,6 +1979,12 @@ parser_eval_level:
     mov     rdi, rbx
     mov     rsi, [rsp]
     call    parser_eval_next
+    test    rax, rax
+    jnz     .ret
+    ; NASM: a label is an address, not a scalar, for these operators
+    mov     edi, r15d
+    mov     rsi, [rsp + 8]
+    call    expr_scalar
     test    rax, rax
     jnz     .ret
     ; a plain number now; a label in it was a position used as a number
@@ -1607,7 +2179,10 @@ parser_evaluate_term:
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
+        mov     edi, EXP_MUL
         call    .combine
+        test    rax, rax
+        jnz     .done
         ; Multiplication wraps modulo 2^64 rather than erroring: hash
         ; constructions such as FNV-1a rely on it, including the
         ; compile_time_hash tables in backend/isa/*.s.
@@ -1620,7 +2195,10 @@ parser_evaluate_term:
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
+        mov     edi, EXP_DIV
         call    .combine
+        test    rax, rax
+        jnz     .done
         test    rdx, rdx
         jz      .div_zero
         mov     r14, rdx           ; R14 = divisor
@@ -1637,7 +2215,10 @@ parser_evaluate_term:
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
+        mov     edi, EXP_DIV
         call    .combine
+        test    rax, rax
+        jnz     .done
         test    rdx, rdx
         jz      .div_zero
         mov     r14, rdx
@@ -1654,7 +2235,10 @@ parser_evaluate_term:
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
+        mov     edi, EXP_DIV
         call    .combine
+        test    rax, rax
+        jnz     .done
         test    rdx, rdx
         jz      .div_zero
         mov     r14, rdx
@@ -1669,8 +2253,13 @@ parser_evaluate_term:
     xor     rax, rax
     jmp     .done
 
-; the operands of * / % %%: a plain number from here on
+; the operands of * / % %% (edi: EXP_MUL / EXP_DIV): a plain number from
+; here on. rax = OK, or NASM's error for a label in it.
 .combine:
+    mov     rsi, [rsp + 8]
+    call    expr_scalar
+    test    rax, rax
+    jnz     .combine_ret
     mov     r8, [rsp + 16]
     mov     rdi, [rsp + 8]
     mov     rsi, r15
@@ -1678,6 +2267,8 @@ parser_evaluate_term:
     mov     [rsp + 16], rax
     mov     qword [rsp + 8], 0
     xor     r15d, r15d
+    xor     eax, eax
+.combine_ret:
     ret
 
 .error:
@@ -1703,6 +2294,10 @@ parser_evaluate_term:
     jmp     .done
 
 .div_zero:
+    ; a divisor not known yet (a label defined later): the expression is
+    ; worked out at the end
+    cmp     byte [rel expr_lost], 0
+    jne     .loop
     mov     rax, EXIT_INVALID_IMM
     jmp     .done
 
@@ -1748,6 +2343,7 @@ parser_evaluate_factor:
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
+        call    expr_unary_lost
         neg     rdx
         neg     qword [rel expr_coeff]
         xor     rax, rax
@@ -1756,6 +2352,14 @@ parser_evaluate_factor:
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
+        push    rdx
+        mov     edi, EXP_NOT                ; ~ of a label: an error, as in NASM
+        xor     esi, esi
+        call    expr_scalar
+        pop     rdx
+        test    rax, rax
+        jnz     .done
+        call    expr_unary_lost
         not     rdx
         call    expr_coeff_taint
         xor     rax, rax
@@ -1772,6 +2376,14 @@ parser_evaluate_factor:
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
+        push    rdx
+        mov     edi, EXP_LNOT               ; ! of a label: an error, as in NASM
+        xor     esi, esi
+        call    expr_scalar
+        pop     rdx
+        test    rax, rax
+        jnz     .done
+        call    expr_unary_lost
         call    expr_coeff_taint
         test    rdx, rdx
         sete    dl
@@ -1908,6 +2520,10 @@ parser_evaluate_factor:
         call    parser_pos_label
         check_err
         mov     r15, rdx                   ; a defined label, as for an identifier
+        lea     edi, [r13d + 1]            ; recorded as that label ("$$": two
+        mov     rsi, [rdx + SYMBOL_name]   ; tokens), for an expression kept
+        extern  prep_rec_rename
+        call    prep_rec_rename
         mov     rdx, [rdx + SYMBOL_value]
         test    r13d, r13d
         jnz     .pos_start
@@ -1934,6 +2550,10 @@ parser_evaluate_factor:
         mov     rsi, rdx               ; namespaced name
 
 .do_sym_lookup:
+        ; recorded under the name it resolved to (".x" under its global
+        ; label, "1f" as the label it means), for an expression kept
+        mov     edi, 1
+        call    prep_rec_rename
         ; Symbol lookup
         mov     rdi, [rbx + PREP_ctx]
         extern  symbol_find
@@ -1969,6 +2589,7 @@ parser_evaluate_factor:
             inc     qword [rel known_pos_uses]
 .pos_none:
             mov     rdx, [rdx + SYMBOL_value]
+            call    expr_deferred_addr     ; (r15: the SYMBOL)
             xor     rax, rax
             ELSE
             ; not defined yet: the second pass knows it if it is a
@@ -4849,6 +5470,25 @@ parser_handle_bits:
 [SECTION .data]
 align 8
 ds_utf_buf:    dq ds_utf           ; __utf16__ / __utf32__ output (it grows)
+; the operators' texts by EOP_* / EXP_* (expr_scalar's messages)
+eop_texts:     dq 0, eop_bar, eop_hat, eop_amp, eop_eq, eop_ne, eop_lt
+               dq eop_le, eop_gt, eop_ge, eop_cmp, eop_bar, eop_hat, eop_amp
+               dq 0, 0, 0, 0, 0, eop_tilde, eop_bang
+eop_bar:       db "|", 0
+eop_hat:       db "^", 0
+eop_amp:       db "&", 0
+eop_eq:        db "==", 0
+eop_ne:        db "!=", 0
+eop_lt:        db "<", 0
+eop_le:        db "<=", 0
+eop_gt:        db ">", 0
+eop_ge:        db ">=", 0
+eop_cmp:       db "<=>", 0
+eop_tilde:     db "~", 0
+eop_bang:      db "!", 0
+expr_level:    dd 0                ; parser_evaluate_expression's nesting
+expr_lost:     db 0                ; a label not defined yet went into arithmetic
+expr_deferring: db 0               ; parser_deferred_value is working one out
 ds_utf_cap:    dq DS_UTF_SIZE
 global asm_bits
 asm_bits:       db 64               ; bits 16 / 32 / 64
@@ -5302,6 +5942,10 @@ parser_handle_times:
     test    rax, rax
     jnz     .ret
     mov     r15, rdx
+    ; a count not known yet (a label defined later): NASM's error; utasm
+    ; reads the source once (it repeated the line 0 times)
+    call    parser_count_known
+    jnz     .times_nonconst
     cmp     qword [rel expr_coeff], -1
     jne     .count_done
     test    r15, r15
@@ -5460,6 +6104,10 @@ parser_handle_times:
     test    rax, rax
     jnz     .ret
     mov     [rdx + MACROEXP_rep_count], r15d
+    jmp     .ok
+.times_nonconst:
+    mov     eax, EXIT_TIMES_NONCONST
+    jmp     .ret
 .ok:
     xor     eax, eax
 .ret:
@@ -6077,6 +6725,24 @@ parser_emit_data_64:
 .error:
     epilogue
 
+; parser_count_known: ZF set when the count just evaluated (rcx / r11) is a
+; number: no name not defined yet, no address. Preserves every register.
+parser_count_known:
+    push    rax
+    push    rdi
+    test    rcx, rcx
+    jnz     .not
+    mov     rdi, r11
+    call    expr_sym_class
+    test    eax, eax
+    jmp     .ret
+.not:
+    or      eax, 1                         ; ZF clear
+.ret:
+    pop     rdi
+    pop     rax
+    ret
+
 ;*
 ; * [parser_handle_res]
 ; * Purpose: RESB/RESW/RESD/RESQ — reserve uninitialised space in the
@@ -6096,6 +6762,11 @@ parser_handle_res:
     mov     rdi, rbx
     call    parser_evaluate_expression
     check_err
+    call    parser_count_known     ; a count not known yet: NASM's error
+    jz      .count_known
+    mov     rax, EXIT_RES_NONCONST
+    jmp     .error
+.count_known:
     imul    rdx, r12               ; total bytes to reserve
 
     mov     rax, [rbx + PREP_ctx]
