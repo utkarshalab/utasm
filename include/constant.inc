@@ -74,6 +74,9 @@
 %define EXIT_ALIGN_ERROR       44  ; alignment directive could not be satisfied
 %define EXIT_STRUCT_BOUNDS     45  ; memory write size exceeds struct field byte width
 %define EXIT_BITS_MODE         46  ; not encodable in the current bits 16/32/64 mode
+%define EXIT_USE_PACKAGE       47  ; %use of a package utasm does not know
+%define EXIT_ALIGN_MODE        48  ; alignmode with an unknown mode
+%define EXIT_REG_SIZE          49  ; "dword ax": a size that is not the register's
 
 %define EXIT_UNDEF_SYMBOL      50  ; referenced symbol has no definition
 %define EXIT_DUP_SYMBOL        51  ; symbol defined more than once
@@ -132,7 +135,7 @@
 %define MAX_PATH               4096        ; maximum file path length in bytes
 %define MAX_LINE               4096        ; maximum source line length (expanded for macro nesting)
 %define MAX_TOKEN              4096        ; maximum single token length (matched to macro limits)
-%define MAX_SYMBOL             65536       ; maximum entries in symbol table
+%define MAX_SYMBOL             (1 << 22)   ; symbol table slots (reserved, committed as used)
 %define MAX_SECTIONS           65535       ; maximum ELF sections per object (aligned to standard ELF limits)
 %define MAX_INCLUDES           256         ; maximum nested include depth
 %define MAX_MACRO_PARAMS       32          ; maximum parameters per macro
@@ -141,7 +144,7 @@
 %define MAX_ERRORS             100         ; fatal hard stop threshold for error count (consistent with docs/workflow.md and docs/error_reference.md)
 %define MAX_ERRORS_SOFT        100         ; soft threshold for warning count reporting
 %define MAX_WARNINGS           100         ; threshold for warning count
-%define MAX_RELOC              8192        ; maximum relocation entries per object
+%define MAX_RELOC              (1 << 22)   ; relocation entries (reserved, committed as used)
 
 ; ============================================================================
 ; BUFFER SIZES
@@ -228,6 +231,8 @@
 %define FLT_SINGLE             2           ; binary32, dd
 %define FLT_DOUBLE             3           ; binary64, dq
 %define FLT_EXT                4           ; x87 80-bit extended, dt
+%define FLT_QUAD               5           ; binary128, do
+%define FLT_HIGH               0x80        ; (float functions) the high part
 %define TOK_COMMENT            0x21
 %define TOK_FLOAT              0x22
 %define TOK_MACRO_LOCAL        0x23
@@ -303,6 +308,9 @@
 
 ; SYMBOL_pflags
 %define SYMF_ASSIGN            0x01        ; a %assign value: a single-line macro
+%define SYMF_POSDEP            0x02        ; an equ whose value depends on code positions
+%define SYMF_KNOWN             0x04        ; handed to the second pass (core/known.s)
+%define SYMF_SHADOW            0x08        ; a %define over an equ: SYMBOL_size keeps its value
 %define SYM_SET                0x0E        ; mutable variable defined via %assign or SET
 %define SYM_EQU                0x0F        ; immutable assembler constant defined via EQU
 %define SYM_IFUNC              0x10        ; ELF indirect function symbol
@@ -402,6 +410,10 @@
                                            ; not its section's symbol
 %define RELOC_FLAG_SECTION     0x02        ; against the section named by RELOC_sym
                                            ; (its section symbol): debug info
+; A relocation whose symbol name starts with this byte wants the symbol's
+; offset in its section ("later - $$"), not its address: it is written in
+; place once the symbol is defined, never left in an object.
+%define RELOC_OFFSET_MARK      0x1F        ; (not a TAG_*: names and SYMBOL* share fields)
 
 ; "wrt ..name" (reloc_wrt): the relocation the next reloc_record makes
 %define WRT_NONE               0
@@ -461,6 +473,8 @@
 %define RELAX_JMP              1           ; forward jmp emitted as E9 rel32
 %define RELAX_JCC              2           ; forward jcc emitted as 0F 8x rel32
 %define RELAX_FIXED            3           ; branch displacement resolved in place
+%define RELAX_PADTO            5           ; "times K-($-$$) db F": padding up to K
+%define RELAX_P1               6           ; NASM's first-pass size differs (aux32 = delta)
 %define RELAX_ALIGN            4           ; align padding
 
 ; ============================================================================
