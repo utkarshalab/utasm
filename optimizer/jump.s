@@ -34,9 +34,15 @@ DEFAULT REL
 ;                          (RELAX_FIXED) and rewritten
 ;   align                  padding points are recorded (RELAX_ALIGN) and
 ;                          re-padded for the new layout
-;   $, label differences,  these turn a position into a plain number,
-;   equ with a label       which cannot be updated afterwards; they mark
-;                          their section frozen and it is left untouched
+;   label differences      "b - a" (also "$ - msg", "$ - $$") turns the
+;                          distance into a plain number: nothing between a
+;                          and b may change size (a frozen range); no jump
+;                          inside one is shortened, and when padding in
+;                          one would change the section is left as it is
+;   times K-($-$$) db F    padding up to offset K (RELAX_PADTO): it grows
+;                          by what is removed before it
+;   other uses of a        a position in arithmetic NASM cannot relocate
+;   position as a number   (label >> 4) freezes its whole section
 ;
 ; Choosing which jumps to shorten is iterative: shortening one can bring
 ; another into reach, so candidates are added until nothing changes.
@@ -75,7 +81,9 @@ DEFAULT REL
 %define RX_aux       24     ; q  target offset (old) / alignment
 %define RX_end       32     ; q  first byte after the part that can change
 %define RX_change    40     ; q  bytes removed here in the current layout
-%define RX_SIZE      48
+%define RX_fill      48     ; q  align: the fill spec (optimizer/align.s)
+%define RX_tprev     56     ; q  candidate: its target in the previous pass
+%define RX_SIZE      64
 
 %define RS_LONG       0     ; candidate, not shortened (yet)
 %define RS_SHORT      1     ; candidate, shortened
@@ -85,6 +93,9 @@ DEFAULT REL
 
 %define RF_RETARGET   1     ; -O2: target changed; resolve it here, even
                             ; if it stays rel32 (its relocation is stale)
+%define RF_BACKWARD   2     ; a backward rel16/rel32 jump the encoder
+                            ; resolved in place (RELAX_FIXED, rx_backward):
+                            ; RX_fill = its displacement | width << 56
 %define NO_RELOC      0xFFFFFFFF          ; RX_aux32 of a record with none
 
 %define RELOC_DELETED 0xFFFFFFFF
@@ -105,6 +116,22 @@ rw_recs:            resq 1              ; its records (array of pointers)
 rw_n:               resq 1              ; number of records
 rw_deleted:         resq 1              ; any relocation deleted
 relax_all_frozen:   resb 1              ; a position escaped somewhere unknown
+alignb 8
+; frozen ranges: SECTION*, lo, hi (relax_freeze_range)
+%define FREEZE_MAX  4096
+freeze_ranges:      resq 3 * FREEZE_MAX
+freeze_n:           resq 1
+; ranges held back while a "times" count is read (relax_defer_begin)
+freeze_pend:        resq 3 * 4
+freeze_pend_n:      resq 1
+freeze_defer:       resb 1
+freeze_pend_over:   resb 1
+rw_has_ranges:      resb 1              ; the section being processed has some
+alignb 8
+rw_removed:         resq 1              ; bytes removed so far in this pass
+rw_passes:          resq 1              ; passes made choosing the sizes
+rw_ends:            resq 1              ; each record's RX_end
+rw_pref:            resq 1              ; bytes removed before each record
 
 [SECTION .text]
 
@@ -120,7 +147,7 @@ relax_all_frozen:   resb 1              ; a position escaped somewhere unknown
 ;            rsi = position (see RX_pos)
 ;            rdx = aux (see RX_aux)
 ;            ecx = aux32 (see RX_aux32)
-;            r8b = condition code / width
+;            r8b = condition code / width; align: r8 = the fill spec
 ;
 global relax_note
 relax_note:
@@ -143,6 +170,7 @@ relax_note:
 
     mov     byte  [rsp + RX_kind], dil
     mov     byte  [rsp + RX_state], RS_LONG
+    mov     byte  [rsp + RX_flags], 0
     mov     byte  [rsp + RX_cc], r8b
     mov     dword [rsp + RX_aux32], ecx
     mov     [rsp + RX_sec], rax
@@ -150,6 +178,7 @@ relax_note:
     mov     [rsp + RX_aux], rdx
     mov     qword [rsp + RX_end], 0
     mov     qword [rsp + RX_change], 0
+    mov     [rsp + RX_fill], r8
 
     lea     rdi, [rel relax_vec]
     cmp     byte [rdi + VEC_tag], TAG_VEC
@@ -195,6 +224,252 @@ relax_freeze_current:
     mov     byte [rax + SECTION_relax_frozen], 1
 .out:
     pop     rax
+    ret
+
+; ---- relax_freeze_range ------------------
+;
+; relax_freeze_range
+; "b - a" became a number: the code from a to b must keep its size.
+; Preserves every register.
+; Input    : rdi = SECTION*, rsi / rdx = the two offsets (either order)
+;
+global relax_freeze_range
+relax_freeze_range:
+    push    rax
+    push    rcx
+    push    rdx
+    push    rsi
+    test    rdi, rdi
+    jz      .out
+    cmp     rsi, rdx
+    jbe     .ordered
+    xchg    rsi, rdx
+.ordered:
+    cmp     byte [rel freeze_defer], 0
+    je      .commit
+    mov     rax, [rel freeze_pend_n]
+    cmp     rax, 4
+    jae     .too_many
+    imul    rax, rax, 24
+    lea     rcx, [rel freeze_pend]
+    add     rcx, rax
+    mov     [rcx], rdi
+    mov     [rcx + 8], rsi
+    mov     [rcx + 16], rdx
+    inc     qword [rel freeze_pend_n]
+    jmp     .out
+.too_many:
+    mov     byte [rel freeze_pend_over], 1
+.commit:
+    mov     rax, [rel freeze_n]
+    cmp     rax, FREEZE_MAX
+    jae     .whole
+    imul    rax, rax, 24
+    lea     rcx, [rel freeze_ranges]
+    add     rcx, rax
+    mov     [rcx], rdi
+    mov     [rcx + 8], rsi
+    mov     [rcx + 16], rdx
+    inc     qword [rel freeze_n]
+    jmp     .out
+.whole:
+    mov     byte [rdi + SECTION_relax_frozen], 1
+.out:
+    pop     rsi
+    pop     rdx
+    pop     rcx
+    pop     rax
+    ret
+
+; ---- relax_defer_begin / relax_defer_end --
+;
+; Around the count of a "times": the ranges it freezes are held back; if
+; the count is K - ($ - $$) the padding is a RELAX_PADTO record and they
+; are dropped (relax_defer_end with edi = 0), else committed (edi = 1).
+; relax_pending_padto: eax = 1 when the only range held back is [0, rsi)
+; in section rdi (the "$ - $$" of the count). All preserve other registers.
+;
+global relax_defer_begin, relax_defer_end, relax_pending_padto
+relax_defer_begin:
+    mov     byte [rel freeze_defer], 1
+    mov     qword [rel freeze_pend_n], 0
+    mov     byte [rel freeze_pend_over], 0
+    ret
+
+relax_defer_end:
+    push    rdi
+    push    rsi
+    push    rdx
+    push    rcx
+    mov     byte [rel freeze_defer], 0
+    test    edi, edi
+    jz      .done
+    xor     ecx, ecx
+.next:
+    cmp     rcx, [rel freeze_pend_n]
+    jae     .done
+    imul    rax, rcx, 24
+    lea     rdx, [rel freeze_pend]
+    add     rax, rdx
+    mov     rdi, [rax]
+    mov     rsi, [rax + 8]
+    mov     rdx, [rax + 16]
+    call    relax_freeze_range
+    inc     rcx
+    jmp     .next
+.done:
+    mov     qword [rel freeze_pend_n], 0
+    pop     rcx
+    pop     rdx
+    pop     rsi
+    pop     rdi
+    ret
+
+relax_pending_padto:
+    xor     eax, eax
+    cmp     byte [rel freeze_pend_over], 0
+    jne     .ret
+    cmp     qword [rel freeze_pend_n], 1
+    jne     .ret
+    cmp     [rel freeze_pend], rdi
+    jne     .ret
+    cmp     qword [rel freeze_pend + 8], 0
+    jne     .ret
+    cmp     [rel freeze_pend + 16], rsi
+    jne     .ret
+    mov     eax, 1
+.ret:
+    ret
+
+; ---- rx_in_frozen (internal) -------------
+; eax = 1 when offset rdi lies in a frozen range of rw_sec. Clobbers rcx,
+; rdx.
+rx_in_frozen:
+    xor     ecx, ecx
+.next:
+    cmp     rcx, [rel freeze_n]
+    jae     .no
+    imul    rdx, rcx, 24
+    push    rax
+    lea     rax, [rel freeze_ranges]
+    add     rdx, rax
+    pop     rax
+    inc     rcx
+    mov     rax, [rel rw_sec]
+    cmp     [rdx], rax
+    jne     .next
+    mov     byte [rel rw_has_ranges], 1
+    cmp     rdi, [rdx + 8]
+    jb      .next
+    cmp     rdi, [rdx + 16]
+    jae     .next
+    mov     eax, 1
+    ret
+.no:
+    xor     eax, eax
+    ret
+
+; ---- rx_ranges_kept (internal) -----------
+; eax = 1 when, in the current layout, every frozen range of rw_sec keeps
+; its length. Clobbers rcx, rdx, rdi, r8-r11.
+rx_ranges_kept:
+    push    rbx
+    push    r12
+    xor     ebx, ebx
+.next:
+    cmp     rbx, [rel freeze_n]
+    jae     .yes
+    imul    r12, rbx, 24
+    lea     rax, [rel freeze_ranges]
+    add     r12, rax
+    inc     rbx
+    mov     rax, [rel rw_sec]
+    cmp     [r12], rax
+    jne     .next
+    mov     rdi, [r12 + 16]
+    call    rx_new
+    mov     r11, rax
+    mov     rdi, [r12 + 8]
+    call    rx_new
+    sub     r11, rax                       ; the new length
+    mov     rax, [r12 + 16]
+    sub     rax, [r12 + 8]
+    cmp     rax, r11
+    je      .next
+    xor     eax, eax
+    jmp     .ret
+.yes:
+    mov     eax, 1
+.ret:
+    pop     r12
+    pop     rbx
+    ret
+
+; ---- relax_count / relax_truncate --------
+;
+; relax_count: rax = how many records there are. relax_truncate: drop
+; the records from index rdi on (a trial encoding's, encoder.s).
+; Both preserve the other registers.
+;
+global relax_count, relax_truncate
+relax_count:
+    xor     eax, eax
+    push    rcx
+    lea     rcx, [rel relax_vec]
+    cmp     byte [rcx + VEC_tag], TAG_VEC
+    jne     .ret
+    mov     rax, [rcx + VEC_len]
+.ret:
+    pop     rcx
+    ret
+
+relax_truncate:
+    push    rcx
+    lea     rcx, [rel relax_vec]
+    cmp     byte [rcx + VEC_tag], TAG_VEC
+    jne     .ret
+    cmp     rdi, [rcx + VEC_len]
+    jae     .ret
+    mov     [rcx + VEC_len], rdi
+.ret:
+    pop     rcx
+    ret
+
+; ---- relax_range_fixed -------------------
+;
+; relax_range_fixed
+; eax = 1 when no record of section rdi lies in [rsi, rdx): no jump,
+; padding or in-place branch there the optimizer could resize.
+;
+global relax_range_fixed
+relax_range_fixed:
+    push    rbx
+    xor     eax, eax
+    lea     rcx, [rel relax_vec]
+    cmp     byte [rcx + VEC_tag], TAG_VEC
+    jne     .yes
+    mov     r8, [rcx + VEC_data]
+    mov     r9, [rcx + VEC_len]
+    xor     ecx, ecx
+.next:
+    cmp     rcx, r9
+    jae     .yes
+    imul    rbx, rcx, RX_SIZE
+    add     rbx, r8
+    inc     rcx
+    cmp     [rbx + RX_sec], rdi
+    jne     .next
+    mov     r10, [rbx + RX_pos]
+    cmp     r10, rsi
+    jb      .next
+    cmp     r10, rdx
+    jae     .next
+    xor     eax, eax
+    pop     rbx
+    ret
+.yes:
+    mov     eax, 1
+    pop     rbx
     ret
 
 ; ---- relax_freeze_symref -----------------
@@ -365,6 +640,9 @@ rx_section:
 .filled:
 
     ; ---- 2. prepare each record ----
+    mov     byte [rel rw_has_ranges], 0
+    mov     rdi, -1
+    call    rx_in_frozen                   ; notes whether there are ranges
     xor     r15d, r15d
 .prep:
     cmp     r15, [rel rw_n]
@@ -377,10 +655,27 @@ rx_section:
     je      .prep_fixed
     cmp     eax, RELAX_ALIGN
     je      .prep_align
+    cmp     eax, RELAX_PADTO
+    je      .prep_align
+    cmp     eax, RELAX_P1
+    je      .prep_p1
     mov     rdi, r13
     call    rx_prepare_candidate
+    ; a jump between two labels whose distance is a number keeps its size
+    cmp     byte [r13 + RX_state], RS_LONG
+    jne     .prep_next
+    mov     rdi, [r13 + RX_pos]
+    call    rx_in_frozen
+    test    eax, eax
+    jz      .prep_next
+    mov     byte [r13 + RX_state], RS_NO
     jmp     .prep_next
 .prep_fixed:
+    mov     rax, [r13 + RX_pos]
+    mov     [r13 + RX_end], rax
+    jmp     .prep_next
+.prep_p1:
+    mov     byte [r13 + RX_state], RS_NO
     mov     rax, [r13 + RX_pos]
     mov     [r13 + RX_end], rax
     jmp     .prep_next
@@ -393,39 +688,305 @@ rx_section:
     jmp     .prep
 .prepared:
 
-    ; ---- 2b. -O2: rewrite jumps before choosing sizes ----
+    ; ---- 2b. -O2: rewrite jumps before choosing sizes (not around
+    ;          frozen ranges: they remove and move jumps) ----
     cmp     byte [rbx + ASMCTX_opt], OPT_SIZE
-    jb      .again
+    jb      .o2_done
+    cmp     byte [rel rw_has_ranges], 0
+    jne     .o2_done
     call    rx_o2
+.o2_done:
 
-    ; ---- 3. choose the jumps to shorten ----
-.again:
-    call    rx_layout
-    xor     r14d, r14d                     ; r14 = changed
+    ; backward jumps resolved in place are candidates too (after -O2,
+    ; whose rewrites are for the forward ones)
+    call    rx_backward
+
+    ; ---- 3. choose the jumps to shorten, pass by pass as NASM does ----
+    ; In a pass, a jump's own position is this pass's (what jumps before
+    ; it shrank in it), a label before it is this pass's too, and a label
+    ; after it is where the previous pass put it - so a forward jump is
+    ; short only when it reaches without counting its own shrinking. The
+    ; passes repeat until no size changes: NASM's sizes, byte for byte.
+    ; NASM's first pass takes a jump to a label it has not seen yet as
+    ; short ("optimistic"): the sizes start from there
+    mov     qword [rel rw_passes], 0
     xor     r15d, r15d
-.try:
+.optimist:
     cmp     r15, [rel rw_n]
-    jae     .tried
+    jae     .arrays
     mov     rax, [rel rw_recs]
     mov     r13, [rax + r15*8]
-    cmp     byte [r13 + RX_kind], RELAX_JCC
-    ja      .try_next
-    cmp     byte [r13 + RX_state], RS_LONG
-    jne     .try_next
-    mov     rdi, r13
-    call    rx_short_disp                  ; rax = displacement if short
-    cmp     rax, -128
-    jl      .try_next
-    cmp     rax, 127
-    jg      .try_next
-    mov     byte [r13 + RX_state], RS_SHORT
-    mov     r14d, 1
-.try_next:
     inc     r15
-    jmp     .try
-.tried:
+    cmp     byte [r13 + RX_kind], RELAX_JCC
+    ja      .optimist
+    cmp     byte [r13 + RX_state], RS_LONG
+    jne     .optimist
+    mov     byte [r13 + RX_state], RS_SHORT
+    jmp     .optimist
+    ; ---- per-pass bookkeeping: each record's end, and the bytes removed
+    ;      before each in the pass (binary search instead of a walk) ----
+.arrays:
+    mov     rdi, [rbx + ASMCTX_arena]
+    mov     rsi, [rel rw_n]
+    shl     rsi, 3
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     [rel rw_ends], rdx
+    mov     rdi, [rbx + ASMCTX_arena]
+    mov     rsi, [rel rw_n]
+    lea     rsi, [rsi*8 + 8]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     [rel rw_pref], rdx
+    call    rx_layout                      ; the first pass's predecessor
+    xor     r15d, r15d
+.ends:
+    cmp     r15, [rel rw_n]
+    jae     .first_pass
+    mov     rax, [rel rw_recs]
+    mov     rax, [rax + r15*8]
+    mov     rax, [rax + RX_end]
+    mov     rdx, [rel rw_ends]
+    mov     [rdx + r15*8], rax
+    inc     r15
+    jmp     .ends
+
+    ; ---- NASM's first pass: a jump to a label not seen yet is short, one
+    ;      to a label behind it is sized by where things lie in this pass,
+    ;      and instructions with symbols not defined yet have the sizes the
+    ;      first pass gives them (RELAX_P1). Its layout is what the second
+    ;      pass measures forward jumps against. ----
+.first_pass:
+    mov     qword [rel rw_removed], 0
+    mov     rdi, [rel rw_pref]
+    mov     qword [rdi], 0
+    xor     r15d, r15d
+.fp:
+    cmp     r15, [rel rw_n]
+    jae     .fp_done
+    mov     rax, [rel rw_recs]
+    mov     r13, [rax + r15*8]
+    inc     r15
+    movzx   eax, byte [r13 + RX_kind]
+    cmp     eax, RELAX_ALIGN
+    je      .fp_align
+    cmp     eax, RELAX_PADTO
+    je      .fp_padto
+    cmp     eax, RELAX_P1
+    je      .fp_p1
+    cmp     eax, RELAX_JCC
+    ja      .fp_zero
+    movzx   eax, byte [r13 + RX_state]
+    cmp     eax, RS_LONG
+    je      .fp_jump
+    cmp     eax, RS_SHORT
+    jne     .fp_zero
+.fp_jump:
+    mov     rax, [r13 + RX_aux]
+    cmp     rax, [r13 + RX_end]
+    jae     .fp_short                      ; forward: optimistic
+    mov     rdi, rax
+    call    rx_ub
+    mov     rdx, [rel rw_pref]
+    mov     rcx, [r13 + RX_aux]
+    sub     rcx, [rdx + rax*8]             ; the target in this pass
+    mov     rax, [r13 + RX_pos]
+    sub     rax, [rel rw_removed]
+    add     rax, 2
+    sub     rcx, rax
+    cmp     rcx, -128
+    jl      .fp_long
+    cmp     rcx, 127
+    jg      .fp_long
+.fp_short:
+    mov     byte [r13 + RX_state], RS_SHORT
+    mov     rax, [r13 + RX_end]
+    sub     rax, [r13 + RX_pos]
+    sub     rax, 2
+    jmp     .fp_store
+.fp_long:
+    mov     byte [r13 + RX_state], RS_LONG
+    jmp     .fp_zero
+.fp_p1:
+    movsxd  rax, dword [r13 + RX_aux32]    ; first-pass size - final
+    neg     rax
+    jmp     .fp_store
+.fp_align:
+    mov     rax, [r13 + RX_pos]
+    sub     rax, [rel rw_removed]
+    neg     rax
+    mov     rcx, [r13 + RX_aux]
+    dec     rcx
+    and     rax, rcx
+    mov     ecx, [r13 + RX_aux32]
+    sub     rcx, rax
+    mov     rax, rcx
+    jmp     .fp_store
+.fp_padto:
+    mov     rax, [r13 + RX_pos]
+    sub     rax, [rel rw_removed]
+    neg     rax
+    add     rax, [r13 + RX_aux]
+    jns     .fp_padto_len
+    xor     eax, eax
+.fp_padto_len:
+    mov     ecx, [r13 + RX_aux32]
+    sub     rcx, rax
+    mov     rax, rcx
+    jmp     .fp_store
+.fp_zero:
+    xor     eax, eax
+.fp_store:
+    mov     [r13 + RX_change], rax
+    add     rax, [rel rw_removed]
+    mov     [rel rw_removed], rax
+    mov     rdx, [rel rw_pref]
+    mov     [rdx + r15*8], rax
+    jmp     .fp
+.fp_done:
+
+.again:
+    ; the previous pass: the bytes removed before each record
+    mov     rdi, [rel rw_pref]
+    xor     eax, eax
+    mov     [rdi], rax
+    xor     r15d, r15d
+.prefix:
+    cmp     r15, [rel rw_n]
+    jae     .prefixed
+    mov     rcx, [rel rw_recs]
+    mov     rcx, [rcx + r15*8]
+    add     rax, [rcx + RX_change]
+    inc     r15
+    mov     [rdi + r15*8], rax
+    jmp     .prefix
+.prefixed:
+    ; forward targets where the previous pass put them
+    xor     r15d, r15d
+.snap:
+    cmp     r15, [rel rw_n]
+    jae     .snapped
+    mov     rax, [rel rw_recs]
+    mov     r13, [rax + r15*8]
+    inc     r15
+    cmp     byte [r13 + RX_kind], RELAX_JCC
+    ja      .snap
+    mov     rdi, [r13 + RX_aux]
+    call    rx_ub
+    mov     rdx, [rel rw_pref]
+    mov     rcx, [r13 + RX_aux]
+    sub     rcx, [rdx + rax*8]
+    mov     [r13 + RX_tprev], rcx
+    jmp     .snap
+.snapped:
+    xor     r14d, r14d                     ; r14 = a size changed
+    mov     qword [rel rw_removed], 0
+    xor     r15d, r15d
+.pass:
+    cmp     r15, [rel rw_n]
+    jae     .passed
+    mov     rax, [rel rw_recs]
+    mov     r13, [rax + r15*8]
+    inc     r15
+    movzx   eax, byte [r13 + RX_kind]
+    cmp     eax, RELAX_ALIGN
+    je      .p_align
+    cmp     eax, RELAX_PADTO
+    je      .p_padto
+    cmp     eax, RELAX_JCC
+    ja      .p_zero                        ; RELAX_FIXED
+    movzx   eax, byte [r13 + RX_state]
+    cmp     eax, RS_DELETE
+    je      .p_delete
+    cmp     eax, RS_LONG
+    je      .p_decide
+    cmp     eax, RS_SHORT
+    jne     .p_zero                        ; RS_NO, RS_FORCED: long
+.p_decide:
+    mov     rax, [r13 + RX_aux]
+    cmp     rax, [r13 + RX_end]
+    jae     .p_forward
+    ; backward: this pass's position (the records before it are done)
+    mov     rdi, rax
+    call    rx_ub
+    mov     rdx, [rel rw_pref]
+    mov     rcx, [r13 + RX_aux]
+    sub     rcx, [rdx + rax*8]
+    mov     rax, rcx
+    jmp     .p_disp
+.p_forward:
+    mov     rax, [r13 + RX_tprev]          ; forward: the previous pass's
+.p_disp:
+    mov     rcx, [r13 + RX_pos]
+    sub     rcx, [rel rw_removed]
+    add     rcx, 2
+    sub     rax, rcx                       ; the rel8 it would have
+    mov     dl, RS_SHORT
+    cmp     rax, -128
+    jl      .p_long
+    cmp     rax, 127
+    jle     .p_state
+.p_long:
+    mov     dl, RS_LONG
+.p_state:
+    cmp     dl, [r13 + RX_state]
+    je      .p_same
+    mov     [r13 + RX_state], dl
+    mov     r14d, 1
+.p_same:
+    cmp     dl, RS_SHORT
+    jne     .p_zero
+    mov     rax, [r13 + RX_end]
+    sub     rax, [r13 + RX_pos]
+    sub     rax, 2                         ; 3 (jmp) or 4 (jcc) bytes saved
+    jmp     .p_store
+.p_delete:
+    mov     rax, [r13 + RX_end]
+    sub     rax, [r13 + RX_pos]
+    jmp     .p_store
+.p_align:
+    mov     rax, [r13 + RX_pos]
+    sub     rax, [rel rw_removed]
+    neg     rax
+    mov     rcx, [r13 + RX_aux]
+    dec     rcx
+    and     rax, rcx                       ; its padding in this pass
+    mov     ecx, [r13 + RX_aux32]
+    sub     rcx, rax
+    mov     rax, rcx
+    jmp     .p_store
+.p_padto:
+    mov     rax, [r13 + RX_pos]
+    sub     rax, [rel rw_removed]
+    neg     rax
+    add     rax, [r13 + RX_aux]
+    jns     .p_padto_len
+    xor     eax, eax
+.p_padto_len:
+    mov     ecx, [r13 + RX_aux32]
+    sub     rcx, rax
+    mov     rax, rcx
+    jmp     .p_store
+.p_zero:
+    xor     eax, eax
+.p_store:
+    mov     [r13 + RX_change], rax
+    add     rax, [rel rw_removed]
+    mov     [rel rw_removed], rax
+    mov     rdx, [rel rw_pref]
+    mov     [rdx + r15*8], rax             ; (r15 is past this record)
+    jmp     .pass
+.passed:
     test    r14d, r14d
-    jnz     .again
+    jz      .stable
+    ; as NASM: pass after pass until nothing moves (a ripple of jumps
+    ; settling takes one pass per step)
+    inc     qword [rel rw_passes]
+    cmp     qword [rel rw_passes], 100000
+    jb      .again
+.stable:
 
     ; verify the final layout; undo any shortened jump that no longer fits
     call    rx_layout
@@ -473,6 +1034,19 @@ rx_section:
 .verified:
     test    r14d, r14d
     jnz     .again
+
+    ; frozen ranges must keep their lengths (align padding inside one
+    ; changes with what moves before it): if not, nothing changes here
+    cmp     byte [rel rw_has_ranges], 0
+    je      .ranges_ok
+    call    rx_ranges_kept
+    test    eax, eax
+    jz      .give_up
+.ranges_ok:
+
+    ; the backward jumps left long are in-place displacements again
+    call    rx_backward_restore
+    call    rx_layout
 
     ; ---- 4. anything to do? ----
     xor     r15d, r15d
@@ -834,6 +1408,8 @@ rx_is_targeted:
     mov     rdx, [rdx + rcx*8]
     cmp     byte [rdx + RX_kind], RELAX_ALIGN
     je      .recs_next
+    cmp     byte [rdx + RX_kind], RELAX_PADTO
+    je      .recs_next
     cmp     byte [rdx + RX_kind], RELAX_FIXED
     je      .check
     cmp     byte [rdx + RX_state], RS_NO
@@ -871,6 +1447,8 @@ rx_layout:
     je      .store
     cmp     eax, RELAX_ALIGN
     je      .align
+    cmp     eax, RELAX_PADTO
+    je      .padto
     cmp     byte [rbx + RX_state], RS_DELETE
     je      .deleted
     cmp     byte [rbx + RX_state], RS_SHORT
@@ -892,6 +1470,18 @@ rx_layout:
     and     rax, r9                        ; new padding
     mov     edx, [rbx + RX_aux32]          ; old padding
     sub     rdx, rax
+    jmp     .store
+.padto:
+    ; up to offset RX_aux, which does not move (it counts from $$)
+    mov     rax, [rbx + RX_pos]
+    sub     rax, r8                        ; new position of the padding
+    neg     rax
+    add     rax, [rbx + RX_aux]            ; new padding
+    jns     .padto_len
+    xor     eax, eax
+.padto_len:
+    mov     edx, [rbx + RX_aux32]          ; old padding
+    sub     rdx, rax
 .store:
     mov     [rbx + RX_change], rdx
     add     r8, rdx
@@ -899,6 +1489,28 @@ rx_layout:
     jmp     .loop
 .done:
     pop     rbx
+    ret
+
+; ---- rx_ub (internal) --------------------
+; rax = how many records end at or before offset rdi (rw_ends ascends).
+; Clobbers rcx, rdx, r8.
+rx_ub:
+    xor     eax, eax
+    mov     rcx, [rel rw_n]
+    mov     r8, [rel rw_ends]
+.loop:
+    cmp     rax, rcx
+    jae     .done
+    lea     rdx, [rax + rcx]
+    shr     rdx, 1
+    cmp     [r8 + rdx*8], rdi
+    ja      .upper
+    lea     rax, [rdx + 1]
+    jmp     .loop
+.upper:
+    mov     rcx, rdx
+    jmp     .loop
+.done:
     ret
 
 ; ---- rx_new (internal) -------------------
@@ -949,6 +1561,118 @@ rx_short_disp:
     pop     rbx
     ret
 
+; ---- rx_backward (internal) --------------
+;
+; A backward jmp / jcc the encoder resolved in place as rel16 / rel32 (its
+; target was too far for rel8 then) may come within reach once code
+; between shrinks, as NASM would find over its passes: its RELAX_FIXED
+; record becomes a candidate (RF_BACKWARD). rx_backward_restore turns the
+; ones left long back into RELAX_FIXED, whose displacements rx_apply
+; rewrites.
+;
+rx_backward:
+    push    rbx
+    push    r12
+    push    r13
+    mov     rax, [rel rw_sec]
+    mov     r12, [rax + SECTION_data]
+    test    r12, r12
+    jz      .done
+    xor     r13d, r13d
+.next:
+    cmp     r13, [rel rw_n]
+    jae     .done
+    mov     rax, [rel rw_recs]
+    mov     rbx, [rax + r13*8]
+    inc     r13
+    cmp     byte [rbx + RX_kind], RELAX_FIXED
+    jne     .next
+    movzx   ecx, byte [rbx + RX_cc]        ; the displacement's width
+    cmp     ecx, 1
+    je      .next
+    mov     rdx, [rbx + RX_pos]            ; the displacement
+    cmp     [rbx + RX_aux], rdx
+    jae     .next                          ; forward: not this
+    cmp     rdx, 2
+    jb      .next
+    ; the opcode before the displacement: E9 (jmp) or 0F 8x (jcc); a call
+    ; or a loop stays as it is
+    cmp     byte [r12 + rdx - 1], 0xE9
+    je      .jmp
+    cmp     byte [r12 + rdx - 2], 0x0F
+    jne     .next
+    movzx   eax, byte [r12 + rdx - 1]
+    and     eax, 0xF0
+    cmp     eax, 0x80
+    jne     .next
+    movzx   eax, byte [r12 + rdx - 1]
+    and     eax, 0x0F                      ; the condition
+    lea     r8, [rdx - 2]
+    mov     r9d, RELAX_JCC
+    jmp     .convert
+.jmp:
+    xor     eax, eax
+    lea     r8, [rdx - 1]
+    mov     r9d, RELAX_JMP
+.convert:
+    cmp     ecx, 2
+    jne     .cc
+    or      eax, 0x80                      ; a rel16
+.cc:
+    mov     [rbx + RX_cc], al
+    mov     [rbx + RX_kind], r9b
+    mov     rax, rcx
+    shl     rax, 56
+    or      rax, rdx
+    mov     [rbx + RX_fill], rax
+    mov     [rbx + RX_pos], r8
+    add     rdx, rcx
+    mov     [rbx + RX_end], rdx
+    mov     dword [rbx + RX_aux32], NO_RELOC
+    mov     byte [rbx + RX_flags], RF_BACKWARD
+    mov     byte [rbx + RX_state], RS_LONG
+    push    rcx
+    push    rdx
+    mov     rdi, r8
+    call    rx_in_frozen
+    pop     rdx
+    pop     rcx
+    test    eax, eax
+    jz      .next
+    mov     byte [rbx + RX_state], RS_NO
+    jmp     .next
+.done:
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+rx_backward_restore:
+    xor     ecx, ecx
+.next:
+    cmp     rcx, [rel rw_n]
+    jae     .done
+    mov     rax, [rel rw_recs]
+    mov     rdx, [rax + rcx*8]
+    inc     rcx
+    test    byte [rdx + RX_flags], RF_BACKWARD
+    jz      .next
+    cmp     byte [rdx + RX_state], RS_SHORT
+    je      .next
+    mov     rax, [rdx + RX_fill]
+    mov     r8, rax
+    shr     r8, 56                         ; the width
+    shl     rax, 8
+    shr     rax, 8                         ; the displacement
+    mov     byte [rdx + RX_kind], RELAX_FIXED
+    mov     [rdx + RX_cc], r8b
+    mov     [rdx + RX_pos], rax
+    mov     [rdx + RX_end], rax
+    mov     byte [rdx + RX_flags], 0
+    jmp     .next
+.done:
+    ret
+
 ; ---- rx_apply (internal) -----------------
 ;
 ; Rewrites the section for the chosen layout: bytes, in-place
@@ -984,6 +1708,8 @@ rx_apply:
     mov     rbx, [rax + r15*8]             ; rbx = record (ctx reloaded below)
     movzx   eax, byte [rbx + RX_kind]
     cmp     eax, RELAX_ALIGN
+    je      .sweep_align
+    cmp     eax, RELAX_PADTO
     je      .sweep_align
     cmp     eax, RELAX_JCC
     ja      .sweep_next
@@ -1064,20 +1790,13 @@ rx_apply:
 .sweep_align:
     mov     rdi, [rbx + RX_pos]
     call    .copy_to
-    mov     ecx, [rbx + RX_aux32]
-    sub     rcx, [rbx + RX_change]         ; new padding
-    xor     eax, eax                       ; fill: 0 for data
-    cmp     byte [r12 + SECTION_type], SEC_TEXT
-    jne     .pad
-    mov     al, 0x90                       ; nop for x86-64 code
-.pad:
-    test    rcx, rcx
-    jz      .padded
-    mov     [rbp + r14], al
-    inc     r14
-    dec     rcx
-    jmp     .pad
-.padded:
+    mov     esi, [rbx + RX_aux32]
+    sub     rsi, [rbx + RX_change]         ; new padding
+    lea     rdi, [rbp + r14]
+    add     r14, rsi
+    mov     rdx, [rbx + RX_fill]           ; as align wrote it first
+    extern  align_fill
+    call    align_fill
     mov     r13, [rbx + RX_end]            ; skip the old padding
 .sweep_next:
     inc     r15
