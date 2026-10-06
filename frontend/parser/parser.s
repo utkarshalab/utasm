@@ -36,12 +36,20 @@ extern error_emit
 extern error_hint_mnemonic
 extern relax_freeze_current
 extern relax_freeze_symref
+extern relax_freeze_range
+extern relax_defer_begin
+extern relax_defer_end
+extern relax_pending_padto
 extern asm_ctx_create_section
 extern asmctx_get_section
 extern asmctx_emit_byte
 extern asmctx_emit_word
 extern asmctx_emit_dword
 extern asmctx_emit_qword
+extern str_cmp_kw
+extern known_lookup
+extern known_note_forward
+extern known_fwd_uses
 extern parser_is_register
 extern parser_lookup_mnemonic
 extern parser_check_prefix
@@ -244,18 +252,38 @@ parser_parse_instruction:
     check_err
     ; RDX = peeked TOKEN*
     IF byte [rdx + TOKEN_kind], e, TOK_IDENT
-        mov     rsi, [rdx + TOKEN_value]
-        lea     rdi, [rel str_equ]
+        mov     rdi, [rdx + TOKEN_value]
+        lea     rsi, [rel str_equ]
         extern  str_cmp
-        call    str_cmp
+        call    str_cmp_kw                 ; EQU too
         IF rax, e, OK
             ; Yes! The next token is "equ".
             ; 1. Define the current identifier (in r12) as a label/symbol.
+            ;    A constant already defined may be defined again with the
+            ;    same value (NASM: two files both define SEL_NULL equ 0).
+            mov     byte [rel equ_again], 0
+            mov     rsi, [r12 + TOKEN_value]
+            cmp     byte [rsi], '.'
+            je      .equ_define
+            mov     rdi, [rbx + PREP_ctx]
+            call    symbol_find
+            test    rax, rax
+            jnz     .equ_define
+            cmp     word [rdx + SYMBOL_section], SHN_ABS
+            jne     .equ_define
+            cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
+            je      .equ_define
+            mov     rax, [rbx + PREP_ctx]
+            mov     [rax + ASMCTX_last_symbol], rdx
+            mov     byte [rel equ_again], 1
+            jmp     .equ_defined
+.equ_define:
             mov     rsi, [r12 + TOKEN_value]
             mov     rdi, [rbx + PREP_ctx]
             call    parser_define_label
             check_err
-            
+.equ_defined:
+
             ; 2. Consume the "equ" token
             mov     rdi, rbx
             call    preprocessor_next_token
@@ -305,7 +333,7 @@ parser_parse_instruction:
 
 .lookup_mnemonic:
     mov     rsi, [r12 + TOKEN_value]
-    hash_fnv1a_64 rsi, r13
+    hash_fnv1a_64_ci rsi, r13
     
     ; Reload tables as hash macro clobbers r11 (and potentially others)
     mov     r10, [rsp]
@@ -351,7 +379,8 @@ parser_parse_instruction:
 
 .parse_operands:
     xor     r14, r14
-    
+    mov     byte [rel far_colon], 0
+
     ; Check for 0-operand instruction
     mov     rdi, rbx
     call    preprocessor_peek_token
@@ -388,7 +417,34 @@ parser_parse_instruction:
     
     inc     r14
     mov     [r15 + INST_nops], r14b
-    
+
+    ; "jmp 0x10:label" / "call SEL:label": a far pointer, segment first;
+    ; the two parts become two operands, the segment marked OP_FLAG_FAR
+    cmp     byte [rel far_colon], 0
+    jne     .far_pointer
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_COLON
+    jne     .not_far_pointer
+    mov     rdi, rbx
+    call    preprocessor_next_token
+.far_pointer:
+    mov     byte [rel far_colon], 0
+    cmp     r14, 1
+    jne     .far_bad
+    movzx   eax, byte [r15 + INST_op0 + OPERAND_kind]
+    cmp     eax, OP_IMM
+    je      .far_mark
+    cmp     eax, OP_SYMBOL
+    jne     .far_bad
+.far_mark:
+    or      byte [r15 + INST_op0 + OPERAND_flags], OP_FLAG_FAR
+    jmp     .operand_loop
+.far_bad:
+    mov     rax, EXIT_UNEXPECTED_TOKEN
+    jmp     .error
+.not_far_pointer:
+
     mov     rdi, rbx
     call    preprocessor_peek_token
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
@@ -520,36 +576,44 @@ parser_parse_operand:
     IF byte [r13 + TOKEN_kind], e, TOK_IDENT
         mov     rdi, [r13 + TOKEN_value]
         lea     rsi, [rel str_strict]
-        call    str_cmp
+        call    str_cmp_kw
         IF rax, e, 0
             or      byte [r12 + OPERAND_flags], OP_FLAG_STRICT
             jmp .fetch_operand_token
             ENDIF
         mov     rdi, [r13 + TOKEN_value]
         lea     rsi, [rel str_near]
-        call    str_cmp
+        call    str_cmp_kw
         IF rax, e, 0
             or      byte [r12 + OPERAND_flags], OP_FLAG_STRICT
             jmp .fetch_operand_token
             ENDIF
         mov     rdi, [r13 + TOKEN_value]
         lea     rsi, [rel str_short]
-        call    str_cmp
+        call    str_cmp_kw
         IF rax, e, 0
             or      byte [r12 + OPERAND_flags], OP_FLAG_SHORT
             jmp .fetch_operand_token
             ENDIF
         mov     rdi, [r13 + TOKEN_value]
         lea     rsi, [rel str_far]
-        call    str_cmp
+        call    str_cmp_kw
         IF rax, e, 0
             or      byte [r12 + OPERAND_flags], OP_FLAG_FAR
             jmp .fetch_operand_token
             ENDIF
         ENDIF
 
+    ; "jmp SEL:offset": a name right before the colon lexes as a label;
+    ; it is the far pointer's segment, the colon is noted for
+    ; parser_parse_instruction
+    cmp     byte [r13 + TOKEN_kind], TOK_LABEL
+    jne     .not_far_label
+    mov     byte [r13 + TOKEN_kind], TOK_IDENT
+    mov     byte [rel far_colon], 1
+.not_far_label:
     mov     al, [r13 + TOKEN_kind]
-    
+
     ; 0. AVX-512 rounding operand: {rn-sae}, {rd-sae}, {ru-sae}, {rz-sae}, {sae}
     IF al, e, TOK_LBRACE
         mov     rax, [rbx + PREP_ctx]
@@ -592,7 +656,7 @@ parser_parse_operand:
         IF byte [rcx + TOKEN_kind], e, TOK_IDENT
             mov     rdi, [rcx + TOKEN_value]
             lea     rsi, [rel str_ptr]
-            call    str_cmp
+            call    str_cmp_kw
             test    rax, rax
             jnz     .no_ptr
             mov     rdi, rbx
@@ -618,12 +682,19 @@ parser_parse_operand:
         pop     rcx
         cmp     rax, ERR
         je      .expression                ; a symbol: "dword SIZE_CONST"
+        ; a segment register's size is ignored, as NASM does ("push dword
+        ; fs" is push fs)
+        movzx   eax, byte [r12 + OPERAND_reg]
+        sub     eax, 24
+        cmp     eax, 5
+        jbe     .sized_reg
         cmp     cx, [r12 + OPERAND_xsize]
         jne     .sized_bad
+.sized_reg:
         mov     byte [r12 + OPERAND_kind], OP_REG
         jmp     .success
 .sized_bad:
-        mov     rax, 211                   ; the size does not match the register
+        mov     rax, EXIT_REG_SIZE         ; the size does not match the register
         jmp     .error
 .sized_mem:
         call    parser_parse_mem_operand
@@ -692,9 +763,15 @@ parser_parse_operand:
     mov     rdi, rbx
     mov     rsi, r13
     call    preprocessor_putback_token
-    
+
+    push    qword [rel known_fwd_uses]
     mov     rdi, rbx
     call    parser_evaluate_expression
+    pop     r8
+    cmp     r8, [rel known_fwd_uses]
+    je      .not_fwd
+    mov     byte [r12 + OPERAND_fwd], 1    ; (encoder.s: NASM's pass 1)
+.not_fwd:
     test    rax, rax
     IF z
         mov     byte [r12 + OPERAND_kind], OP_IMM
@@ -779,6 +856,8 @@ parser_parse_reg_info:
 ; * [parser_evaluate_additive]
 ; * Purpose: Additive level (+ -)
 ; ;
+%define EXPR_COEFF_LIMIT (1 << 20)
+%define EXPR_NONLINEAR   (1 << 40)      ; a value not linear in $
 parser_evaluate_additive:
     prologue
     push    rbx
@@ -786,6 +865,7 @@ parser_evaluate_additive:
     push    r13
     push    r14
     push    r15
+    sub     rsp, 16                ; [rsp] = the position coefficient
 
     mov     rbx, rdi               ; RBX = PrepState
 
@@ -795,13 +875,15 @@ parser_evaluate_additive:
     mov     r13, rdx               ; R13 = current running total
     mov     r14, rcx               ; R14 = deferred symbol name (optional)
     mov     r15, r11               ; R15 = resolved SYMBOL* (optional)
+    mov     rax, [rel expr_coeff]
+    mov     [rsp], rax
 
 .loop:
     mov     rdi, rbx
     call    preprocessor_peek_token
     mov     r12, rdx
     mov     al, [r12 + TOKEN_kind]
-    
+
     IF al, e, TOK_PLUS
         mov     rdi, rbx
         call    preprocessor_next_token
@@ -827,6 +909,23 @@ parser_evaluate_additive:
         check_err
         add     r13, rdx
         jo      .overflow
+        mov     rdi, [rsp]
+        mov     rsi, [rel expr_coeff]
+        call    expr_coeff_sum
+        mov     [rsp], rax
+        ; "1 + label", "CONST + label": the label is the right-hand term's
+        test    r14, r14
+        jnz     .loop
+        test    r15, r15
+        jz      .plus_adopt
+        cmp     word [r15 + SYMBOL_section], SHN_ABS
+        jne     .loop
+.plus_adopt:
+        mov     rax, rcx
+        or      rax, r11
+        jz      .loop                      ; a number: the left one stays
+        mov     r14, rcx
+        mov     r15, r11
         jmp     .loop
     ELSEIF al, e, TOK_MINUS
         mov     rdi, rbx
@@ -834,17 +933,96 @@ parser_evaluate_additive:
         mov     rdi, rbx
         call    parser_evaluate_term
         check_err
+        mov     rsi, [rel expr_coeff]
+        neg     rsi
+        mov     rdi, [rsp]
+        call    expr_coeff_sum
+        mov     [rsp], rax
 
-        ; Note whether the right operand referenced a symbol before the
-        ; arithmetic below overwrites the flags.
-        mov     r8, rcx                ; deferred name, if any
-        or      r8, r11                ; resolved SYMBOL*, if any
+        sub     r13, rdx
+        jo      .overflow
 
-        ; "label_b - label_a" turns positions into a plain number, so the
-        ; sections of both labels must not move afterwards (jump shortening
-        ; in optimizer/jump.s leaves them alone).
-        test    r8, r8
-        jz      .no_diff_freeze
+        ; the right operand a number ("label - 4", "x - CONST"): the left
+        ; one's symbol stays
+        test    rcx, rcx
+        jnz     .minus_symbol
+        test    r11, r11
+        jz      .loop
+        cmp     word [r11 + SYMBOL_section], SHN_ABS
+        je      .loop
+.minus_symbol:
+
+        ; "later - $$", "end - start" with a label not defined yet: the
+        ; distance is only known at the end. It is recorded under a name
+        ; holding both labels (RELOC_OFFSET_MARK, parser_offset_name) and
+        ; the relocation pass writes it in place, after jumps are
+        ; shortened - so nothing has to keep its size for it.
+        mov     rax, r14
+        or      rax, rcx
+        jz      .not_offset                ; both defined: a number now
+        test    r14, r14
+        jz      .off_left_sym
+        cmp     byte [r14], RELOC_OFFSET_MARK
+        je      .not_offset                ; already a distance
+        mov     rdi, r14                   ; A: not defined yet
+        jmp     .off_right
+.off_left_sym:
+        test    r15, r15
+        jz      .not_offset
+        cmp     word [r15 + SYMBOL_section], SHN_ABS
+        je      .not_offset
+        mov     rdi, [r15 + SYMBOL_name]   ; A: defined; its value leaves
+        sub     r13, [r15 + SYMBOL_value]  ; the constant part
+.off_right:
+        test    rcx, rcx
+        jz      .off_right_sym
+        cmp     byte [rcx], RELOC_OFFSET_MARK
+        je      .not_offset
+        mov     rsi, rcx                   ; B: not defined yet
+        jmp     .off_name
+.off_right_sym:
+        mov     rsi, [r11 + SYMBOL_name]   ; B: defined
+        add     r13, [r11 + SYMBOL_value]
+.off_name:
+        call    parser_offset_name
+        test    rax, rax
+        jnz     .error
+        mov     r14, rdx
+        xor     r15d, r15d
+        jmp     .loop
+.not_offset:
+
+        ; "b - a", both labels of one section: the distance is a number now,
+        ; so the code between them must keep its size (a frozen range,
+        ; optimizer/jump.s). Anything else freezes the sections involved.
+        test    r14, r14
+        jnz     .diff_other
+        test    rcx, rcx
+        jnz     .diff_other
+        test    r15, r15
+        jz      .diff_other
+        test    r11, r11
+        jz      .diff_other
+        movzx   eax, word [r15 + SYMBOL_section]
+        cmp     ax, [r11 + SYMBOL_section]
+        jne     .diff_other
+        test    eax, eax
+        jz      .diff_other                ; not defined
+        cmp     eax, 0xFF00
+        jae     .diff_other                ; SHN_ABS, SHN_COMMON ...
+        mov     rdx, [rbx + PREP_ctx]
+        movzx   r8d, word [rdx + ASMCTX_seccount]
+        cmp     eax, r8d
+        ja      .diff_other
+        mov     rdx, [rdx + ASMCTX_sections]
+        mov     rdi, [rdx + rax*8 - 8]     ; the index is 1-based
+        mov     rsi, [r15 + SYMBOL_value]
+        mov     rdx, [r11 + SYMBOL_value]
+        call    relax_freeze_range
+        extern  known_note_diff
+        call    known_note_diff            ; (core/known.s: "len equ $ - msg")
+        jmp     .diff_number
+.diff_other:
         push    rdi
         push    rsi
         mov     rdi, r11
@@ -855,21 +1033,12 @@ parser_evaluate_additive:
         call    relax_freeze_symref
         pop     rsi
         pop     rdi
-.no_diff_freeze:
-        mov     r8, rcx
-        or      r8, r11
-
-        sub     r13, rdx
-        jo      .overflow
-
+.diff_number:
         ; "label_b - label_a" is an absolute constant: the two references
         ; cancel out. Carrying a symbol onward would make the encoder emit a
         ; relocation that overwrites the difference we just computed.
-        test    r8, r8
-        IF nz
-            xor r14, r14
-            xor r15, r15
-            ENDIF
+        xor     r14, r14
+        xor     r15, r15
         jmp     .loop
         ENDIF
 
@@ -879,8 +1048,11 @@ parser_evaluate_additive:
 
 .done:
 .error:
+    mov     rcx, [rsp]
+    mov     [rel expr_coeff], rcx  ; how the value moves with $
     mov     rcx, r14               ; carry the symbol info to the caller
     mov     r11, r15
+    add     rsp, 16
     pop     r15
     pop     r14
     pop     r13
@@ -892,6 +1064,152 @@ parser_evaluate_additive:
 .overflow:
     mov     rax, EXIT_IMM_RANGE
     jmp     .error
+
+;*
+; * [expr_coeff_sum]
+; * Purpose: Adds two position coefficients (expr_coeff): how much a value
+; *   grows when $ grows by one. Past +-2^20 a value is not linear in $
+; *   (EXPR_NONLINEAR), and stays so.
+; * Input  : RDI, RSI. Output: RAX. Clobbers nothing else.
+; ;
+expr_coeff_sum:
+    mov     rax, rdi
+    add     rax, EXPR_COEFF_LIMIT
+    cmp     rax, 2 * EXPR_COEFF_LIMIT
+    ja      .nonlinear
+    mov     rax, rsi
+    add     rax, EXPR_COEFF_LIMIT
+    cmp     rax, 2 * EXPR_COEFF_LIMIT
+    ja      .nonlinear
+    lea     rax, [rdi + rsi]
+    ret
+.nonlinear:
+    mov     rax, EXPR_NONLINEAR
+    ret
+
+;*
+; * [expr_combine]
+; * Purpose: Two operands joined by an operator other than + and - (* / %
+; *   << >> & | ^ comparisons): the result is a plain number. A label in
+; *   either is a position used as a number, which freezes its section;
+; *   the coefficient is 0, or EXPR_NONLINEAR when either depended on $.
+; * Input  : RDI = left SYMBOL* (or 0), RSI = left deferred name (or 0),
+; *          RDX = left coefficient; right: R11, RCX, expr_coeff
+; * Output : expr_coeff, RAX = the new coefficient. Preserves the others.
+; ;
+expr_combine:
+    push    rdi
+    push    rsi
+    call    relax_freeze_symref
+    mov     rdi, r11
+    mov     rsi, rcx
+    call    relax_freeze_symref
+    pop     rsi
+    pop     rdi
+    xor     eax, eax
+    test    rdx, rdx
+    jnz     .nonlinear
+    cmp     qword [rel expr_coeff], 0
+    je      .set
+.nonlinear:
+    mov     rax, EXPR_NONLINEAR
+.set:
+    mov     [rel expr_coeff], rax
+    ret
+
+; expr_coeff_taint: after ~ or !, a value that depended on $ no longer
+; does so linearly. Preserves every register.
+expr_coeff_taint:
+    cmp     qword [rel expr_coeff], 0
+    je      .ret
+    push    rax
+    mov     rax, EXPR_NONLINEAR
+    mov     [rel expr_coeff], rax
+    pop     rax
+.ret:
+    ret
+
+;*
+; * [parser_disp_size_word]
+; * Purpose: byte / word / dword / qword inside brackets, in any case.
+; * Input  : RDI = word
+; * Output : EAX = 8, 16, 32, 64, or 0 when it is none of them
+; ;
+parser_disp_size_word:
+    push    r12
+    mov     r12, rdi
+    lea     rsi, [rel str_byte]
+    call    str_cmp_kw
+    mov     edx, 8
+    test    rax, rax
+    jz      .hit
+    mov     rdi, r12
+    lea     rsi, [rel str_word]
+    call    str_cmp_kw
+    mov     edx, 16
+    test    rax, rax
+    jz      .hit
+    mov     rdi, r12
+    lea     rsi, [rel str_dword]
+    call    str_cmp_kw
+    mov     edx, 32
+    test    rax, rax
+    jz      .hit
+    mov     rdi, r12
+    lea     rsi, [rel str_qword]
+    call    str_cmp_kw
+    mov     edx, 64
+    test    rax, rax
+    jz      .hit
+    xor     edx, edx
+.hit:
+    mov     eax, edx
+    pop     r12
+    ret
+
+;*
+; * [parser_offset_name]
+; * Purpose: The name an "A - B" distance is recorded under when A or B is
+; *   not defined yet: RELOC_OFFSET_MARK, A, RELOC_OFFSET_MARK, B (reloc.s
+; *   resolves it once both are).
+; * Input  : RDI = A's name, RSI = B's name, RBX = PrepState
+; * Output : RAX = OK or error, RDX = the marked name
+; ;
+parser_offset_name:
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    mov     r12, rdi
+    mov     r14, rsi
+    call    str_len
+    mov     r13, rax
+    mov     rdi, r14
+    call    str_len
+    mov     r15, rax
+    mov     rdi, [rbx + PREP_arena]
+    lea     rsi, [r13 + r15 + 3]
+    call    arena_alloc                    ; zeroed: the NUL is there
+    test    rax, rax
+    jnz     .ret
+    mov     rdi, rdx
+    mov     byte [rdi], RELOC_OFFSET_MARK
+    inc     rdi
+    mov     rsi, r12
+    mov     rcx, r13
+    rep movsb
+    mov     byte [rdi], RELOC_OFFSET_MARK
+    inc     rdi
+    mov     rsi, r14
+    mov     rcx, r15
+    rep movsb
+    xor     eax, eax
+.ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    ret
 
 ;*
 ; * [parser_evaluate_expression]
@@ -931,7 +1249,7 @@ parser_evaluate_expression:
     jne     .ternary
     mov     rdi, [rdx + TOKEN_value]
     lea     rsi, [rel str_wrt]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jnz     .ternary
     mov     rdi, rbx
@@ -1047,7 +1365,8 @@ parser_eval_level:
     push    r13
     push    r14
     push    r15
-    sub     rsp, 16                ; [rsp] = level, [rsp + 8] = SYMBOL*
+    sub     rsp, 32                ; [rsp] = level, [rsp + 8] = SYMBOL*,
+                                   ; [rsp + 16] = position coefficient
     mov     rbx, rdi
     mov     eax, esi
     mov     [rsp], rax
@@ -1058,6 +1377,8 @@ parser_eval_level:
     mov     r12, rdx               ; running value
     mov     r13, rcx               ; deferred symbol name
     mov     [rsp + 8], r11         ; resolved SYMBOL*
+    mov     r8, [rel expr_coeff]
+    mov     [rsp + 16], r8
 .loop:
     mov     rdi, rbx
     call    preprocessor_peek_token
@@ -1085,6 +1406,12 @@ parser_eval_level:
     call    parser_eval_next
     test    rax, rax
     jnz     .ret
+    ; a plain number now; a label in it was a position used as a number
+    mov     r8, [rsp + 16]
+    mov     rdi, [rsp + 8]
+    mov     rsi, r13
+    call    expr_combine
+    mov     [rsp + 16], rax
     xor     eax, eax
     xor     ecx, ecx
     cmp     r15d, EOP_LOR
@@ -1198,9 +1525,11 @@ parser_eval_level:
     mov     rdx, r12
     mov     rcx, r13
     mov     r11, [rsp + 8]
+    mov     r8, [rsp + 16]
+    mov     [rel expr_coeff], r8
     xor     eax, eax
 .ret:
-    add     rsp, 16
+    add     rsp, 32
     pop     r15
     pop     r14
     pop     r13
@@ -1252,6 +1581,8 @@ parser_evaluate_term:
     mov     r12, rdx               ; R12 = running total
     mov     r15, rcx               ; R15 = deferred symbol name (optional)
     mov     [rsp], r11             ; resolved SYMBOL* (optional)
+    mov     rax, [rel expr_coeff]
+    mov     [rsp + 8], rax         ; position coefficient
 
 .loop:
     mov     rdi, rbx
@@ -1267,6 +1598,7 @@ parser_evaluate_term:
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
+        call    .combine
         ; Multiplication wraps modulo 2^64 rather than erroring: hash
         ; constructions such as FNV-1a rely on it, including the
         ; compile_time_hash tables in backend/isa/*.s.
@@ -1279,6 +1611,7 @@ parser_evaluate_term:
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
+        call    .combine
         test    rdx, rdx
         jz      .div_zero
         mov     r14, rdx           ; R14 = divisor
@@ -1295,6 +1628,7 @@ parser_evaluate_term:
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
+        call    .combine
         test    rdx, rdx
         jz      .div_zero
         mov     r14, rdx
@@ -1311,6 +1645,7 @@ parser_evaluate_term:
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
+        call    .combine
         test    rdx, rdx
         jz      .div_zero
         mov     r14, rdx
@@ -1325,9 +1660,24 @@ parser_evaluate_term:
     xor     rax, rax
     jmp     .done
 
+; the operands of * / % %%: a plain number from here on
+.combine:
+    mov     r8, [rsp + 16]
+    mov     rdi, [rsp + 8]
+    mov     rsi, r15
+    call    expr_combine
+    mov     [rsp + 16], rax
+    mov     qword [rsp + 8], 0
+    xor     r15d, r15d
+    ret
+
 .error:
     ; RAX already has the error code from check_err
 .done:
+    push    rax
+    mov     rax, [rsp + 16]
+    mov     [rel expr_coeff], rax
+    pop     rax
     mov     rcx, r15               ; carry the symbol info to the caller
     mov     r11, [rsp]
     add     rsp, 16
@@ -1364,6 +1714,7 @@ parser_evaluate_factor:
     ; They live in preserved registers so the calls below cannot corrupt them.
     xor     r14, r14               ; deferred symbol name -> rcx
     xor     r15, r15               ; resolved SYMBOL*    -> r11
+    mov     qword [rel expr_coeff], 0      ; independent of $ (but $ itself)
 
     mov     rdi, rbx
     call    preprocessor_next_token
@@ -1389,6 +1740,7 @@ parser_evaluate_factor:
         call    parser_evaluate_factor
         check_err
         neg     rdx
+        neg     qword [rel expr_coeff]
         xor     rax, rax
         jmp     .done
     ELSEIF al, e, TOK_TILDE
@@ -1396,6 +1748,7 @@ parser_evaluate_factor:
         call    parser_evaluate_factor
         check_err
         not     rdx
+        call    expr_coeff_taint
         xor     rax, rax
         jmp     .done
     ELSEIF al, e, TOK_PLUS
@@ -1410,6 +1763,7 @@ parser_evaluate_factor:
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
+        call    expr_coeff_taint
         test    rdx, rdx
         sete    dl
         movzx   edx, dl
@@ -1445,11 +1799,29 @@ parser_evaluate_factor:
     ; __float16__(x) / __float32__(x) / __float64__(x): the bits as a number
     cmp     al, TOK_IDENT
     jne     .not_float_fn
+    ; __Infinity__, __QNaN__, __SNaN__: floats, where one goes
+    cmp     byte [rel float_fmt], 0
+    je      .not_special
+    mov     rdi, [r12 + TOKEN_value]
+    call    parser_float_special
+    test    eax, eax
+    jz      .not_special
+    lea     esi, [rax - 1]
+    movzx   edx, byte [rel float_fmt]
+    extern  float_special
+    call    float_special
+    mov     [rel float_hi], rcx
+    mov     byte [rel float_seen], 1
+    xor     eax, eax
+    jmp     .done
+.not_special:
     mov     rdi, [r12 + TOKEN_value]
     call    parser_float_func
     test    eax, eax
     jz      .not_float_fn_ident
     movzx   r13d, byte [rel float_fmt]     ; the enclosing directive's
+    mov     [rel float_part], al           ; FLT_HIGH: the high part
+    and     al, 0x7F
     mov     [rel float_fmt], al
     mov     rdi, rbx
     call    preprocessor_next_token
@@ -1469,6 +1841,10 @@ parser_evaluate_factor:
     cmp     byte [rdx + TOKEN_kind], TOK_RPAREN
     jne     .float_fn_bad
     mov     rdx, [rel float_fn_val]
+    test    byte [rel float_part], FLT_HIGH
+    jz      .float_fn_low
+    mov     rdx, [rel float_hi]            ; __float80e__ / __float128h__
+.float_fn_low:
     mov     byte [rel float_seen], 0       ; a plain number from here on
     xor     eax, eax
     jmp     .float_fn_end
@@ -1497,10 +1873,10 @@ parser_evaluate_factor:
         xor     rax, rax
         jmp     .done
     ELSEIF al, e, TOK_DOLLAR
-        ; Current location counter ($) or the section's start ($$). Code in
-        ; this section must not move afterwards: the value may end up as a
-        ; plain number.
-        call    relax_freeze_current
+        ; Current location counter ($) or the section's start ($$): a label
+        ; at that point. Used as a number only in a difference ("$ - $$"),
+        ; which freezes the code between them, or in arithmetic that
+        ; freezes the section (expr_combine).
         mov     rax, [rbx + PREP_ctx]
         mov     rax, [rax + ASMCTX_curr_sec]
         IF rax, e, 0
@@ -1524,6 +1900,11 @@ parser_evaluate_factor:
         check_err
         mov     r15, rdx                   ; a defined label, as for an identifier
         mov     rdx, [rdx + SYMBOL_value]
+        test    r13d, r13d
+        jnz     .pos_start
+        mov     qword [rel expr_coeff], 1  ; $ moves with itself
+.pos_start:
+        inc     qword [rel known_pos_uses]  ; a position (core/known.s)
         xor     rax, rax
         jmp     .done
     ELSEIF al, e, TOK_IDENT
@@ -1549,10 +1930,52 @@ parser_evaluate_factor:
         extern  symbol_find
         call    symbol_find
         IF rax, e, OK
+            ; an entry not defined yet (named by global, or by a reference
+            ; before): the second pass may know it as a constant
+            cmp     word [rdx + SYMBOL_section], 0
+            jne     .sym_defined
+            push    rdx
+            inc     qword [rel known_fwd_uses]
+            call    known_lookup
+            test    rax, rax
+            jz      .sym_unknown
+            add     rsp, 8
+            xor     r15d, r15d             ; a plain number
+            xor     r14d, r14d
+            xor     eax, eax
+            jmp     .done
+.sym_unknown:
+            call    known_note_forward     ; (pass 1: noted)
+            pop     rdx
+.sym_defined:
             mov     r15, rdx               ; return SYMBOL* in r11 (A78)
+            ; a position (a label, or an equ derived from one) in an equ
+            ; makes it depend on the layout (core/known.s)
+            cmp     word [rdx + SYMBOL_section], SHN_ABS
+            jne     .pos_use
+            test    byte [rdx + SYMBOL_pflags], SYMF_POSDEP
+            jz      .pos_none
+.pos_use:
+            extern  known_pos_uses
+            inc     qword [rel known_pos_uses]
+.pos_none:
             mov     rdx, [rdx + SYMBOL_value]
             xor     rax, rax
             ELSE
+            ; not defined yet: the second pass knows it if it is a
+            ; constant (core/known.s), the first notes it
+            extern  known_lookup, known_note_forward
+            inc     qword [rel known_fwd_uses]     ; (NASM: unknown in pass 1)
+            call    known_lookup
+            test    rax, rax
+            jz      .unknown_yet
+            xor     r15d, r15d             ; a plain number
+            xor     r14d, r14d
+            xor     eax, eax
+            jmp     .done
+.unknown_yet:
+            call    known_note_forward
+            inc     qword [rel known_pos_uses]
             ; Deferred symbol (R_ABS64 reloc)
             mov     rdx, 0
             xor     r15, r15               ; no symbol metadata yet
@@ -1715,7 +2138,7 @@ parser_parse_mem_operand:
         mov     rdi, [r13 + TOKEN_value]
         lea     rsi, [str_rel]
         extern  str_cmp
-        call    str_cmp
+        call    str_cmp_kw
         IF rax, e, 0
             mov     rdi, rbx
             call    preprocessor_next_token ; consume 'rel'
@@ -1731,7 +2154,7 @@ parser_parse_mem_operand:
     IF byte [r13 + TOKEN_kind], e, TOK_IDENT
         mov     rdi, [r13 + TOKEN_value]
         lea     rsi, [str_abs]
-        call    str_cmp
+        call    str_cmp_kw
         IF rax, e, 0
             mov     rdi, rbx
             call    preprocessor_next_token ; consume 'abs'
@@ -1754,11 +2177,24 @@ parser_parse_mem_operand:
         jmp     .loop
         ENDIF
 
+    ; [byte x], [word x], [dword x], [qword x]: the displacement's size
+    ; (and, for an address with no register, the address size)
+    IF al, e, TOK_IDENT
+        mov     rdi, [r13 + TOKEN_value]
+        call    parser_disp_size_word
+        test    eax, eax
+        jz      .not_disp_size
+        mov     [r12 + OPERAND_dispsize], al
+        jmp     .loop
+.not_disp_size:
+        mov     al, [r13 + TOKEN_kind]
+        ENDIF
+
     ; "nosplit": keep [reg*2] as index*2 with a disp32
     IF al, e, TOK_IDENT
         mov     rdi, [r13 + TOKEN_value]
         lea     rsi, [rel str_nosplit]
-        call    str_cmp
+        call    str_cmp_kw
         IF rax, e, 0
             or      byte [r12 + OPERAND_flags], OP_FLAG_NOSPLIT
             jmp     .loop
@@ -1912,11 +2348,27 @@ parser_parse_mem_operand:
     mov     rsi, r13
     call    preprocessor_putback_token
 
+    push    qword [rel known_fwd_uses]
     mov     rdi, rbx
     call    parser_evaluate_expression
+    pop     r8
     check_err_to .error
+    cmp     r8, [rel known_fwd_uses]
+    je      .disp_known
+    mov     byte [r12 + OPERAND_fwd], 1    ; (encoder.s: NASM's pass 1)
+.disp_known:
     ; result in rdx, symbol metadata in r11 (A78)
     add     [r12 + OPERAND_imm], rdx
+    ; [table + rax + FIELD]: the label stays the operand's symbol; a
+    ; constant (equ, structure field) after it only adds its value
+    mov     rax, [r12 + OPERAND_sym]
+    test    rax, rax
+    jz      .take_sym
+    cmp     byte [rax], TAG_SYMBOL
+    jne     .loop                          ; a label not defined yet
+    cmp     word [rax + SYMBOL_section], SHN_ABS
+    jne     .loop                          ; a label
+.take_sym:
     IF r11, ne, 0
         mov [r12 + OPERAND_sym], r11
     ELSEIF rcx, ne, 0
@@ -1925,6 +2377,58 @@ parser_parse_mem_operand:
     jmp     .loop
 
 .finalize:
+    ; a size that cannot be the address's: [dword bx+4], [word ebx],
+    ; [qword x] outside bits 64, [word x] in bits 64
+    movzx   eax, byte [r12 + OPERAND_dispsize]
+    test    eax, eax
+    jz      .asize_ok
+    cmp     eax, 64
+    jne     .asize_not64
+    cmp     byte [rel asm_bits], 64
+    jne     .asize_bad
+.asize_not64:
+    cmp     eax, 32
+    jne     .asize_not32
+    test    byte [r12 + OPERAND_flags], OP_FLAG_ADDR16
+    jnz     .asize_bad
+.asize_not32:
+    cmp     eax, 16
+    jne     .asize_ok
+    test    byte [r12 + OPERAND_flags], OP_FLAG_ADDR32
+    jnz     .asize_bad
+    cmp     byte [rel asm_bits], 64
+    je      .asize_bad
+    test    byte [r12 + OPERAND_flags], OP_FLAG_ADDR16
+    jnz     .asize_ok
+    cmp     byte [r12 + OPERAND_base], 0xFF
+    jne     .asize_bad                     ; 32-bit registers
+    cmp     byte [r12 + OPERAND_index], 0xFF
+    jne     .asize_bad
+    jmp     .asize_ok
+.asize_bad:
+    mov     rax, EXIT_INVALID_ADDR
+    jmp     .error
+.asize_ok:
+    ; [dword 0xFEE00300] in bits 16, [word 0x1234] in bits 32: an address
+    ; of the other size (67), as with registers of that size
+    cmp     byte [r12 + OPERAND_base], 0xFF
+    jne     .asize_done
+    cmp     byte [r12 + OPERAND_index], 0xFF
+    jne     .asize_done
+    movzx   eax, byte [r12 + OPERAND_dispsize]
+    cmp     eax, 32
+    jne     .asize_word
+    cmp     byte [rel asm_bits], 16
+    jne     .asize_done
+    or      byte [r12 + OPERAND_flags], OP_FLAG_ADDR32
+    jmp     .asize_done
+.asize_word:
+    cmp     eax, 16
+    jne     .asize_done
+    cmp     byte [rel asm_bits], 32
+    jne     .asize_done
+    or      byte [r12 + OPERAND_flags], OP_FLAG_ADDR16
+.asize_done:
     ; rsp cannot be an index register: [rbx+rsp] is [rsp+rbx], and
     ; [rsp*1] is [rsp], as NASM swaps them
     cmp     byte [r12 + OPERAND_index], REG_RSP
@@ -2318,7 +2822,7 @@ parser_is_statement_word:
     je      .mnemonic
     mov     rdi, r12
     mov     rsi, r13
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jz      .yes
 .skip:
@@ -2327,7 +2831,7 @@ parser_is_statement_word:
     jne     .skip
     jmp     .word
 .mnemonic:
-    hash_fnv1a_64 r12, r13
+    hash_fnv1a_64_ci r12, r13
     call    parser_get_arch_tables         ; rax = mnemonic table
     mov     rdi, r13
     mov     rsi, rax
@@ -2574,7 +3078,7 @@ str_abs: db "abs", 0
 ; ;
 parser_is_register:
     prologue
-    hash_fnv1a_64 rsi, r8
+    hash_fnv1a_64_ci rsi, r8
 .loop:
     mov     rax, [rdi]
     test    rax, rax
@@ -2633,7 +3137,7 @@ parser_check_prefix:
     je      .none
     mov     rdi, r12
     mov     rsi, r13
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jz      .hit
     add     r13, 10
@@ -2755,7 +3259,7 @@ parser_parse_struc:
         mov     rdi, [r12 + TOKEN_value]
         lea     rsi, [str_endstruc]
         extern  str_compare
-        call    str_compare
+        call    str_cmp_kw
         IF rax, e, 0
             jmp .register_struct
             ENDIF
@@ -2763,7 +3267,7 @@ parser_parse_struc:
         ; Check for 'field' keyword; any other word is NASM's form
         mov     rdi, [r12 + TOKEN_value]
         lea     rsi, [str_field]
-        call    str_compare
+call    str_compare
         IF rax, ne, 0
             jmp     .nasm_word
             ENDIF
@@ -2894,7 +3398,14 @@ parser_parse_struc:
     jnz     .nasm_res
     mov     rdi, [r12 + TOKEN_value]
     lea     rsi, [rel str_alignb]
-    call    str_cmp
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .nasm_alignb
+    ; "align 64" in a structure: as alignb (NASM accepts it where it pads
+    ; nothing, and has no code to pad with here)
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [rel str_align]
+    call    str_cmp_kw
     test    rax, rax
     jz      .nasm_alignb
     ; any other word names a field (a label without its colon)
@@ -3254,6 +3765,27 @@ parser_handle_pseudo_op:
     push    r13
     mov     rbx, rdi               ; rbx = PrepState
     mov     r12, rsi               ; r12 = mnemonic string
+    ; directives are compared in lower case: NASM takes BITS, Org, SECTION
+    lea     rdi, [rel pseudo_lc]
+    xor     ecx, ecx
+.lc:
+    movzx   eax, byte [rsi + rcx]
+    cmp     al, 'A'
+    jb      .lc_put
+    cmp     al, 'Z'
+    ja      .lc_put
+    or      al, 0x20
+.lc_put:
+    mov     [rdi + rcx], al
+    test    al, al
+    jz      .lc_done
+    inc     ecx
+    cmp     ecx, 63
+    jb      .lc
+    jmp     .lc_keep               ; longer than any directive
+.lc_done:
+    mov     r12, rdi
+.lc_keep:
 
     ; 1. Data Directives (db, dw, dd, dq) - the whole word, not a prefix
     ;    ("dbg" or "dword_table" as a statement word is not db / dw)
@@ -3298,7 +3830,7 @@ parser_handle_pseudo_op:
     ; 1.4 "times N <directive>" repeats the rest of the line N times
     mov     rdi, r12
     lea     rsi, [rel str_times]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, OK
         mov     rdi, rbx
         call    parser_handle_times
@@ -3355,7 +3887,7 @@ parser_handle_pseudo_op:
     ; NASM's structure instances: istruc NAME / at FIELD, data / iend
     mov     rdi, r12
     lea     rsi, [rel str_istruc]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jnz     .not_istruc
     call    parser_istruc
@@ -3363,7 +3895,7 @@ parser_handle_pseudo_op:
 .not_istruc:
     mov     rdi, r12
     lea     rsi, [rel str_at]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jnz     .not_at
     call    parser_at
@@ -3371,7 +3903,7 @@ parser_handle_pseudo_op:
 .not_at:
     mov     rdi, r12
     lea     rsi, [rel str_iend]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jnz     .not_iend
     call    parser_iend
@@ -3379,7 +3911,7 @@ parser_handle_pseudo_op:
 .not_iend:
     mov     rdi, r12
     lea     rsi, [rel str_absolute]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jnz     .not_absolute
     call    parser_absolute
@@ -3387,7 +3919,7 @@ parser_handle_pseudo_op:
 .not_absolute:
     mov     rdi, r12
     lea     rsi, [rel str_alignb_d]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jnz     .not_alignb
     call    parser_alignb
@@ -3395,7 +3927,7 @@ parser_handle_pseudo_op:
 .not_alignb:
     mov     rdi, r12
     lea     rsi, [rel str_incbin]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jnz     .not_incbin
     call    parser_incbin
@@ -3404,7 +3936,7 @@ parser_handle_pseudo_op:
     ; 2. Section Directive ("segment" is NASM's other name for it)
     mov     rdi, r12
     lea     rsi, [rel str_segment]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jnz     .not_segment
     mov     rdi, rbx
@@ -3414,7 +3946,7 @@ parser_handle_pseudo_op:
     ; "cpu <level>": utasm encodes whatever it is given
     mov     rdi, r12
     lea     rsi, [rel str_cpu]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jnz     .not_cpu
     call    parser_skip_to_eol
@@ -3456,7 +3988,7 @@ parser_handle_pseudo_op:
     ; [list -] / [list +]: the listing stops and goes on
     mov     rdi, r12
     lea     rsi, [rel str_list]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jnz     .ignored_rest
     mov     rdi, rbx
@@ -3481,7 +4013,7 @@ parser_handle_pseudo_op:
     mov     rdi, r12
     lea     rsi, [rel str_section]
     extern  str_cmp
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         mov     rdi, rbx
         call    parser_handle_section_directive
@@ -3489,7 +4021,7 @@ parser_handle_pseudo_op:
     ELSE
         mov     rdi, r12
         lea     rsi, [rel str_section_upper]
-        call    str_cmp
+        call    str_cmp_kw
         IF rax, e, 0
             mov     rdi, rbx
             call    parser_handle_section_directive
@@ -3500,17 +4032,30 @@ parser_handle_pseudo_op:
     ; 2.5 Comm Directive
     mov     rdi, r12
     lea     rsi, [rel str_comm]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         mov     rdi, rbx
         call    parser_handle_comm
         jmp     .check_handler_result
         ENDIF
 
+    ; alignmode MODE [, threshold | nojmp]: once %use smartalign defined it
+    extern  smartalign_mode
+    cmp     byte [rel smartalign_mode], 0
+    je      .not_alignmode
+    mov     rdi, r12
+    lea     rsi, [rel str_alignmode]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .not_alignmode
+    call    parser_alignmode
+    jmp     .check_handler_result
+.not_alignmode:
+
     ; 3. Align Directives
     mov     rdi, r12
     lea     rsi, [rel str_align]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         mov     rdi, rbx
         xor     rsi, rsi           ; type = 0 (byte)
@@ -3520,7 +4065,7 @@ parser_handle_pseudo_op:
 
     mov     rdi, r12
     lea     rsi, [rel str_p2align]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         mov     rdi, rbx
         mov     rsi, 1             ; type = 1 (p2)
@@ -3531,7 +4076,7 @@ parser_handle_pseudo_op:
     ; 4. Visibility Directives (global, weak, local)
     mov     rdi, r12
     lea     rsi, [rel str_global]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         mov     rdi, rbx
         mov     rsi, VIS_GLOBAL
@@ -3541,7 +4086,7 @@ parser_handle_pseudo_op:
 
     mov     rdi, r12
     lea     rsi, [rel str_weak]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         mov     rdi, rbx
         mov     rsi, VIS_WEAK
@@ -3551,7 +4096,7 @@ parser_handle_pseudo_op:
 
     mov     rdi, r12
     lea     rsi, [rel str_local]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         mov     rdi, rbx
         mov     rsi, VIS_LOCAL
@@ -3562,7 +4107,7 @@ parser_handle_pseudo_op:
     ; static NAME: a local symbol, kept in the object by name
     mov     rdi, r12
     lea     rsi, [rel str_static_d]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         mov     rdi, rbx
         mov     rsi, VIS_LOCAL
@@ -3573,7 +4118,7 @@ parser_handle_pseudo_op:
     ; common NAME SIZE[:ALIGN]
     mov     rdi, r12
     lea     rsi, [rel str_common_d]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         call    parser_handle_common
         jmp     .check_handler_result
@@ -3581,7 +4126,7 @@ parser_handle_pseudo_op:
 
     mov     rdi, r12
     lea     rsi, [rel str_org]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         mov     rdi, rbx
         call    parser_handle_org
@@ -3590,7 +4135,7 @@ parser_handle_pseudo_op:
     
     mov     rdi, r12
     lea     rsi, [rel str_extern]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         mov     rdi, rbx
         call    parser_handle_extern
@@ -3599,7 +4144,7 @@ parser_handle_pseudo_op:
 
     mov     rdi, r12
     lea     rsi, [rel str_default]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         mov     rdi, rbx
         call    parser_handle_default
@@ -3607,7 +4152,7 @@ parser_handle_pseudo_op:
     ELSE
         mov     rdi, r12
         lea     rsi, [rel str_default_upper]
-        call    str_cmp
+        call    str_cmp_kw
         IF rax, e, 0
             mov     rdi, rbx
             call    parser_handle_default
@@ -3617,7 +4162,7 @@ parser_handle_pseudo_op:
 
     mov     rdi, r12
     lea     rsi, [rel str_equ]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         mov     rdi, rbx
         call    parser_handle_equ
@@ -3626,7 +4171,7 @@ parser_handle_pseudo_op:
 
     mov     rdi, r12
     lea     rsi, [rel str_bits]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         call    parser_handle_bits
         jmp     .check_handler_result
@@ -3634,7 +4179,7 @@ parser_handle_pseudo_op:
 
     mov     rdi, r12
     lea     rsi, [rel str_struc]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         mov     rdi, rbx
         call    preprocessor_next_token
@@ -3661,6 +4206,7 @@ parser_handle_pseudo_op:
     epilogue
 
 %define INCBIN_CHUNK 4096
+%define DS_UTF_SIZE  16384        ; __utf16__ / __utf32__ output
 %define TIMES_CAPACITY 256
 %define GSIZE_MAX      256          ; "global f:function (size)" per file
 %define GSIZE_TOKENS   64           ; tokens in one size expression
@@ -3688,6 +4234,8 @@ parser_data_string:
     movzx   eax, byte [r12 + TOKEN_kind]
     cmp     eax, TOK_STRING
     je      .string
+    cmp     eax, TOK_IDENT
+    je      .utf
     cmp     eax, TOK_CHAR
     jne     .not
     mov     rdi, rbx
@@ -3714,6 +4262,71 @@ parser_data_string:
     lea     r14, [rel ds_chars]
     movzx   r13d, word [r12 + TOKEN_len]
     jmp     .emit
+
+.utf:
+    ; __utf16__('text') and the others: the string in UTF-16 / UTF-32
+    mov     rdi, [r12 + TOKEN_value]
+    call    parser_utf_kind
+    test    eax, eax
+    jz      .not
+    mov     r14d, eax                      ; the form
+    ; the parentheses may be left out: __utf16__ "text"
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_LPAREN
+    jne     .utf_text
+    or      r14d, 0x100                    ; a ")" to come
+    mov     rdi, rbx
+    call    preprocessor_next_token
+.utf_text:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret
+    mov     r12, rdx
+    movzx   r13d, word [r12 + TOKEN_len]
+    cmp     byte [r12 + TOKEN_kind], TOK_CHAR
+    je      .utf_chars
+    cmp     byte [r12 + TOKEN_kind], TOK_STRING
+    jne     .utf_bad
+    mov     rsi, [r12 + TOKEN_value]
+    test    byte [r12 + TOKEN_flags], TOK_FLAG_COUNTED
+    jnz     .utf_close
+    mov     rdi, rsi
+    call    str_len
+    mov     r13, rax
+    mov     rsi, [r12 + TOKEN_value]
+    jmp     .utf_close
+.utf_chars:
+    mov     rax, [r12 + TOKEN_value]
+    mov     [rel ds_chars], rax
+    lea     rsi, [rel ds_chars]
+.utf_close:
+    test    r14d, 0x100
+    jz      .utf_encode
+    push    rsi
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    pop     rsi
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_RPAREN
+    jne     .utf_bad
+.utf_encode:
+    mov     rdi, rsi
+    mov     rsi, r13
+    movzx   edx, r14b
+    call    parser_utf_encode
+    test    rax, rax
+    jnz     .ret
+    lea     r14, [rel ds_utf]
+    mov     r13, rdx
+    jmp     .emit
+.utf_bad:
+    mov     eax, EXIT_INVALID_EXPR
+    jmp     .ret
 .string:
     mov     r14, [r12 + TOKEN_value]
     movzx   r13d, word [r12 + TOKEN_len]
@@ -3770,6 +4383,121 @@ parser_data_string:
 ; * Input  : RBX = PrepState, ESI = unit in bytes
 ; * Output : RAX = OK or an error
 ; ;
+;*
+; * [parser_utf_kind]
+; * Purpose: Which of NASM's string functions a name is: __utf16__,
+; *   __utf16le__, __utf16be__, __utf32__, __utf32le__, __utf32be__ (also
+; *   spelled __?utf16?__ ...).
+; * Input  : RDI = name
+; * Output : EAX = 0 none, else 1 UTF-16 / 2 UTF-32, | 4 big-endian
+; ;
+parser_utf_kind:
+    push    r12
+    push    r13
+    mov     r12, rdi
+    lea     r13, [rel utf_fn_names]
+.name:
+    cmp     byte [r13], 0
+    je      .none
+    mov     rdi, r12
+    mov     rsi, r13
+    call    str_cmp
+    test    rax, rax
+    jz      .hit
+    add     r13, 16
+    jmp     .name
+.hit:
+    movzx   eax, byte [r13 + 15]
+    jmp     .ret
+.none:
+    xor     eax, eax
+.ret:
+    pop     r13
+    pop     r12
+    ret
+
+;*
+; * [parser_utf_encode]
+; * Purpose: UTF-8 text as UTF-16 (surrogate pairs above U+FFFF) or UTF-32,
+; *   little- or big-endian, into ds_utf.
+; * Input  : RDI = text, RSI = its length, EDX = parser_utf_kind's form
+; * Output : RAX = OK or EXIT_INVALID_EXPR (not UTF-8, too long),
+; *          RDX = bytes written
+; ;
+parser_utf_encode:
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    mov     r12, rdi                       ; r12 = position
+    lea     r13, [rdi + rsi]               ; r13 = end
+    mov     r14d, edx                      ; r14 = form
+    lea     r15, [rel ds_utf]              ; r15 = output
+.char:
+    cmp     r12, r13
+    jae     .done
+    lea     rax, [rel ds_utf + DS_UTF_SIZE - 8]
+    cmp     r15, rax
+    jae     .bad
+    movzx   edx, byte [r12]
+    mov     eax, 1
+    cmp     edx, 0x80
+    jb      .have                          ; ASCII (and NUL)
+    mov     rdi, r12
+    mov     rsi, r13
+    extern  str_utf8_decode
+    call    str_utf8_decode                ; rax = length, rdx = code point
+    test    rax, rax
+    jz      .bad
+.have:
+    add     r12, rax
+    test    r14d, 2
+    jnz     .utf32
+    cmp     edx, 0x10000
+    jb      .unit
+    ; a surrogate pair
+    sub     edx, 0x10000
+    push    rdx
+    shr     edx, 10
+    add     edx, 0xD800
+    call    .put16
+    pop     rdx
+    and     edx, 0x3FF
+    add     edx, 0xDC00
+.unit:
+    call    .put16
+    jmp     .char
+.utf32:
+    test    r14d, 4
+    jz      .le32
+    bswap   edx
+.le32:
+    mov     [r15], edx
+    add     r15, 4
+    jmp     .char
+.done:
+    lea     rdx, [rel ds_utf]
+    neg     rdx
+    add     rdx, r15
+    xor     eax, eax
+    jmp     .ret
+.bad:
+    mov     eax, EXIT_INVALID_EXPR
+.ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    ret
+.put16:
+    test    r14d, 4
+    jz      .le16
+    xchg    dl, dh
+.le16:
+    mov     [r15], dx
+    add     r15, 2
+    ret
+
 parser_emit_data_wide:
     push    r12
     push    r13
@@ -3781,10 +4509,15 @@ parser_emit_data_wide:
     jnz     .ret
     test    edx, edx
     jnz     .next
+    ; dt: the x87 80-bit format; do: binary128
     xor     eax, eax
     cmp     r12d, 10
-    jne     .fmt
+    jne     .fmt_do
     mov     eax, FLT_EXT
+.fmt_do:
+    cmp     r12d, 16
+    jne     .fmt
+    mov     eax, FLT_QUAD
 .fmt:
     mov     [rel float_fmt], al
     mov     byte [rel float_seen], 0
@@ -3800,8 +4533,14 @@ parser_emit_data_wide:
     mov     rsi, rdx
     call    asmctx_emit_qword
     mov     rdi, [rbx + PREP_ctx]
-    mov     rsi, [rel float_hi]            ; sign and exponent
+    mov     rsi, [rel float_hi]            ; sign and exponent / high half
+    cmp     r12d, 16
+    je      .quad_hi
     call    asmctx_emit_word
+    jmp     .next
+.quad_hi:
+    extern  asmctx_emit_qword
+    call    asmctx_emit_qword
     jmp     .next
 .not_float:
     mov     rax, EXIT_INVALID_OPERAND
@@ -3817,6 +4556,37 @@ parser_emit_data_wide:
     call    preprocessor_next_token
     jmp     .loop
 .done:
+    xor     eax, eax
+.ret:
+    pop     r13
+    pop     r12
+    ret
+
+;*
+; * [parser_float_special]
+; * Purpose: Is this name __Infinity__, __QNaN__ or __SNaN__?
+; * Input  : RDI = name
+; * Output : EAX = 1, 2, 3, or 0
+; ;
+parser_float_special:
+    push    r12
+    push    r13
+    mov     r12, rdi
+    lea     r13, [rel float_special_names]
+.name:
+    cmp     byte [r13], 0
+    je      .none
+    mov     rdi, r12
+    mov     rsi, r13
+    call    str_cmp
+    test    rax, rax
+    jz      .hit
+    add     r13, 16
+    jmp     .name
+.hit:
+    movzx   eax, byte [r13 + 15]
+    jmp     .ret
+.none:
     xor     eax, eax
 .ret:
     pop     r13
@@ -3978,15 +4748,56 @@ parser_incbin:
 str_incbin:    db "incbin", 0
 str_list:      db "list", 0
 ; name (15 bytes) + FLT_* format
+; NASM's string functions: name (15), form (parser_utf_kind)
+utf_fn_names:
+              db "__utf16__", 0, 0, 0, 0, 0, 0, 1
+              db "__?utf16?__", 0, 0, 0, 0, 1
+              db "__utf16le__", 0, 0, 0, 0, 1
+              db "__?utf16le?__", 0, 0, 1
+              db "__utf16be__", 0, 0, 0, 0, 5
+              db "__?utf16be?__", 0, 0, 5
+              db "__utf32__", 0, 0, 0, 0, 0, 0, 2
+              db "__?utf32?__", 0, 0, 0, 0, 2
+              db "__utf32le__", 0, 0, 0, 0, 2
+              db "__?utf32le?__", 0, 0, 2
+              db "__utf32be__", 0, 0, 0, 0, 6
+              db "__?utf32be?__", 0, 0, 6
+              db 0
 float_fn_names: db "__float16__", 0, 0,0,0, FLT_HALF
                db "__float32__", 0, 0,0,0, FLT_SINGLE
                db "__float64__", 0, 0,0,0, FLT_DOUBLE
+               db "__float80m__", 0, 0,0, FLT_EXT
+               db "__float80e__", 0, 0,0, FLT_EXT | FLT_HIGH
+               db "__float128l__", 0, 0, FLT_QUAD
+               db "__float128h__", 0, 0, FLT_QUAD | FLT_HIGH
+               db "__?float16?__", 0, 0, FLT_HALF
+               db "__?float32?__", 0, 0, FLT_SINGLE
+               db "__?float64?__", 0, 0, FLT_DOUBLE
+               db 0
+; name (15 bytes) + 1 infinity / 2 quiet NaN / 3 signalling NaN
+float_special_names:
+               db "__Infinity__", 0, 0, 0, 1
+               db "__QNaN__", 0, 0, 0, 0, 0, 0, 0, 2
+               db "__SNaN__", 0, 0, 0, 0, 0, 0, 0, 3
+               db "__?Infinity?__", 0, 1
+               db "__?QNaN?__", 0, 0, 0, 0, 0, 2
+               db "__?SNaN?__", 0, 0, 0, 0, 0, 3
                db 0
 [SECTION .bss]
 float_fmt:     resb 1              ; FLT_* for a float constant here, 0: none
 float_seen:    resb 1              ; the last value was a float constant
-float_hi:      resq 1              ; its 80-bit sign/exponent word
+float_hi:      resq 1              ; its 80-bit sign/exponent word, or
+                                   ; binary128's high half
+float_part:    resb 1              ; a float function's FLT_HIGH
 float_fn_val:  resq 1
+ds_utf:        resb DS_UTF_SIZE    ; __utf16__ / __utf32__ text
+far_colon:     resb 1              ; a far pointer's colon came with its segment
+global expr_coeff
+expr_coeff:    resq 1              ; how the last value moves with $ (1: $ itself)
+times_newline: resq 1              ; the token that ends a times line
+times_padto:   resb 1              ; this times count is K - ($ - $$)
+equ_again:     resb 1              ; this equ defines a constant again
+pseudo_lc:     resb 64             ; a statement word in lower case
 ds_chars:      resq 2              ; a quoted literal's characters
 ds_pad:        resq 1
 incbin_buf:    resb 4096
@@ -4128,9 +4939,73 @@ parser_alignb:
 .ret:
     ret
 
+;*
+; * [parser_alignmode]
+; * Purpose: "alignmode MODE [, threshold | nojmp]" (%use smartalign): the
+; *   NOPs "align" pads code with (optimizer/align.s).
+; * Input  : RBX = PrepState
+; * Output : RAX = OK or an error
+; ;
+parser_alignmode:
+    push    r12
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .bad
+    mov     r12, [rdx + TOKEN_value]       ; the mode
+    xor     esi, esi                       ; its own threshold
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    xor     esi, esi
+    cmp     byte [rdx + TOKEN_kind], TOK_COMMA
+    jne     .set
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .threshold
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel str_nojmp]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .threshold
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     esi, 1                         ; nojmp: never jump
+    jmp     .set
+.threshold:
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .ret
+    mov     esi, 2                         ; rdx = the threshold
+.set:
+    mov     rdi, r12
+    extern  align_mode_directive
+    call    align_mode_directive
+    test    rax, rax
+    jz      .ret
+    mov     rdi, r12
+    call    error_set_subject
+    jmp     .ret
+.bad:
+    mov     eax, EXIT_ALIGN_MODE
+.ret:
+    pop     r12
+    ret
+
 [SECTION .rodata]
 str_absolute:  db "absolute", 0
 str_alignb_d:  db "alignb", 0
+str_alignmode: db "alignmode", 0
+str_nojmp:     db "nojmp", 0
 attr_vstart:   db "vstart", 0
 attr_start:    db "start", 0
 attr_follows:  db "follows", 0
@@ -4150,6 +5025,25 @@ parser_struc_const:
     push    r13
     mov     r12, rsi
     mov     r13, rdx
+    ; the same structure defined again (two files each declaring it):
+    ; a field with the same offset is fine, as in NASM
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, r12
+    call    symbol_find
+    test    rax, rax
+    jnz     .new
+    cmp     word [rdx + SYMBOL_section], SHN_ABS
+    je      .again
+    cmp     byte [rdx + SYMBOL_kind], SYM_CONSTANT
+    jne     .new
+.again:
+    cmp     [rdx + SYMBOL_value], r13
+    jne     .new                           ; symbol_add reports it
+    xor     eax, eax
+    pop     r13
+    pop     r12
+    ret
+.new:
     sub     rsp, SYMBOL_SIZE
     mov     rdi, rsp
     xor     eax, eax
@@ -4158,6 +5052,9 @@ parser_struc_const:
     mov     byte [rsp + SYMBOL_tag], TAG_SYMBOL
     mov     byte [rsp + SYMBOL_kind], SYM_CONSTANT
     mov     byte [rsp + SYMBOL_vis], VIS_LOCAL
+    ; a number, as for equ: a use before the structure (thread_t.x in a
+    ; file included first) is resolved to it at the end
+    mov     word [rsp + SYMBOL_section], SHN_ABS
     mov     [rsp + SYMBOL_name], r12
     mov     [rsp + SYMBOL_value], r13
     mov     qword [rsp + SYMBOL_size], 8
@@ -4180,6 +5077,7 @@ parser_res_unit:
     cmp     byte [rdi + 4], 0
     jne     .none
     mov     ecx, [rdi]
+    or      ecx, 0x20202020                ; RESB is resb
     mov     eax, 1
     cmp     ecx, 'resb'
     je      .ret
@@ -4373,12 +5271,28 @@ parser_handle_times:
     push    r15
     mov     rbx, rdi
 
-    ; 1. Repetition count
+    ; 1. Repetition count. "times K-($-$$) db F" pads up to offset K: the
+    ;    jump optimizer can then shorten jumps before it and pad more
+    ;    (RELAX_PADTO), so the "$ - $$" in it freezes nothing.
+    call    relax_defer_begin
+    mov     byte [rel times_padto], 0
     mov     rdi, rbx
     call    parser_evaluate_expression
     test    rax, rax
     jnz     .ret
     mov     r15, rdx
+    cmp     qword [rel expr_coeff], -1
+    jne     .count_done
+    test    r15, r15
+    js      .count_done
+    mov     rax, [rbx + PREP_ctx]
+    mov     rdi, [rax + ASMCTX_curr_sec]
+    test    rdi, rdi
+    jz      .count_done
+    mov     rsi, [rdi + SECTION_size]
+    call    relax_pending_padto
+    mov     [rel times_padto], al
+.count_done:
 
     ; 2. The statement to repeat, with the newline ending it, becomes a
     ;    %rep body: the parser then reads it N times, whether it is an
@@ -4414,12 +5328,71 @@ parser_handle_times:
     inc     r13d
     jmp     .token
 .captured:
+    mov     [rel times_newline], rdx       ; the newline peeked
+    ; "db F" with F a number or a character: written directly, N bytes
+    ; (times 4194304 db 0 is a table, not four million statements); with a
+    ; count K - ($ - $$) it is padding the jump optimizer can lengthen
+    cmp     r13d, 2
+    jne     .not_padto
+    cmp     byte [r12 + TOKEN_kind], TOK_IDENT
+    jne     .not_padto
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [rel str_db]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .not_padto
+    movzx   eax, byte [r12 + TOKEN_SIZE + TOKEN_kind]
+    mov     rdx, [r12 + TOKEN_SIZE + TOKEN_value]
+    cmp     eax, TOK_CHAR
+    je      .padto_fill
+    cmp     eax, TOK_NUMBER
+    jne     .not_padto
+    mov     rdi, rdx
+    call    str_to_int
+    test    rax, rax
+    jnz     .not_padto
+.padto_fill:
+    test    r15, r15
+    js      .not_padto                     ; a negative count
+    cmp     byte [rel times_padto], 0
+    jne     .padto_record                  ; even empty now: it can grow
+    test    r15, r15
+    jz      .not_padto                     ; times 0
+    jmp     .fill_bytes
+.padto_record:
+    xor     edi, edi
+    call    relax_defer_end                ; the range is the padding's own
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, r15
+    movzx   edx, dl
+    extern  asm_ctx_padto
+    call    asm_ctx_padto
+    test    rax, rax
+    jnz     .ret
+    jmp     .filled
+.fill_bytes:
+    mov     edi, 1
+    call    relax_defer_end
+    mov     r14d, edx                      ; the byte
+.fill_byte:
+    mov     rdi, [rbx + PREP_ctx]
+    movzx   esi, r14b
+    call    asmctx_emit_byte
+    dec     r15
+    jnz     .fill_byte
+.filled:
+    mov     edi, 2                         ; the listing: 00<rep Nh>
+    call    lst_mark
+    jmp     .ok
+.not_padto:
+    mov     edi, 1
+    call    relax_defer_end
     test    r13d, r13d
     jz      .ok                        ; "times N" alone
     test    r15, r15
     jle     .ok                        ; "times 0": the line is consumed
     ; the newline that ends each repetition
-    mov     rsi, rdx
+    mov     rsi, [rel times_newline]
     imul    rdi, r13, TOKEN_SIZE
     add     rdi, r12
     mov     r14, rdi
@@ -4447,6 +5420,10 @@ parser_handle_times:
 .ok:
     xor     eax, eax
 .ret:
+    push    rax
+    mov     edi, 1
+    call    relax_defer_end                ; (nothing left when done above)
+    pop     rax
     pop     r15
     pop     r14
     pop     r13
@@ -4498,7 +5475,7 @@ parser_check_aarch64_shift:
     mov     rbx, rdi
     
     lea     rsi, [str_lsl]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         mov rax, SHIFT_LSL
         jmp .done
@@ -4506,7 +5483,7 @@ parser_check_aarch64_shift:
     
     mov     rdi, rbx
     lea     rsi, [str_lsr]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         mov rax, SHIFT_LSR
         jmp .done
@@ -4514,7 +5491,7 @@ parser_check_aarch64_shift:
     
     mov     rdi, rbx
     lea     rsi, [str_asr]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         mov rax, SHIFT_ASR
         jmp .done
@@ -4522,7 +5499,7 @@ parser_check_aarch64_shift:
     
     mov     rdi, rbx
     lea     rsi, [str_ror]
-    call    str_cmp
+    call    str_cmp_kw
     IF rax, e, 0
         mov rax, SHIFT_ROR
         jmp .done
@@ -4579,7 +5556,7 @@ parser_handle_align:
         jne     .fill_value
         mov     rdi, [rdx + TOKEN_value]
         lea     rsi, [rel str_db]
-        call    str_cmp
+        call    str_cmp_kw
         test    rax, rax
         jnz     .fill_value
         mov     rdi, rbx
@@ -4671,6 +5648,9 @@ parser_handle_equ:
     test    r13, r13
     jz      .no_name
 
+    mov     qword [rel known_pos_uses], 0
+    extern  known_diff_n
+    mov     qword [rel known_diff_n], 0
     call    parser_evaluate_expression
     check_err_to .error
     mov     r12, rdx               ; r12 = value
@@ -4679,6 +5659,29 @@ parser_handle_equ:
     ; the source once
     test    rcx, rcx
     jnz     .forward
+
+    ; a constant defined again: the same value, or the error a label
+    ; defined twice gets
+    cmp     byte [rel equ_again], 0
+    je      .first
+    mov     byte [rel equ_again], 0
+    test    r11, r11
+    jz      .again_value
+    cmp     byte [r11], TAG_SYMBOL
+    jne     .again_value
+    cmp     word [r11 + SYMBOL_section], 0xFFF1
+    jne     .again_bad                     ; now a label
+.again_value:
+    cmp     r12, [r13 + SYMBOL_value]
+    jne     .again_bad
+    xor     eax, eax
+    jmp     .error
+.again_bad:
+    mov     rdi, [r13 + SYMBOL_name]
+    call    error_set_subject
+    mov     rax, EXIT_DUP_SYMBOL
+    jmp     .error
+.first:
 
     ; "x equ label [+ n]": x is a label of the same section (NASM's alias),
     ; moved with it when jumps are shortened. Anything else - a number, a
@@ -4699,6 +5702,20 @@ parser_handle_equ:
     mov     byte [r13 + SYMBOL_kind], SYM_LABEL
 .set:
     mov     [r13 + SYMBOL_value], r12
+    ; "len equ $ - msg", "x equ label + 4": not a constant a second pass
+    ; could take before its definition (core/known.s)
+    cmp     qword [rel known_pos_uses], 0
+    je      .set_done
+    or      byte [r13 + SYMBOL_pflags], SYMF_POSDEP
+    ; just one "b - a": it may turn out fixed (known_second_pass)
+    cmp     qword [rel known_diff_n], 1
+    jne     .set_done
+    cmp     qword [rel known_pos_uses], 2
+    jne     .set_done
+    mov     rdi, r13
+    extern  known_note_equ_diff
+    call    known_note_equ_diff
+.set_done:
     xor     eax, eax
     jmp     .error
 
@@ -5134,22 +6151,22 @@ parser_handle_default:
 
     mov     rdi, [r12 + TOKEN_value]
     lea     rsi, [rel str_default_rel]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jz      .set_rel
     mov     rdi, [r12 + TOKEN_value]
     lea     rsi, [rel str_default_rel_upper]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jz      .set_rel
     mov     rdi, [r12 + TOKEN_value]
     lea     rsi, [rel str_default_abs]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jz      .set_abs
     mov     rdi, [r12 + TOKEN_value]
     lea     rsi, [rel str_default_abs_upper]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jz      .set_abs
     jmp     .loop
@@ -5530,7 +6547,7 @@ parser_handle_section_directive:
                 call    preprocessor_next_token
                 mov     rdi, [rdx + TOKEN_value]
                 lea     rsi, [str_comdat]
-                call    str_cmp
+                call    str_cmp_kw
                 IF rax, e, 0
                     mov dword [r13 + SECTION_group_flags], GRP_COMDAT
                     ENDIF
@@ -6188,61 +7205,61 @@ parser_parse_size_specifier_string:
     ; 1. Check "byte" -> 8
     mov     rdi, rbx
     lea     rsi, [rel str_byte]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jz      .is_byte
 
     ; 2. Check "word" -> 16
     mov     rdi, rbx
     lea     rsi, [rel str_word]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jz      .is_word
 
     ; 3. Check "dword" -> 32
     mov     rdi, rbx
     lea     rsi, [rel str_dword]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jz      .is_dword
 
     ; 4. Check "qword" -> 64
     mov     rdi, rbx
     lea     rsi, [rel str_qword]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jz      .is_qword
 
     ; 5. Check "tword" -> 80 (and "tbyte", the MASM/GAS spelling)
     mov     rdi, rbx
     lea     rsi, [rel str_tword]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jz      .is_tword
     mov     rdi, rbx
     lea     rsi, [rel str_tbyte]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jz      .is_tword
 
     ; 6. Check "oword" -> 128
     mov     rdi, rbx
     lea     rsi, [rel str_oword]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jz      .is_oword
 
     ; 7. Check "yword" -> 256
     mov     rdi, rbx
     lea     rsi, [rel str_yword]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jz      .is_yword
 
     ; 8. Check "zword" -> 512
     mov     rdi, rbx
     lea     rsi, [rel str_zword]
-    call    str_cmp
+    call    str_cmp_kw
     test    rax, rax
     jz      .is_zword
 
