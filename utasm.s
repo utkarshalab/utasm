@@ -40,6 +40,10 @@ extern global_profstate
     resb 1024
     global global_ctx
     global_ctx:   resb ASMCTX_SIZE
+    global utasm_envp
+    utasm_envp:   resq 1            ; the environment (NAME=value strings)
+    global utasm_argv
+    utasm_argv:   resq 1            ; the command line
     resb 1024
     global global_lexer
     global_lexer: resb LEXER_SIZE
@@ -61,10 +65,16 @@ _start:
     ; [rbp+8] is argc, [rbp+16] is argv[0]
     mov     r12, [rbp + 8]          ; r12 = argc
     lea     r13, [rbp + 16]         ; r13 = argv
+    ; the environment follows argv and its NULL (%ifenv)
+    lea     rax, [r13 + r12*8 + 8]
+    mov     [rel utasm_envp], rax
+    mov     [rel utasm_argv], r13          ; to run again (core/known.s)
+    extern  known_init
+    call    known_init                     ; pass 2 of two?
 
     ; 1. Initialize Arena
     lea     rdi, [rel global_arena]
-    mov     rsi, 0x20000000 ; 512MB (lazily mapped)
+    mov     rsi, 0x200000000 ; 8GB reserved (MAP_NORESERVE: used pages only)
     call    arena_init
     test    rax, rax
     jnz     .exit_oom
@@ -274,7 +284,8 @@ _start:
     jmp     .check_enc
 
 .call_amd64:
-    call    amd64_encode_instruction
+    extern  amd64_encode_tracked
+    call    amd64_encode_tracked
     jmp     .check_enc
 .call_aarch64:
     call    aarch64_encode_instruction
@@ -317,6 +328,14 @@ _start:
     xor     eax, eax
     jmp     .exit
 .link:
+    ; constants used before their definition: assemble again knowing them,
+    ; as NASM's passes would (core/known.s); nothing is written before this
+    lea     rdi, [rel global_ctx]
+    extern  prep_unshadow
+    call    prep_unshadow                  ; equ values a %define hid
+    extern  known_second_pass
+    call    known_second_pass
+
     extern  lst_close
     call    lst_close                      ; the listing's last line
 
