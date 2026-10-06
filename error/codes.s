@@ -228,6 +228,59 @@ error_set_subject:
     mov     [rel error_subject], rdi
     ret
 
+; ---- print_subject ----------------------
+;
+; The error's subject on stderr: a distance kept as a name
+; (RELOC_OFFSET_MARK A RELOC_OFFSET_MARK B) as "A - B", an expression kept
+; until the end (RELOC_EXPR_MARK) by its text.
+; Clobbers : rax, rcx, rdx, rsi, rdi, r8-r11
+;
+print_subject:
+    push    r12
+    push    r13
+    mov     r12, [rel error_subject]
+    cmp     byte [r12], RELOC_EXPR_MARK
+    jne     .not_expr
+    mov     rdi, 2
+    mov     rsi, [r12 + 8]
+    call    print_str
+    jmp     .ret
+.not_expr:
+    cmp     byte [r12], RELOC_OFFSET_MARK
+    jne     .plain
+    inc     r12
+    mov     r13, r12
+.find:
+    mov     al, [r13]
+    test    al, al
+    jz      .plain
+    cmp     al, RELOC_OFFSET_MARK
+    je      .split
+    inc     r13
+    jmp     .find
+.split:
+    mov     byte [r13], 0
+    mov     rdi, 2
+    mov     rsi, r12
+    call    print_str
+    mov     byte [r13], RELOC_OFFSET_MARK
+    mov     rdi, 2
+    lea     rsi, [rel subj_minus]
+    call    print_str
+    lea     r12, [r13 + 1]
+.plain:
+    mov     rdi, 2
+    mov     rsi, r12
+    call    print_str
+.ret:
+    pop     r13
+    pop     r12
+    ret
+
+[SECTION .rodata]
+subj_minus:     db " - ", 0
+[SECTION .text]
+
 ; ---- error_set_location -----------------
 ;
 ; For errors found after the source is read (undefined symbols): the
@@ -318,9 +371,7 @@ error_report_code:
     mov     rsi, r12
     call    print_str
     mov     byte [r13], '^'
-    mov     rdi, 2
-    mov     rsi, [rel error_subject]
-    call    print_str
+    call    print_subject
     lea     r12, [r13 + 1]
     jmp     .piece
 .last:
@@ -473,6 +524,14 @@ code_table:
     code_msg EXIT_MACRO_EXP,         m_macro_exp
     code_msg EXIT_MACRO_RECURSION,   m_macro_deep
     code_msg EXIT_COND_DEPTH,        m_cond_deep
+    code_msg EXIT_NOT_SIMPLE,        m_not_simple
+    code_msg EXIT_NONSCALAR_OP,      m_nonscalar, t_nonscalar
+    code_msg EXIT_NONSCALAR_DIV,     m_nonscalar_div
+    code_msg EXIT_NONSCALAR_SHIFT,   m_nonscalar_shift
+    code_msg EXIT_NONSCALAR_CMP,     m_nonscalar_cmp, t_nonscalar_cmp
+    code_msg EXIT_NONSCALAR_COND,    m_nonscalar_cond
+    code_msg EXIT_TIMES_NONCONST,    m_times_nonconst
+    code_msg EXIT_RES_NONCONST,      m_res_nonconst
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -562,6 +621,14 @@ m_struct:       db "operand larger than the structure field", 0
 m_bits_mode:    db "instruction not supported in this bits mode (16/32/64)", 0
 m_use:          db "unknown `%use' package", 0
 m_cond_deep:    db "conditionals nested too deeply", 0
+m_not_simple:   db "expression is not simple or relocatable", 0
+m_nonscalar:    db "operator may only be applied to scalar values", 0
+m_nonscalar_div: db "division operator may only be applied to scalar values", 0
+m_nonscalar_shift: db "shift operator may only be applied to scalar values", 0
+m_nonscalar_cmp: db "operands differ by a non-scalar", 0
+m_nonscalar_cond: db "the left-hand side of `?' must be a scalar value", 0
+m_times_nonconst: db "non-constant argument supplied to TIMES", 0
+m_res_nonconst: db "attempt to reserve non-constant quantity of BSS space", 0
 m_ctx_deep:     db "context stack nested too deeply", 0
 m_align_mode:   db "unknown alignment mode", 0
 m_reg_size:     db "invalid register size specification", 0
@@ -593,6 +660,8 @@ t_dup:          db "label `^' inconsistently redefined", 0
 t_multi:        db "symbol `^' defined more than once", 0
 t_instr:        db "parser: instruction expected, found `^'", 0
 t_use:          db "unknown `%use' package `^'", 0
+t_nonscalar:    db "`^' operator may only be applied to scalar values", 0
+t_nonscalar_cmp: db "`^': operands differ by a non-scalar", 0
 t_align_mode:   db "unknown alignment mode: ^", 0
 
 sev_warning:    db "warning: ", 0
