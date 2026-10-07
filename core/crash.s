@@ -37,6 +37,7 @@ DEFAULT REL
 %define UC_RIP              168         ; ucontext_t: uc_mcontext.gregs[REG_RIP]
 
 extern  error_loc_file
+extern  warn_flush
 extern  error_loc_line
 
 [SECTION .bss]
@@ -115,6 +116,7 @@ crash_restorer:
 crash_handler:
     mov     r12d, edi
     mov     r13, rdx
+    call    warn_flush                     ; the warnings held before it
     ; "file:line: fatal: internal error: " - or "utasm: ..." before any
     ; statement was read
     mov     rsi, [rel error_loc_file]
