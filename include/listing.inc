@@ -29,6 +29,9 @@
 %define LE_PFILE    56              ; q nested body line: the enclosing
 %define LE_PLINE    64              ; d body's lines up to here are listed
                                     ;   first (an inner %rep block)
-%define LE_SIZE     72
+%define LE_WARN     72              ; q its warnings: {q next, text}, or 0
+%define LE_UNINIT   80              ; q its "?" bytes: {q from, q to (from
+                                    ;   the entry's start), q next}, or 0
+%define LE_SIZE     88
 %define LST_DEPTHS  32              ; include depths remembered
 
