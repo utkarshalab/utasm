@@ -4898,6 +4898,35 @@ parser_handle_pseudo_op:
     cmp     byte [r12 + 2], 0
     jne     .not_data
     mov     byte [rel zero_warned], 0      ; one warning a line (db ?, ?)
+    ; "db" alone: NASM's warning, nothing written
+    cmp     byte [r12], 'd'
+    jne     .data_word
+    lea     rcx, [rel data_letters]
+    mov     al, [r12 + 1]
+.data_letter:
+    cmp     byte [rcx], 0
+    je      .data_word
+    cmp     [rcx], al
+    je      .data_operands
+    inc     rcx
+    jmp     .data_letter
+.data_operands:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .data_empty
+    cmp     eax, TOK_EOF
+    jne     .data_word
+.data_empty:
+    mov     edi, WC_DB_EMPTY
+    call    warn_begin
+    lea     rsi, [rel s_db_empty]
+    call    warn_text
+    call    warn_end
+    xor     eax, eax
+    jmp     .check_handler_result
+.data_word:
     mov     ax, [r12]
     IF ax, e, 'db'
         mov     rdi, rbx
@@ -5684,7 +5713,10 @@ parser_emit_data_wide:
     jne     .done
     mov     rdi, rbx
     call    preprocessor_next_token
-    jmp     .loop
+    call    parser_data_more
+    test    eax, eax
+    jnz     .loop
+    jmp     .done
 .done:
     xor     eax, eax
 .ret:
@@ -7008,7 +7040,9 @@ parser_emit_data_8:
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
         mov     rdi, rbx
         call    preprocessor_next_token
-        jmp     .loop
+        call    parser_data_more           ; ("db 1," ends there, as in NASM)
+        test    eax, eax
+        jnz     .loop
         ENDIF
     pop     r14
     pop     r13
@@ -7067,7 +7101,9 @@ parser_emit_data_16:
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
         mov     rdi, rbx
         call    preprocessor_next_token
-        jmp     .loop
+        call    parser_data_more           ; ("db 1," ends there, as in NASM)
+        test    eax, eax
+        jnz     .loop
         ENDIF
     epilogue
 
@@ -7175,7 +7211,9 @@ parser_emit_data_32:
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
         mov     rdi, rbx
         call    preprocessor_next_token
-        jmp     .loop
+        call    parser_data_more           ; ("db 1," ends there, as in NASM)
+        test    eax, eax
+        jnz     .loop
         ENDIF
     xor     rax, rax
     epilogue
@@ -7231,7 +7269,9 @@ parser_emit_data_64:
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
         mov     rdi, rbx
         call    preprocessor_next_token
-        jmp     .loop
+        call    parser_data_more           ; ("db 1," ends there, as in NASM)
+        test    eax, eax
+        jnz     .loop
         ENDIF
     xor     rax, rax
     epilogue
@@ -7255,6 +7295,21 @@ parser_count_known:
 .ret:
     pop     rdi
     pop     rax
+    ret
+
+; parser_data_more: after a data directive's comma: eax = 1 when an item
+; follows, 0 at the end of the line ("db 1," is db 1, as in NASM)
+parser_data_more:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    movzx   ecx, byte [rdx + TOKEN_kind]
+    xor     eax, eax
+    cmp     ecx, TOK_NEWLINE
+    je      .end
+    cmp     ecx, TOK_EOF
+    je      .end
+    inc     eax
+.end:
     ret
 
 ; parser_item_begin / parser_item_end: around one item of a data
@@ -7325,6 +7380,8 @@ s_bits64:      db "64", 0
 s_bits32:      db "32", 0
 s_bits16:      db "16", 0
 s_rel_regs:    db "indirect address displacements cannot be RIP-relative", 0
+s_db_empty:    db "no operand for data declaration", 0
+data_letters:  db "bwdqtoyz", 0
 [SECTION .bss]
 alignb 8
 item_start:    resq 1                  ; parser_item_begin: the item's offset
