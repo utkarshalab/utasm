@@ -56,17 +56,21 @@ warn_state:
     db 1                                ; WC_PREFIX_LOCK_XCHG
     db 1                                ; WC_NUMBER_OVERFLOW
     db 1                                ; WC_PREFIX_LOCK_ERROR
+    db 1                                ; WC_DB_EMPTY
+    db 1                                ; WC_PP_MACRO_DEFAULTS
 
 [SECTION .rodata]
 warn_names:
     dq wn_other, wn_user, wn_zeroing, wn_lock_xchg, wn_overflow
-    dq wn_lock_error
+    dq wn_lock_error, wn_db_empty, wn_macro_defaults
 wn_other:       db "other", 0
 wn_user:        db "user", 0
 wn_zeroing:     db "zeroing", 0
 wn_lock_xchg:   db "prefix-lock-xchg", 0
 wn_overflow:    db "number-overflow", 0
 wn_lock_error:  db "prefix-lock-error", 0
+wn_db_empty:    db "db-empty", 0
+wn_macro_defaults: db "pp-macro-defaults", 0
 wn_all:         db "all", 0
 wn_error:       db "error", 0
 s_warning:      db "warning: ", 0
