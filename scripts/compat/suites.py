@@ -809,3 +809,35 @@ def addresses(utasm, verbose=False):
             else:
                 s.result(name, ub == nb, "nasm %s | utasm %s" % (nb.hex(), ub.hex()))
     return s
+
+
+# ---------------------------------------------------------------------------
+# warnings: the same warnings as NASM on stderr, the same exit status, and
+# (when NASM succeeds) the same listing, with each set of -w options
+# ---------------------------------------------------------------------------
+def warnings(utasm, verbose=False):
+    s = Suite("warnings", verbose)
+
+    def one(job):
+        name, src, opts = job
+        with tempdir() as d:
+            open(os.path.join(d, "w.s"), "w").write("bits 64\n" + src)
+            rn = run(["nasm", "-f", "elf64", "w.s", "-o", "n.o", "-l", "n.lst"] + opts, cwd=d)
+            ru = run([utasm, "-f", "elf64", "w.s", "-o", "u.o", "-l", "u.lst"] + opts, cwd=d)
+            ln = open(os.path.join(d, "n.lst")).read() if os.path.exists(os.path.join(d, "n.lst")) else ""
+            lu = open(os.path.join(d, "u.lst")).read() if os.path.exists(os.path.join(d, "u.lst")) else ""
+        return "%s %s" % (name, " ".join(opts)), rn, ru, ln, lu
+
+    jobs = [(n, src, o) for n, src in cases.WARN_CASES.items() for o in cases.WARN_OPTIONS]
+    with cf.ThreadPoolExecutor(JOBS) as ex:
+        for name, rn, ru, ln, lu in ex.map(one, jobs):
+            if _crashed(ru):
+                s.result(name, False, "utasm crashed")
+            elif (rn.returncode == 0) != (ru.returncode == 0):
+                s.result(name, False, "nasm rc %d | utasm rc %d" % (rn.returncode, ru.returncode))
+            elif rn.stderr != ru.stderr:
+                s.result(name, False, "nasm: %r | utasm: %r" % (rn.stderr[:120], ru.stderr[:120]))
+            else:
+                # NASM writes the listing after an error too; utasm does not
+                s.result(name, rn.returncode != 0 or ln == lu, "listings differ")
+    return s
