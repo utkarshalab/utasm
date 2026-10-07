@@ -781,3 +781,31 @@ def robustness(utasm, verbose=False):
                 s.result(name, (rn.returncode == 0) == (ru.returncode == 0),
                          "nasm rc %d | utasm rc %d: %s" % (rn.returncode, ru.returncode, first_line(ru)))
     return s
+
+
+# ---------------------------------------------------------------------------
+# addresses: every order of base, index and scale (cases.address_forms):
+# the same bytes as NASM, or rejected where NASM rejects it
+# ---------------------------------------------------------------------------
+def addresses(utasm, verbose=False):
+    s = Suite("addresses", verbose)
+
+    def one(job):
+        bits, line = job
+        with tempdir() as d:
+            nb, ub, ru = assemble_bin(utasm, "%s\n%s\nlbl: nop\n" % (bits, line), d)
+        return "%s: %s" % (bits, line), nb, ub, ru
+
+    with cf.ThreadPoolExecutor(JOBS) as ex:
+        for name, nb, ub, ru in ex.map(one, cases.address_forms()):
+            if _crashed(ru):
+                s.result(name, False, "utasm crashed")
+            elif nb is None and ub is None:
+                s.skip()
+            elif nb is None:
+                s.result(name, False, "NASM rejects it; utasm accepts it")
+            elif ub is None:
+                s.result(name, False, "utasm: " + first_line(ru))
+            else:
+                s.result(name, ub == nb, "nasm %s | utasm %s" % (nb.hex(), ub.hex()))
+    return s
