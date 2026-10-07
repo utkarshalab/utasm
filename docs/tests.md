@@ -623,36 +623,28 @@ This folder is permanent memory. Every entry is an hour transformed into permane
 
 ## Fuzz Tests
 
-Random inputs. utasm must never crash, hang, or produce undefined behaviour.
+`scripts/compat/fuzz.py` changes the test sources and the compatibility
+cases at random - lines dropped, repeated, cut, swapped or spliced in from
+another source; directives, operators, odd bytes and nesting inserted - and
+assembles each result as bin, elf64 or elf32, sometimes with `-l` or `-g`:
 
-```
-tests/fuzz/
-├── runner.s
-├── lexer.s
-├── parser.s
-├── macro.s
-├── encoder.s
-├── expr.s
-├── elf.s
-│
-├── seeds/
-│   ├── empty.s
-│   ├── nullbytes.s
-│   ├── allff.s
-│   ├── deep_macro.s
-│   ├── long_line.s
-│   ├── unicode.s
-│   └── max_symbols.s
-│
-└── corpus/              ; grows as fuzzer runs
-    └── ...
+```sh
+python3 scripts/compat/fuzz.py build/gen1/utasm 6000 7   # 6000 runs, seed 7
 ```
 
 **Invariants that must hold regardless of input:**
-- Never segfaults
-- Never hangs (enforced by timeout.s)
-- Always exits 0 (success) or 1 (error)
-- Error messages always contain valid line/col numbers
+- No internal error: a fault in utasm (SIGSEGV, SIGBUS, SIGFPE, SIGILL) is
+  caught by `core/crash.s` and reported as `file:line: fatal: internal
+  error: ... at 0x...`, exit status 9 - the fuzzer counts it, as it counts
+  a death by any other signal
+- Finishes within 10 seconds
+- Uses no more than 2 GB
+- Otherwise, any exit status: assembling it or reporting errors are both fine
+
+Each failing input is saved, cut down to the smallest one that fails at the
+same address, and printed once per address with the function it is in. The
+same seed gives the same inputs. The inputs it has found are kept in
+`cases.ROBUST_CASES`, which the *robustness* compatibility suite runs.
 
 ---
 
@@ -833,6 +825,7 @@ python3 scripts/compat/run_all.py build/gen1/utasm -v       # also list known di
 | command line | NASM's options (`-I`, `-D`, `-U`, `-p`, `--before`, `-M` and its variants, `-E`) on the same files: the same binary, or the same dependency rules |
 | expressions | labels defined later in arithmetic (`dd (end - start) / 4`), as data, immediates and displacements, in flat binaries and objects: the same bytes; NASM's scalar rule (a label in `*`, `/`, shifts, `&`, comparisons...) before and after its definition: the same error messages; and `times` / `resb` / `equ` counts that utasm, reading once, must refuse |
 | limits | inputs past utasm's old fixed limits - long `times` lines, 100-parameter macros, long arguments and bodies, deep `%if` / `%push` / macro / include nesting, long `%ifidn` / `%defstr` / `%[...]` text, 300 sections: the same output as NASM |
+| robustness | inputs that crashed or hung utasm before (found by `fuzz.py`, see *Fuzz Tests*): it must finish, with no internal error, and accept or reject each as NASM does |
 | encoder corpus | every instruction of `corpus.py` alone, byte for byte |
 | operand shapes | ~1,700 pairings of register and memory sizes for the general-purpose instructions: the same bytes as NASM, or rejected where NASM rejects them |
 | disassembler | `utasm --disasm` against `objdump -d -M intel` on the gen1 objects and the corpus |
