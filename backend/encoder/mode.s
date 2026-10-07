@@ -439,6 +439,25 @@ amd64_imm_canon:
     movzx   edx, byte [rdi + OPERAND_size]
 .sized:
     mov     rax, [rdi + OPERAND_imm]
+    ; "mov ecx, -16 >> 2": the value does not fit the operation's width -
+    ; NASM's "dword data exceeds bounds"
+    test    ebx, ebx
+    jz      .bounded
+    cmp     edx, 32
+    ja      .bounded
+    push    rcx
+    push    rdx
+    push    rdi
+    mov     esi, edx
+    shr     esi, 3
+    mov     rdi, rax
+    extern  warn_data_bounds
+    call    warn_data_bounds
+    pop     rdi
+    pop     rdx
+    pop     rcx
+    mov     rax, [rdi + OPERAND_imm]
+.bounded:
     cmp     edx, 16
     je      .w16
     cmp     edx, 32
