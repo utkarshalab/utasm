@@ -21,15 +21,6 @@ KNOWN = {
     # listings (-l): the encoding differences above show there too
     "listing op_cmp3": "NASM's <=> disagrees with its own manual",
     "listing op_signed_div": "// is a comment in utasm",
-    # NASM lists its warnings; utasm does not give these warnings yet
-    "listing basic_warning_dir": "%warning text in the listing",
-    "listing dir_db_question": "warning: uninitialized space in a non-BSS section",
-    "listing dir_dw_question": "warning: uninitialized space in a non-BSS section",
-    "listing dir_times_question": "warning: uninitialized space in a non-BSS section",
-    "listing dir_section_follows": "warning: unknown section attribute",
-    "listing dir_section_vstart": "warning: unknown section attribute",
-    "listing ins_multiple_prefix": "warning: superfluous LOCK prefix on XCHG",
-    "listing op_shifts": "warning: dword data exceeds bounds",
     # listing details not reproduced
     "listing basic_exitrep": "lines after %exitrep are listed by NASM",
     "listing pp_line": "%line: the text of the renumbered line",
