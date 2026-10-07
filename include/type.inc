@@ -223,13 +223,15 @@ struc MACROEXP
     field params,   8       ; array of pointers to each argument's first token
     field body,     8       ; current body position token pointer
     field line,     4       ; invocation line number
-    field pad1,     4       ; alignment padding
+    field lst_depth, 4      ; macro / %rep expansions open, this one included
     field arglens,  8       ; per-argument token counts (dword array)
     field pend_ptr, 8       ; next token of the argument being substituted
     field pend_cnt, 4       ; tokens still to emit from that argument
     field exp_id,   4       ; id used by %%locals (shared with %rep bodies)
     field pcap,     4       ; entries of params[] and arglens[] (they grow)
     field pad2,     4
+    field lst_first, 8      ; the innermost of those expansions (lst_depth)
+    field lst_second, 8     ; ... and the one around it, or 0
 endstruc
 
 ; ============================================================================
