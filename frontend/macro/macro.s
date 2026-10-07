@@ -355,6 +355,10 @@ prep_internal_next:
     mov     rdi, r12
     xor     esi, esi
     call    error_track_token
+    ; "P %+ cd" in the source itself (in a body, prep_expand_next joins)
+    call    prep_file_paste
+    test    rax, rax
+    jnz     .done
     jmp     .check_token
 
 .from_body:
@@ -3234,7 +3238,10 @@ dbg_newline:  db 10, 0
 ; prep_subst_const_text
 ; If the token names a %assign / %define constant, replace its text with the
 ; constant's value in decimal. Pasting joins text, and "%assign i 7" makes i
-; a numeric macro: ".lbl_ %+ i" has to produce ".lbl_7", not ".lbl_i".
+; a numeric macro: ".lbl_ %+ i" has to produce ".lbl_7", not ".lbl_i". A
+; %define of one token, with no parameters, stands for that token ("%define
+; P ab": "P %+ cd" is abcd, as NASM expands before it pastes), and so on
+; down a chain of them.
 ;
 ; Input    : rdi = pointer to PrepState
 ;             rsi = pointer to Token (rewritten in place)
@@ -3247,6 +3254,8 @@ prep_subst_const_text:
     mov     rbx, rdi
     mov     r12, rsi
 
+    mov     r13d, 32                       ; (a %define naming itself)
+.lookup:
     cmp     byte [r12 + TOKEN_kind], TOK_IDENT
     jne     .done
 
@@ -3255,6 +3264,8 @@ prep_subst_const_text:
     call    symbol_find
     test    rax, rax
     jnz     .done
+    cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
+    je      .one_token_define
     cmp     byte [rdx + SYMBOL_kind], SYM_CONSTANT
     jne     .done
     mov     r13, [rdx + SYMBOL_value]
@@ -3270,12 +3281,179 @@ prep_subst_const_text:
     mov     rsi, r13
     call    str_int_to_str
     mov     byte [r12 + TOKEN_kind], TOK_NUMBER
+    jmp     .done
+
+.one_token_define:
+    mov     rax, [rdx + SYMBOL_value]      ; MACRO*
+    test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE
+    jz      .done
+    cmp     word [rax + MACRO_max_params], 0
+    jne     .done
+    cmp     dword [rax + MACRO_ntokens], 1
+    jne     .done
+    mov     rax, [rax + MACRO_tokens]
+    mov     cl, [rax + TOKEN_kind]
+    cmp     cl, TOK_IDENT
+    je      .define_text
+    cmp     cl, TOK_NUMBER
+    jne     .done
+.define_text:
+    mov     [r12 + TOKEN_kind], cl
+    mov     rax, [rax + TOKEN_value]
+    mov     [r12 + TOKEN_value], rax
+    dec     r13d
+    jnz     .lookup
 
 .done:
     pop     r13
     pop     r12
     pop     rbx
     epilogue
+
+; ---- prep_file_paste --------------------
+;
+; "P %+ cd" in the source itself (a body's %+ is joined as the body is
+; served, prep_expand_next): the token just read, r12, joined with the one
+; after the %+ - each first as the constant or one-token %define it names
+; (prep_subst_const_text) - and again for "a %+ b %+ c". prep_internal_next
+; then looks the result up like any token ("abcd" can be a %define).
+; The %+ is found by reading the source bytes, not by lexing ahead: the
+; lexer's line must not move past this line (%line relies on it).
+; Input    : rbx = PrepState, r12 = the token just read from the lexer
+; Output   : rax = EXIT_OK or an error
+;
+prep_file_paste:
+    movzx   eax, byte [r12 + TOKEN_kind]
+    cmp     eax, TOK_IDENT
+    je      .pasteable
+    cmp     eax, TOK_NUMBER
+    jne     .none
+.pasteable:
+    cmp     word [rbx + PREP_skip_depth], 0
+    jne     .none
+    ; a %define body keeps its %+ until it is expanded ("%define J(a,b)
+    ; a %+ b" joins the arguments, not a and b)
+    cmp     byte [rel prep_noexpand], 0
+    jne     .none
+    push    r13
+    push    r14
+    sub     rsp, TOKEN_SIZE
+    mov     r13, [rbx + PREP_lexer]
+.again:
+    cmp     byte [r13 + LEXER_has_peek], TRUE
+    jne     .scan
+    cmp     byte [r13 + LEXER_peek + TOKEN_kind], TOK_CONCAT
+    jne     .ok
+    jmp     .paste
+.scan:
+    mov     rsi, [r13 + LEXER_pos]
+    mov     rdi, [r13 + LEXER_end]
+.blank:
+    cmp     rsi, rdi
+    jae     .ok
+    mov     al, [rsi]
+    cmp     al, ' '
+    je      .blank_next
+    cmp     al, 9
+    jne     .blank_done
+.blank_next:
+    inc     rsi
+    jmp     .blank
+.blank_done:
+    cmp     al, '%'
+    jne     .ok
+    lea     rax, [rsi + 1]
+    cmp     rax, rdi
+    jae     .ok
+    cmp     byte [rsi + 1], '+'
+    jne     .ok
+.paste:
+    mov     rdi, r13
+    mov     rsi, rsp
+    call    lexer_next                     ; the %+
+    test    rax, rax
+    jnz     .out
+    mov     rdi, r13
+    mov     rsi, rsp
+    call    lexer_next                     ; what it joins on
+    test    rax, rax
+    jnz     .out
+    movzx   eax, byte [rsp + TOKEN_kind]
+    cmp     eax, TOK_IDENT
+    je      .join
+    cmp     eax, TOK_NUMBER
+    je      .join
+    cmp     eax, TOK_LABEL
+    je      .join
+    cmp     eax, TOK_LOCAL_LABEL
+    je      .join
+    ; nothing to join ("x %+" at the end of the line): NASM's error; what
+    ; followed is read next
+    lea     rdi, [r13 + LEXER_peek]
+    mov     rsi, rsp
+    mov     ecx, TOKEN_SIZE
+    rep     movsb
+    mov     byte [r13 + LEXER_has_peek], TRUE
+    mov     eax, EXIT_INVALID_EXPR
+    jmp     .out
+.join:
+    mov     rdi, rbx
+    mov     rsi, r12
+    call    prep_subst_const_text
+    mov     rdi, rbx
+    mov     rsi, rsp
+    call    prep_subst_const_text
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, MAX_TOKEN
+    call    arena_alloc
+    test    rax, rax
+    jnz     .out
+    mov     r14, rdx
+    mov     byte [r14], 0
+    mov     rdi, r14
+    mov     rsi, [r12 + TOKEN_value]
+    call    str_concat
+    mov     rdi, r14
+    mov     rsi, [rsp + TOKEN_value]
+    call    str_concat
+    ; a label when the right piece carried the ':'; a number when it
+    ; starts with a digit ("1 %+ 2")
+    mov     byte [r12 + TOKEN_kind], TOK_IDENT
+    mov     cl, [rsp + TOKEN_kind]
+    cmp     cl, TOK_LABEL
+    je      .label
+    cmp     cl, TOK_LOCAL_LABEL
+    je      .label
+    movzx   eax, byte [r14]
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .kind_set
+    mov     byte [r12 + TOKEN_kind], TOK_NUMBER
+    jmp     .kind_set
+.label:
+    mov     byte [r12 + TOKEN_kind], TOK_LABEL
+    cmp     byte [r14], '.'
+    jne     .kind_set
+    mov     byte [r12 + TOKEN_kind], TOK_LOCAL_LABEL
+.kind_set:
+    mov     [r12 + TOKEN_value], r14
+    mov     rdi, r14
+    call    str_len
+    mov     [r12 + TOKEN_len], ax
+    cmp     byte [r12 + TOKEN_kind], TOK_IDENT
+    je      .again                         ; "a %+ b %+ c"
+    cmp     byte [r12 + TOKEN_kind], TOK_NUMBER
+    je      .again
+.ok:
+    xor     eax, eax
+.out:
+    add     rsp, TOKEN_SIZE
+    pop     r14
+    pop     r13
+    ret
+.none:
+    xor     eax, eax
+    ret
 
 ; ---- conditional level bookkeeping ------
 ;
