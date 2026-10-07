@@ -8,12 +8,14 @@ labels as instruction operands, UBF boot images, error messages (the file
 and line of the first error), NASM's command-line options, listings (-l),
 DWARF line tables (-g), i386 objects (-f elf32), labels in expressions
 (defined later, and NASM's scalar errors), inputs past the old fixed limits,
-inputs that crashed utasm before (robustness),
+inputs that crashed utasm before (robustness), every order of base, index and
+scale in addresses,
 the encoder corpus (also under bits 32 and bits 16), operand shapes (valid
 and invalid pairings), and the disassembler against objdump.
 
 usage: scripts/compat/run_all.py [utasm-binary] [--quick] [-v]
-       --quick  skips the encoder corpus, the operand shapes and the disassembler
+       --quick  skips the encoder corpus, the operand shapes, the addresses and the
+                disassembler
                 (the slow ones)
        -v       also lists the known differences (common.KNOWN)
 
@@ -45,7 +47,7 @@ def main(argv):
             suites.command_line, suites.listing, suites.dwarf, suites.elf32,
             suites.expressions, suites.limits, suites.robustness]
     if not quick:
-        runs += [suites.encoder, suites.operand_shapes, suites.modes]
+        runs += [suites.encoder, suites.operand_shapes, suites.modes, suites.addresses]
     good = True
     for fn in runs:
         good = fn(utasm, verbose).report() and good
