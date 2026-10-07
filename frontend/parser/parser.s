@@ -16,6 +16,11 @@ DEFAULT REL
 
 extern arena_alloc
 extern float_encode
+extern warn_begin
+extern warn_data_bounds
+extern warn_text
+extern warn_end
+extern lst_uninit
 extern io_open
 extern io_read
 extern io_close
@@ -333,6 +338,7 @@ parser_parse_instruction:
 
 .lookup_mnemonic:
     mov     rsi, [r12 + TOKEN_value]
+    mov     [rel inst_mnem_text], rsi      ; (parser_check_lock)
     hash_fnv1a_64_ci rsi, r13
     
     ; Reload tables as hash macro clobbers r11 (and potentially others)
@@ -460,6 +466,7 @@ parser_parse_instruction:
     je      .instruction_consume_rbracket
     
 .instruction_ok:
+    call    parser_check_lock
     mov     rax, OK
     mov     rdx, r15
     jmp     .done
@@ -2457,7 +2464,8 @@ parser_evaluate_factor:
         xor     rax, rax
         jmp     .done
     ELSEIF al, e, TOK_QUESTION
-        ; "db ?": an uninitialised item, zero here
+        ; "db ?": an uninitialised item, zero here (parser_item_end)
+        mov     byte [rel expr_question], 1
         xor     edx, edx
         xor     rax, rax
         jmp     .done
@@ -2831,6 +2839,7 @@ parser_parse_mem_operand:
     mov     [rel mem_scaled_n], eax
     mov     [rel mem_scaled_take], eax
     mov     [rel mem_terms_n], eax
+    mov     [rel mem_addr_width], eax
     mov     byte [rel mem_term_pending], 0
     mov     byte [r12 + OPERAND_kind], OP_MEM
     mov     byte [r12 + OPERAND_scale], 1 ; Default scale
@@ -2944,6 +2953,7 @@ parser_parse_mem_operand:
         push    rcx
         call    parser_parse_reg_info
         movzx   r8d, word [r12 + OPERAND_xsize] ; the register's width, if it is one
+        mov     [rel mem_term_width], r8d
         pop     rcx
         mov     [r12 + OPERAND_xsize], cx
         pop     rcx
@@ -2995,6 +3005,20 @@ parser_parse_mem_operand:
             call    preprocessor_next_token ; consume ':'
             jmp     .loop
         .not_seg:
+            ; registers of one size: [eax + rbx] is no address
+            mov     ecx, [rel mem_term_width]
+            cmp     ecx, 128
+            jae     .one_size                      ; a vector index
+            cmp     dword [rel mem_addr_width], 0
+            jne     .size_seen
+            mov     [rel mem_addr_width], ecx
+            jmp     .one_size
+        .size_seen:
+            cmp     [rel mem_addr_width], ecx
+            je      .one_size
+            mov     eax, EXIT_EA_SIZE_MIX
+            jmp     .error
+        .one_size:
             ; how it is scaled: "rcx*4" (read here), "4*rcx" (read by the
             ; expression evaluator), or not at all
             mov     [rel mem_term_reg], al
@@ -3280,7 +3304,7 @@ parser_parse_mem_operand:
     ret
 .at_new:
     cmp     r8d, MEM_SCALED_MAX
-    jae     .place_bad
+    jae     .bad_too_many
     mov     [r10 + r8], al
     lea     r10, [rel mem_terms_coef]
     mov     [r10 + r8 * 8], rcx
@@ -3291,6 +3315,31 @@ parser_parse_mem_operand:
     ret
 .place_bad:
     mov     eax, EXIT_INVALID_ADDR
+    ret
+.bad_too_many:
+    mov     eax, EXIT_EA_TOO_MANY
+    ret
+.bad_two_index:
+    mov     eax, EXIT_EA_TWO_INDEX
+    ret
+.bad_bits:
+    ; "invalid 64-bit effective address": the address's size
+    lea     rdi, [rel s_bits64]
+    mov     eax, [rel mem_addr_width]
+    test    eax, eax
+    jnz     .bad_bits_size
+    movzx   eax, byte [rel asm_bits]
+.bad_bits_size:
+    cmp     eax, 32
+    jne     .bad_bits_16
+    lea     rdi, [rel s_bits32]
+.bad_bits_16:
+    cmp     eax, 16
+    jne     .bad_bits_set
+    lea     rdi, [rel s_bits16]
+.bad_bits_set:
+    call    error_set_subject
+    mov     eax, EXIT_EA_BITS
     ret
 
 ; .place_terms: the registers into base and index, as NASM places them.
@@ -3326,8 +3375,25 @@ parser_parse_mem_operand:
     mov     [rel mem_terms_n], edx
     test    edx, edx
     jz      .pt_ok
+    ; [rel rax]: NASM's warning, and the address is [rax]
+    test    byte [r12 + OPERAND_flags], OP_FLAG_REL
+    jz      .pt_placed_rel
+    cmp     byte [r12 + OPERAND_base], REG_RIP
+    jne     .pt_placed_rel
+    and     byte [r12 + OPERAND_flags], ~OP_FLAG_REL
+    mov     byte [r12 + OPERAND_base], 0xFF
+    mov     edi, WC_OTHER
+    call    warn_begin
+    lea     rsi, [rel s_rel_regs]
+    call    warn_text
+    call    warn_end
+    lea     r8, [rel mem_terms_reg]
+    lea     r9, [rel mem_terms_coef]
+    lea     r10, [rel mem_terms_mul]
+    mov     edx, [rel mem_terms_n]
+.pt_placed_rel:
     cmp     edx, 2
-    ja      .place_bad
+    ja      .bad_too_many
     je      .pt_two
     ; one register
     movzx   eax, byte [r8]
@@ -3356,7 +3422,7 @@ parser_parse_mem_operand:
     jne     .pt_index
 .pt_split:
     cmp     byte [r12 + OPERAND_base], 0xFF
-    jne     .place_bad
+    jne     .bad_bits
     mov     [r12 + OPERAND_base], al
     dec     ecx
     jmp     .pt_index
@@ -3371,14 +3437,14 @@ parser_parse_mem_operand:
     cmp     qword [r9], 1
     je      .pt_first_once
     cmp     qword [r9 + 8], 1
-    jne     .place_bad                     ; two index registers
+    jne     .bad_two_index
 .pt_first_index:
     ; the first one the index, the second the base
     movzx   eax, byte [r8 + 1]
     call    .pt_vector
-    jnc     .place_bad                     ; two vector registers
+    jnc     .bad_two_index                 ; two vector registers
     cmp     qword [r9 + 8], 1
-    jne     .place_bad
+    jne     .pt_first_scaled
     call    .pt_base
     test    eax, eax
     jnz     .pt_ret
@@ -3393,7 +3459,7 @@ parser_parse_mem_operand:
 .pt_second_index:
     ; the first one the base, the second the index
     cmp     qword [r9], 1
-    jne     .place_bad
+    jne     .pt_second_scaled
     movzx   eax, byte [r8]
     call    .pt_base
     test    eax, eax
@@ -3410,7 +3476,7 @@ parser_parse_mem_operand:
     cmp     rcx, 4
     je      .pt_scale_ok
     cmp     rcx, 8
-    jne     .place_bad
+    jne     .bad_bits
 .pt_scale_ok:
     cmp     byte [r12 + OPERAND_index], 0xFF
     jne     .place_bad
@@ -3419,6 +3485,21 @@ parser_parse_mem_operand:
     xor     eax, eax
 .pt_ret:
     ret
+; the base has a scale too: two index registers, unless it can be split
+; ([rbx*3 + rcx]: NASM's "invalid 64-bit effective address")
+.pt_first_scaled:
+    mov     rcx, [r9 + 8]
+    jmp     .pt_scaled_base
+.pt_second_scaled:
+    mov     rcx, [r9]
+.pt_scaled_base:
+    cmp     rcx, 3
+    je      .bad_bits
+    cmp     rcx, 5
+    je      .bad_bits
+    cmp     rcx, 9
+    je      .bad_bits
+    jmp     .bad_two_index
 
 ; .pt_vector: CF clear when eax is a vector register (xmm / ymm / zmm)
 .pt_vector:
@@ -3448,6 +3529,9 @@ mem_scaled_take:  resd 1                  ; how many the operand has taken
 mem_scaling:      resb 1                  ; a memory operand is being read
 mem_term_pending: resb 1                  ; mem_term_coef came from the evaluator
 mem_term_reg:     resb 1
+alignb 4
+mem_term_width:   resd 1                  ; the register just read: its width
+mem_addr_width:   resd 1                  ; the address's registers' width
 [SECTION .text]
 
 ;*
@@ -3886,6 +3970,7 @@ parser_section_attrs:
     mov     [r13 + SECTION_align], rdx
     jmp     .next
 .vstart:
+    call    .bin_only
     call    .equals_value
     test    rax, rax
     jnz     .ret
@@ -3893,6 +3978,7 @@ parser_section_attrs:
     or      byte [r13 + SECTION_bin_flags], BIN_VSTART
     jmp     .next
 .start:
+    call    .bin_only
     call    .equals_value
     test    rax, rax
     jnz     .ret
@@ -3900,6 +3986,7 @@ parser_section_attrs:
     or      byte [r13 + SECTION_bin_flags], BIN_START
     jmp     .next
 .follows:
+    call    .bin_only
     mov     rdi, rbx
     call    preprocessor_next_token        ; "="
     cmp     byte [rdx + TOKEN_kind], TOK_EQUAL
@@ -3911,6 +3998,27 @@ parser_section_attrs:
     mov     rax, [rdx + TOKEN_value]
     mov     [r13 + SECTION_follows], rax
     jmp     .next
+; .bin_only: vstart=, start=, follows= place sections in a flat binary;
+; in any other output NASM ignores them with a warning (r12 = the name)
+.bin_only:
+    lea     rax, [rel global_ctx]
+    cmp     byte [rax + ASMCTX_fmt], FMT_BIN
+    je      .bin_ret
+    mov     edi, WC_OTHER
+    call    warn_begin
+    lea     rsi, [rel s_attr_a]
+    call    warn_text
+    mov     rsi, r12
+    call    warn_text
+    lea     rsi, [rel s_attr_b]
+    call    warn_text
+    mov     rsi, [r13 + SECTION_name]
+    call    warn_text
+    lea     rsi, [rel s_attr_c]
+    call    warn_text
+    call    warn_end
+.bin_ret:
+    ret
 ; "= expr": rax = OK or error, rdx = the value
 .equals_value:
     mov     rdi, rbx
@@ -4036,6 +4144,86 @@ parser_lookup_mnemonic:
 .not_found:
     xor     rax, rax
     epilogue
+
+; parser_check_lock: NASM's warnings for a LOCK prefix (r15 = INST): on an
+; instruction that cannot be locked, or without a memory operand,
+; "instruction is not lockable"; on XCHG with one, which locks anyway,
+; "superfluous LOCK prefix on XCHG instruction". Preserves rbx, r12-r15.
+parser_check_lock:
+    xor     ecx, ecx
+.prefix:
+    cmp     byte [r15 + INST_prefixes + rcx], 0xF0
+    je      .locked
+    inc     ecx
+    cmp     ecx, 4
+    jb      .prefix
+    ret
+.locked:
+    push    r12
+    push    r13
+    ; a memory operand?
+    movzx   r12d, byte [r15 + INST_nops]
+    lea     r13, [r15 + INST_op0]
+.operand:
+    test    r12d, r12d
+    jz      .not_lockable
+    cmp     byte [r13 + OPERAND_kind], OP_MEM
+    je      .has_memory
+    add     r13, OPERAND_SIZE
+    dec     r12d
+    jmp     .operand
+.has_memory:
+    ; one of the instructions that can be locked?
+    lea     r12, [rel lockable_names]
+.name:
+    cmp     byte [r12], 0
+    je      .not_lockable
+    mov     rdi, [rel inst_mnem_text]
+    mov     rsi, r12
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .lockable
+.skip:
+    inc     r12
+    cmp     byte [r12 - 1], 0
+    jne     .skip
+    jmp     .name
+.lockable:
+    mov     rdi, [rel inst_mnem_text]
+    lea     rsi, [rel str_xchg]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .out
+    mov     edi, WC_PREFIX_LOCK_XCHG
+    lea     r12, [rel s_lock_xchg]
+    jmp     .warn
+.not_lockable:
+    mov     edi, WC_PREFIX_LOCK_ERROR
+    lea     r12, [rel s_not_lockable]
+.warn:
+    call    warn_begin
+    mov     rsi, r12
+    call    warn_text
+    call    warn_end
+.out:
+    pop     r13
+    pop     r12
+    ret
+
+[SECTION .rodata]
+; the instructions LOCK may come before (with a memory operand)
+lockable_names:
+    db "add", 0, "adc", 0, "and", 0, "btc", 0, "btr", 0, "bts", 0
+    db "cmpxchg", 0, "cmpxchg8b", 0, "cmpxchg16b", 0, "dec", 0, "inc", 0
+    db "neg", 0, "not", 0, "or", 0, "sbb", 0, "sub", 0, "xor", 0
+    db "xadd", 0, "xchg", 0, 0
+str_xchg:       db "xchg", 0
+s_lock_xchg:    db "superfluous LOCK prefix on XCHG instruction", 0
+s_not_lockable: db "instruction is not lockable", 0
+[SECTION .bss]
+alignb 8
+inst_mnem_text: resq 1                  ; the mnemonic of the instruction read
+[SECTION .text]
 
 ;*
 ; * [parser_check_prefix]
@@ -4709,6 +4897,7 @@ parser_handle_pseudo_op:
     ;    ("dbg" or "dword_table" as a statement word is not db / dw)
     cmp     byte [r12 + 2], 0
     jne     .not_data
+    mov     byte [rel zero_warned], 0      ; one warning a line (db ?, ?)
     mov     ax, [r12]
     IF ax, e, 'db'
         mov     rdi, rbx
@@ -5430,6 +5619,7 @@ parser_emit_data_wide:
     push    r13
     mov     r12d, esi
 .loop:
+    call    parser_item_begin
     mov     esi, r12d
     call    parser_data_string
     test    rax, rax
@@ -5453,6 +5643,18 @@ parser_emit_data_wide:
     mov     byte [rel float_fmt], 0
     test    rax, rax
     jnz     .ret
+    ; "dt ?": ten bytes, uninitialised
+    cmp     byte [rel expr_question], 0
+    je      .not_question
+    mov     r13d, r12d
+.question_byte:
+    mov     rdi, [rbx + PREP_ctx]
+    xor     esi, esi
+    call    asmctx_emit_byte
+    dec     r13d
+    jnz     .question_byte
+    jmp     .next
+.not_question:
     ; as in NASM, only a float constant (dt) or a string fills these
     cmp     byte [rel float_seen], 0
     je      .not_float
@@ -5473,6 +5675,7 @@ parser_emit_data_wide:
     mov     rax, EXIT_INVALID_OPERAND
     jmp     .ret
 .next:
+    call    parser_item_end
     mov     rdi, rbx
     call    preprocessor_peek_token
     test    rax, rax
@@ -6717,6 +6920,7 @@ parser_emit_data_8:
     push    r13
     push    r14
 .loop:
+    call    parser_item_begin
     mov     esi, 1
     call    parser_data_string
     check_err
@@ -6786,6 +6990,11 @@ parser_emit_data_8:
         check_err
         xor     r10d, r10d
 .plain8:
+        mov     rdi, r10                   ; "db 256": NASM's warning
+        mov     esi, 1
+        push    r10
+        call    warn_data_bounds
+        pop     r10
         mov     rdi, [rbx + PREP_ctx]
         mov     rsi, r10
         extern  asmctx_emit_byte
@@ -6793,6 +7002,7 @@ parser_emit_data_8:
         ENDIF
 
 .next_item:
+    call    parser_item_end
     mov     rdi, rbx
     call    preprocessor_peek_token
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
@@ -6812,6 +7022,7 @@ parser_emit_data_8:
 parser_emit_data_16:
     prologue
 .loop:
+    call    parser_item_begin
     mov     esi, 2
     call    parser_data_string
     check_err
@@ -6839,12 +7050,18 @@ parser_emit_data_16:
     xor     esi, esi
     jmp     .emit16
 .plain16:
+    mov     rdi, r10                       ; "dw 65536": NASM's warning
+    mov     esi, 2
+    push    r10
+    call    warn_data_bounds
+    pop     r10
     mov     rsi, r10
 .emit16:
     mov     rdi, [rbx + PREP_ctx]
     extern  asmctx_emit_word
     call    asmctx_emit_word
 .next:
+    call    parser_item_end
     mov     rdi, rbx
     call    preprocessor_peek_token
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
@@ -6907,6 +7124,7 @@ parser_data_symbol:
 parser_emit_data_32:
     prologue
 .loop:
+    call    parser_item_begin
     mov     esi, 4
     call    parser_data_string
     check_err
@@ -6941,11 +7159,17 @@ parser_emit_data_32:
     jmp     .next
 
 .plain:
+    mov     rdi, r10                       ; "dd 0x100000000": NASM's warning
+    mov     esi, 4
+    push    r10
+    call    warn_data_bounds
+    pop     r10
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, r10
     call    asmctx_emit_dword
 
 .next:
+    call    parser_item_end
     mov     rdi, rbx
     call    preprocessor_peek_token
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
@@ -6962,6 +7186,7 @@ parser_emit_data_32:
 parser_emit_data_64:
     prologue
 .loop:
+    call    parser_item_begin
     mov     esi, 8
     call    parser_data_string
     check_err
@@ -7000,6 +7225,7 @@ parser_emit_data_64:
     call    asmctx_emit_qword
 
 .next:
+    call    parser_item_end
     mov     rdi, rbx
     call    preprocessor_peek_token
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
@@ -7031,6 +7257,81 @@ parser_count_known:
     pop     rax
     ret
 
+; parser_item_begin / parser_item_end: around one item of a data
+; directive: when it was "?", its bytes are uninitialised - "??" in the
+; listing, and outside .bss NASM's warning (they are zeros). rbx =
+; PrepState. Preserve rbx and r12-r15.
+parser_item_begin:
+    mov     byte [rel expr_question], 0
+    xor     eax, eax
+    mov     rcx, [rbx + PREP_ctx]
+    mov     rcx, [rcx + ASMCTX_curr_sec]
+    test    rcx, rcx
+    jz      .start
+    mov     rax, [rcx + SECTION_size]
+.start:
+    mov     [rel item_start], rax
+    ret
+
+parser_item_end:
+    cmp     byte [rel expr_question], 0
+    je      .ret
+    mov     byte [rel expr_question], 0
+    push    r12
+    mov     rax, [rbx + PREP_ctx]
+    mov     r12, [rax + ASMCTX_curr_sec]
+    test    r12, r12
+    jz      .out
+    mov     rdi, [rel item_start]
+    mov     rsi, [r12 + SECTION_size]
+    call    lst_uninit
+    cmp     byte [rel zero_warned], 0
+    jne     .out                           ; this line's warning is given
+    mov     byte [rel zero_warned], 1
+    mov     rdi, r12
+    call    parser_warn_zeroing
+.out:
+    pop     r12
+.ret:
+    ret
+
+; parser_warn_zeroing: "uninitialized space declared in non-BSS section
+; `.text': zeroing [-w+zeroing]" for section rdi, unless it is .bss
+parser_warn_zeroing:
+    cmp     dword [rdi + SECTION_elf_type], SHT_NOBITS
+    je      .ret
+    push    r12
+    mov     r12, rdi
+    mov     edi, WC_ZEROING
+    call    warn_begin
+    lea     rsi, [rel s_zeroing_a]
+    call    warn_text
+    mov     rsi, [r12 + SECTION_name]
+    call    warn_text
+    lea     rsi, [rel s_zeroing_b]
+    call    warn_text
+    call    warn_end
+    pop     r12
+.ret:
+    ret
+
+[SECTION .rodata]
+s_zeroing_a:   db "uninitialized space declared in non-BSS section `", 0
+s_zeroing_b:   db "': zeroing", 0
+s_attr_a:      db "unknown section attribute '", 0
+s_attr_b:      db "' ignored on declaration of section `", 0
+s_attr_c:      db "'", 0
+s_bits64:      db "64", 0
+s_bits32:      db "32", 0
+s_bits16:      db "16", 0
+s_rel_regs:    db "indirect address displacements cannot be RIP-relative", 0
+[SECTION .bss]
+alignb 8
+item_start:    resq 1                  ; parser_item_begin: the item's offset
+expr_question: resb 1                  ; "?" was read (an uninitialised item)
+zero_warned:   resb 1                  ; this data line has warned (zeroing)
+[SECTION .text]
+
 ;*
 ; * [parser_handle_res]
 ; * Purpose: RESB/RESW/RESD/RESQ — reserve uninitialised space in the
@@ -7061,6 +7362,21 @@ parser_handle_res:
     mov     rax, [rax + ASMCTX_curr_sec]
     test    rax, rax
     jz      .no_section
+    ; outside .bss, zeros: NASM's warning, and "??" in the listing
+    cmp     dword [rax + SECTION_elf_type], SHT_NOBITS
+    je      .reserve
+    test    rdx, rdx
+    jz      .reserve
+    push    rax
+    push    rdx
+    mov     rdi, [rax + SECTION_size]
+    lea     rsi, [rdi + rdx]
+    call    lst_uninit
+    mov     rdi, [rsp + 8]
+    call    parser_warn_zeroing
+    pop     rdx
+    pop     rax
+.reserve:
     add     [rax + SECTION_size], rdx
     xor     rax, rax
     jmp     .done
