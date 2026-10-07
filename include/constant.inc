@@ -93,6 +93,19 @@
 %define EXIT_TIMES_NONCONST    57  ; times with a count not known yet
 %define EXIT_RES_NONCONST      58  ; resb with a count not known yet
 %define EXIT_UNKNOWN_DIRECTIVE 59  ; %name that is no directive
+%define EXIT_EA_TWO_INDEX      24  ; [rax*2 + rbx*2]
+%define EXIT_EA_TOO_MANY       67  ; [rax + rbx + rcx]
+%define EXIT_EA_BITS           68  ; [rax*6]: invalid 64-bit effective address
+%define EXIT_EA_SIZE_MIX       69  ; [eax + rbx]
+
+; warning classes, by NASM's names (error/warnings.s)
+%define WC_OTHER               0   ; other
+%define WC_USER                1   ; user: %warning
+%define WC_ZEROING             2   ; zeroing: db ? / resb outside .bss
+%define WC_PREFIX_LOCK_XCHG    3   ; prefix-lock-xchg
+%define WC_NUMBER_OVERFLOW     4   ; number-overflow: data exceeds bounds
+%define WC_PREFIX_LOCK_ERROR   5   ; prefix-lock-error: not lockable
+%define WC_COUNT               6
 
 %define EXIT_LD_SCRIPT_404     60  ; linker script file not found
 %define EXIT_LD_SCRIPT_PARSE   61  ; linker script contains syntax errors
