@@ -54,12 +54,14 @@ extern lst_note
 extern lst_line_end
 extern lst_rep_tick
 extern lst_parent_exp
+extern lst_enabled
 extern global_ctx
 
 [SECTION .bss]
 alignb 8
 global error_loc_file
 global error_loc_line
+global error_subject
 global error_deferred
 error_loc_file:  resq 1                 ; file of the current statement, or 0
 error_mac_name:  resq 1                 ; macro being expanded, or 0
@@ -68,8 +70,6 @@ error_subject:   resq 1                 ; name for the message, or 0
 error_loc_line:  resd 1                 ; ... and line of the statement
 error_mac_line:  resd 1                 ; ... and line in the macro body
 error_deferred:  resd 1                 ; %error count
-alignb 8
-exp_parent:      resq 1                 ; .expansion_depth's second one
 global error_style
 error_style:     resb 1                 ; 0 file:line: (gnu), 1 file(line) : (vc)
 
@@ -141,6 +141,8 @@ error_track_token:
     mov     [rel error_loc_line], ecx
 .listed_body:
     ; the listing: a body line, marked with the expansions around it (<N>)
+    cmp     byte [rel lst_enabled], 0
+    je      .done
     cmp     byte [rdi + TOKEN_kind], TOK_NEWLINE
     je      .body_line_end
     call    .expansion_depth
@@ -194,26 +196,16 @@ error_track_token:
 
 ; .expansion_depth: r8d = how many macro and %rep expansions are open
 ; around the token (rsi = the innermost), the listing's <N>; r9 = the
-; nearest one around rsi's own (0 when none)
+; nearest one around rsi's own (0 when none). Kept on each expansion as it
+; opens (prep_expand_start).
 .expansion_depth:
     xor     r8d, r8d
-    mov     r9, rsi
-    mov     qword [rel exp_parent], 0
-.depth_up:
-    test    r9, r9
+    xor     r9d, r9d
+    test    rsi, rsi
     jz      .depth_done
-    mov     r10, [r9 + MACROEXP_macro]
-    test    byte [r10 + MACRO_flags], MACRO_FLAG_DEFINE | MACRO_FLAG_TIMES
-    jnz     .depth_next
-    inc     r8d
-    cmp     r8d, 2
-    jne     .depth_next
-    mov     [rel exp_parent], r9
-.depth_next:
-    mov     r9, [r9 + MACROEXP_parent]
-    jmp     .depth_up
+    mov     r8d, [rsi + MACROEXP_lst_depth]
+    mov     r9, [rsi + MACROEXP_lst_second]
 .depth_done:
-    mov     r9, [rel exp_parent]
     ret
 
 ; ---- error_set_subject ------------------
@@ -532,6 +524,7 @@ code_table:
     code_msg EXIT_NONSCALAR_COND,    m_nonscalar_cond
     code_msg EXIT_TIMES_NONCONST,    m_times_nonconst
     code_msg EXIT_RES_NONCONST,      m_res_nonconst
+    code_msg EXIT_UNKNOWN_DIRECTIVE, m_unknown_dir, t_unknown_dir
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -629,6 +622,7 @@ m_nonscalar_cmp: db "operands differ by a non-scalar", 0
 m_nonscalar_cond: db "the left-hand side of `?' must be a scalar value", 0
 m_times_nonconst: db "non-constant argument supplied to TIMES", 0
 m_res_nonconst: db "attempt to reserve non-constant quantity of BSS space", 0
+m_unknown_dir:  db "unknown preprocessor directive", 0
 m_ctx_deep:     db "context stack nested too deeply", 0
 m_align_mode:   db "unknown alignment mode", 0
 m_reg_size:     db "invalid register size specification", 0
@@ -662,6 +656,7 @@ t_instr:        db "parser: instruction expected, found `^'", 0
 t_use:          db "unknown `%use' package `^'", 0
 t_nonscalar:    db "`^' operator may only be applied to scalar values", 0
 t_nonscalar_cmp: db "`^': operands differ by a non-scalar", 0
+t_unknown_dir:  db "unknown preprocessor directive `%^'", 0
 t_align_mode:   db "unknown alignment mode: ^", 0
 
 sev_warning:    db "warning: ", 0
