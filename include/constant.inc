@@ -97,6 +97,13 @@
 %define EXIT_EA_TOO_MANY       67  ; [rax + rbx + rcx]
 %define EXIT_EA_BITS           68  ; [rax*6]: invalid 64-bit effective address
 %define EXIT_EA_SIZE_MIX       69  ; [eax + rbx]
+%define EXIT_MACRO_NO_NAME     81  ; "%macro" with no name
+%define EXIT_MACRO_NO_COUNT    82  ; "%macro s" with no parameter count
+%define EXIT_MACRO_NO_MAX      83  ; "%macro s 1-"
+%define EXIT_MACRO_MINMAX      84  ; "%macro s 2-1"
+%define EXIT_MACRO_EOF         85  ; no %endmacro before the end of the file
+%define EXIT_NOT_DEFINING      86  ; %endmacro with no %macro
+%define EXIT_NO_REP            87  ; %endrep with no %rep
 
 ; warning classes, by NASM's names (error/warnings.s)
 %define WC_OTHER               0   ; other
@@ -105,7 +112,9 @@
 %define WC_PREFIX_LOCK_XCHG    3   ; prefix-lock-xchg
 %define WC_NUMBER_OVERFLOW     4   ; number-overflow: data exceeds bounds
 %define WC_PREFIX_LOCK_ERROR   5   ; prefix-lock-error: not lockable
-%define WC_COUNT               6
+%define WC_DB_EMPTY            6   ; db-empty: "db" with no operand
+%define WC_PP_MACRO_DEFAULTS   7   ; pp-macro-defaults: too many defaults
+%define WC_COUNT               8
 
 %define EXIT_LD_SCRIPT_404     60  ; linker script file not found
 %define EXIT_LD_SCRIPT_PARSE   61  ; linker script contains syntax errors
