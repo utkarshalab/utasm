@@ -547,7 +547,20 @@ my_func rax, rbx                ; two args
 
 ; [GEN2] → rotate keyword removed — use mac with index param
 %rotate 1                       ; rotate macro parameters
+
+; parameter counts and defaults
+%macro args 1-3 5               ; 1 to 3 parameters; %2 is 5 when left out,
+    db %1, %2, %3               ; %3 empty ("db 1, 5," ends at the comma)
+%endm                           ; %endm is %endmacro
+%macro tail 1+                  ; the last parameter takes the rest of the line
+%endmacro
+%unmacro args 1-3               ; removes the overload with exactly this count
 ```
+
+The parameter count is required, as in NASM: `%macro name` alone is an
+error ("`%macro' expects a parameter count"), as is a minimum above the
+maximum. A macro may be defined again with another count; each definition
+is an overload, chosen by the number of arguments of a call.
 
 ---
 
