@@ -214,7 +214,8 @@ works with `NASM=utasm`:
 | `-M`, `-MG` | Makefile dependencies on stdout, nothing assembled: `target : source includes incbins`, in NASM's format (lines wrapped with `\`). |
 | `-MD` | Assemble, and write the dependencies too: into the `-MF` file, else the output's name with `.d`. |
 | `-MF file`, `-MT target`, `-MQ target`, `-MP` | Where the dependencies go, the rule's target (default: the output file), and an empty rule for every file (`-MP`). `-MW` is accepted. |
-| `-w+error`, `-w+error=class` | Warnings are errors, like `-Werror`. Other `-w+class`, `-w-class`, `-Wclass`, `-Wno-class` are accepted. |
+| `-w+class`, `-w-class`, `-Wclass`, `-Wno-class` | Turn a warning class on or off (`all`: every class). The classes are NASM's: `user` (`%warning`), `zeroing`, `number-overflow`, `prefix-lock-xchg`, `prefix-lock-error`, `other`; a class utasm does not have is accepted and changes nothing. |
+| `-w+error`, `-w+error=class`, `-Werror=class` | Warnings (of that class) are errors, like `-Werror`. |
 | `-X gnu`, `-X vc` | Message style: `file:line: error: ...` (the default) or `file(line) : error: ...`. |
 | `-s`, `-Z file` | Messages on stdout, or into a file. |
 | `-l file` | The listing (see [Listings](#listings)). |
@@ -282,7 +283,8 @@ prog.s:3: error: parser: instruction expected, found `foo'
 hint: did you mean 'xor'?
 prog.s:20: error: symbol `count' not defined
 prog.s:7: error: label `loop' inconsistently redefined
-prog.s:9: warning: value is 16 ok
+prog.s:9: warning: value is 16 ok [-w+user]
+prog.s:14: warning: uninitialized space declared in non-BSS section `.text': zeroing [-w+zeroing]
 ```
 
 - A statement that comes from a multi-line macro is reported at the line
@@ -290,7 +292,16 @@ prog.s:9: warning: value is 16 ok
   `prog.s:4: ... from macro `m' defined here`. One from a `%rep` body (or
   `times`) is reported at its line in the body, one from an included file
   at its line in that file.
-- `%warning` prints its text as a warning and assembly goes on. `%error`
+- Warnings are NASM's, each ending with its class: `db ?` or `resb` outside
+  `.bss` (`zeroing`), a value that does not fit its field - `db 256`,
+  `mov eax, 0x100000000` - (`number-overflow`), `lock` before an
+  instruction that cannot be locked (`prefix-lock-error`) or before `xchg`
+  (`prefix-lock-xchg`), a flat-binary section attribute in an object or
+  `[rel rax]` (`other`). As in NASM they are given only when the source
+  assembles: an error while it is read stops the assembly with no warning;
+  an undefined symbol or a jump out of range is reported with them. The
+  listing (`-l`) shows each warning after its line.
+- `%warning` prints its text as a warning (class `user`) and assembly goes on. `%error`
   prints an error and assembly goes on, so that every `%error` reached is
   reported, but no output file is written. `%fatal` prints its text and
   stops.
