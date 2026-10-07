@@ -734,3 +734,25 @@ BIN_PROBES.update({
     "ins_mem_scale_first": "lea eax, [8*rcx+rbx]\nlea eax, [rbx+4*rcx+16]\nlea eax, [16+4*rcx]\nlea eax, [3*rbx]\n",
     "ins_mem_scale_one": "lea eax, [rbx*1]\nlea eax, [rbx*1+rcx]\nlea eax, [rax+rax*3]\nlea eax, [2*rbx*2]\n",
 })
+
+
+# ---------------------------------------------------------------------------
+# warnings: NASM's warnings, with its -w options (name -> source)
+# ---------------------------------------------------------------------------
+WARN_CASES = {
+    "warn_user": "%warning hello there\nnop\n",
+    "warn_zeroing": "db 1\ndb ?\ndw ?, 5\ndd 1, ?\ntimes 3 db ?\nresb 2\ndt ?\ndq ?, ?\n"
+                    "section .bss\ndb ?\nresb 4\nresb 64\n",
+    "warn_section_attr": "section .a\ndb 1\nsection .b follows=.a\ndb 2\nsection .c vstart=0x1000\n"
+                         "db 3\nsection .d start=0x2000\ndb 4\n",
+    "warn_lock": "lock xchg eax, ebx\nlock xchg ebx, [rax]\nlock add eax, ebx\nlock mov [rax], eax\n"
+                 "lock add [rax], ebx\nLOCK XCHG [rax], ebx\nlock cmpxchg [rax], ecx\n",
+    "warn_overflow": "db 256, -257, 255, -256\ndw 65536, -65537\ndd 0x100000000, -0x100000001\n"
+                     "mov al, 256\nmov ax, 65536\nmov eax, -0x100000001\nmov byte [rax], 256\n"
+                     "mov dword [rax], 0x100000000\nadd al, 300\njmp short x\nmov ecx, -16 >> 2\nx: nop\n",
+    "warn_in_macro": "%macro m 0\ndb ?\n%warning in macro\n%endmacro\nm\nm\n",
+    "warn_two_pass": "%warning early\ndb ?\nmov eax, LATER\nLATER equ 5\n",
+    "warn_then_error": "db ?\n%warning first\nmov eax, [rbx*2+rcx*2]\n",
+}
+WARN_OPTIONS = [[], ["-Werror"], ["-w-zeroing", "-w-user"], ["-w+error=zeroing"], ["-w-all"],
+                ["-Wno-number-overflow"], ["-w+all"]]
