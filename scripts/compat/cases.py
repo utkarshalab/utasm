@@ -681,3 +681,56 @@ ROBUST_CASES = [
                           "%if n < 200\n%endif\nr\n%endmacro\nr\n", "elf64", []),
     ("runaway_recursion_listed", "%rmacro r 0\ndb 1, 2, 3\nr\n%endmacro\nr\n", "elf64", ["-l", "x.lst"]),
 ]
+
+
+# ---------------------------------------------------------------------------
+# addresses: base, index and scale in every order NASM takes ([rbx+rcx*4],
+# [4*rcx+rbx], [rbx*1+rcx], [rax+rax*3], [rbx*3], ...), with displacements
+# and labels, in bits 64, 32 and 16, and vector indexes. (bits, line)
+# ---------------------------------------------------------------------------
+def address_forms():
+    def forms(regs, scales, disps):
+        out = set()
+        for b in regs:
+            for d in disps:
+                out.add("[lbl+%s]" % b if d == "lbl+" else "[%s%s]" % (b, d))
+                d = "" if d == "lbl+" else d
+                for s in scales:
+                    out.add("[%s*%s%s]" % (b, s, d))
+                    out.add("[%s*%s%s]" % (s, b, d))
+                for i in regs:
+                    for s in ["", "*1", "*2", "*4", "*8", "*3"]:
+                        out.add("[%s+%s%s%s]" % (b, i, s, d))
+                        if s:
+                            out.add("[%s*%s+%s%s]" % (s[1:], i, b, d))
+                            out.add("[%s%s+%s%s]" % (i, s, b, d))
+                            out.add("[%s+%s*%s%s]" % (b, s[1:], i, d))
+        return sorted(out)
+    disps = ["", "+8", "-8", "+0x1000", "+lbl", "lbl+"]
+    jobs = [("bits 64", "lea eax, " + f) for f in
+            forms(["rax", "rsp", "rbp", "r12", "r13", "rbx"], ["1", "2", "3", "4", "5", "8", "9", "6"], disps)]
+    jobs += [("bits 64", "lea eax, " + f) for f in forms(["eax", "esp", "ebp", "r13d"], ["1", "2", "3", "4", "8"], disps)]
+    jobs += [("bits 32", "lea eax, " + f) for f in
+             forms(["eax", "esp", "ebp", "ebx", "esi"], ["1", "2", "3", "4", "8", "9"], disps)]
+    jobs += [("bits 16", "lea ax, " + f) for f in forms(["bx", "bp", "si", "di"], ["1", "2"], disps)]
+    for v, dst in (("xmm1", "xmm0"), ("ymm2", "ymm0")):
+        for b in ["rax", "rbp", "r13", ""]:
+            for s in ["", "*4", "4*", "*8", "*1", "1*"]:
+                idx = s + v if s.endswith("*") else v + s
+                for f in ("[%s%s+16]" % (b + "+" if b else "", idx), "[%s%s]" % (idx, "+" + b if b else "")):
+                    jobs.append(("bits 64", "vgatherdps %s, %s, %s" % (dst, f, dst.replace("0", "5"))))
+    return jobs
+
+
+# %+ outside a macro body, each side first as the %define / %assign it names
+BIN_PROBES.update({
+    "pp_paste_define_rhs": "%define C cd\n%define abcd 7\ndb ab %+ C\n",
+    "pp_paste_chain": "db 1 %+ 2 %+ 3\n",
+    "pp_paste_assign": "%assign x 3\ndb x %+ 4\n",
+    "pp_paste_label": "foo %+ bar:\ndb 5\njmp foobar\n",
+    "pp_paste_define_chain": "%define Q P\n%define P ab\n%define abcd 9\ndb Q %+ cd\n",
+    "pp_paste_fn_define": "%define J(a,b) a %+ b\n%define xy 6\ndb J(x,y)\n",
+    "pp_paste_in_macro": "%macro m 0\n%define P ab\n%define abcd 9\ndb P %+ cd\n%endmacro\nm\n",
+    "ins_mem_scale_first": "lea eax, [8*rcx+rbx]\nlea eax, [rbx+4*rcx+16]\nlea eax, [16+4*rcx]\nlea eax, [3*rbx]\n",
+    "ins_mem_scale_one": "lea eax, [rbx*1]\nlea eax, [rbx*1+rcx]\nlea eax, [rax+rax*3]\nlea eax, [2*rbx*2]\n",
+})
