@@ -80,6 +80,9 @@ lst_nfiles:     resq 1
 lst_out:        resb OUT_BUF
 lst_num:        resb 32
 lst_enabled:    resb 1
+alignb 8
+lst_heap:       resq 1              ; the notes (lst_alloc)
+lst_heap_used:  resq 1
 
 [SECTION .text]
 
@@ -103,6 +106,118 @@ global lst_listing
 lst_listing:
     xor     edi, 1
     mov     [rel lst_hidden], dil
+    ret
+
+;*
+; * [lst_warning]
+; * Purpose: A warning given at the current line: listed after it.
+; * Input  : RDI = its text ("warning: ... [-w+class]")
+; * Clobbers: rax, rcx, rdx, rsi, rdi, r8-r11
+; ;
+global lst_warning
+lst_warning:
+    cmp     byte [rel lst_enabled], 0
+    je      .ret
+    cmp     qword [rel lst_cur], 0
+    je      .ret
+    push    rbx
+    push    r12
+    mov     r12, rdi
+    call    str_len
+    lea     rdi, [rax + 9]                 ; next, the text, its NUL
+    call    lst_alloc
+    test    rax, rax
+    jz      .out
+    mov     qword [rax], 0
+    lea     rdi, [rax + 8]
+    mov     rsi, r12
+.copy:
+    mov     cl, [rsi]
+    mov     [rdi], cl
+    inc     rsi
+    inc     rdi
+    test    cl, cl
+    jnz     .copy
+    ; after the line's other warnings
+    mov     rcx, [rel lst_cur]
+    add     rcx, LE_WARN
+.tail:
+    cmp     qword [rcx], 0
+    je      .link
+    mov     rcx, [rcx]
+    jmp     .tail
+.link:
+    mov     [rcx], rax
+.out:
+    pop     r12
+    pop     rbx
+.ret:
+    ret
+
+;*
+; * [lst_uninit]
+; * Purpose: The current line's bytes from RDI to RSI (offsets in its
+; *          section) are uninitialised ("db ?", resb): listed as "??".
+; * Clobbers: rax, rcx, rdx, rdi, r8-r11
+; ;
+global lst_uninit
+lst_uninit:
+    cmp     byte [rel lst_enabled], 0
+    je      .ret
+    mov     rax, [rel lst_cur]
+    test    rax, rax
+    jz      .ret
+    push    rsi
+    push    rdi
+    mov     edi, 24
+    call    lst_alloc
+    pop     rdi
+    pop     rsi
+    test    rax, rax
+    jz      .ret
+    mov     rcx, [rel lst_cur]
+    sub     rdi, [rcx + LE_START]          ; from the entry's start: jump
+    sub     rsi, [rcx + LE_START]          ; shortening moves the entry
+    mov     [rax], rdi
+    mov     [rax + 8], rsi
+    mov     rdx, [rcx + LE_UNINIT]
+    mov     [rax + 16], rdx
+    mov     [rcx + LE_UNINIT], rax
+.ret:
+    ret
+
+; lst_alloc: rdi bytes (rounded up to 8) for the listing's notes; rax = the
+; space, or 0. A region reserved once, committed as it is used.
+%define LST_HEAP    (1 << 28)
+lst_alloc:
+    add     rdi, 7
+    and     rdi, -8
+    mov     rax, [rel lst_heap]
+    test    rax, rax
+    jnz     .room
+    push    rdi
+    xor     edi, edi
+    mov     rsi, LST_HEAP
+    mov     edx, PROT_READ | PROT_WRITE
+    mov     ecx, MAP_PRIVATE | MAP_ANONYMOUS | 0x4000   ; MAP_NORESERVE
+    mov     r8, -1
+    xor     r9d, r9d
+    call    io_mmap
+    pop     rdi
+    test    rax, rax
+    jnz     .none
+    mov     [rel lst_heap], rdx
+    mov     rax, rdx
+.room:
+    mov     rcx, [rel lst_heap_used]
+    lea     rdx, [rcx + rdi]
+    cmp     rdx, LST_HEAP
+    ja      .none
+    mov     [rel lst_heap_used], rdx
+    add     rax, rcx
+    ret
+.none:
+    xor     eax, eax
     ret
 
 ;*
@@ -258,6 +373,8 @@ lst_note:
     mov     [r8 + LE_START], rax
     mov     [r8 + LE_END], rax
     mov     [rel lst_cur], r8
+    mov     qword [r8 + LE_WARN], 0
+    mov     qword [r8 + LE_UNINIT], 0
     mov     dword [r8 + LE_REPS], 0
     mov     byte [r8 + LE_KIND], LK_CODE
     mov     al, [rel lst_hidden]
@@ -589,6 +706,25 @@ lst_entry:
     jbe     .text_only
     cmp     dword [r12 + SECTION_elf_type], SHT_NOBITS
     je      .reserved
+    ; all of it uninitialised ("dt ?", "resb 16" outside .bss): shown as
+    ; .bss space is; a times line keeps its "????<rep 2h>"
+    cmp     dword [rbx + LE_REPS], 0
+    jne     .not_all_uninit
+    mov     rax, [rbx + LE_UNINIT]
+    test    rax, rax
+    jz      .not_all_uninit
+    xor     ecx, ecx
+.uninit_sum:
+    add     rcx, [rax + 8]
+    sub     rcx, [rax]
+    mov     rax, [rax + 16]
+    test    rax, rax
+    jnz     .uninit_sum
+    mov     rax, r14
+    sub     rax, r13
+    cmp     rcx, rax
+    je      .reserved
+.not_all_uninit:
 
     ; incbin: "<bin Nh>"; align padding: its byte and "<rep Nh>"
     cmp     byte [rbx + LE_KIND], LK_BIN
@@ -870,6 +1006,31 @@ lst_entry:
     mov     rdx, r15
     call    lst_text_row_entry
 .done:
+    ; its warnings, after its rows:
+    ;      3          ******************       warning: ... [-w+zeroing]
+    mov     r12, [rbx + LE_WARN]
+.warning:
+    test    r12, r12
+    jz      .warned
+    mov     edi, [rbx + LE_LINE]
+    call    lst_put_lineno
+    lea     rsi, [rel lst_warn_mark]
+    mov     edx, lst_warn_mark_len
+    call    lst_put
+    movzx   edi, byte [rbx + LE_DEPTH]     ; "<1> " in a macro's lines
+    call    lst_put_marker
+    lea     rsi, [rel lst_blank]
+    mov     edx, 1
+    call    lst_put
+    lea     rdi, [r12 + 8]
+    call    str_len
+    mov     edx, eax
+    lea     rsi, [r12 + 8]
+    call    lst_put
+    call    lst_put_newline
+    mov     r12, [r12]
+    jmp     .warning
+.warned:
     ; the other repetitions' relocations are behind us
     mov     rdi, [rbx + LE_SEC]
     mov     rsi, [rbx + LE_END]
@@ -881,8 +1042,34 @@ lst_entry:
     pop     rbx
     ret
 
-; .byte_hex: the byte at r12's data + r13, as two hex digits at rdi; r13++
+; .byte_hex: the byte at r12's data + r13, as two hex digits at rdi; r13++;
+; "??" for a byte a "db ?" or a resb left uninitialised, as NASM lists it
 .byte_hex:
+    mov     rax, [rbx + LE_UNINIT]
+    test    rax, rax
+    jz      .initialised
+    push    rcx
+    mov     rcx, r13
+    sub     rcx, [rbx + LE_START]
+.uninit:
+    test    rax, rax
+    jz      .uninit_none
+    cmp     rcx, [rax]
+    jb      .uninit_next
+    cmp     rcx, [rax + 8]
+    jb      .uninit_byte
+.uninit_next:
+    mov     rax, [rax + 16]
+    jmp     .uninit
+.uninit_byte:
+    pop     rcx
+    inc     r13
+    mov     ax, '??'
+    stosw
+    ret
+.uninit_none:
+    pop     rcx
+.initialised:
     mov     rax, [r12 + SECTION_data]
     movzx   eax, byte [rax + r13]
     inc     r13
@@ -1377,6 +1564,8 @@ lst_hex_trimmed:
 
 [SECTION .data]
 lst_hexdig:     db "0123456789ABCDEF"
+lst_warn_mark:  db "         ******************  "
+lst_warn_mark_len equ $ - lst_warn_mark
 lst_marker:     db "<1> "
 lst_nl:         db 10
 lst_blank:      times 40 db ' '
