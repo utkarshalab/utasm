@@ -10,10 +10,6 @@ KNOWN = {
     "op_signed_div": "// is a comment in utasm",
     # NASM 2.16.03 gives 0/0/1 for <=>; its manual (and utasm) say -1/0/1.
     "op_cmp3": "NASM's <=> disagrees with its own manual",
-    # %+ pastes inside macro bodies only
-    "pp_paste": "top-level %+ paste",
-    # [2*rbx]: a scale written before the register
-    "ins_mem_scale_forms": "number-first scale",
     # one pass: an equ cannot use a symbol defined after it (an error)
     "elf_equ_forward_ref": "equ with a forward reference",
     # one pass: a value worked out at the end keeps room for any value
@@ -25,8 +21,6 @@ KNOWN = {
     # listings (-l): the encoding differences above show there too
     "listing op_cmp3": "NASM's <=> disagrees with its own manual",
     "listing op_signed_div": "// is a comment in utasm",
-    "listing ins_mem_scale_forms": "number-first scale",
-    "listing pp_paste": "top-level %+ paste",
     # NASM lists its warnings; utasm does not give these warnings yet
     "listing basic_warning_dir": "%warning text in the listing",
     "listing dir_db_question": "warning: uninitialized space in a non-BSS section",
