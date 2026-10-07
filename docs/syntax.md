@@ -336,7 +336,6 @@ mov rax, [rax + rax*3]      ; rax*4: a register written twice adds up
 
 ; RIP-relative (position independent)
 mov rax, [rel my_label]     ; relative to instruction pointer
-mov rax, [rip + my_label]   ; alternate syntax
 
 ; segment override
 mov rax, [fs:0]             ; TLS access via FS segment
