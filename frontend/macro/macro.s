@@ -5377,10 +5377,15 @@ prep_handle_message:
     je      .head
     mov     edi, 1                         ; error
     ja      .head
-    xor     edi, edi                       ; warning
+    ; %warning: a warning of class "user" ([-w+user], -w-user, the listing)
+    mov     edi, WC_USER
+    extern  warn_begin, warn_text, warn_end
+    call    warn_begin
+    jmp     .words
 .head:
     extern  error_report_text
     call    error_report_text
+.words:
     xor     r12d, r12d                     ; words printed
 .word:
     mov     rdi, rbx
@@ -5407,8 +5412,7 @@ prep_handle_message:
     push    rsi
     call    .space
     pop     rsi
-    mov     rdi, 2
-    call    print_str
+    call    .out
     inc     r12d
     jmp     .word
 .text:
@@ -5418,18 +5422,22 @@ prep_handle_message:
     push    rax
     test    r12d, r12d
     jz      .no_space
-    mov     rdi, 2
     lea     rsi, [rel msg_space]
-    call    print_str
+    call    .out
 .no_space:
     pop     rsi
-    mov     rdi, 2
-    call    print_str
+    call    .out
     inc     r12d
     jmp     .word
 .end:
+    test    r13d, r13d
+    jnz     .end_report
+    call    warn_end
+    jmp     .ended
+.end_report:
     extern  error_report_end
     call    error_report_end
+.ended:
     xor     eax, eax
     cmp     r13d, 1
     jb      .ret
@@ -5449,11 +5457,17 @@ prep_handle_message:
 .space:
     test    r12d, r12d
     jz      .space_done
-    mov     rdi, 2
     lea     rsi, [rel msg_space]
-    call    print_str
+    call    .out
 .space_done:
     ret
+
+; .out: the text at rsi: into the warning (%warning), or on stderr
+.out:
+    test    r13d, r13d
+    jz      warn_text
+    mov     rdi, 2
+    jmp     print_str
 
 ; ---- %exitrep ---------------------------
 ;
