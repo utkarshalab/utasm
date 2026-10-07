@@ -1015,6 +1015,10 @@ msg_note_field_size:
 msg_note_access_size:
     db      "access width: ", 0
 
+; the code that follows was assembled into .data (not executable): its
+; first instruction faulted
+[SECTION .text]
+
 ; ---- error_new_from_errno ----------------
 ;
 ; error_new_from_errno
