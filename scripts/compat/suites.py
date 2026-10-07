@@ -754,3 +754,30 @@ def limits(utasm, verbose=False):
             else:
                 s.result(name, a == b, "outputs differ")
     return s
+
+
+# ---------------------------------------------------------------------------
+# robustness: inputs that crashed or hung utasm before - it must finish,
+# with no internal error, and accept or reject each as NASM does
+# ---------------------------------------------------------------------------
+def robustness(utasm, verbose=False):
+    s = Suite("robustness", verbose)
+
+    def one(case):
+        name, src, fmt, opts = case
+        with tempdir() as d:
+            open(os.path.join(d, "p.s"), "w").write(src)
+            rn = run(["nasm", "-f", fmt, "p.s", "-o", "n.out"] + opts, cwd=d)
+            ru = run([utasm, "-f", fmt, "p.s", "-o", "u.out"] + opts, cwd=d, timeout=10)
+        return name, rn, ru
+
+    with cf.ThreadPoolExecutor(JOBS) as ex:
+        for name, rn, ru in ex.map(one, cases.ROBUST_CASES):
+            if ru.returncode == 124:
+                s.result(name, False, "utasm did not finish in 10 s")
+            elif _crashed(ru) or "internal error" in (ru.stderr or ""):
+                s.result(name, False, "utasm crashed: " + first_line(ru))
+            else:
+                s.result(name, (rn.returncode == 0) == (ru.returncode == 0),
+                         "nasm rc %d | utasm rc %d: %s" % (rn.returncode, ru.returncode, first_line(ru)))
+    return s
