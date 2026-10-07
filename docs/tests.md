@@ -805,7 +805,7 @@ matrix; it can also be run alone:
 
 ```sh
 python3 scripts/compat/run_all.py build/gen1/utasm          # everything
-python3 scripts/compat/run_all.py build/gen1/utasm --quick  # skip the three slow suites
+python3 scripts/compat/run_all.py build/gen1/utasm --quick  # skip the slow suites
 python3 scripts/compat/run_all.py build/gen1/utasm -v       # also list known differences
 ```
 
@@ -825,6 +825,7 @@ python3 scripts/compat/run_all.py build/gen1/utasm -v       # also list known di
 | command line | NASM's options (`-I`, `-D`, `-U`, `-p`, `--before`, `-M` and its variants, `-E`) on the same files: the same binary, or the same dependency rules |
 | expressions | labels defined later in arithmetic (`dd (end - start) / 4`), as data, immediates and displacements, in flat binaries and objects: the same bytes; NASM's scalar rule (a label in `*`, `/`, shifts, `&`, comparisons...) before and after its definition: the same error messages; and `times` / `resb` / `equ` counts that utasm, reading once, must refuse |
 | limits | inputs past utasm's old fixed limits - long `times` lines, 100-parameter macros, long arguments and bodies, deep `%if` / `%push` / macro / include nesting, long `%ifidn` / `%defstr` / `%[...]` text, 300 sections: the same output as NASM |
+| addresses | base, index and scale in every order NASM takes (`[rbx+rcx*4]`, `[4*rcx+rbx]`, `[rbx*1+rcx]`, `[rax+rax*3]`, `[rbx*3]`), with displacements and labels, in bits 64, 32 and 16, and vector indexes: the same bytes as NASM, or rejected where NASM rejects it |
 | robustness | inputs that crashed or hung utasm before (found by `fuzz.py`, see *Fuzz Tests*): it must finish, with no internal error, and accept or reject each as NASM does |
 | encoder corpus | every instruction of `corpus.py` alone, byte for byte |
 | operand shapes | ~1,700 pairings of register and memory sizes for the general-purpose instructions: the same bytes as NASM, or rejected where NASM rejects them |
