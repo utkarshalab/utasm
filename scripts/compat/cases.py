@@ -756,3 +756,33 @@ WARN_CASES = {
 }
 WARN_OPTIONS = [[], ["-Werror"], ["-w-zeroing", "-w-user"], ["-w+error=zeroing"], ["-w-all"],
                 ["-Wno-number-overflow"], ["-w+all"]]
+
+
+# %macro / %unmacro headers and their errors; data lists
+DIAG_CASES += [
+    ("%macro without a count", "nop\n%macro s\nnop\n%endmacro\n"),
+    ("%macro without a name", "nop\n%macro\n%endmacro\n"),
+    ("%macro bad count", "%macro s x\n%endmacro\n"),
+    ("%macro count after -", "nop\n%macro s 0-\n%endmacro\n"),
+    ("%macro min over max", "%macro s 2-1\n%endmacro\n"),
+    ("%rmacro without a count", "%rmacro s\n%endmacro\n"),
+    ("%macro until the end", "nop\n%macro s 0\nnop\n"),
+    ("%endmacro alone", "nop\n%endmacro\n"),
+    ("%endm alone", "nop\nnop\n%endm\n"),
+    ("%endrep alone", "nop\n%endrep\n"),
+    ("%unmacro without a count", "%macro s 0\nnop\n%endmacro\n%unmacro s\n"),
+    ("empty data item", "nop\ndb 1,,2\n"),
+]
+WARN_CASES.update({
+    "warn_macro_defaults": "%macro s 0 junk\nnop\n%endmacro\ns\n%macro t 0-1 5,6\n%endmacro\n"
+                           "%macro u 0-1 (5,6)\n%endmacro\n%macro v 1-* 5,6,7\n%endmacro\n",
+    "warn_db_empty": "db\ndd\nnop\n",
+})
+BIN_PROBES.update({
+    "pp_endm": "%macro s 0\nnop\n%endm\ns\ns\n",
+    "pp_unmacro_overload": "%macro s 0\ndb 1\n%endmacro\n%macro s 1\ndb %1\n%endmacro\n%unmacro s 1\ns\n"
+                           "%macro t 0-1\ndb 3\n%endmacro\n%unmacro t 0\nt\n"
+                           "%macro u 1+\ndb 4\n%endmacro\n%unmacro u 1\nu 1\n",
+    "pp_macro_empty_default": "%macro s 1-3 5\ndb %1, %2, %3\n%endmacro\ns 1\ns 1, 2\ns 1, 2, 3\n",
+    "dir_data_trailing_comma": "db 1,\ndw 2, \ndd 3, 4,\ndq 5,\ndt 1.0,\ndb 'ab',\ntimes 2 db 6,\n",
+})
