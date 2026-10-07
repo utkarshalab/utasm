@@ -55,6 +55,9 @@ extern lst_line_end
 extern lst_rep_tick
 extern lst_parent_exp
 extern lst_enabled
+extern warn_flush
+extern warn_before_error
+extern stderr_hold
 extern global_ctx
 
 [SECTION .bss]
@@ -324,6 +327,7 @@ error_code_message:
 ;
 global error_report_code
 error_report_code:
+    call    warn_before_error              ; the warnings held: given or not
     push    rbx
     mov     ebx, edi
     lea     rdi, [rel sev_error]
@@ -399,6 +403,17 @@ error_report_text:
     lea     rax, [rel sev_warning]
     cmp     edi, 1
     jb      .go
+    ; %error (and a warning made an error): the warnings before it are
+    ; given; %fatal: as any error (warn_before_error)
+    ja      .fatal_held
+    cmp     byte [rel stderr_hold], 0
+    jne     .held_done                     ; a warning made an error: held too
+    call    warn_flush
+    jmp     .held_done
+.fatal_held:
+    call    warn_before_error
+.held_done:
+    cmp     edi, 1                         ; (the flags again)
     lea     rax, [rel sev_error]
     je      .go
     lea     rax, [rel sev_fatal]
@@ -525,6 +540,10 @@ code_table:
     code_msg EXIT_TIMES_NONCONST,    m_times_nonconst
     code_msg EXIT_RES_NONCONST,      m_res_nonconst
     code_msg EXIT_UNKNOWN_DIRECTIVE, m_unknown_dir, t_unknown_dir
+    code_msg EXIT_EA_TWO_INDEX,      m_ea_two_index
+    code_msg EXIT_EA_TOO_MANY,       m_ea_too_many
+    code_msg EXIT_EA_BITS,           m_addr, t_ea_bits
+    code_msg EXIT_EA_SIZE_MIX,       m_ea_size_mix
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -623,6 +642,9 @@ m_nonscalar_cond: db "the left-hand side of `?' must be a scalar value", 0
 m_times_nonconst: db "non-constant argument supplied to TIMES", 0
 m_res_nonconst: db "attempt to reserve non-constant quantity of BSS space", 0
 m_unknown_dir:  db "unknown preprocessor directive", 0
+m_ea_two_index: db "invalid effective address: two index registers", 0
+m_ea_too_many:  db "invalid effective address: too many registers", 0
+m_ea_size_mix:  db "impossible combination of address sizes", 0
 m_ctx_deep:     db "context stack nested too deeply", 0
 m_align_mode:   db "unknown alignment mode", 0
 m_reg_size:     db "invalid register size specification", 0
@@ -657,6 +679,7 @@ t_use:          db "unknown `%use' package `^'", 0
 t_nonscalar:    db "`^' operator may only be applied to scalar values", 0
 t_nonscalar_cmp: db "`^': operands differ by a non-scalar", 0
 t_unknown_dir:  db "unknown preprocessor directive `%^'", 0
+t_ea_bits:      db "invalid ^-bit effective address", 0
 t_align_mode:   db "unknown alignment mode: ^", 0
 
 sev_warning:    db "warning: ", 0
