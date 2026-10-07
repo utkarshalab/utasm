@@ -2630,6 +2630,12 @@ parser_evaluate_factor:
         xor     rax, rax
         jmp     .done
     ELSEIF al, e, TOK_COLON
+        ; ":lo12:sym" is AArch64's; elsewhere a colon is no operand
+        mov     rax, [rbx + PREP_ctx]
+        cmp     byte [rax + ASMCTX_target], TARGET_AARCH64
+        mov     eax, EXIT_INVALID_EXPR
+        jne     .error
+        mov     rdi, rbx
         call    parser_handle_reloc_modifier
         check_err_to .error
         IF rax, ne, OK
@@ -2661,6 +2667,7 @@ parser_handle_reloc_modifier:
     push    r12
     push    r14
     
+    mov     rdi, rbx
     call    preprocessor_next_token
     check_err_to .error
     mov     r12, rdx
@@ -6976,6 +6983,22 @@ parser_handle_section_directive:
     call    preprocessor_next_token
     check_err
     mov     r12, rdx               ; r12 = token (.text, .data, etc)
+
+    ; "[section]" with no name: nothing changes, as in NASM (it made a
+    ; section with no name, which the ELF writer could not write)
+    movzx   eax, byte [r12 + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .no_name
+    cmp     eax, TOK_EOF
+    je      .no_name
+    cmp     eax, TOK_RBRACKET
+    jne     .name_piece
+.no_name:
+    mov     rdi, rbx
+    mov     rsi, r12
+    call    preprocessor_putback_token
+    xor     eax, eax
+    jmp     .done
 
     ; ".note.GNU-stack": a name with '-' in it lexes as several tokens;
     ; join the ones written together
