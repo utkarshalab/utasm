@@ -544,6 +544,13 @@ code_table:
     code_msg EXIT_EA_TOO_MANY,       m_ea_too_many
     code_msg EXIT_EA_BITS,           m_addr, t_ea_bits
     code_msg EXIT_EA_SIZE_MIX,       m_ea_size_mix
+    code_msg EXIT_MACRO_NO_NAME,     m_macro_def, t_macro_no_name
+    code_msg EXIT_MACRO_NO_COUNT,    m_macro_def, t_macro_no_count
+    code_msg EXIT_MACRO_NO_MAX,      m_macro_def, t_macro_no_max
+    code_msg EXIT_MACRO_MINMAX,      m_macro_minmax
+    code_msg EXIT_MACRO_EOF,         m_macro_def, t_macro_eof
+    code_msg EXIT_NOT_DEFINING,      m_macro_def, t_not_defining
+    code_msg EXIT_NO_REP,            m_no_rep
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -645,6 +652,8 @@ m_unknown_dir:  db "unknown preprocessor directive", 0
 m_ea_two_index: db "invalid effective address: two index registers", 0
 m_ea_too_many:  db "invalid effective address: too many registers", 0
 m_ea_size_mix:  db "impossible combination of address sizes", 0
+m_macro_minmax: db "minimum parameter count exceeds maximum", 0
+m_no_rep:       db "`%endrep': no matching `%rep'", 0
 m_ctx_deep:     db "context stack nested too deeply", 0
 m_align_mode:   db "unknown alignment mode", 0
 m_reg_size:     db "invalid register size specification", 0
@@ -680,6 +689,11 @@ t_nonscalar:    db "`^' operator may only be applied to scalar values", 0
 t_nonscalar_cmp: db "`^': operands differ by a non-scalar", 0
 t_unknown_dir:  db "unknown preprocessor directive `%^'", 0
 t_ea_bits:      db "invalid ^-bit effective address", 0
+t_macro_no_name: db "`%^' expects a macro name", 0
+t_macro_no_count: db "`%^' expects a parameter count", 0
+t_macro_no_max: db "`%^' expects a parameter count after `-'", 0
+t_macro_eof:    db "end of file while still defining macro `^'", 0
+t_not_defining: db "`%^': not defining a macro", 0
 t_align_mode:   db "unknown alignment mode: ^", 0
 
 sev_warning:    db "warning: ", 0
