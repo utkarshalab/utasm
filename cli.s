@@ -692,7 +692,8 @@ cli_parse.exit:
 ;   -MF file                where they go; -MT / -MQ target: the rule's
 ;                           target; -MP an empty rule per dependency;
 ;                           -MW is accepted
-;   -w+x, -w-x, -Wx, -Wno-x warning classes: accepted; -w+error is -Werror
+;   -w+x, -w-x, -Wx, -Wno-x warning classes on / off ("all": every one);
+;                           -w+error[=x], -Werror[=x]: warnings are errors
 ;   -X gnu | -X vc          message style: file:line: / file(line) :
 ;   -s                      messages on stdout; -Z file: into a file
 ;   -l file                 the listing: lines, offsets and bytes
@@ -734,7 +735,7 @@ cli_nasm_option:
     cmp     eax, 'w'
     je      .warn
     cmp     eax, 'W'
-    je      .taken
+    je      .warn
     cmp     eax, 'X'
     je      .style
     cmp     eax, 's'
@@ -863,20 +864,11 @@ cli_nasm_option:
     jmp     .ret
 
 .warn:
-    ; -w+error (or -w+error=class): warnings are errors; the other classes
-    ; are accepted and change nothing yet
-    cmp     dword [r12 + 2], '+err'
-    jne     .taken
-    cmp     word [r12 + 6], 'or'
-    jne     .taken
-    movzx   eax, byte [r12 + 8]
-    test    eax, eax
-    jz      .werror
-    cmp     eax, '='
-    jne     .taken
-.werror:
-    lea     rax, [rel global_ctx]
-    or      dword [rax + ASMCTX_flags], CTX_FLAG_WERROR
+    ; -w+class, -w-class, -Wclass, -Wno-class, -w+error[=class]: the
+    ; warning classes (error/warnings.s)
+    mov     rdi, r12
+    extern  warn_option
+    call    warn_option
     jmp     .taken
 
 .style:
