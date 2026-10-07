@@ -321,6 +321,9 @@ _start:
     jmp     .assembly_loop
 
 .finish_assembly:
+    ; errors from here on come with the warnings (error/warnings.s)
+    extern  warn_final
+    mov     byte [rel warn_final], 1
     ; what needs the whole source read ("global f:function (size)")
     lea     rdi, [rel global_prep]
     extern  parser_finish
@@ -522,6 +525,8 @@ _start:
 .exit_error:
     mov     rax, 1
 .exit:
+    extern  warn_flush
+    call    warn_flush                     ; the warnings held
     mov     rdi, rax
     mov     rax, 60 ; SYS_EXIT
     syscall
@@ -543,10 +548,22 @@ print_str:
     inc     rdx
     jmp     .len_loop
 .len_done:
+    ; a warning being written is held (error/warnings.s)
+    cmp     rbx, 2
+    jne     .write
+    extern  stderr_hold, warn_hold_put
+    cmp     byte [rel stderr_hold], 0
+    je      .write
+    mov     rdi, r12
+    mov     rsi, rdx
+    call    warn_hold_put
+    jmp     .written
+.write:
     mov     rdi, rbx
     mov     rsi, r12
     mov     rax, 1 ; SYS_WRITE
     syscall
+.written:
     pop     r12
     pop     rbx
     pop     rbp
