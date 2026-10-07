@@ -163,8 +163,54 @@ preprocessor_next_token:
     ret
 
 .error:
-    xor     rdx, rdx
+    call    prep_error_note
+    lea     rdx, [rel prep_error_token]
     jmp     .done
+
+
+; ---- prep_error_note --------------------
+;
+; An error from preprocessor_next_token / _peek_token, whose callers do not
+; all look at rax: they get an end of line in place of the token (never a
+; null pointer), and the first such error is kept, with its subject, for
+; the main loop to report (prep_error_take).
+; Input    : rax = the error
+; Preserves every register.
+;
+prep_error_note:
+    cmp     dword [rel prep_error], 0
+    jne     .ret
+    mov     [rel prep_error], eax
+    push    rax
+    extern  error_subject
+    mov     rax, [rel error_subject]
+    mov     [rel prep_error_subj], rax
+    pop     rax
+.ret:
+    ret
+
+; ---- prep_error_take --------------------
+;
+; prep_error_take
+; The error kept by prep_error_note, if any, taken (and its subject set
+; again): what went wrong first in the statement just read.
+; Output   : eax = the error, or 0
+; Preserves the others.
+;
+global prep_error_take
+prep_error_take:
+    mov     eax, [rel prep_error]
+    test    eax, eax
+    jz      .ret
+    mov     dword [rel prep_error], 0
+    push    rdi
+    push    rax
+    mov     rdi, [rel prep_error_subj]
+    call    error_set_subject
+    pop     rax
+    pop     rdi
+.ret:
+    ret
 
 
 ; ---- preprocessor_unread_token ----------
@@ -264,7 +310,8 @@ preprocessor_peek_token:
     ret
 
 .error:
-    xor     rdx, rdx
+    call    prep_error_note
+    lea     rdx, [rel prep_error_token]
     jmp     .exit
 
 
@@ -1223,7 +1270,30 @@ prep_expand_start:
     mov     r9, [r8 + ASMCTX_mac_exp]
     mov     [r13 + MACROEXP_parent], r9
     mov     [r8 + ASMCTX_mac_exp], r13
-    
+
+    ; the listing's <N> (error_track_token): the macro and %rep expansions
+    ; open around this one, from its parent's - counting them per token
+    ; walked every open expansion
+    xor     eax, eax
+    xor     ecx, ecx
+    xor     edx, edx
+    test    r9, r9
+    jz      .nest_own
+    mov     eax, [r9 + MACROEXP_lst_depth]
+    mov     rcx, [r9 + MACROEXP_lst_first]
+    mov     rdx, [r9 + MACROEXP_lst_second]
+.nest_own:
+    mov     r10, [r13 + MACROEXP_macro]
+    test    byte [r10 + MACRO_flags], MACRO_FLAG_DEFINE | MACRO_FLAG_TIMES
+    jnz     .nest_set
+    inc     eax
+    mov     rdx, rcx
+    mov     rcx, r13
+.nest_set:
+    mov     [r13 + MACROEXP_lst_depth], eax
+    mov     [r13 + MACROEXP_lst_first], rcx
+    mov     [r13 + MACROEXP_lst_second], rdx
+
     xor     rax, rax
     mov     rdx, r13               ; Return expansion struct in RDX (A99)
     jmp     .done
@@ -2477,17 +2547,9 @@ prep_handle_directive:
     sub     eax, 'a'
     cmp     eax, 25
     ja      .discard_quietly
-    mov     rdi, 2
-    lea     rsi, [rel msg_unknown_dir]
-    extern  print_str
-    call    print_str
-    mov     rdi, 2
-    mov     rsi, [r12 + TOKEN_value]
-    call    print_str
-    mov     rdi, 2
-    lea     rsi, [rel msg_newline]
-    call    print_str
-    mov     rax, EXIT_UNEXPECTED_TOKEN
+    mov     rdi, [r12 + TOKEN_value]
+    call    error_set_subject
+    mov     rax, EXIT_UNKNOWN_DIRECTIVE
     jmp     .done_cleanup
 .discard_quietly:
     sub     rsp, TOKEN_SIZE
@@ -3122,7 +3184,6 @@ msg_space:    db " ", 0
 ; "0".."9" for the %N references of a function-like %define
 def_digits:   db "0", 0, "1", 0, "2", 0, "3", 0, "4", 0, "5", 0, "6", 0, "7", 0, "8", 0, "9", 0
 undef_name:   db 0                  ; the name of an %undef'd entry
-msg_unknown_dir: db "error: unknown preprocessor directive %", 0
 dir_if:     db "if", 0
 dir_ifdef:  db "ifdef", 0
 dir_ifndef: db "ifndef", 0
@@ -3933,12 +3994,20 @@ prep_handle_strlen:
     call    preprocessor_next_token
     test    rax, rax
     jnz     .done
+    mov     eax, EXIT_DEFINE           ; "%strlen" with no name (NASM's error)
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .done
     mov     r12, [rdx + TOKEN_value]   ; name
 
     mov     rdi, rbx
     call    preprocessor_next_token
     test    rax, rax
     jnz     .done
+    mov     eax, EXIT_DEFINE           ; "%strlen x": no string (NASM's error)
+    cmp     byte [rdx + TOKEN_kind], TOK_NEWLINE
+    je      .done
+    cmp     byte [rdx + TOKEN_kind], TOK_EOF
+    je      .done
     call    prep_token_text            ; 'hello' is a packed character constant
     mov     rdi, rax                   ; string contents
     test    rdi, rdi
@@ -3986,6 +4055,9 @@ prep_handle_substr:
     mov     byte [rel prep_noexpand], 0
     test    rax, rax
     jnz     .ret
+    mov     eax, EXIT_DEFINE           ; "%substr" with no name (NASM's error)
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .ret
     mov     r12, [rdx + TOKEN_value]   ; name
 
     mov     rdi, rbx
@@ -7896,6 +7968,15 @@ rng_total:     resq 1
 rng_buf:       resq 1
 
 [SECTION .data]
+; what a caller gets for a token when the preprocessor fails (prep_error_note)
+align 8
+prep_error_token:
+    db TAG_TOKEN, TOK_NEWLINE, 0, 0, 0, 0, 0, 0
+    dq prep_error_text
+    dd 0
+    dw 0, 0
+    dq 0
+prep_error_text: db 0
 dump_newline:   db 10
 dump_colon:     db ":"
 dump_blank:     db " "
@@ -7905,6 +7986,9 @@ dump_hex:       db 0, 0, 0, 0
 dump_digits:    db "0123456789abcdef"
 
 [SECTION .bss]
+alignb 8
+prep_error_subj: resq 1                 ; prep_error's subject
+prep_error:     resd 1                  ; the first error a caller got, or 0
 cond_negate:    resb 1                  ; %ifn / %elifn: the result inverted
 stk_text:       resb STK_TEXT               ; %arg / %local definitions
 elif_negate:    resb 1
