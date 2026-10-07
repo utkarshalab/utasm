@@ -2503,6 +2503,8 @@ prep_handle_directive:
     call    prep_skip_macro_block
     jmp     .done_cleanup
 .do_macro_normal:
+    mov     rax, [r12 + TOKEN_value]       ; macro / imacro / rmacro: messages
+    mov     [rel mdef_dir], rax
     mov     rdi, rbx
     call    macro_handle_def
     jmp     .done_cleanup
@@ -2526,7 +2528,7 @@ prep_handle_directive:
     jmp     .done_cleanup
 
 .do_endrep:
-    mov     rax, EXIT_ERROR
+    mov     rax, EXIT_NO_REP               ; no %rep is being read
     jmp     .done_cleanup
 
 .error_pop_rsp:
@@ -2543,6 +2545,15 @@ prep_handle_directive:
     ; (%1, %{1..}) are macro parameter forms, left as before.
     cmp     word [rbx + PREP_skip_depth], 0
     jne     .discard_quietly
+    ; %endmacro / %endm with no %macro being read
+    mov     rdi, [r12 + TOKEN_value]
+    call    prep_is_macro_end
+    jnz     .not_macro_end
+    mov     rdi, [r12 + TOKEN_value]
+    call    error_set_subject
+    mov     rax, EXIT_NOT_DEFINING
+    jmp     .done_cleanup
+.not_macro_end:
     mov     rax, [r12 + TOKEN_value]
     test    rax, rax
     jz      .discard_quietly
@@ -3197,6 +3208,10 @@ dir_rep:    db "rep", 0
 dir_endrep: db "endrep", 0
 dir_macro:  db "macro", 0
 dir_endm:   db "endmacro", 0
+dir_endm_short: db "endm", 0
+s_macro_defaults: db "too many default macro parameters in macro `", 0
+s_quote_end: db "'", 0
+s_unmacro:  db "unmacro", 0
 dir_struc:  db "struc", 0
 dir_endstruc: db "endstruc", 0
 dir_unmacro:  db "unmacro", 0
@@ -4018,8 +4033,8 @@ prep_raw_peek:
 ; prep_internal_next only fires on SYM_MACRO, so an entry of any other kind is
 ; inert. Removing a name that is not a macro is not an error, matching NASM.
 ;
-; The parameter spec is parsed and discarded: it only disambiguates between
-; overloads, which utasm does not keep.
+; The parameter count is required, and removes the overload with exactly
+; that count ("%unmacro s 1" leaves "s 0" and "s 1+"), as in NASM.
 ;
 ; Input    : rdi = pointer to PrepState
 ; Output   : rax = EXIT_OK or error code
@@ -4028,6 +4043,8 @@ prep_handle_unmacro:
     prologue
     push    rbx
     push    r12
+    push    r13
+    push    r14
     sub     rsp, TOKEN_SIZE        ; scratch token
     mov     rbx, rdi
 
@@ -4042,30 +4059,69 @@ prep_handle_unmacro:
     call    lexer_next
     test    rax, rax
     jnz     .done
-    IF byte [rsp + TOKEN_kind], ne, TOK_IDENT
-        mov     rax, EXIT_UNEXPECTED_TOKEN
-        jmp     .done
-        ENDIF
+    cmp     byte [rsp + TOKEN_kind], TOK_IDENT
+    je      .named
+    lea     rdi, [rel s_unmacro]           ; "`%unmacro' expects a macro name"
+    call    error_set_subject
+    mov     eax, EXIT_MACRO_NO_NAME
+    jmp     .done
+.named:
     mov     r12, [rsp + TOKEN_value]
 
-    ; 2. Retire it if it is currently a macro
+    ; 2. The parameter count of the overload to remove
+    lea     rdi, [rel s_unmacro]
+    call    prep_parse_count
+    test    rax, rax
+    jnz     .done
+    mov     r13, rcx
+    mov     r14, rdx
+
+    ; 3. Unlink that overload (a %define of the name stays)
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, r12
     extern  symbol_find
     call    symbol_find
-    IF rax, e, OK
-        IF byte [rdx + SYMBOL_kind], e, SYM_MACRO
-            mov     byte [rdx + SYMBOL_kind], SYM_UNKNOWN
-            ENDIF
-        ENDIF
+    test    rax, rax
+    jnz     .drain
+    cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
+    jne     .drain
+    mov     r8, rdx                        ; the SYMBOL
+    lea     r9, [rdx + SYMBOL_value]       ; where the current one is linked
+.find:
+    mov     r10, [r9]
+    test    r10, r10
+    jz      .drain                         ; no overload with that count
+    test    byte [r10 + MACRO_flags], MACRO_FLAG_DEFINE
+    jnz     .drain
+    movzx   eax, word [r10 + MACRO_min_params]
+    cmp     rax, r13
+    jne     .next
+    movzx   eax, word [r10 + MACRO_max_params]
+    cmp     rax, r14
+    jne     .next
+    mov     al, [r10 + MACRO_flags]
+    and     al, MACRO_FLAG_GREEDY
+    cmp     al, [rel mdef_greedy]
+    jne     .next
+    mov     rax, [r10 + MACRO_next]
+    mov     [r9], rax
+    cmp     qword [r8 + SYMBOL_value], 0
+    jne     .drain
+    mov     byte [r8 + SYMBOL_kind], SYM_UNKNOWN   ; the last overload
+    jmp     .drain
+.next:
+    lea     r9, [r10 + MACRO_next]
+    jmp     .find
 
-    ; 3. Discard the parameter spec
+.drain:
     mov     rdi, rbx
     call    prep_drain_line
     xor     rax, rax
 
 .done:
     add     rsp, TOKEN_SIZE
+    pop     r14
+    pop     r13
     pop     r12
     pop     rbx
     epilogue
@@ -7178,11 +7234,9 @@ prep_skip_macro_block:
     call    prep_is_macro_open             ; %rmacro, %imacro, %irmacro
     jz      .nest_in
     
-    ; Compare with "endmacro"
+    ; Compare with "endmacro" (or "endm")
     mov     rdi, [r13 + TOKEN_value]
-    lea     rsi, [dir_endm]
-    call    str_cmp
-    test    rax, rax
+    call    prep_is_macro_end
     jz      .nest_out
     
     jmp     .loop
@@ -7273,6 +7327,124 @@ prep_skip_rep_block:
 ; Input    : rdi = pointer to PrepState
 ; Output   : rax = EXIT_OK or error code
 ;
+; ---- prep_parse_count -------------------
+;
+; prep_parse_count
+; The parameter count of %macro / %unmacro: "N", "N-M" or "N-*", then "+"
+; (the last parameter takes the rest of the line) and ".nolist", as NASM
+; reads them, with its errors.
+; Input    : rbx = PrepState, rdi = the directive's name (for the messages)
+; Output   : rax = OK or an error; rcx = the minimum, rdx = the maximum
+;            (MACRO_VARIADIC for "*"); mdef_greedy = MACRO_FLAG_GREEDY for "+"
+;
+prep_parse_count:
+    push    r12
+    push    r13
+    push    r14
+    sub     rsp, TOKEN_SIZE
+    mov     r12, rdi
+    mov     byte [rel mdef_greedy], 0
+    mov     rdi, rbx
+    mov     rsi, rsp
+    call    prep_raw_next
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rsp + TOKEN_kind], TOK_NUMBER
+    jne     .no_count
+    mov     rdi, [rsp + TOKEN_value]
+    call    str_to_int
+    mov     r13, rdx                       ; the minimum
+    mov     r14, rdx                       ; the maximum, unless "-M"
+    mov     rdi, rbx
+    mov     rsi, rsp
+    call    prep_raw_peek
+    cmp     byte [rsp + TOKEN_kind], TOK_MINUS
+    jne     .range
+    mov     rdi, rbx
+    mov     rsi, rsp
+    call    prep_raw_next                  ; '-'
+    mov     rdi, rbx
+    mov     rsi, rsp
+    call    prep_raw_next
+    cmp     byte [rsp + TOKEN_kind], TOK_NUMBER
+    jne     .max_star
+    mov     rdi, [rsp + TOKEN_value]
+    call    str_to_int
+    mov     r14, rdx
+    jmp     .range
+.max_star:
+    cmp     byte [rsp + TOKEN_kind], TOK_STAR
+    jne     .no_max
+    mov     r14, MACRO_VARIADIC
+.range:
+    ; up to MACRO_PARAMS_MAX parameters (the counts are words)
+    mov     eax, EXIT_MACRO_DEF
+    cmp     r13, MACRO_PARAMS_MAX
+    ja      .ret
+    cmp     r14, MACRO_VARIADIC
+    je      .tail
+    cmp     r14, MACRO_PARAMS_MAX
+    ja      .ret
+    mov     eax, EXIT_MACRO_MINMAX
+    cmp     r13, r14
+    ja      .ret
+.tail:
+    mov     rdi, rbx
+    mov     rsi, rsp
+    call    prep_raw_peek
+    movzx   eax, byte [rsp + TOKEN_kind]
+    cmp     eax, TOK_PLUS
+    jne     .not_plus
+    mov     byte [rel mdef_greedy], MACRO_FLAG_GREEDY
+    jmp     .tail_eat
+.not_plus:
+    cmp     eax, TOK_IDENT
+    jne     .counted
+    mov     rdi, [rsp + TOKEN_value]
+    lea     rsi, [rel str_nolist]
+    call    str_cmp
+    test    rax, rax
+    jnz     .counted
+.tail_eat:
+    mov     rdi, rbx
+    mov     rsi, rsp
+    call    prep_raw_next
+    jmp     .tail
+.counted:
+    xor     eax, eax
+    mov     rcx, r13
+    mov     rdx, r14
+    jmp     .ret
+.no_count:
+    mov     rdi, r12
+    call    error_set_subject
+    mov     eax, EXIT_MACRO_NO_COUNT
+    jmp     .ret
+.no_max:
+    mov     rdi, r12
+    call    error_set_subject
+    mov     eax, EXIT_MACRO_NO_MAX
+.ret:
+    add     rsp, TOKEN_SIZE
+    pop     r14
+    pop     r13
+    pop     r12
+    ret
+
+; prep_is_macro_end: ZF set when rdi names %endmacro or its short form %endm
+prep_is_macro_end:
+    push    rdi
+    lea     rsi, [rel dir_endm]
+    call    str_cmp
+    pop     rdi
+    test    rax, rax
+    jz      .ret
+    lea     rsi, [rel dir_endm_short]
+    call    str_cmp
+    test    rax, rax
+.ret:
+    ret
+
 macro_handle_def:
     prologue
     push    rbx
@@ -7308,93 +7480,18 @@ macro_handle_def:
     mov     [r12 + TOKEN_value], rdx
 .name_ready:
 
-    ; 2. Lex the parameter count
-    mov     rdi, rbx                   ; the expansion first, then the file
-    lea     r13, [rsp + 32]        ; r13 = param count token
-    mov     rsi, r13
-    call    prep_raw_next
+    ; 2. The parameter count: N, N-M, N-*, then "+" and ".nolist"
+    mov     rdi, [rel mdef_dir]
+    call    prep_parse_count
     test    rax, rax
-    jnz     .error
-
-    ; Param count can be N, N-M, or N-*
-    xor     r14, r14               ; min_params
-    xor     r15, r15               ; max_params
-    mov     byte [rel mdef_greedy], 0
+    jnz     .done
+    mov     r14, rcx               ; min_params
+    mov     r15, rdx               ; max_params
     mov     qword [rel mdef_defaults], 0
     mov     dword [rel mdef_ndefaults], 0
-    
-    cmp     byte [r13 + TOKEN_kind], TOK_NUMBER
-    jne     .body_start            ; No params specified
-    
-    ; Parse minimum
-    mov     rdi, [r13 + TOKEN_value]
-    call    str_to_int
-    mov     r14, rdx
-    mov     r15, rdx               ; Default max = min
-    
-    ; Peek for hyphen '-'
-    mov     rdi, rbx                   ; the expansion first, then the file
-    lea     rsi, [rsp + 64]
-    call    prep_raw_peek
-    cmp     byte [rsp + 64 + TOKEN_kind], TOK_MINUS
-    jne     .no_hyphen
-    
-    ; Consume hyphen
-    mov     rdi, rbx                   ; the expansion first, then the file
-    lea     rsi, [rsp + 64]
-    call    prep_raw_next
-    
-    ; Lex next for max
-    mov     rdi, rbx                   ; the expansion first, then the file
-    lea     rsi, [rsp + 64]
-    call    prep_raw_next
-    
-    cmp     byte [rsp + 64 + TOKEN_kind], TOK_NUMBER
-    jne     .check_star
-    mov     rdi, [rsp + 64 + TOKEN_value]
-    call    str_to_int
-    mov     r15, rdx
-    jmp     .no_hyphen
-
-.check_star:
-    cmp     byte [rsp + 64 + TOKEN_kind], TOK_STAR
-    jne     .no_hyphen
-    mov     r15, MACRO_VARIADIC
-
-.no_hyphen:
-    ; up to MACRO_PARAMS_MAX parameters (the counts are words)
-    cmp     r14, MACRO_PARAMS_MAX
-    ja      .error_macro_def
-
-    cmp     r15, MACRO_VARIADIC
-    je      .tail
-    cmp     r15, MACRO_PARAMS_MAX
-    ja      .error_macro_def
-
-    ; After the count: "+" (the last parameter takes the rest of the line),
-    ; ".nolist", then default values for the optional parameters
-.tail:
     mov     rdi, rbx
     lea     rsi, [rsp + 64]
     call    prep_raw_peek
-    movzx   eax, byte [rsp + 64 + TOKEN_kind]
-    cmp     eax, TOK_PLUS
-    jne     .not_plus
-    mov     byte [rel mdef_greedy], MACRO_FLAG_GREEDY
-    jmp     .tail_eat
-.not_plus:
-    cmp     eax, TOK_IDENT
-    jne     .defaults
-    mov     rdi, [rsp + 64 + TOKEN_value]
-    lea     rsi, [rel str_nolist]
-    call    str_cmp
-    test    rax, rax
-    jnz     .defaults
-.tail_eat:
-    mov     rdi, rbx
-    lea     rsi, [rsp + 64]
-    call    prep_raw_next
-    jmp     .tail
 .defaults:
     movzx   eax, byte [rsp + 64 + TOKEN_kind]
     cmp     eax, TOK_NEWLINE
@@ -7440,6 +7537,38 @@ macro_handle_def:
     jnz     .error
     mov     [rel mdef_defaults], rdx
 .defaults_taken:
+    ; more defaults than optional parameters (they are counted by their
+    ; commas): NASM's warning
+    cmp     r15, MACRO_VARIADIC
+    je      .defaults_fit
+    mov     ecx, [rel mdef_ndefaults]
+    test    ecx, ecx
+    jz      .defaults_fit
+    mov     rsi, [rel mdef_defaults]
+    mov     eax, 1
+.default_comma:
+    cmp     byte [rsi + TOKEN_kind], TOK_COMMA
+    jne     .default_next
+    inc     eax
+.default_next:
+    add     rsi, TOKEN_SIZE
+    dec     ecx
+    jnz     .default_comma
+    mov     rdx, r15
+    sub     rdx, r14
+    cmp     rax, rdx
+    jbe     .defaults_fit
+    mov     edi, WC_PP_MACRO_DEFAULTS
+    extern  warn_begin, warn_text, warn_end
+    call    warn_begin
+    lea     rsi, [rel s_macro_defaults]
+    call    warn_text
+    mov     rsi, [r12 + TOKEN_value]
+    call    warn_text
+    lea     rsi, [rel s_quote_end]
+    call    warn_text
+    call    warn_end
+.defaults_fit:
 
     ; 3. Allocate MACRO struct in arena
     ; We need to save r14 (min) and r15 (max) while we use r15 for the struct pointer
@@ -7514,9 +7643,7 @@ macro_handle_def:
     jz      .nest_in
 
     mov     rdi, [r12 + TOKEN_value]
-    lea     rsi, [dir_endm]
-    call    str_cmp
-    test    rax, rax
+    call    prep_is_macro_end              ; %endmacro or %endm
     jz      .nest_out
 
     jmp     .store_token
@@ -7617,11 +7744,26 @@ macro_handle_def:
     jmp     .done
 
 .error_expected_ident:
-    mov     rax, EXIT_ERROR
+    mov     rdi, [rel mdef_dir]            ; "`%macro' expects a macro name"
+    call    error_set_subject
+    mov     rax, EXIT_MACRO_NO_NAME
     jmp     .done
 
 .error_eof:
-    mov     rax, EXIT_ERROR
+    ; at the end of the file, as NASM reports it
+    mov     eax, [r12 + TOKEN_line]
+    test    eax, eax
+    jz      .eof_line
+    cmp     word [r12 + TOKEN_col], 1
+    jbe     .eof_at_line
+    inc     eax                            ; (no newline at the end: the next)
+.eof_at_line:
+    extern  error_loc_line
+    mov     [rel error_loc_line], eax
+.eof_line:
+    mov     rdi, [r15 + MACRO_name]        ; "end of file while still
+    call    error_set_subject              ;  defining macro `s'"
+    mov     rax, EXIT_MACRO_EOF
     jmp     .done
 
 .done:
@@ -8140,7 +8282,8 @@ idefine_count: resd 1              ; %idefine names so far
 icase_buf:     resb 256            ; a name's case-insensitive key
 idn_case:      resb 1              ; 1: %ifidn compares case-sensitively
 exit_open:     resb 1              ; %if blocks %exitrep has to close
-mdef_defaults: resq 1              ; %macro header: default argument tokens
+mdef_dir:       resq 1                  ; the directive's name (macro, imacro ...)
+mdef_defaults:resq 1              ; %macro header: default argument tokens
 mdef_ndefaults: resd 1             ; ... and how many
 mdef_greedy:   resb 1              ; ... MACRO_FLAG_GREEDY after a "+"
 putback_next:  resb TOKEN_SIZE     ; a token queued behind the peek slot
