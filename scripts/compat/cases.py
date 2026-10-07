@@ -656,3 +656,28 @@ def limit_cases():
     inc["i300.inc"] = "db 0\n"
     c["include_nest_300"] = ('%include "i0.inc"\n', inc, "bin")
     return c
+
+
+# ---------------------------------------------------------------------------
+# robustness: inputs that crashed or hung utasm (found by scripts/compat/
+# fuzz.py, cut down): utasm must finish, without an internal error, and
+# accept or reject each as NASM does. (name, source, format, options)
+# ---------------------------------------------------------------------------
+ROBUST_CASES = [
+    ("percent_name_operand", "mov rax, %e\n", "elf64", ["-g"]),
+    ("percent_name_data", "%defstr S hello wor\ndb S %a\n", "elf64", []),
+    ("percent_name_mem", "addss xmm2, [ %a\n", "elf64", ["-g"]),
+    ("percent_name_default", "bits 64\ndefault %s\n", "elf64", []),
+    ("percent_name_line_start", "%foo bar\ndb 1\n", "bin", []),
+    ("strlen_no_name", "%strlen\n", "bin", []),
+    ("strlen_no_string", "%strlen x\n", "bin", []),
+    ("substr_no_name", "%substr : qword j\n", "bin", ["-l", "x.lst"]),
+    ("colon_operand", "dq 1 + :\n", "elf64", ["-g"]),
+    ("colon_after_wrt", "dq ..plt + :\n", "elf64", []),
+    ("section_no_name", "section\ndb 1\n", "elf64", []),
+    ("section_no_name_bracket", "[section]\ndb 1\n", "elf32", []),
+    ("push_trailing_section", "%push qword segment\n", "elf32", []),
+    ("runaway_recursion", "%assign n 0\n%rmacro r 0\ndb 1, 2, 3, 4, 5, 6, 7, 8, 9, 10\ndb n\n%assign n n+1\n"
+                          "%if n < 200\n%endif\nr\n%endmacro\nr\n", "elf64", []),
+    ("runaway_recursion_listed", "%rmacro r 0\ndb 1, 2, 3\nr\n%endmacro\nr\n", "elf64", ["-l", "x.lst"]),
+]
