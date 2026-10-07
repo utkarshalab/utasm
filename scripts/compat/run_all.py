@@ -8,6 +8,7 @@ labels as instruction operands, UBF boot images, error messages (the file
 and line of the first error), NASM's command-line options, listings (-l),
 DWARF line tables (-g), i386 objects (-f elf32), labels in expressions
 (defined later, and NASM's scalar errors), inputs past the old fixed limits,
+inputs that crashed utasm before (robustness),
 the encoder corpus (also under bits 32 and bits 16), operand shapes (valid
 and invalid pairings), and the disassembler against objdump.
 
@@ -42,7 +43,7 @@ def main(argv):
     runs = [suites.bin_probes, suites.elf_probes, suites.data_forms,
             suites.sections, suites.symbol_imm, suites.ubf, suites.diagnostics,
             suites.command_line, suites.listing, suites.dwarf, suites.elf32,
-            suites.expressions, suites.limits]
+            suites.expressions, suites.limits, suites.robustness]
     if not quick:
         runs += [suites.encoder, suites.operand_shapes, suites.modes]
     good = True
