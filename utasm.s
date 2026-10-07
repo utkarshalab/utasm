@@ -62,6 +62,10 @@ _start:
     mov     rbp, rsp
     and     rsp, -16               ; Align stack
 
+    ; a fault in utasm is reported as an internal error (core/crash.s)
+    extern  crash_install
+    call    crash_install
+
     ; [rbp+8] is argc, [rbp+16] is argv[0]
     mov     r12, [rbp + 8]          ; r12 = argc
     lea     r13, [rbp + 16]         ; r13 = argv
@@ -244,6 +248,15 @@ _start:
     call    profiler_end_phase
     pop     rdx
     pop     rax
+
+    ; an error the preprocessor gave a caller that went on without it (it
+    ; got an end of line instead): the one to report
+    extern  prep_error_take
+    mov     rcx, rax
+    call    prep_error_take
+    test    eax, eax
+    jnz     .error_in_parser
+    mov     rax, rcx
 
     test    rax, rax
     jnz     .error_in_parser
