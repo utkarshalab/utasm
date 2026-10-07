@@ -1764,6 +1764,7 @@ parser_eval_expr_body:
 %define EXP_DIV   18
 %define EXP_NOT   19
 %define EXP_LNOT  20
+%define MEM_SCALED_MAX 4          ; "4*rcx" registers in one memory operand
 
 ;*
 ; * [expr_sym_class]
@@ -2176,6 +2177,71 @@ parser_evaluate_term:
         mov     rdi, rbx
         call    preprocessor_next_token
         check_err
+        ; "[rbx + 4*rcx]": in a memory operand a number times a register is
+        ; the register scaled. The operand takes it (mem_scaled_*); the term
+        ; adds nothing to the displacement. (rcx went in as an unknown
+        ; name: [2*rbx] was [0], [rbx+4*rcx+16] was [rbx+16].)
+        cmp     byte [rel mem_scaling], 0
+        je      .star_value
+        mov     rdi, rbx
+        call    preprocessor_peek_token
+        check_err
+        cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+        jne     .star_value
+        mov     r14, rdx
+        call    parser_get_arch_tables
+        mov     rdi, rdx
+        mov     rsi, [r14 + TOKEN_value]
+        call    parser_is_register
+        cmp     rax, ERR
+        je      .star_value
+        test    r15, r15
+        jnz     .scaled_bad                ; a label times a register
+        mov     rdi, [rsp]
+        call    expr_sym_class
+        test    eax, eax
+        jnz     .scaled_bad
+        cmp     dword [rel mem_scaled_n], MEM_SCALED_MAX
+        jae     .scaled_bad
+        mov     rdi, rbx
+        call    preprocessor_next_token    ; the register
+        check_err
+        mov     ecx, [rel mem_scaled_n]
+        lea     rax, [rel mem_scaled_tok]
+        mov     [rax + rcx * 8], rdx
+        inc     dword [rel mem_scaled_n]
+.scaled_more:
+        ; "2*rbx*2": the factors after it scale it too
+        mov     rdi, rbx
+        call    preprocessor_peek_token
+        check_err
+        cmp     byte [rdx + TOKEN_kind], TOK_STAR
+        jne     .scaled_done
+        mov     rdi, rbx
+        call    preprocessor_next_token
+        check_err
+        mov     rdi, rbx
+        call    parser_evaluate_factor
+        check_err
+        test    rcx, rcx
+        jnz     .scaled_bad
+        mov     rdi, r11
+        call    expr_sym_class
+        test    eax, eax
+        jnz     .scaled_bad
+        imul    r12, rdx
+        jmp     .scaled_more
+.scaled_done:
+        mov     ecx, [rel mem_scaled_n]
+        lea     rax, [rel mem_scaled_coef]
+        mov     [rax + rcx * 8 - 8], r12
+        xor     r12d, r12d
+        mov     qword [rsp], 0
+        jmp     .loop
+.scaled_bad:
+        mov     eax, EXIT_INVALID_ADDR
+        jmp     .done
+.star_value:
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
@@ -2760,6 +2826,12 @@ parser_get_arch_tables:
 ; ;
 parser_parse_mem_operand:
     prologue
+    mov     byte [rel mem_scaling], 1      ; "4*rcx": parser_evaluate_term
+    xor     eax, eax
+    mov     [rel mem_scaled_n], eax
+    mov     [rel mem_scaled_take], eax
+    mov     [rel mem_terms_n], eax
+    mov     byte [rel mem_term_pending], 0
     mov     byte [r12 + OPERAND_kind], OP_MEM
     mov     byte [r12 + OPERAND_scale], 1 ; Default scale
     mov     byte [r12 + OPERAND_base],  0xFF ; 0xFF = no base register
@@ -2800,6 +2872,10 @@ parser_parse_mem_operand:
         ENDIF
 
 .loop:
+    ; a register the expression evaluator took as "4*rcx" (mem_scaled_*)
+    mov     eax, [rel mem_scaled_take]
+    cmp     eax, [rel mem_scaled_n]
+    jb      .take_scaled
     mov     rdi, rbx
     call    preprocessor_next_token
     check_err_to .error
@@ -2858,6 +2934,7 @@ parser_parse_mem_operand:
 .parse_item:
     IF al, e, TOK_IDENT
         ; Could be a register OR a symbol
+.reg_token:
         call    parser_get_arch_tables
         mov     rdi, rdx               ; RDI = Register Table Pointer
         mov     rsi, [r13 + TOKEN_value]
@@ -2918,62 +2995,54 @@ parser_parse_mem_operand:
             call    preprocessor_next_token ; consume ':'
             jmp     .loop
         .not_seg:
-
-            ; A scaled register is the index even when there is no base yet,
-            ; as in [table + rcx*4]; a vector register is always the index.
-            cmp     al, 80
-            jb      .gpr_slot
-            cmp     al, 112
-            jb      .set_index
-        .gpr_slot:
-            push    rax
+            ; how it is scaled: "rcx*4" (read here), "4*rcx" (read by the
+            ; expression evaluator), or not at all
+            mov     [rel mem_term_reg], al
+            cmp     byte [rel mem_term_pending], 0
+            jne     .scaled_given
             mov     rdi, rbx
             call    preprocessor_peek_token
-            mov     cl, [rdx + TOKEN_kind]
-            pop     rax
-            cmp     cl, TOK_STAR
-            je      .set_index
-
-            cmp     byte [r12 + OPERAND_base], 0xFF
-            jne     .set_index
-            mov     [r12 + OPERAND_base], al
-        .check_scale:
-            jmp     .loop
-        .set_index:
-            mov     [r12 + OPERAND_index], al
-            ; Check for scale [base + index * scale]
+            cmp     byte [rdx + TOKEN_kind], TOK_STAR
+            jne     .unscaled
+            mov     qword [rel mem_term_coef], 1
+        .scale_factor:
+            mov     rdi, rbx
+            call    preprocessor_next_token ; consume '*'
+            mov     rdi, rbx
+            ; The scale is a single factor: in [base+index*4+8] the "+8"
+            ; belongs to the displacement, not to the scale.
+            call    parser_evaluate_factor
+            check_err_to .error
+            test    rcx, rcx
+            jnz     .scale_bad                     ; a label not defined yet
+            mov     rdi, r11
+            call    expr_sym_class
+            test    eax, eax
+            jnz     .scale_bad                     ; a label
+            imul    rdx, [rel mem_term_coef]
+            mov     [rel mem_term_coef], rdx
             mov     rdi, rbx
             call    preprocessor_peek_token
-            IF byte [rdx + TOKEN_kind], e, TOK_STAR
-                mov     rdi, rbx
-                call    preprocessor_next_token ; consume '*'
-                mov     rdi, rbx
-                ; The scale is a single factor: in [base+index*4+8] the "+8"
-                ; belongs to the displacement, not to the scale.
-                call    parser_evaluate_factor
-                check_err_to .error
-                mov     rax, rdx               ; evaluated scale value
-                
-                ; Validate Scale: 1, 2, 4, 8
-                IF rax, e, 1
-                    jmp .scale_ok
-                ENDIF 
-                IF rax, e, 2
-                    jmp .scale_ok
-                ENDIF 
-                IF rax, e, 4
-                    jmp .scale_ok
-                ENDIF 
-                IF rax, e, 8
-                    jmp .scale_ok
-                ENDIF 
-                
-                mov     rax, 212
-                jmp     .error
-            .scale_ok:
-                mov     [r12 + OPERAND_scale], al
-                ENDIF
+            cmp     byte [rdx + TOKEN_kind], TOK_STAR
+            je      .scale_factor                  ; "rbx*2*2"
+        .scaled_given:
+            mov     byte [rel mem_term_pending], 0
+            mov     al, [rel mem_term_reg]
+            mov     rcx, [rel mem_term_coef]
+            mov     dl, 1                          ; written multiplied
+            call    .add_term
+            check_err_to .error
             jmp     .loop
+        .unscaled:
+            mov     al, [rel mem_term_reg]
+            mov     ecx, 1
+            xor     edx, edx
+            call    .add_term
+            check_err_to .error
+            jmp     .loop
+        .scale_bad:
+            mov     eax, EXIT_INVALID_ADDR
+            jmp     .error
             ENDIF
         ; Not a register, must be a symbol/expression
         ENDIF
@@ -3014,6 +3083,9 @@ parser_parse_mem_operand:
     jmp     .loop
 
 .finalize:
+    ; the registers into base and index, now that all are known
+    call    .place_terms
+    check_err_to .error
     ; a size that cannot be the address's: [dword bx+4], [word ebx],
     ; [qword x] outside bits 64, [word x] in bits 64
     movzx   eax, byte [r12 + OPERAND_dispsize]
@@ -3164,10 +3236,219 @@ parser_parse_mem_operand:
 .rel_done:
     mov     rax, OK
 .done:
+    mov     byte [rel mem_scaling], 0
     epilogue
 
 .error:
+    mov     byte [rel mem_scaling], 0
     epilogue
+
+; .take_scaled: the next register the evaluator took (rax = its number):
+; through the register path, with its scale
+.take_scaled:
+    inc     dword [rel mem_scaled_take]
+    lea     rcx, [rel mem_scaled_tok]
+    mov     r13, [rcx + rax * 8]
+    lea     rcx, [rel mem_scaled_coef]
+    mov     rcx, [rcx + rax * 8]
+    mov     [rel mem_term_coef], rcx
+    mov     byte [rel mem_term_pending], 1
+    jmp     .reg_token
+
+; .add_term: a register of the address (al), times rcx; dl = 1 when the
+; scale was written ("rbx*1", "4*rbx"). The terms are kept in the order
+; written, a register written twice once (its scales added: [rax+rax*3] is
+; rax*4), and placed when the address is complete (.place_terms).
+; rax = OK or EXIT_INVALID_ADDR (more registers than there is room for).
+.add_term:
+    lea     r10, [rel mem_terms_reg]
+    mov     r8d, [rel mem_terms_n]
+    xor     r9d, r9d
+.at_find:
+    cmp     r9d, r8d
+    jae     .at_new
+    cmp     [r10 + r9], al
+    je      .at_merge
+    inc     r9d
+    jmp     .at_find
+.at_merge:
+    lea     r10, [rel mem_terms_coef]
+    add     [r10 + r9 * 8], rcx
+    lea     r10, [rel mem_terms_mul]
+    or      [r10 + r9], dl
+    xor     eax, eax
+    ret
+.at_new:
+    cmp     r8d, MEM_SCALED_MAX
+    jae     .place_bad
+    mov     [r10 + r8], al
+    lea     r10, [rel mem_terms_coef]
+    mov     [r10 + r8 * 8], rcx
+    lea     r10, [rel mem_terms_mul]
+    mov     [r10 + r8], dl
+    inc     dword [rel mem_terms_n]
+    xor     eax, eax
+    ret
+.place_bad:
+    mov     eax, EXIT_INVALID_ADDR
+    ret
+
+; .place_terms: the registers into base and index, as NASM places them.
+; A register times 0 is dropped. One register: times 1 the base (the index
+; for "nosplit rax*1"), times 2, 4 or 8 the index, times 3, 5 or 9 base and
+; index both ([rbx*3] is [rbx + rbx*2]). Two: the one with a scale is the
+; index; both times 1, the first written is the base unless its scale was
+; written ([rbx*1 + rax] is [rax + rbx]). A vector register is always the
+; index. rax = OK or EXIT_INVALID_ADDR.
+.place_terms:
+    ; drop the registers times 0
+    lea     r8, [rel mem_terms_reg]
+    lea     r9, [rel mem_terms_coef]
+    lea     r10, [rel mem_terms_mul]
+    xor     ecx, ecx                       ; read
+    xor     edx, edx                       ; kept
+.pt_drop:
+    cmp     ecx, [rel mem_terms_n]
+    jae     .pt_dropped
+    mov     rax, [r9 + rcx * 8]
+    test    rax, rax
+    jz      .pt_drop_next
+    mov     [r9 + rdx * 8], rax
+    mov     al, [r8 + rcx]
+    mov     [r8 + rdx], al
+    mov     al, [r10 + rcx]
+    mov     [r10 + rdx], al
+    inc     edx
+.pt_drop_next:
+    inc     ecx
+    jmp     .pt_drop
+.pt_dropped:
+    mov     [rel mem_terms_n], edx
+    test    edx, edx
+    jz      .pt_ok
+    cmp     edx, 2
+    ja      .place_bad
+    je      .pt_two
+    ; one register
+    movzx   eax, byte [r8]
+    mov     rcx, [r9]
+    call    .pt_vector
+    jnc     .pt_index
+    cmp     rcx, 1
+    jne     .pt_one_scaled
+    test    byte [r12 + OPERAND_flags], OP_FLAG_NOSPLIT
+    jz      .pt_base
+    cmp     byte [r10], 0
+    jne     .pt_index                      ; "nosplit rax*1"
+.pt_base:
+    cmp     byte [r12 + OPERAND_base], 0xFF
+    jne     .place_bad
+    mov     [r12 + OPERAND_base], al
+.pt_ok:
+    xor     eax, eax
+    ret
+.pt_one_scaled:
+    cmp     rcx, 3
+    je      .pt_split
+    cmp     rcx, 5
+    je      .pt_split
+    cmp     rcx, 9
+    jne     .pt_index
+.pt_split:
+    cmp     byte [r12 + OPERAND_base], 0xFF
+    jne     .place_bad
+    mov     [r12 + OPERAND_base], al
+    dec     ecx
+    jmp     .pt_index
+
+.pt_two:
+    movzx   eax, byte [r8]
+    call    .pt_vector
+    jnc     .pt_first_index                ; [xmm1 + rax]: the vector
+    movzx   eax, byte [r8 + 1]
+    call    .pt_vector
+    jnc     .pt_second_index
+    cmp     qword [r9], 1
+    je      .pt_first_once
+    cmp     qword [r9 + 8], 1
+    jne     .place_bad                     ; two index registers
+.pt_first_index:
+    ; the first one the index, the second the base
+    movzx   eax, byte [r8 + 1]
+    call    .pt_vector
+    jnc     .place_bad                     ; two vector registers
+    cmp     qword [r9 + 8], 1
+    jne     .place_bad
+    call    .pt_base
+    test    eax, eax
+    jnz     .pt_ret
+    movzx   eax, byte [r8]
+    mov     rcx, [r9]
+    jmp     .pt_index
+.pt_first_once:
+    cmp     qword [r9 + 8], 1
+    jne     .pt_second_index
+    cmp     byte [r10], 0
+    jne     .pt_first_index                ; [rbx*1 + rax]: rax is the base
+.pt_second_index:
+    ; the first one the base, the second the index
+    cmp     qword [r9], 1
+    jne     .place_bad
+    movzx   eax, byte [r8]
+    call    .pt_base
+    test    eax, eax
+    jnz     .pt_ret
+    movzx   eax, byte [r8 + 1]
+    mov     rcx, [r9 + 8]
+    ; (falls through)
+.pt_index:
+    ; eax = the index, rcx its scale: 1, 2, 4 or 8
+    cmp     rcx, 1
+    je      .pt_scale_ok
+    cmp     rcx, 2
+    je      .pt_scale_ok
+    cmp     rcx, 4
+    je      .pt_scale_ok
+    cmp     rcx, 8
+    jne     .place_bad
+.pt_scale_ok:
+    cmp     byte [r12 + OPERAND_index], 0xFF
+    jne     .place_bad
+    mov     [r12 + OPERAND_index], al
+    mov     [r12 + OPERAND_scale], cl
+    xor     eax, eax
+.pt_ret:
+    ret
+
+; .pt_vector: CF clear when eax is a vector register (xmm / ymm / zmm)
+.pt_vector:
+    cmp     eax, 80
+    jb      .pt_not_vector
+    cmp     eax, 112
+    jae     .pt_not_vector
+    clc
+    ret
+.pt_not_vector:
+    stc
+    ret
+
+[SECTION .bss]
+; a memory operand being read: the registers the expression evaluator took
+; as "4*rcx" (parser_evaluate_term), for parser_parse_mem_operand
+mem_scaled_tok:   resq MEM_SCALED_MAX     ; the register's token
+mem_scaled_coef:  resq MEM_SCALED_MAX     ; its scale
+mem_term_coef:    resq 1                  ; the register being placed: scale
+mem_terms_coef:   resq MEM_SCALED_MAX     ; the address's registers, as written:
+mem_terms_reg:    resb MEM_SCALED_MAX     ; scale, register, and whether the
+mem_terms_mul:    resb MEM_SCALED_MAX     ; scale was written (.add_term)
+alignb 4
+mem_terms_n:      resd 1
+mem_scaled_n:     resd 1
+mem_scaled_take:  resd 1                  ; how many the operand has taken
+mem_scaling:      resb 1                  ; a memory operand is being read
+mem_term_pending: resb 1                  ; mem_term_coef came from the evaluator
+mem_term_reg:     resb 1
+[SECTION .text]
 
 ;*
 ; * [parser_parse_decorator]
