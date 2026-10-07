@@ -329,6 +329,11 @@ mov rax, [rbx + rcx*8]      ; rbx + rcx*8
 ; base + scaled index + displacement
 mov rax, [rbx + rcx*4 + 16] ; full SIB + displacement
 
+; the scale may come first, and the terms in any order
+mov rax, [4*rcx + rbx + 16] ; the same address
+mov rax, [rbx*3]            ; rbx + rbx*2 (also *5, *9)
+mov rax, [rax + rax*3]      ; rax*4: a register written twice adds up
+
 ; RIP-relative (position independent)
 mov rax, [rel my_label]     ; relative to instruction pointer
 mov rax, [rip + my_label]   ; alternate syntax
@@ -337,6 +342,13 @@ mov rax, [rip + my_label]   ; alternate syntax
 mov rax, [fs:0]             ; TLS access via FS segment
 mov rax, [gs:0x28]          ; canary via GS segment
 ```
+
+Base and index are chosen as NASM chooses them: a register with a scale
+other than 1 is the index; of two registers times 1, the first written is
+the base unless it was written with a scale (`[rbx*1 + rax]` is
+`[rax + rbx]`); `nosplit` keeps `[rbx*1]` and `[rbx*2]` as an index with a
+32-bit displacement. Two scaled registers, three registers, or a scale
+other than 1, 2, 3, 4, 5, 8 or 9 is an error.
 
 ### AArch64 Addressing Modes
 
