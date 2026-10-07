@@ -92,6 +92,7 @@
 %define EXIT_NONSCALAR_COND    56  ; label ? a : b
 %define EXIT_TIMES_NONCONST    57  ; times with a count not known yet
 %define EXIT_RES_NONCONST      58  ; resb with a count not known yet
+%define EXIT_UNKNOWN_DIRECTIVE 59  ; %name that is no directive
 
 %define EXIT_LD_SCRIPT_404     60  ; linker script file not found
 %define EXIT_LD_SCRIPT_PARSE   61  ; linker script contains syntax errors
