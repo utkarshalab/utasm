@@ -14,6 +14,8 @@
 DEFAULT REL
 
 extern str_len
+extern warn_flush
+extern warn_before_error
 extern global_ctx
 extern error_hint_symbol
 extern error_hint_flush
@@ -117,6 +119,7 @@ error_emit:
     call    error_print_caret_diagnostics
     
     ; EXIT IMMEDIATELY
+    call    warn_before_error
     mov     rdi, 1                 ; status = 1
     mov     rax, 60                ; sys_exit
     syscall
@@ -231,6 +234,7 @@ error_emit_undefined_symbol:
     call    error_hint_flush
 
     ; EXIT IMMEDIATELY, as error_emit does
+    call    warn_before_error
     mov     rdi, 1                 ; status = 1
     mov     rax, 60                ; sys_exit
     syscall
@@ -543,6 +547,7 @@ error_fatal:
     call    error_write_raw
 
 .exit_now:
+    call    warn_before_error
     mov     rax, AMD64_SYS_EXIT
     mov     rdi, EXIT_INTERNAL
     syscall
