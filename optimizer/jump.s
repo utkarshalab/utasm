@@ -132,6 +132,7 @@ rw_removed:         resq 1              ; bytes removed so far in this pass
 rw_passes:          resq 1              ; passes made choosing the sizes
 rw_ends:            resq 1              ; each record's RX_end
 rw_pref:            resq 1              ; bytes removed before each record
+rw_pref_ok:         resb 1              ; rw_pref and rw_ends hold (rx_new)
 
 [SECTION .text]
 
@@ -623,6 +624,9 @@ rx_section:
     jnz     .ret
     mov     [rel rw_recs], rdx
     mov     [rel rw_n], r15
+    mov     qword [rel rw_pref], 0         ; (this section's: not yet)
+    mov     qword [rel rw_ends], 0
+    mov     byte [rel rw_pref_ok], 0
     mov     r9, rdx                        ; r9 = output slot
     xor     ecx, ecx
 .fill:
@@ -759,6 +763,10 @@ rx_section:
     ;      first pass gives them (RELAX_P1). Its layout is what the second
     ;      pass measures forward jumps against. ----
 .first_pass:
+    ; from here rw_ends holds the records' ends and rw_pref, kept up to
+    ; date by the passes and rx_layout, the bytes removed before each:
+    ; rx_new is a binary search
+    mov     byte [rel rw_pref_ok], 1
     mov     qword [rel rw_removed], 0
     mov     rdi, [rel rw_pref]
     mov     qword [rdi], 0
@@ -1045,7 +1053,9 @@ rx_section:
 .ranges_ok:
 
     ; the backward jumps left long are in-place displacements again
+    ; (their records move: rw_ends again)
     call    rx_backward_restore
+    call    rx_fill_ends
     call    rx_layout
 
     ; ---- 4. anything to do? ----
@@ -1486,9 +1496,31 @@ rx_layout:
     mov     [rbx + RX_change], rdx
     add     r8, rdx
     inc     rcx
+    mov     rax, [rel rw_pref]             ; (the bytes removed before the
+    test    rax, rax                       ;  next record, for rx_new)
+    jz      .loop
+    mov     [rax + rcx*8], r8
     jmp     .loop
 .done:
     pop     rbx
+    ret
+
+; rx_fill_ends: rw_ends from the records' RX_end
+rx_fill_ends:
+    mov     r8, [rel rw_ends]
+    test    r8, r8
+    jz      .ret
+    mov     r9, [rel rw_recs]
+    xor     ecx, ecx
+.loop:
+    cmp     rcx, [rel rw_n]
+    jae     .ret
+    mov     rax, [r9 + rcx*8]
+    mov     rax, [rax + RX_end]
+    mov     [r8 + rcx*8], rax
+    inc     rcx
+    jmp     .loop
+.ret:
     ret
 
 ; ---- rx_ub (internal) --------------------
@@ -1519,6 +1551,21 @@ rx_ub:
 ; Input: rdi = old offset. Output: rax = new offset. Clobbers: rdx, r9.
 ;
 rx_new:
+    ; the records ending at or before rdi, and the bytes they removed:
+    ; walking them for every jump and label made relaxation quadratic
+    cmp     byte [rel rw_pref_ok], 0
+    je      .walk
+    push    rcx
+    push    r8
+    call    rx_ub
+    mov     r9, [rel rw_pref]
+    mov     rax, [r9 + rax*8]
+    pop     r8
+    pop     rcx
+    neg     rax
+    add     rax, rdi
+    ret
+.walk:
     xor     eax, eax                       ; bytes removed before rdi
     xor     edx, edx
 .loop:
