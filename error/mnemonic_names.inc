@@ -4,7 +4,7 @@
 ; ============================================================================
 ;
 ; x86-64 mnemonic names as a packed, NUL-separated list, used only for
-; "did you mean" hints (error/hints.s). 1839 unique names.
+; "did you mean" hints (error/hints.s). 1844 unique names.
 
 mnemonic_names_x64:
     db "aaa", 0, "aad", 0, "aam", 0, "aas", 0, "adc", 0, "adcx", 0, "add", 0, "addpd", 0
@@ -165,76 +165,77 @@ mnemonic_names_x64:
     db "xadd", 0, "xbegin", 0, "xchg", 0, "xend", 0, "xgetbv", 0, "xlat", 0, "xlatb", 0, "xor", 0
     db "xorpd", 0, "xorps", 0, "xrelease", 0, "xresldtrk", 0, "xrstor", 0, "xrstors", 0, "xsave", 0, "xsavec", 0
     db "xsaveopt", 0, "xsaves", 0, "xsetbv", 0, "xsusldtrk", 0, "xtest", 0, "vmcall", 0, "vmlaunch", 0, "vmresume", 0
-    db "vmxoff", 0, "vmxon", 0, "vmptrld", 0, "vmptrst", 0, "vmclear", 0, "vmread", 0, "vmwrite", 0, "vmrun", 0
-    db "vmmcall", 0, "vmload", 0, "vmsave", 0, "clgi", 0, "stgi", 0, "invlpga", 0, "skinit", 0, "clzero", 0
-    db "flcw", 0, "vaesenc", 0, "vaesdec", 0, "vaesenclast", 0, "vaesdeclast", 0, "vpclmulqdq", 0, "vaddpd", 0, "femms", 0
-    db "pfadd", 0, "pfcmpeq", 0, "pfmax", 0, "pfmin", 0, "pfrcp", 0, "pfrsqrt", 0, "pi2fd", 0, "vpmacssww", 0
-    db "vpmadcsswd", 0, "vpperm", 0, "vprotb", 0, "vpshab", 0, "eadd", 0, "eblock", 0, "ecreate", 0, "einit", 0
-    db "eenter", 0, "eresume", 0, "egetkey", 0, "cmpeqpd", 0, "cmpeqps", 0, "cmpeqsd", 0, "cmpeqss", 0, "cmplepd", 0
-    db "cmpleps", 0, "cmplesd", 0, "cmpless", 0, "cmpltpd", 0, "cmpltps", 0, "cmpltsd", 0, "cmpltss", 0, "cmpneqpd", 0
-    db "cmpneqps", 0, "cmpneqsd", 0, "cmpneqss", 0, "cmpnlepd", 0, "cmpnleps", 0, "cmpnlesd", 0, "cmpnless", 0, "cmpnltpd", 0
-    db "cmpnltps", 0, "cmpnltsd", 0, "cmpnltss", 0, "cmpordpd", 0, "cmpordps", 0, "cmpordsd", 0, "cmpordss", 0, "cmpunordpd", 0
-    db "cmpunordps", 0, "cmpunordsd", 0, "cmpunordss", 0, "fcmovb", 0, "fcmovbe", 0, "fcmove", 0, "fcmovnb", 0, "fcmovnbe", 0
-    db "fcmovne", 0, "fcmovnu", 0, "fcmovu", 0, "fxrstor64", 0, "fxsave64", 0, "pclmulhqhqdq", 0, "pclmulhqlqdq", 0, "pclmullqhqdq", 0
-    db "pclmullqlqdq", 0, "pmovsxbd", 0, "pmovsxbq", 0, "pmovsxbw", 0, "pmovsxdq", 0, "pmovsxwd", 0, "pmovsxwq", 0, "pmovzxbd", 0
-    db "pmovzxbq", 0, "pmovzxbw", 0, "pmovzxdq", 0, "pmovzxwd", 0, "pmovzxwq", 0, "popfw", 0, "prefetchnta", 0, "prefetcht0", 0
-    db "prefetcht1", 0, "prefetcht2", 0, "pushfw", 0, "ud2", 0, "xrstor64", 0, "xsave64", 0, "vaddps", 0, "vaddsd", 0
-    db "vaddss", 0, "vaddsubpd", 0, "vaddsubps", 0, "vaesimc", 0, "vaeskeygenassist", 0, "vandnpd", 0, "vandnps", 0, "vandpd", 0
-    db "vandps", 0, "vblendpd", 0, "vblendps", 0, "vblendvpd", 0, "vblendvps", 0, "vbroadcastf128", 0, "vbroadcasti128", 0, "vbroadcastsd", 0
-    db "vbroadcastss", 0, "vcmpeq_ospd", 0, "vcmpeq_osps", 0, "vcmpeq_ossd", 0, "vcmpeq_osss", 0, "vcmpeq_uqpd", 0, "vcmpeq_uqps", 0, "vcmpeq_uqsd", 0
-    db "vcmpeq_uqss", 0, "vcmpeq_uspd", 0, "vcmpeq_usps", 0, "vcmpeq_ussd", 0, "vcmpeq_usss", 0, "vcmpeqpd", 0, "vcmpeqps", 0, "vcmpeqsd", 0
-    db "vcmpeqss", 0, "vcmpfalse_ospd", 0, "vcmpfalse_osps", 0, "vcmpfalse_ossd", 0, "vcmpfalse_osss", 0, "vcmpfalsepd", 0, "vcmpfalseps", 0, "vcmpfalsesd", 0
-    db "vcmpfalsess", 0, "vcmpge_oqpd", 0, "vcmpge_oqps", 0, "vcmpge_oqsd", 0, "vcmpge_oqss", 0, "vcmpgepd", 0, "vcmpgeps", 0, "vcmpgesd", 0
-    db "vcmpgess", 0, "vcmpgt_oqpd", 0, "vcmpgt_oqps", 0, "vcmpgt_oqsd", 0, "vcmpgt_oqss", 0, "vcmpgtpd", 0, "vcmpgtps", 0, "vcmpgtsd", 0
-    db "vcmpgtss", 0, "vcmple_oqpd", 0, "vcmple_oqps", 0, "vcmple_oqsd", 0, "vcmple_oqss", 0, "vcmplepd", 0, "vcmpleps", 0, "vcmplesd", 0
-    db "vcmpless", 0, "vcmplt_oqpd", 0, "vcmplt_oqps", 0, "vcmplt_oqsd", 0, "vcmplt_oqss", 0, "vcmpltpd", 0, "vcmpltps", 0, "vcmpltsd", 0
-    db "vcmpltss", 0, "vcmpneq_oqpd", 0, "vcmpneq_oqps", 0, "vcmpneq_oqsd", 0, "vcmpneq_oqss", 0, "vcmpneq_ospd", 0, "vcmpneq_osps", 0, "vcmpneq_ossd", 0
-    db "vcmpneq_osss", 0, "vcmpneq_uspd", 0, "vcmpneq_usps", 0, "vcmpneq_ussd", 0, "vcmpneq_usss", 0, "vcmpneqpd", 0, "vcmpneqps", 0, "vcmpneqsd", 0
-    db "vcmpneqss", 0, "vcmpnge_uqpd", 0, "vcmpnge_uqps", 0, "vcmpnge_uqsd", 0, "vcmpnge_uqss", 0, "vcmpngepd", 0, "vcmpngeps", 0, "vcmpngesd", 0
-    db "vcmpngess", 0, "vcmpngt_uqpd", 0, "vcmpngt_uqps", 0, "vcmpngt_uqsd", 0, "vcmpngt_uqss", 0, "vcmpngtpd", 0, "vcmpngtps", 0, "vcmpngtsd", 0
-    db "vcmpngtss", 0, "vcmpnle_uqpd", 0, "vcmpnle_uqps", 0, "vcmpnle_uqsd", 0, "vcmpnle_uqss", 0, "vcmpnlepd", 0, "vcmpnleps", 0, "vcmpnlesd", 0
-    db "vcmpnless", 0, "vcmpnlt_uqpd", 0, "vcmpnlt_uqps", 0, "vcmpnlt_uqsd", 0, "vcmpnlt_uqss", 0, "vcmpnltpd", 0, "vcmpnltps", 0, "vcmpnltsd", 0
-    db "vcmpnltss", 0, "vcmpord_spd", 0, "vcmpord_sps", 0, "vcmpord_ssd", 0, "vcmpord_sss", 0, "vcmpordpd", 0, "vcmpordps", 0, "vcmpordsd", 0
-    db "vcmpordss", 0, "vcmppd", 0, "vcmpps", 0, "vcmpsd", 0, "vcmpss", 0, "vcmptrue_uspd", 0, "vcmptrue_usps", 0, "vcmptrue_ussd", 0
-    db "vcmptrue_usss", 0, "vcmptruepd", 0, "vcmptrueps", 0, "vcmptruesd", 0, "vcmptruess", 0, "vcmpunord_spd", 0, "vcmpunord_sps", 0, "vcmpunord_ssd", 0
-    db "vcmpunord_sss", 0, "vcmpunordpd", 0, "vcmpunordps", 0, "vcmpunordsd", 0, "vcmpunordss", 0, "vcomisd", 0, "vcomiss", 0, "vcvtdq2pd", 0
-    db "vcvtdq2ps", 0, "vcvtpd2dq", 0, "vcvtpd2ps", 0, "vcvtps2dq", 0, "vcvtps2pd", 0, "vcvtsd2si", 0, "vcvtsd2ss", 0, "vcvtsi2sd", 0
-    db "vcvtsi2ss", 0, "vcvtss2sd", 0, "vcvtss2si", 0, "vcvttpd2dq", 0, "vcvttps2dq", 0, "vcvttsd2si", 0, "vcvttss2si", 0, "vdivpd", 0
-    db "vdivps", 0, "vdivsd", 0, "vdivss", 0, "vdppd", 0, "vdpps", 0, "vextractps", 0, "vfmaddsub132pd", 0, "vfmaddsub132ps", 0
-    db "vfmaddsub213pd", 0, "vfmaddsub213ps", 0, "vfmaddsub231pd", 0, "vfmaddsub231ps", 0, "vhaddpd", 0, "vhaddps", 0, "vhsubpd", 0, "vhsubps", 0
-    db "vinsertps", 0, "vlddqu", 0, "vmaskmovdqu", 0, "vmaskmovpd", 0, "vmaskmovps", 0, "vmaxpd", 0, "vmaxps", 0, "vmaxsd", 0
-    db "vmaxss", 0, "vminpd", 0, "vminps", 0, "vminsd", 0, "vminss", 0, "vmovapd", 0, "vmovaps", 0, "vmovd", 0
-    db "vmovddup", 0, "vmovdqa", 0, "vmovdqu", 0, "vmovhlps", 0, "vmovhpd", 0, "vmovhps", 0, "vmovlhps", 0, "vmovlpd", 0
-    db "vmovlps", 0, "vmovmskpd", 0, "vmovmskps", 0, "vmovntdq", 0, "vmovntdqa", 0, "vmovntpd", 0, "vmovntps", 0, "vmovq", 0
-    db "vmovsd", 0, "vmovshdup", 0, "vmovsldup", 0, "vmovss", 0, "vmovupd", 0, "vmovups", 0, "vmpsadbw", 0, "vmulpd", 0
-    db "vmulps", 0, "vmulsd", 0, "vmulss", 0, "vorpd", 0, "vorps", 0, "vpabsb", 0, "vpabsd", 0, "vpabsw", 0
-    db "vpackssdw", 0, "vpacksswb", 0, "vpackusdw", 0, "vpackuswb", 0, "vpaddb", 0, "vpaddd", 0, "vpaddq", 0, "vpaddsb", 0
-    db "vpaddsw", 0, "vpaddusb", 0, "vpaddusw", 0, "vpaddw", 0, "vpalignr", 0, "vpand", 0, "vpandn", 0, "vpavgb", 0
-    db "vpavgw", 0, "vpblendvb", 0, "vpblendw", 0, "vpclmulhqhqdq", 0, "vpclmulhqlqdq", 0, "vpclmullqhqdq", 0, "vpclmullqlqdq", 0, "vpcmpeqb", 0
-    db "vpcmpeqd", 0, "vpcmpeqq", 0, "vpcmpeqw", 0, "vpcmpestri", 0, "vpcmpestrm", 0, "vpcmpgtb", 0, "vpcmpgtd", 0, "vpcmpgtq", 0
-    db "vpcmpgtw", 0, "vpcmpistri", 0, "vpcmpistrm", 0, "vpextrb", 0, "vpextrd", 0, "vpextrq", 0, "vpextrw", 0, "vphaddd", 0
-    db "vphaddsw", 0, "vphaddw", 0, "vphminposuw", 0, "vphsubd", 0, "vphsubsw", 0, "vphsubw", 0, "vpinsrb", 0, "vpinsrd", 0
-    db "vpinsrq", 0, "vpinsrw", 0, "vpmaddubsw", 0, "vpmaddwd", 0, "vpmaskmovd", 0, "vpmaskmovq", 0, "vpmaxsb", 0, "vpmaxsd", 0
-    db "vpmaxsw", 0, "vpmaxub", 0, "vpmaxud", 0, "vpmaxuw", 0, "vpminsb", 0, "vpminsd", 0, "vpminsw", 0, "vpminub", 0
-    db "vpminud", 0, "vpminuw", 0, "vpmovmskb", 0, "vpmovsxbd", 0, "vpmovsxbq", 0, "vpmovsxbw", 0, "vpmovsxdq", 0, "vpmovsxwd", 0
-    db "vpmovsxwq", 0, "vpmovzxbd", 0, "vpmovzxbq", 0, "vpmovzxbw", 0, "vpmovzxdq", 0, "vpmovzxwd", 0, "vpmovzxwq", 0, "vpmuldq", 0
-    db "vpmulhrsw", 0, "vpmulhuw", 0, "vpmulhw", 0, "vpmulld", 0, "vpmullw", 0, "vpmuludq", 0, "vpor", 0, "vpsadbw", 0
-    db "vpshufb", 0, "vpshufd", 0, "vpshufhw", 0, "vpshuflw", 0, "vpsignb", 0, "vpsignd", 0, "vpsignw", 0, "vpslld", 0
-    db "vpslldq", 0, "vpsllq", 0, "vpsllw", 0, "vpsrad", 0, "vpsraw", 0, "vpsrld", 0, "vpsrldq", 0, "vpsrlq", 0
-    db "vpsrlw", 0, "vpsubb", 0, "vpsubd", 0, "vpsubq", 0, "vpsubsb", 0, "vpsubsw", 0, "vpsubusb", 0, "vpsubusw", 0
-    db "vpsubw", 0, "vptest", 0, "vpunpckhbw", 0, "vpunpckhdq", 0, "vpunpckhqdq", 0, "vpunpckhwd", 0, "vpunpcklbw", 0, "vpunpckldq", 0
-    db "vpunpcklqdq", 0, "vpunpcklwd", 0, "vpxor", 0, "vrcpps", 0, "vrcpss", 0, "vroundpd", 0, "vroundps", 0, "vroundsd", 0
-    db "vroundss", 0, "vrsqrtps", 0, "vrsqrtss", 0, "vshufpd", 0, "vshufps", 0, "vsqrtpd", 0, "vsqrtps", 0, "vsqrtsd", 0
-    db "vsqrtss", 0, "vsubpd", 0, "vsubps", 0, "vsubsd", 0, "vsubss", 0, "vucomisd", 0, "vucomiss", 0, "vunpckhpd", 0
-    db "vunpckhps", 0, "vunpcklpd", 0, "vunpcklps", 0, "vxorpd", 0, "vxorps", 0, "vldmxcsr", 0, "vstmxcsr", 0, "vbroadcastf32x2", 0
-    db "vbroadcastf32x4", 0, "vbroadcastf32x8", 0, "vbroadcastf64x2", 0, "vbroadcastf64x4", 0, "vbroadcasti32x2", 0, "vbroadcasti32x4", 0, "vbroadcasti32x8", 0, "vbroadcasti64x2", 0
-    db "vbroadcasti64x4", 0, "vgf2p8affineinvqb", 0, "vgf2p8affineqb", 0, "vgf2p8mulb", 0, "vpabsq", 0, "vpandd", 0, "vpandnd", 0, "vpandnq", 0
-    db "vpandq", 0, "vpcmpequb", 0, "vpcmpequd", 0, "vpcmpequq", 0, "vpcmpequw", 0, "vpcmpleb", 0, "vpcmpled", 0, "vpcmpleq", 0
-    db "vpcmpleub", 0, "vpcmpleud", 0, "vpcmpleuq", 0, "vpcmpleuw", 0, "vpcmplew", 0, "vpcmpltb", 0, "vpcmpltd", 0, "vpcmpltq", 0
-    db "vpcmpltub", 0, "vpcmpltud", 0, "vpcmpltuq", 0, "vpcmpltuw", 0, "vpcmpltw", 0, "vpcmpneqb", 0, "vpcmpneqd", 0, "vpcmpneqq", 0
-    db "vpcmpnequb", 0, "vpcmpnequd", 0, "vpcmpnequq", 0, "vpcmpnequw", 0, "vpcmpneqw", 0, "vpcmpnleb", 0, "vpcmpnled", 0, "vpcmpnleq", 0
-    db "vpcmpnleub", 0, "vpcmpnleud", 0, "vpcmpnleuq", 0, "vpcmpnleuw", 0, "vpcmpnlew", 0, "vpcmpnltb", 0, "vpcmpnltd", 0, "vpcmpnltq", 0
-    db "vpcmpnltub", 0, "vpcmpnltud", 0, "vpcmpnltuq", 0, "vpcmpnltuw", 0, "vpcmpnltw", 0, "vpmaxsq", 0, "vpmaxuq", 0, "vpminsq", 0
-    db "vpminuq", 0, "vpmullq", 0, "vpord", 0, "vporq", 0, "vpsraq", 0, "vpxord", 0, "vpxorq", 0, "loope", 0
-    db "loopz", 0, "loopne", 0, "loopnz", 0, "jecxz", 0, "jrcxz", 0, "sysexitq", 0, "sysretq", 0
+    db "vmxoff", 0, "vmxon", 0, "vmptrld", 0, "vmptrst", 0, "vmclear", 0, "vmread", 0, "vmwrite", 0, "vmfunc", 0
+    db "vmrun", 0, "vmmcall", 0, "vmload", 0, "vmsave", 0, "clgi", 0, "stgi", 0, "invlpga", 0, "skinit", 0
+    db "clzero", 0, "flcw", 0, "vaesenc", 0, "vaesdec", 0, "vaesenclast", 0, "vaesdeclast", 0, "vpclmulqdq", 0, "vaddpd", 0
+    db "femms", 0, "pfadd", 0, "pfcmpeq", 0, "pfmax", 0, "pfmin", 0, "pfrcp", 0, "pfrsqrt", 0, "pi2fd", 0
+    db "vpmacssww", 0, "vpmadcsswd", 0, "vpperm", 0, "vprotb", 0, "vpshab", 0, "eadd", 0, "eblock", 0, "ecreate", 0
+    db "einit", 0, "eenter", 0, "eresume", 0, "egetkey", 0, "cmpeqpd", 0, "cmpeqps", 0, "cmpeqsd", 0, "cmpeqss", 0
+    db "cmplepd", 0, "cmpleps", 0, "cmplesd", 0, "cmpless", 0, "cmpltpd", 0, "cmpltps", 0, "cmpltsd", 0, "cmpltss", 0
+    db "cmpneqpd", 0, "cmpneqps", 0, "cmpneqsd", 0, "cmpneqss", 0, "cmpnlepd", 0, "cmpnleps", 0, "cmpnlesd", 0, "cmpnless", 0
+    db "cmpnltpd", 0, "cmpnltps", 0, "cmpnltsd", 0, "cmpnltss", 0, "cmpordpd", 0, "cmpordps", 0, "cmpordsd", 0, "cmpordss", 0
+    db "cmpunordpd", 0, "cmpunordps", 0, "cmpunordsd", 0, "cmpunordss", 0, "fcmovb", 0, "fcmovbe", 0, "fcmove", 0, "fcmovnb", 0
+    db "fcmovnbe", 0, "fcmovne", 0, "fcmovnu", 0, "fcmovu", 0, "fxrstor64", 0, "fxsave64", 0, "pclmulhqhqdq", 0, "pclmulhqlqdq", 0
+    db "pclmullqhqdq", 0, "pclmullqlqdq", 0, "pmovsxbd", 0, "pmovsxbq", 0, "pmovsxbw", 0, "pmovsxdq", 0, "pmovsxwd", 0, "pmovsxwq", 0
+    db "pmovzxbd", 0, "pmovzxbq", 0, "pmovzxbw", 0, "pmovzxdq", 0, "pmovzxwd", 0, "pmovzxwq", 0, "popfw", 0, "prefetchnta", 0
+    db "prefetcht0", 0, "prefetcht1", 0, "prefetcht2", 0, "pushfw", 0, "ud2", 0, "xrstor64", 0, "xsave64", 0, "vaddps", 0
+    db "vaddsd", 0, "vaddss", 0, "vaddsubpd", 0, "vaddsubps", 0, "vaesimc", 0, "vaeskeygenassist", 0, "vandnpd", 0, "vandnps", 0
+    db "vandpd", 0, "vandps", 0, "vblendpd", 0, "vblendps", 0, "vblendvpd", 0, "vblendvps", 0, "vbroadcastf128", 0, "vbroadcasti128", 0
+    db "vbroadcastsd", 0, "vbroadcastss", 0, "vcmpeq_ospd", 0, "vcmpeq_osps", 0, "vcmpeq_ossd", 0, "vcmpeq_osss", 0, "vcmpeq_uqpd", 0, "vcmpeq_uqps", 0
+    db "vcmpeq_uqsd", 0, "vcmpeq_uqss", 0, "vcmpeq_uspd", 0, "vcmpeq_usps", 0, "vcmpeq_ussd", 0, "vcmpeq_usss", 0, "vcmpeqpd", 0, "vcmpeqps", 0
+    db "vcmpeqsd", 0, "vcmpeqss", 0, "vcmpfalse_ospd", 0, "vcmpfalse_osps", 0, "vcmpfalse_ossd", 0, "vcmpfalse_osss", 0, "vcmpfalsepd", 0, "vcmpfalseps", 0
+    db "vcmpfalsesd", 0, "vcmpfalsess", 0, "vcmpge_oqpd", 0, "vcmpge_oqps", 0, "vcmpge_oqsd", 0, "vcmpge_oqss", 0, "vcmpgepd", 0, "vcmpgeps", 0
+    db "vcmpgesd", 0, "vcmpgess", 0, "vcmpgt_oqpd", 0, "vcmpgt_oqps", 0, "vcmpgt_oqsd", 0, "vcmpgt_oqss", 0, "vcmpgtpd", 0, "vcmpgtps", 0
+    db "vcmpgtsd", 0, "vcmpgtss", 0, "vcmple_oqpd", 0, "vcmple_oqps", 0, "vcmple_oqsd", 0, "vcmple_oqss", 0, "vcmplepd", 0, "vcmpleps", 0
+    db "vcmplesd", 0, "vcmpless", 0, "vcmplt_oqpd", 0, "vcmplt_oqps", 0, "vcmplt_oqsd", 0, "vcmplt_oqss", 0, "vcmpltpd", 0, "vcmpltps", 0
+    db "vcmpltsd", 0, "vcmpltss", 0, "vcmpneq_oqpd", 0, "vcmpneq_oqps", 0, "vcmpneq_oqsd", 0, "vcmpneq_oqss", 0, "vcmpneq_ospd", 0, "vcmpneq_osps", 0
+    db "vcmpneq_ossd", 0, "vcmpneq_osss", 0, "vcmpneq_uspd", 0, "vcmpneq_usps", 0, "vcmpneq_ussd", 0, "vcmpneq_usss", 0, "vcmpneqpd", 0, "vcmpneqps", 0
+    db "vcmpneqsd", 0, "vcmpneqss", 0, "vcmpnge_uqpd", 0, "vcmpnge_uqps", 0, "vcmpnge_uqsd", 0, "vcmpnge_uqss", 0, "vcmpngepd", 0, "vcmpngeps", 0
+    db "vcmpngesd", 0, "vcmpngess", 0, "vcmpngt_uqpd", 0, "vcmpngt_uqps", 0, "vcmpngt_uqsd", 0, "vcmpngt_uqss", 0, "vcmpngtpd", 0, "vcmpngtps", 0
+    db "vcmpngtsd", 0, "vcmpngtss", 0, "vcmpnle_uqpd", 0, "vcmpnle_uqps", 0, "vcmpnle_uqsd", 0, "vcmpnle_uqss", 0, "vcmpnlepd", 0, "vcmpnleps", 0
+    db "vcmpnlesd", 0, "vcmpnless", 0, "vcmpnlt_uqpd", 0, "vcmpnlt_uqps", 0, "vcmpnlt_uqsd", 0, "vcmpnlt_uqss", 0, "vcmpnltpd", 0, "vcmpnltps", 0
+    db "vcmpnltsd", 0, "vcmpnltss", 0, "vcmpord_spd", 0, "vcmpord_sps", 0, "vcmpord_ssd", 0, "vcmpord_sss", 0, "vcmpordpd", 0, "vcmpordps", 0
+    db "vcmpordsd", 0, "vcmpordss", 0, "vcmppd", 0, "vcmpps", 0, "vcmpsd", 0, "vcmpss", 0, "vcmptrue_uspd", 0, "vcmptrue_usps", 0
+    db "vcmptrue_ussd", 0, "vcmptrue_usss", 0, "vcmptruepd", 0, "vcmptrueps", 0, "vcmptruesd", 0, "vcmptruess", 0, "vcmpunord_spd", 0, "vcmpunord_sps", 0
+    db "vcmpunord_ssd", 0, "vcmpunord_sss", 0, "vcmpunordpd", 0, "vcmpunordps", 0, "vcmpunordsd", 0, "vcmpunordss", 0, "vcomisd", 0, "vcomiss", 0
+    db "vcvtdq2pd", 0, "vcvtdq2ps", 0, "vcvtpd2dq", 0, "vcvtpd2ps", 0, "vcvtps2dq", 0, "vcvtps2pd", 0, "vcvtsd2si", 0, "vcvtsd2ss", 0
+    db "vcvtsi2sd", 0, "vcvtsi2ss", 0, "vcvtss2sd", 0, "vcvtss2si", 0, "vcvttpd2dq", 0, "vcvttps2dq", 0, "vcvttsd2si", 0, "vcvttss2si", 0
+    db "vdivpd", 0, "vdivps", 0, "vdivsd", 0, "vdivss", 0, "vdppd", 0, "vdpps", 0, "vextractps", 0, "vfmaddsub132pd", 0
+    db "vfmaddsub132ps", 0, "vfmaddsub213pd", 0, "vfmaddsub213ps", 0, "vfmaddsub231pd", 0, "vfmaddsub231ps", 0, "vhaddpd", 0, "vhaddps", 0, "vhsubpd", 0
+    db "vhsubps", 0, "vinsertps", 0, "vlddqu", 0, "vmaskmovdqu", 0, "vmaskmovpd", 0, "vmaskmovps", 0, "vmaxpd", 0, "vmaxps", 0
+    db "vmaxsd", 0, "vmaxss", 0, "vminpd", 0, "vminps", 0, "vminsd", 0, "vminss", 0, "vmovapd", 0, "vmovaps", 0
+    db "vmovd", 0, "vmovddup", 0, "vmovdqa", 0, "vmovdqu", 0, "vmovhlps", 0, "vmovhpd", 0, "vmovhps", 0, "vmovlhps", 0
+    db "vmovlpd", 0, "vmovlps", 0, "vmovmskpd", 0, "vmovmskps", 0, "vmovntdq", 0, "vmovntdqa", 0, "vmovntpd", 0, "vmovntps", 0
+    db "vmovq", 0, "vmovsd", 0, "vmovshdup", 0, "vmovsldup", 0, "vmovss", 0, "vmovupd", 0, "vmovups", 0, "vmpsadbw", 0
+    db "vmulpd", 0, "vmulps", 0, "vmulsd", 0, "vmulss", 0, "vorpd", 0, "vorps", 0, "vpabsb", 0, "vpabsd", 0
+    db "vpabsw", 0, "vpackssdw", 0, "vpacksswb", 0, "vpackusdw", 0, "vpackuswb", 0, "vpaddb", 0, "vpaddd", 0, "vpaddq", 0
+    db "vpaddsb", 0, "vpaddsw", 0, "vpaddusb", 0, "vpaddusw", 0, "vpaddw", 0, "vpalignr", 0, "vpand", 0, "vpandn", 0
+    db "vpavgb", 0, "vpavgw", 0, "vpblendvb", 0, "vpblendw", 0, "vpclmulhqhqdq", 0, "vpclmulhqlqdq", 0, "vpclmullqhqdq", 0, "vpclmullqlqdq", 0
+    db "vpcmpeqb", 0, "vpcmpeqd", 0, "vpcmpeqq", 0, "vpcmpeqw", 0, "vpcmpestri", 0, "vpcmpestrm", 0, "vpcmpgtb", 0, "vpcmpgtd", 0
+    db "vpcmpgtq", 0, "vpcmpgtw", 0, "vpcmpistri", 0, "vpcmpistrm", 0, "vpextrb", 0, "vpextrd", 0, "vpextrq", 0, "vpextrw", 0
+    db "vphaddd", 0, "vphaddsw", 0, "vphaddw", 0, "vphminposuw", 0, "vphsubd", 0, "vphsubsw", 0, "vphsubw", 0, "vpinsrb", 0
+    db "vpinsrd", 0, "vpinsrq", 0, "vpinsrw", 0, "vpmaddubsw", 0, "vpmaddwd", 0, "vpmaskmovd", 0, "vpmaskmovq", 0, "vpmaxsb", 0
+    db "vpmaxsd", 0, "vpmaxsw", 0, "vpmaxub", 0, "vpmaxud", 0, "vpmaxuw", 0, "vpminsb", 0, "vpminsd", 0, "vpminsw", 0
+    db "vpminub", 0, "vpminud", 0, "vpminuw", 0, "vpmovmskb", 0, "vpmovsxbd", 0, "vpmovsxbq", 0, "vpmovsxbw", 0, "vpmovsxdq", 0
+    db "vpmovsxwd", 0, "vpmovsxwq", 0, "vpmovzxbd", 0, "vpmovzxbq", 0, "vpmovzxbw", 0, "vpmovzxdq", 0, "vpmovzxwd", 0, "vpmovzxwq", 0
+    db "vpmuldq", 0, "vpmulhrsw", 0, "vpmulhuw", 0, "vpmulhw", 0, "vpmulld", 0, "vpmullw", 0, "vpmuludq", 0, "vpor", 0
+    db "vpsadbw", 0, "vpshufb", 0, "vpshufd", 0, "vpshufhw", 0, "vpshuflw", 0, "vpsignb", 0, "vpsignd", 0, "vpsignw", 0
+    db "vpslld", 0, "vpslldq", 0, "vpsllq", 0, "vpsllw", 0, "vpsrad", 0, "vpsraw", 0, "vpsrld", 0, "vpsrldq", 0
+    db "vpsrlq", 0, "vpsrlw", 0, "vpsubb", 0, "vpsubd", 0, "vpsubq", 0, "vpsubsb", 0, "vpsubsw", 0, "vpsubusb", 0
+    db "vpsubusw", 0, "vpsubw", 0, "vptest", 0, "vpunpckhbw", 0, "vpunpckhdq", 0, "vpunpckhqdq", 0, "vpunpckhwd", 0, "vpunpcklbw", 0
+    db "vpunpckldq", 0, "vpunpcklqdq", 0, "vpunpcklwd", 0, "vpxor", 0, "vrcpps", 0, "vrcpss", 0, "vroundpd", 0, "vroundps", 0
+    db "vroundsd", 0, "vroundss", 0, "vrsqrtps", 0, "vrsqrtss", 0, "vshufpd", 0, "vshufps", 0, "vsqrtpd", 0, "vsqrtps", 0
+    db "vsqrtsd", 0, "vsqrtss", 0, "vsubpd", 0, "vsubps", 0, "vsubsd", 0, "vsubss", 0, "vucomisd", 0, "vucomiss", 0
+    db "vunpckhpd", 0, "vunpckhps", 0, "vunpcklpd", 0, "vunpcklps", 0, "vxorpd", 0, "vxorps", 0, "vldmxcsr", 0, "vstmxcsr", 0
+    db "vbroadcastf32x2", 0, "vbroadcastf32x4", 0, "vbroadcastf32x8", 0, "vbroadcastf64x2", 0, "vbroadcastf64x4", 0, "vbroadcasti32x2", 0, "vbroadcasti32x4", 0, "vbroadcasti32x8", 0
+    db "vbroadcasti64x2", 0, "vbroadcasti64x4", 0, "vgf2p8affineinvqb", 0, "vgf2p8affineqb", 0, "vgf2p8mulb", 0, "vpabsq", 0, "vpandd", 0, "vpandnd", 0
+    db "vpandnq", 0, "vpandq", 0, "vpcmpequb", 0, "vpcmpequd", 0, "vpcmpequq", 0, "vpcmpequw", 0, "vpcmpleb", 0, "vpcmpled", 0
+    db "vpcmpleq", 0, "vpcmpleub", 0, "vpcmpleud", 0, "vpcmpleuq", 0, "vpcmpleuw", 0, "vpcmplew", 0, "vpcmpltb", 0, "vpcmpltd", 0
+    db "vpcmpltq", 0, "vpcmpltub", 0, "vpcmpltud", 0, "vpcmpltuq", 0, "vpcmpltuw", 0, "vpcmpltw", 0, "vpcmpneqb", 0, "vpcmpneqd", 0
+    db "vpcmpneqq", 0, "vpcmpnequb", 0, "vpcmpnequd", 0, "vpcmpnequq", 0, "vpcmpnequw", 0, "vpcmpneqw", 0, "vpcmpnleb", 0, "vpcmpnled", 0
+    db "vpcmpnleq", 0, "vpcmpnleub", 0, "vpcmpnleud", 0, "vpcmpnleuq", 0, "vpcmpnleuw", 0, "vpcmpnlew", 0, "vpcmpnltb", 0, "vpcmpnltd", 0
+    db "vpcmpnltq", 0, "vpcmpnltub", 0, "vpcmpnltud", 0, "vpcmpnltuq", 0, "vpcmpnltuw", 0, "vpcmpnltw", 0, "vpmaxsq", 0, "vpmaxuq", 0
+    db "vpminsq", 0, "vpminuq", 0, "vpmullq", 0, "vpord", 0, "vporq", 0, "vpsraq", 0, "vpxord", 0, "vpxorq", 0
+    db "loope", 0, "loopz", 0, "loopne", 0, "loopnz", 0, "jecxz", 0, "jrcxz", 0, "sysexitq", 0, "sysretq", 0
+    db "retf", 0, "retfq", 0, "retn", 0, "jcxz", 0
 mnemonic_names_x64_end:
