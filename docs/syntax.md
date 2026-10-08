@@ -458,7 +458,8 @@ the form NASM gives it: `push dword (table_end - table) / 4` is `6A ib`,
 value once the code is laid out; one that measures its own instruction
 (`s: push dword (e - s)`) keeps the long form, where NASM converges on the
 short one. Where the value is needed when the line is read - the count of
-`times` or `resb`, an `equ` - a label defined later is an error.
+`times` or `resb` - the first reading goes on without it and the second
+one knows it; a name that is never defined is an error there.
 
 ---
 
@@ -505,10 +506,22 @@ any other number is a constant; a label plus or minus a number is that
 label's section again (it is relocated like a label, and moves with it
 when jumps are shortened). A constant may be used before its `equ` line
 (`mov ecx, msg_len` above `msg_len equ ...`): its value is written in place
-when the object is finished. utasm reads the source once, though, so the
-`equ` expression itself cannot use a label defined after it
-(`len equ end - start` above `end:`): that is an error naming the label,
-where NASM, which reads the source again, would accept it.
+when the object is finished. The `equ` expression may itself use what is
+defined after it, as in NASM:
+
+```asm
+len      equ end - start            ; labels further on
+size     equ len * 2                ; an equ further on
+start:   db "hello"
+end:
+```
+
+Such an `equ` is worked out once every label is placed, and an
+instruction that uses it gets the form NASM gives it (`add ecx, len` takes
+an imm8): utasm reads the source again knowing the value, and checks it
+once the code is laid out. A name that is never defined is an error at the
+`equ` line, and so are `equ`s that name each other (`a equ b`, `b equ a`),
+which NASM takes as 0.
 
 ---
 
