@@ -497,14 +497,17 @@ leaves the programmer alone:
 
   | input | NASM | utasm |
   |---|---|---|
-  | 200,000 lines of instructions | 1.42 s | 0.44 s |
-  | 200,000 lines of macro calls | 1.88 s | 0.79 s |
-  | 100,000 labelled data lines | 1.56 s | 0.65 s |
-  | 20,000 jumps among labels | 9.32 s | 1.00 s |
-  | 100,000 jumps among labels | 214 s | 6.2 s |
+  | 200,000 lines of instructions | 1.48 s | 0.45 s |
+  | 200,000 lines of macro calls | 2.08 s | 0.77 s |
+  | 100,000 labelled data lines | 1.53 s | 0.55 s |
+  | utasm's own 288 source files | 5.76 s | 1.87 s |
+  | 20,000 jumps among labels | 9.91 s | 0.21 s |
+  | 100,000 jumps among labels | 214 s | 2.1 s |
 
-  NASM's passes grow with the square of the jumps; utasm sizes them
-  in passes of its own, each a binary search per jump.
+  NASM's passes grow with the square of the jumps. utasm makes the same
+  passes, for the same sizes, but each is one walk over the jumps with
+  no searching. At `-O2` it finds the fewest long jumps instead, in one
+  look per jump that grows: 0.7 s for the 100,000.
 - **It is one pass.** No `-O` passes over the source; labels used before
   their definition are worked out at the end, and an instruction that
   uses one gets NASM's short form through a checked second pass.
