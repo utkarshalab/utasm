@@ -598,12 +598,33 @@ EXPR_ELF = {
     "elf_text": "section .text\nmov eax, (l2 - l1) / 4\nl1: dd 1, 2\nl2:\n",
     "elf_two_items": "section .data\ndq (l2 - l1) * 8, (l2 - l1)\nl1: dd 1, 2\nl2:\n",
 }
-# NASM, which reads the source again, takes these; utasm cannot (the value
-# is needed when the line is read): an error, never a wrong value
-EXPR_REJECT = {
+# the value needed when the line is read, a label defined later: pass 1
+# goes on without it, pass 2 knows it (an equ: worked out once the code is
+# laid out - parser_late_equs)
+EXPR_BIN.update({
     "times_count": "bits 32\ntimes (l2 - l1) / 4 db 0" + _T,
     "resb_count": "bits 32\nsection .bss\nresb (l2 - l1) / 4\nsection .text" + _T,
     "equ_before": "bits 32\nn equ (l2 - l1) / 4\ndd n" + _T,
+    "equ_later_imm8": "bits 64\nadd ecx, len\nx: db 1,2,3\nlen equ y - x\ny:\n",
+    "equ_later_chain": "bits 64\nmov eax, a\na equ b + 1\nb equ y - x\nx: times 5 nop\ny:\nadd eax, a\n",
+    "equ_later_chain_rev": "bits 64\nadd eax, a\nb equ a * 2\na equ y - x\nx: nop\ny:\nadd eax, b\n",
+    "equ_later_disp8": "bits 64\nmov eax, [rbx + len]\nlen equ y - x\nx: times 10 nop\ny:\n",
+    "equ_later_jumps": "bits 64\nadd ecx, len\nlen equ y - x\nx: jmp z\ntimes 122 nop\nz: nop\ny:\n",
+    "equ_later_const": "bits 64\nmov eax, [rbx + off]\noff equ base + 8\nbase equ 16\n",
+    "equ_used_before": "bits 64\nmov eax, x\nmov ebx, k\nx equ k + 1\nk equ 3\n",
+    "equ_later_alias": "bits 64\ndq p\np equ y\nsection .data\ny: dd 1\n",
+    "times_later_labels": "bits 64\ntimes y - x nop\nx: db 1,2\ny:\n",
+    "resb_later_equ": "bits 64\nsection .bss\nresb n\nn equ 3\nresb 1\n",
+})
+EXPR_ELF.update({
+    "elf_equ_later": "section .text\nadd ecx, len\nlen equ y - x\nx: db 1,2,3\ny:\nmov eax, a\na equ len * 2\n",
+    "elf_equ_later_alias": "section .text\ndq p\np equ y + 4\nsection .data\ny: dd 1, 2\n",
+})
+# names never defined, or equs naming each other: an error, never a value
+EXPR_REJECT = {
+    "equ_undefined": "bits 64\nlen equ nothere + 1\nmov eax, len\n",
+    "equ_circular": "bits 64\na equ b\nb equ a\nmov eax, a\n",
+    "times_undefined": "bits 64\ntimes nothere nop\n",
 }
 # each with the label defined before and after it, as bin and elf64
 SCALAR_EXPRS = ["l1 * 2", "2 * l1", "-l1", "~l1", "!l1", "l1 | 1", "l1 ^ 1", "l1 & 0xff",
