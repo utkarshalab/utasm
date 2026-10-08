@@ -786,3 +786,21 @@ BIN_PROBES.update({
     "pp_macro_empty_default": "%macro s 1-3 5\ndb %1, %2, %3\n%endmacro\ns 1\ns 1, 2\ns 1, 2, 3\n",
     "dir_data_trailing_comma": "db 1,\ndw 2, \ndd 3, 4,\ndq 5,\ndt 1.0,\ndb 'ab',\ntimes 2 db 6,\n",
 })
+
+
+# labels defined later, in instructions: the short forms NASM gives once it
+# knows the value (the second pass, core/known.s)
+EXPR_BIN.update({
+    "distance_imm": "bits 64\nadd rsp, (l2 - l1)\nnop\nl1: times 16 db 0\nl2:\n",
+    "distance_disp": "bits 64\nmov eax, [rbx + (l2 - l1)]\nl1: dd 1\nl2:\n",
+    "distance_in_macro": "bits 64\n%macro m 0\npush (%%e - %%s)\n%%s: times 3 nop\n%%e:\n%endmacro\nm\nm\nm\n",
+    "distance_and_equ": "bits 64\nmov eax, LATER\nLATER equ 5\npush (l2 - l1)\nl1: nop\nl2:\n",
+    "cmp_then_jump": "bits 64\ncmp eax, (l2 - l1) / 4\njz l1\nl1: dd 1, 2\nl2:\n",
+    "imm_across_jumps": "bits 64\nmov ecx, (le - ls) / 2\nadd rsp, (le - ls)\nls:\n" +
+                        "".join("jz e%d\nnop\ne%d:\n" % (i, i) for i in range(12)) + "le:\n",
+    "self_push": "bits 64\ns: push dword (e - s)\ne:\n",
+    "self_add": "bits 64\ns: add eax, (e - s) * 30\ne:\n",
+})
+EXPR_ELF.update({
+    "elf_distance_imm": "section .text\nadd rsp, (l2 - l1)\nsub rsp, (l2 - l1) / 2\nl1: times 20 db 0\nl2:\n",
+})
