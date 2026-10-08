@@ -67,7 +67,7 @@ only64:
 ; mnemonics that exist only outside 64-bit mode
 only_legacy:
     dw 1584, 1535, 1585, 1536, 1116, 1117, 1000, 1003, 1002, 1001, 1289
-    dw 1050, 1034, 1358, 1354
+    dw 1050, 1034, 1358, 1354, 6536
     dw 0
 ; fixed one-byte instructions with an operand size: id, opcode, size
 ; (0 = the mode's default width)
@@ -230,6 +230,134 @@ amd64_emit_osz_prefix:
     mov     al, 0x66
     jmp     amd64_emit_byte
 
+; ---- amd64_asize_mem ---------------------
+;
+; amd64_asize_mem
+; An a16 / a32 written before an address of no register ("a32 mov al,
+; [0]"): the address has that width - its displacement, its moffs.
+; Input    : r12 = INST. Clobbers rax, rcx, rdx, rdi
+;
+global amd64_asize_mem
+amd64_asize_mem:
+    movzx   eax, byte [r12 + INST_asize]
+    test    eax, eax
+    jz      .done
+    cmp     al, [rel asm_bits]
+    je      .done                          ; the mode's own
+    mov     edx, OP_FLAG_ADDR16
+    cmp     eax, 16
+    je      .ops
+    mov     edx, OP_FLAG_ADDR32
+    cmp     eax, 32
+    jne     .done
+.ops:
+    xor     ecx, ecx
+.op:
+    movzx   eax, byte [r12 + INST_nops]
+    cmp     ecx, eax
+    jae     .done
+    imul    rdi, rcx, OPERAND_SIZE
+    lea     rdi, [r12 + INST_op0 + rdi]
+    inc     ecx
+    cmp     byte [rdi + OPERAND_kind], OP_MEM
+    jne     .op
+    cmp     byte [rdi + OPERAND_base], 0xFF
+    jne     .op
+    cmp     byte [rdi + OPERAND_index], 0xFF
+    jne     .op
+    or      [rdi + OPERAND_flags], dl
+    jmp     .op
+.done:
+    ret
+
+; ---- amd64_count_size --------------------
+;
+; amd64_count_size
+; The count register of jcxz / jecxz / jrcxz / loop (cx, ecx, rcx) is the
+; address size: edi = the one the mnemonic names (16, 32, 64), or 0 for a
+; loop (its second operand's, "loop l, ecx", if written). A 67 goes out
+; when it is not the mode's own and an a16 / a32 did not put one there;
+; rcx outside 64-bit code, cx in it: NASM's error.
+; Input    : rbx = AsmCtx, r12 = INST, edi
+; Output   : rax = 0 or the error
+;
+global amd64_count_size
+amd64_count_size:
+    mov     eax, edi
+    test    eax, eax
+    jnz     .have
+    cmp     byte [r12 + INST_nops], 2
+    jb      .none
+    cmp     byte [r12 + INST_op1 + OPERAND_kind], OP_REG
+    jne     .none
+    cmp     byte [r12 + INST_op1 + OPERAND_reg], 1
+    jne     .none                          ; (only rcx / ecx / cx count)
+    movzx   eax, byte [r12 + INST_op1 + OPERAND_size]
+.have:
+    movzx   ecx, byte [rel asm_bits]
+    cmp     eax, ecx
+    je      .none
+    cmp     eax, 64
+    je      .bad                           ; rcx outside 64-bit code
+    cmp     ecx, 64
+    jne     .prefix
+    cmp     eax, 16
+    je      .bad                           ; cx in 64-bit code
+.prefix:
+    xor     ecx, ecx
+.written:
+    cmp     byte [r12 + INST_prefixes + rcx], 0x67
+    je      .none                          ; a16 / a32 put it there
+    inc     ecx
+    cmp     ecx, 4
+    jb      .written
+    mov     al, 0x67
+    call    amd64_emit_byte
+.none:
+    xor     eax, eax
+    ret
+.bad:
+    jmp     amd64_bits_error
+
+; ---- amd64_bits_error (internal) --------
+; EXIT_BITS_MODE, its message naming the mode: "instruction not supported
+; in 64-bit mode", as NASM's. Output: eax. Preserves the others.
+amd64_bits_error:
+    push    rcx
+    push    rdx
+    push    rsi
+    push    rdi
+    push    r8
+    push    r9
+    push    r10
+    push    r11
+    lea     rdi, [rel s_mode64]
+    cmp     byte [rel asm_bits], 64
+    je      .named
+    lea     rdi, [rel s_mode32]
+    cmp     byte [rel asm_bits], 32
+    je      .named
+    lea     rdi, [rel s_mode16]
+.named:
+    extern  error_set_subject
+    call    error_set_subject
+    pop     r11
+    pop     r10
+    pop     r9
+    pop     r8
+    pop     rdi
+    pop     rsi
+    pop     rdx
+    pop     rcx
+    mov     eax, EXIT_BITS_MODE
+    ret
+
+[SECTION .rodata]
+s_mode64:       db "64-bit", 0
+s_mode32:       db "32-bit", 0
+s_mode16:       db "16-bit", 0
+[SECTION .text]
+
 ;*
 ; * [amd64_mode_check]
 ; * Purpose: Outside 64-bit mode, reject what does not exist there.
@@ -298,17 +426,17 @@ amd64_mode_check:
     movzx   eax, byte [rdi + OPERAND_reg]
     cmp     eax, 16
     jae     .not_gpr
-    cmp     eax, 8
-    jae     .fail                          ; r8 - r15
     cmp     byte [rdi + OPERAND_size], 64
-    je      .fail
+    je      .fail                          ; rax, r8: a 64-bit operation
+    cmp     eax, 8
+    jae     .fail_operands                 ; r8d - r15d, r8w, r8b
     cmp     byte [rdi + OPERAND_size], 8
     jne     .op
     cmp     byte [rdi + OPERAND_is_high], 0
     jne     .op
     cmp     eax, 4
     jb      .op
-    jmp     .fail                          ; spl bpl sil dil
+    jmp     .fail_operands                 ; spl bpl sil dil
 .not_gpr:
     cmp     eax, 40
     je      .fail                          ; cr8
@@ -319,7 +447,7 @@ amd64_mode_check:
     sub     eax, 80
     and     eax, 31
     cmp     eax, 8
-    jae     .fail                          ; xmm8-31
+    jae     .fail_operands                 ; xmm8-31
     jmp     .op
 .mem:
     ; [rel x]: no RIP-relative addressing here, x is an absolute address
@@ -340,13 +468,13 @@ amd64_mode_check:
     cmp     eax, 0xFF
     je      .mem_index
     cmp     eax, 8
-    jae     .fail                          ; r8d - r15d
+    jae     .fail_operands                 ; r8d - r15d
 .mem_index:
     movzx   eax, byte [rdi + OPERAND_index]
     cmp     eax, 0xFF
     je      .op
     cmp     eax, 8
-    jae     .fail
+    jae     .fail_operands
     jmp     .op
 
 .mode64:
@@ -366,13 +494,20 @@ amd64_mode_check:
     cmp     byte [rdi + OPERAND_kind], OP_MEM
     jne     .op64
     test    byte [rdi + OPERAND_flags], OP_FLAG_ADDR16
-    jnz     .fail
+    jnz     .fail_addr16
     jmp     .op64
 .ok:
     xor     eax, eax
     ret
 .fail:
-    mov     eax, EXIT_BITS_MODE
+    jmp     amd64_bits_error
+.fail_operands:
+    ; a register only 64-bit mode has, in an operation that exists here
+    mov     eax, EXIT_NON64_OPERANDS
+    ret
+.fail_addr16:
+    ; [bx] in 64-bit mode: NASM's message
+    mov     eax, EXIT_EA_SIZE_MIX
     ret
 
 ; .listed: is mnemonic id eax in the 0-ended dw list rsi? (ZF clear: yes)
@@ -532,8 +667,7 @@ amd64_rex_scan:
     and     eax, 0xF0
     cmp     eax, 0x40
     jne     .ok
-    mov     eax, EXIT_BITS_MODE
-    ret
+    jmp     amd64_bits_error
 .ok:
     xor     eax, eax
     ret
@@ -584,7 +718,17 @@ amd64_mode_special:
 .not_far:
     cmp     byte [rel asm_bits], 64
     jne     .any_mode
-    ; 64-bit mode: only ins / outs, which the encoders do not have
+    ; 64-bit mode: "a32 mov eax, [0x10]" takes A0-A3 with a 32-bit address,
+    ; as NASM writes it; and ins / outs, which the encoders do not have
+    cmp     r13d, ID_MOV
+    jne     .not_mov64
+    cmp     byte [r12 + INST_asize], 32
+    jne     .none
+    lea     r14, [r12 + INST_op0]
+    lea     r15, [r12 + INST_op1]
+    movzx   ecx, byte [r12 + INST_nops]
+    jmp     .mov
+.not_mov64:
     cmp     byte [r12 + INST_nops], 0
     jne     .none
     cmp     r13d, 1282                     ; insb
@@ -979,7 +1123,16 @@ amd64_mode_special:
     cmp     al, 16
     je      .mov_acc_wide
     cmp     al, 32
+    je      .mov_acc_wide
+    cmp     al, 64
     jne     .none
+    ; rax (64-bit mode, a32): REX.W
+    push    rdi
+    mov     al, 0x48
+    call    amd64_emit_byte
+    pop     rdi
+    inc     r13d                           ; A1 / A3
+    jmp     .mov_acc8
 .mov_acc_wide:
     push    rdi
     call    .osz
@@ -1337,7 +1490,7 @@ amd64_mode_special:
     mov     eax, 1
     jmp     .ret
 .fail:
-    mov     eax, EXIT_BITS_MODE
+    call    amd64_bits_error
     jmp     .ret
 .none:
     xor     eax, eax
