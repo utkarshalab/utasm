@@ -36,6 +36,16 @@ DEFAULT REL
 ;           defined before it. Pass 2 never asks for a third.
 ;
 ; When pass 1 finds no such constant there is no second pass.
+;
+; Expressions with a label not defined yet (parser_evaluate_expression kept
+; them: "push dword (end - start) / 4") are handed on too, when they are an
+; instruction's operand: pass 1 lays the code out as linker_run would and
+; works them out; pass 2 takes those values as numbers (known_lookup, by
+; the expression's line, text and occurrence), so the instruction gets the
+; form NASM gives it (6A ib, not 68 id). A value that shortens code can
+; change what it measures: once the layout is final, pass 2 works each one
+; out again (known_verify), and on any difference runs utasm a third time
+; with the constants only - the expressions then as in pass 1.
 
 %define FWD_CAP         (1 << 23)   ; names noted (reserved, used as needed)
 %define KNOWN_OUT_CAP   (1 << 28)   ; bytes of records (reserved)
@@ -69,8 +79,20 @@ known_mask:     resq 1
 known_buf:      resq 1              ; pass 2: the records
 known_fd:       resq 1
 known_env:      resb 40             ; "UTASM_KNOWN=" and the fd
+known_len:      resq 1              ; pass 2: the records' length
+defer_list:     resq 1              ; pass 1: kept expressions (operands)
+defer_n:        resq 1
+verify_list:    resq 1              ; pass 2: {record, value} taken
+verify_n:       resq 1
+occ_tab:        resq 1              ; {hash, count}: occurrences of a key
+key_heap:       resq 1              ; the keys
+key_used:       resq 1
+%define DEFER_CAP   (1 << 20)
+%define OCC_SLOTS   (1 << 20)
+%define KEY_HEAP    (1 << 26)
 global known_active
 known_active:   resb 1              ; this is pass 2
+defer_laid:     resb 1              ; pass 1 laid the code out (exec, always)
 
 [SECTION .rodata]
 known_var:      db "UTASM_KNOWN="
@@ -344,6 +366,7 @@ known_init:
     jmp     .read
 .read_done:
     mov     r13, r15
+    mov     [rel known_len], r15
     ; count the records: value (8), name, NUL
     xor     ecx, ecx
     xor     edx, edx
@@ -502,8 +525,72 @@ known_second_pass:
     inc     r15
     jmp     .name
 .names_done:
+    ; expressions kept for a label not defined yet: their values, from the
+    ; code laid out as linker_run lays it
+    cmp     qword [rel defer_n], 0
+    je      .defers_done
+    call    known_layout
+    mov     byte [rel defer_laid], 1
+    xor     r12d, r12d
+.defer:
+    cmp     r12, [rel defer_n]
+    jae     .defers_done
+    mov     rax, [rel defer_list]
+    mov     rbx, [rax + r12*8]             ; the record
+    inc     r12
+    mov     rdi, rbx
+    extern  parser_deferred_value
+    call    parser_deferred_value
+    test    rax, rax
+    jnz     .defer
+    test    r11, r11
+    jz      .defer_value
+    cmp     word [r11 + SYMBOL_section], SHN_ABS
+    jne     .defer                         ; an address in an object: no number
+.defer_value:
+    mov     rax, KNOWN_OUT_CAP - 65536
+    cmp     r14, rax
+    jae     .defers_done
+    mov     [r13 + r14], rdx
+    add     r14, 8
+    mov     rsi, [rbx + DEFER_KEY]
+.defer_copy:
+    mov     al, [rsi]
+    mov     [r13 + r14], al
+    inc     r14
+    inc     rsi
+    test    al, al
+    jnz     .defer_copy
+    inc     r15
+    jmp     .defer
+.defers_done:
     test    r15, r15
-    jz      .ret                           ; nothing a second pass would change
+    jnz     .exec
+    cmp     byte [rel defer_laid], 0
+    je      .ret                           ; nothing a second pass would change
+.exec:
+    mov     rdi, r13
+    mov     rsi, r14
+    call    known_exec
+.ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+; ---- known_exec (internal) ----------------
+; Runs utasm again with the records rdi (rsi bytes) in a memfd: UTASM_KNOWN
+; =<fd>. Returns only when that fails.
+known_exec:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    mov     r13, rdi
+    mov     r14, rsi
     ; the records in a memfd the next utasm inherits
     mov     eax, SYS_MEMFD
     lea     rdi, [rel known_memfd]
@@ -586,6 +673,335 @@ known_second_pass:
     mov     rsi, [rel utasm_argv]
     syscall                                ; returns only when it fails
 .ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+; ---- known_layout (internal) --------------
+; The code laid out as linker_run lays it before the relocations: jumps
+; shortened, sections placed (a flat binary, an executable). Pass 1 then
+; runs utasm again, so this is done once.
+known_layout:
+    push    rbx
+    lea     rbx, [rel global_ctx]
+    extern  relax_run
+    mov     rdi, rbx
+    call    relax_run
+    cmp     byte [rbx + ASMCTX_standalone], 0
+    je      .not_standalone
+    extern  elf64_standalone_layout
+    mov     rdi, rbx
+    call    elf64_standalone_layout
+.not_standalone:
+    cmp     byte [rbx + ASMCTX_fmt], FMT_BIN
+    jne     .ret
+    extern  binary_layout
+    mov     rdi, rbx
+    call    binary_layout
+.ret:
+    pop     rbx
+    ret
+
+; ---- known_defer_key ----------------------
+;
+; known_defer_key
+; The name a kept expression is known by across the passes: "\x01" line
+; ":" text "#" n - the n-th time that text was kept on that line (a macro
+; body line is read again for every call).
+; Input    : rdi = its text, esi = its line
+; Output   : rax = the key, or 0
+; Preserves: rbx, r12-r15
+;
+global known_defer_key
+known_defer_key:
+    push    rbx
+    push    r12
+    push    r13
+    mov     r12, rdi
+    mov     r13d, esi
+    mov     rax, [rel key_heap]
+    test    rax, rax
+    jnz     .have_heap
+    mov     rsi, KEY_HEAP
+    call    mem_reserve
+    test    rax, rax
+    jnz     .none
+    mov     [rel key_heap], rdx
+    mov     rsi, OCC_SLOTS * 16
+    call    mem_reserve
+    test    rax, rax
+    jnz     .none
+    mov     [rel occ_tab], rdx
+.have_heap:
+    ; room for the text, the line and the count
+    mov     rdi, r12
+    xor     ecx, ecx
+.len:
+    cmp     byte [rdi + rcx], 0
+    je      .len_done
+    inc     rcx
+    jmp     .len
+.len_done:
+    lea     rdx, [rcx + 64]
+    add     rdx, [rel key_used]
+    cmp     rdx, KEY_HEAP
+    ja      .none
+    mov     rbx, [rel key_heap]
+    add     rbx, [rel key_used]            ; the key
+    mov     rdi, rbx
+    mov     byte [rdi], 1
+    inc     rdi
+    mov     eax, r13d
+    call    .decimal
+    mov     byte [rdi], ':'
+    inc     rdi
+    mov     rsi, r12
+.text:
+    mov     al, [rsi]
+    test    al, al
+    jz      .text_done
+    mov     [rdi], al
+    inc     rdi
+    inc     rsi
+    jmp     .text
+.text_done:
+    mov     byte [rdi], 0
+    ; its occurrence
+    push    rdi
+    mov     rsi, rbx
+    call    known_hash
+    pop     rdi
+    mov     r8, [rel occ_tab]
+    mov     r9, rax
+    mov     ecx, OCC_SLOTS - 1
+.slot:
+    and     rax, rcx
+    mov     rdx, rax
+    shl     rdx, 4
+    cmp     qword [r8 + rdx], 0
+    je      .new_slot
+    cmp     [r8 + rdx], r9
+    je      .slot_found
+    inc     rax
+    jmp     .slot
+.new_slot:
+    mov     [r8 + rdx], r9
+    mov     qword [r8 + rdx + 8], 0
+.slot_found:
+    mov     rax, [r8 + rdx + 8]
+    inc     qword [r8 + rdx + 8]
+    mov     byte [rdi], '#'
+    inc     rdi
+    call    .decimal
+    mov     byte [rdi], 0
+    inc     rdi
+    mov     rax, rdi
+    sub     rax, [rel key_heap]
+    mov     [rel key_used], rax
+    mov     rax, rbx
+    jmp     .ret
+.none:
+    xor     eax, eax
+.ret:
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+; .decimal: rax in decimal at rdi, rdi past it
+.decimal:
+    sub     rsp, 32
+    mov     r10, rsp
+    mov     r11d, 10
+    xor     ecx, ecx
+.digit:
+    xor     edx, edx
+    div     r11
+    add     dl, '0'
+    mov     [r10 + rcx], dl
+    inc     ecx
+    test    rax, rax
+    jnz     .digit
+.out:
+    dec     ecx
+    mov     al, [r10 + rcx]
+    mov     [rdi], al
+    inc     rdi
+    test    ecx, ecx
+    jnz     .out
+    add     rsp, 32
+    ret
+
+; ---- known_note_defer ---------------------
+;
+; known_note_defer
+; Pass 1: a kept expression, an instruction's operand (rdi = its record):
+; its value is handed on to pass 2. Preserves every register.
+;
+global known_note_defer
+known_note_defer:
+    cmp     byte [rel known_active], 0
+    jne     .ret
+    push    rax
+    push    rcx
+    push    rdx
+    push    rsi
+    push    rdi
+    push    r8
+    push    r9
+    push    r10
+    push    r11
+    mov     rax, [rel defer_list]
+    test    rax, rax
+    jnz     .have
+    mov     rsi, DEFER_CAP * 8
+    call    mem_reserve
+    test    rax, rax
+    jnz     .out
+    mov     [rel defer_list], rdx
+    mov     rax, rdx
+.have:
+    mov     rcx, [rel defer_n]
+    cmp     rcx, DEFER_CAP
+    jae     .out
+    mov     rdi, [rsp + 32]                ; (the pushed rdi)
+    mov     [rax + rcx*8], rdi
+    inc     qword [rel defer_n]
+.out:
+    pop     r11
+    pop     r10
+    pop     r9
+    pop     r8
+    pop     rdi
+    pop     rsi
+    pop     rdx
+    pop     rcx
+    pop     rax
+.ret:
+    ret
+
+; ---- known_note_verify --------------------
+;
+; known_note_verify
+; Pass 2: the value pass 1 found was taken for the kept expression rdi
+; (rsi = the value): known_verify checks it. Preserves every register.
+;
+global known_note_verify
+known_note_verify:
+    push    rax
+    push    rcx
+    push    rdx
+    push    rsi
+    push    rdi
+    push    r8
+    push    r9
+    push    r10
+    push    r11
+    mov     rax, [rel verify_list]
+    test    rax, rax
+    jnz     .have
+    mov     rsi, DEFER_CAP * 16
+    call    mem_reserve
+    test    rax, rax
+    jnz     .out
+    mov     [rel verify_list], rdx
+    mov     rax, rdx
+.have:
+    mov     rcx, [rel verify_n]
+    cmp     rcx, DEFER_CAP
+    jae     .out
+    shl     rcx, 4
+    mov     rdi, [rsp + 32]                ; the record
+    mov     rsi, [rsp + 40]                ; the value
+    mov     [rax + rcx], rdi
+    mov     [rax + rcx + 8], rsi
+    inc     qword [rel verify_n]
+.out:
+    pop     r11
+    pop     r10
+    pop     r9
+    pop     r8
+    pop     rdi
+    pop     rsi
+    pop     rdx
+    pop     rcx
+    pop     rax
+    ret
+
+; ---- known_verify -------------------------
+;
+; known_verify
+; Pass 2, the code laid out: each value taken for a kept expression must
+; be what the expression is now. When one is not, utasm runs again with the
+; constants only (the expressions then as in pass 1); nothing has been
+; written yet.
+;
+global known_verify
+known_verify:
+    cmp     qword [rel verify_n], 0
+    jne     .check
+    ret
+.check:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    xor     r12d, r12d
+.item:
+    cmp     r12, [rel verify_n]
+    jae     .all_hold
+    mov     rbx, r12
+    shl     rbx, 4
+    add     rbx, [rel verify_list]
+    inc     r12
+    mov     rdi, [rbx]
+    call    parser_deferred_value
+    test    rax, rax
+    jnz     .differs
+    cmp     rdx, [rbx + 8]
+    jne     .differs
+    jmp     .item
+.differs:
+    ; the records without the expressions'
+    mov     rsi, [rel known_len]
+    add     rsi, 16
+    call    mem_reserve
+    test    rax, rax
+    jnz     .all_hold                      ; (no memory: as it is)
+    mov     r13, rdx                       ; the copy
+    xor     r14d, r14d                     ; its length
+    mov     r15, [rel known_buf]
+    xor     ecx, ecx                       ; read
+.record:
+    cmp     rcx, [rel known_len]
+    jae     .copied
+    mov     rbx, rcx                       ; the record's start
+    add     rcx, 8
+.name_end:
+    cmp     byte [r15 + rcx], 0
+    je      .name_ended
+    inc     rcx
+    jmp     .name_end
+.name_ended:
+    inc     rcx                            ; past the NUL
+    cmp     byte [r15 + rbx + 8], 1
+    je      .record                        ; an expression's: dropped
+.keep:
+    cmp     rbx, rcx
+    jae     .record
+    mov     al, [r15 + rbx]
+    mov     [r13 + r14], al
+    inc     rbx
+    inc     r14
+    jmp     .keep
+.copied:
+    mov     rdi, r13
+    mov     rsi, r14
+    call    known_exec
+.all_hold:
     pop     r15
     pop     r14
     pop     r13
