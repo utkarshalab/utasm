@@ -470,6 +470,9 @@ parser_parse_instruction:
     
 .instruction_ok:
     call    parser_check_lock
+    call    parser_check_size              ; "inc [rax]": how big?
+    test    rax, rax
+    jnz     .error
     mov     rax, OK
     mov     rdx, r15
     jmp     .done
@@ -2643,6 +2646,36 @@ parser_evaluate_factor:
         mov     rdx, [r12 + TOKEN_value]
         xor     rax, rax
         jmp     .done
+    ELSEIF al, e, TOK_STRING
+        ; a double- or back-quoted string in an expression: a character
+        ; constant, as a single-quoted one is in NASM - its bytes, the
+        ; first the lowest (a double-quoted quote was a syntax error)
+        mov     rsi, [r12 + TOKEN_value]
+        movzx   ecx, word [r12 + TOKEN_len]
+        test    byte [r12 + TOKEN_flags], TOK_FLAG_COUNTED
+        jnz     .str_counted
+        xor     ecx, ecx
+.str_nul:
+        cmp     byte [rsi + rcx], 0
+        je      .str_counted
+        inc     ecx
+        jmp     .str_nul
+.str_counted:
+        cmp     ecx, 8
+        jbe     .str_fits
+        mov     ecx, 8
+.str_fits:
+        xor     edx, edx
+.str_pack:
+        test    ecx, ecx
+        jz      .str_packed
+        dec     ecx
+        shl     rdx, 8
+        mov     dl, [rsi + rcx]
+        jmp     .str_pack
+.str_packed:
+        xor     rax, rax
+        jmp     .done
     ELSEIF al, e, TOK_DOLLAR
         ; Current location counter ($) or the section's start ($$): a label
         ; at that point. Used as a number only in a difference ("$ - $$"),
@@ -2911,6 +2944,7 @@ parser_get_arch_tables:
 parser_parse_mem_operand:
     prologue
     mov     byte [rel mem_scaling], 1      ; "4*rcx": parser_evaluate_term
+    mov     byte [rel mem_expect_term], 1  ; (a term must come)
     xor     eax, eax
     mov     [rel mem_scaled_n], eax
     mov     [rel mem_scaled_take], eax
@@ -2968,10 +3002,15 @@ parser_parse_mem_operand:
     mov     al, [r13 + TOKEN_kind]
 
     IF al, e, TOK_RBRACKET
-        jmp     .finalize
+        ; "[ ]", "[rbx + ]": NASM's syntax error (they were [0], [rbx])
+        cmp     byte [rel mem_expect_term], 0
+        je      .finalize
+        mov     eax, EXIT_INVALID_EXPR
+        jmp     .error
         ENDIF
 
     IF al, e, TOK_PLUS
+        mov     byte [rel mem_expect_term], 1
         jmp     .loop
         ENDIF
 
@@ -3159,6 +3198,7 @@ parser_parse_mem_operand:
     call    parser_evaluate_expression
     pop     r8
     check_err_to .error
+    mov     byte [rel mem_expect_term], 0
     cmp     r8, [rel known_fwd_uses]
     je      .disp_known
     mov     byte [r12 + OPERAND_fwd], 1    ; (encoder.s: NASM's pass 1)
@@ -3361,6 +3401,7 @@ parser_parse_mem_operand:
 ; rax*4), and placed when the address is complete (.place_terms).
 ; rax = OK or EXIT_INVALID_ADDR (more registers than there is room for).
 .add_term:
+    mov     byte [rel mem_expect_term], 0
     lea     r10, [rel mem_terms_reg]
     mov     r8d, [rel mem_terms_n]
     xor     r9d, r9d
@@ -3605,6 +3646,7 @@ mem_scaled_take:  resd 1                  ; how many the operand has taken
 mem_scaling:      resb 1                  ; a memory operand is being read
 mem_term_pending: resb 1                  ; mem_term_coef came from the evaluator
 mem_term_reg:     resb 1
+mem_expect_term:  resb 1                  ; a '+' or '[' wants a term
 alignb 4
 mem_term_width:   resd 1                  ; the register just read: its width
 mem_addr_width:   resd 1                  ; the address's registers' width
@@ -4220,6 +4262,85 @@ parser_lookup_mnemonic:
 .not_found:
     xor     rax, rax
     epilogue
+
+; parser_check_size: a memory operand with no size where nothing else gives
+; one - "inc [rax]", "mov [rax], 5", "shl [rax], cl" - is NASM's "operation
+; size not specified" (r15 = INST); utasm used to pick a size and say
+; nothing (a dword, a qword). The instructions are those NASM asks a size
+; for, by form: one memory operand, memory and a number, memory and cl.
+; rax = OK or EXIT_NO_SIZE. Preserves rbx, r12-r15.
+parser_check_size:
+    xor     eax, eax
+    mov     rcx, [rbx + PREP_ctx]
+    cmp     byte [rcx + ASMCTX_target], TARGET_AMD64
+    jne     .ret
+    cmp     byte [r15 + INST_op0 + OPERAND_kind], OP_MEM
+    jne     .ret
+    cmp     byte [r15 + INST_op0 + OPERAND_size], 0
+    jne     .ret
+    cmp     word [r15 + INST_op0 + OPERAND_xsize], 0
+    jne     .ret
+    movzx   ecx, byte [r15 + INST_nops]
+    lea     rsi, [rel nosize_m]
+    cmp     ecx, 1
+    je      .listed
+    cmp     ecx, 2
+    jne     .ret
+    movzx   edx, byte [r15 + INST_op0 + OPERAND_SIZE + OPERAND_kind]
+    lea     rsi, [rel nosize_mi]
+    cmp     edx, OP_IMM
+    je      .listed
+    cmp     edx, OP_SYMBOL
+    je      .listed
+    cmp     edx, OP_REG
+    jne     .ret
+    cmp     byte [r15 + INST_op0 + OPERAND_SIZE + OPERAND_reg], REG_RCX ; cl
+    jne     .ret
+    cmp     byte [r15 + INST_op0 + OPERAND_SIZE + OPERAND_size], 8
+    jne     .ret
+    lea     rsi, [rel nosize_mc]
+.listed:
+    push    r12
+    mov     r12, rsi
+.name:
+    cmp     byte [r12], 0
+    je      .unlisted
+    mov     rdi, [rel inst_mnem_text]
+    mov     rsi, r12
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .no_size
+.skip:
+    inc     r12
+    cmp     byte [r12 - 1], 0
+    jne     .skip
+    jmp     .name
+.no_size:
+    mov     eax, EXIT_NO_SIZE
+    pop     r12
+    ret
+.unlisted:
+    xor     eax, eax
+    pop     r12
+.ret:
+    ret
+
+[SECTION .rodata]
+; the instructions NASM asks a size for (found by asking NASM: every
+; mnemonic, unsized, in each form)
+nosize_m:
+    db "dec", 0, "div", 0, "fadd", 0, "fcom", 0, "fdiv", 0, "fld", 0, "fmul", 0
+    db "fst", 0, "fstp", 0, "fsub", 0, "idiv", 0, "imul", 0, "inc", 0, "mul", 0
+    db "neg", 0, "nop", 0, "not", 0, "pop", 0, "push", 0, 0
+nosize_mi:
+    db "adc", 0, "add", 0, "and", 0, "bt", 0, "btc", 0, "btr", 0, "bts", 0
+    db "cmp", 0, "mov", 0, "or", 0, "rcl", 0, "rcr", 0, "rol", 0, "ror", 0
+    db "sar", 0, "sbb", 0, "shl", 0, "shr", 0, "sub", 0, "test", 0, "xor", 0
+    db "sal", 0, 0
+nosize_mc:
+    db "rcl", 0, "rcr", 0, "rol", 0, "ror", 0, "sar", 0, "shl", 0, "shr", 0
+    db "sal", 0, 0
+[SECTION .text]
 
 ; parser_check_lock: NASM's warnings for a LOCK prefix (r15 = INST): on an
 ; instruction that cannot be locked, or without a memory operand,
