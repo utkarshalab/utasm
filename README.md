@@ -495,6 +495,11 @@ leaves the programmer alone:
 - **It is one pass.** No `-O` passes over the source; labels used before
   their definition are worked out at the end, and an instruction that
   uses one gets NASM's short form through a checked second pass.
+- **It catches what links badly.** `-w+pie` warns, at the line, about an
+  absolute 32-bit address in 64-bit code - the "relocation R_X86_64_32
+  ... can not be used when making a PIE object" the linker reports
+  later - and says to write `[rel msg]`. A misspelt instruction alone on
+  its line (`rett`) gets NASM's label warning and a "did you mean".
 - **It never guesses silently.** An operand size it cannot know is an
   error that says what to write (`dword [rax]`), as are addresses NASM
   rejects - two index registers, mixed address sizes.
