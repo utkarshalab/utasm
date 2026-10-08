@@ -29,6 +29,70 @@ resolved_here:  resb 1                  ; some were written in place
 ; reloc_record
 ; ============================================================================
 ;
+; reloc_warn_pie: "absolute 32-bit address of `msg' will not link into a
+; PIE" for relocation r8 to the name r13, in a 64-bit ELF object (rbx =
+; AsmCtx). Preserves rbx, r8, r12-r14.
+global reloc_warn_pie, reloc_quiet
+reloc_warn_pie:
+    cmp     byte [rel reloc_quiet], 0
+    jne     .ret                           ; a trial encoding (encoder.s)
+    cmp     byte [rbx + ASMCTX_fmt], FMT_ELF64
+    jne     .ret
+    cmp     byte [rbx + ASMCTX_standalone], 0
+    jne     .ret                           ; an executable of its own: fixed
+    extern  elf32_enabled, asm_bits
+    cmp     byte [rel elf32_enabled], 0
+    jne     .ret
+    cmp     byte [rel asm_bits], 64
+    jne     .ret
+    cmp     r8d, R_X86_64_32
+    je      .absolute
+    cmp     r8d, R_X86_64_32S
+    je      .absolute
+    cmp     r8d, 12                        ; R_X86_64_16
+    je      .absolute
+    cmp     r8d, 14                        ; R_X86_64_8
+    jne     .ret
+.absolute:
+    push    r8
+    extern  warn_begin, warn_text, warn_end
+    mov     edi, WC_PIE
+    call    warn_begin
+    test    eax, eax
+    jz      .out
+    lea     rsi, [rel s_pie_a]
+    call    warn_text
+    mov     rsi, r13
+    cmp     byte [rsi], 0x1F
+    jbe     .an_expression                 ; a kept expression, a distance
+    call    warn_text
+    lea     rsi, [rel s_pie_b]
+    call    warn_text
+    mov     rsi, r13
+    call    warn_text
+    lea     rsi, [rel s_pie_c]
+    call    warn_text
+    jmp     .end
+.an_expression:
+    lea     rsi, [rel s_pie_expr]
+    call    warn_text
+.end:
+    call    warn_end
+.out:
+    pop     r8
+.ret:
+    ret
+
+[SECTION .rodata]
+s_pie_a:    db "absolute 32-bit address of `", 0
+s_pie_b:    db "' will not link into a PIE: use [rel ", 0
+s_pie_c:    db "] or lea reg, [rel ...]", 0
+s_pie_expr: db "an expression' will not link into a PIE: use rip-relative addressing ([rel ...])", 0
+[SECTION .bss]
+reloc_quiet: resb 1                     ; no warnings: a trial encoding
+[SECTION .text]
+
+;
 ; reloc_record
 ; Adds one relocation entry to the AsmCtx reloc table.
 ; Called by the encoder whenever it emits a symbol reference that cannot
@@ -54,6 +118,11 @@ reloc_record:
     mov     r13, rdx               ; sym name ptr
     mov     r14, rcx               ; addend
     ; r8 = reloc type (held in r8 throughout)
+
+    ; an absolute 32-bit (or narrower) address in a 64-bit object: the
+    ; linker refuses it in a position-independent executable. utasm's
+    ; warning "pie" (off unless -w+pie / -w+all) says so here.
+    call    reloc_warn_pie
 
     ; "sym wrt ..plt" and friends: the statement asked for another type
     xor     r9d, r9d                       ; RELOC_flags
