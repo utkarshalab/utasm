@@ -115,7 +115,9 @@
 %define WC_PREFIX_LOCK_ERROR   5   ; prefix-lock-error: not lockable
 %define WC_DB_EMPTY            6   ; db-empty: "db" with no operand
 %define WC_PP_MACRO_DEFAULTS   7   ; pp-macro-defaults: too many defaults
-%define WC_COUNT               8
+%define WC_LABEL_ORPHAN        8   ; label-orphan: "rett" alone on its line
+%define WC_PIE                 9   ; pie (utasm's, off): won't link as PIE
+%define WC_COUNT               10
 
 ; a kept expression's record (parser_defer_record): +0 RELOC_EXPR_MARK,
 ; +8 text, +16 tokens, +24 count; and for core/known.s:
