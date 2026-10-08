@@ -840,3 +840,28 @@ EXPLAIN_CASES = [
     ("syntax error", "bits 64\nmov eax, [ ]\n", "mov eax, [ ]|           ^", []),
     ("warning", "bits 64\ndb ?\n", "db ?|^~~~", []),
 ]
+
+
+# a label alone on its line (NASM's label-orphan); in a macro, the body line
+WARN_CASES.update({
+    "warn_label_orphan": "foo\nstart\nnop\nbar:\n.local_x\n",
+})
+EXPLAIN_CASES += [
+    ("error in a macro", "bits 64\n%macro load 1\n    mov al, %1\n%endmacro\nnop\nload rax\n",
+     "    mov al, %1|    ^~~~~~~~~~",
+     ["note: `al' is an 8-bit register, `%1' a 64-bit register"]),
+    ("misspelt alone", "bits 64\nrett\n", "rett|^~~~", ["hint: did you mean 'ret'?"]),
+]
+# utasm's own warnings, with the option that turns them on: (name, source,
+# options, lines that must warn with this text, lines that must not)
+LINT_CASES = [
+    ("pie", "bits 64\nmov eax, msg\nmov eax, [msg]\nlea rax, [rel msg]\nmov rax, msg\ndd msg\n"
+            "call fn\nmov eax, [later]\nfn: ret\nsection .data\nmsg: db 1\nlater: dd 2\n",
+     ["-w+pie"], {2: "absolute 32-bit address of `msg' will not link into a PIE",
+                  3: "absolute 32-bit address of `msg'", 6: "`msg'", 8: "`later'"}, [4, 5, 7]),
+    ("pie off by default", "bits 64\nmov eax, msg\nsection .data\nmsg: db 1\n", [], {}, [2]),
+    ("pie with default rel", "bits 64\ndefault rel\nmov eax, [msg]\nsection .data\nmsg: dd 1\n",
+     ["-w+pie"], {}, [3]),
+    ("pie: -w+all", "bits 64\nmov eax, msg\nsection .data\nmsg: db 1\n", ["-w+all"], {2: "[-w+pie]"}, []),
+    ("pie: a flat binary", "bits 64\nmov eax, msg\nmsg: db 1\n", ["-w+pie", "-fbin"], {}, [2]),
+]
