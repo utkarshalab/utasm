@@ -116,6 +116,12 @@
 %define WC_PP_MACRO_DEFAULTS   7   ; pp-macro-defaults: too many defaults
 %define WC_COUNT               8
 
+; a kept expression's record (parser_defer_record): +0 RELOC_EXPR_MARK,
+; +8 text, +16 tokens, +24 count; and for core/known.s:
+%define DEFER_KEY             32   ; q its key across the passes
+%define DEFER_DATA            40   ; b 1: a data directive's (size fixed)
+%define DEFER_SIZE            48
+
 %define EXIT_LD_SCRIPT_404     60  ; linker script file not found
 %define EXIT_LD_SCRIPT_PARSE   61  ; linker script contains syntax errors
 %define EXIT_SECTION_OVERLAP   62  ; two or more output sections occupy same address
