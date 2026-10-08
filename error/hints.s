@@ -13,6 +13,9 @@
 
 DEFAULT REL
 
+extern stderr_hold
+extern warn_hold_put
+
 ; ============================================================================
 ; "DID YOU MEAN" HINTS
 ; ============================================================================
@@ -194,6 +197,13 @@ error_hint_clear:
 hint_write:
     test    rdx, rdx
     jz      .done
+    ; with a warning: held with it (error/warnings.s)
+    cmp     byte [rel stderr_hold], 0
+    je      .write
+    mov     rdi, rsi
+    mov     rsi, rdx
+    jmp     warn_hold_put
+.write:
     mov     eax, AMD64_SYS_WRITE
     mov     edi, 2
     syscall
