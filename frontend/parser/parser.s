@@ -323,8 +323,32 @@ parser_parse_instruction:
     test    rax, rax
     jz      .lookup_mnemonic
     cmp     eax, 1
-    je      .get_mnemonic              ; o32 / a64 in 64-bit code: no byte
-    
+    je      .get_mnemonic              ; o32 / o64 in 64-bit code: no byte
+    cmp     eax, 4
+    ja      .prefix_byte
+    ; a16 / a32 / a64 (2, 3, 4): the address size asked for. Its byte, 67,
+    ; only when it is not the mode's own; 16 in 64-bit code, or 64 outside
+    ; it, is NASM's error
+    lea     ecx, [eax - 1]
+    mov     eax, 8
+    shl     eax, cl                        ; 16, 32, 64
+    mov     [r15 + INST_asize], al
+    movzx   ecx, byte [rel asm_bits]
+    cmp     eax, ecx
+    je      .get_mnemonic                  ; the mode's own: no byte
+    cmp     eax, 64
+    je      .asize_bad                     ; a64 outside 64-bit code
+    cmp     ecx, 64
+    jne     .asize_67
+    cmp     eax, 16
+    je      .asize_bad                     ; a16 in 64-bit code
+.asize_67:
+    mov     eax, 0x67
+    jmp     .prefix_byte
+.asize_bad:
+    mov     rax, EXIT_EA_SIZE_MIX
+    jmp     .error
+.prefix_byte:
     ; Find empty slot in prefixes[4]
     xor     rcx, rcx
 .prefix_slot_loop:
@@ -4118,7 +4142,7 @@ parser_section_attrs:
     lea     rsi, [rel attr_align]
     call    str_cmp
     test    rax, rax
-    jnz     .bad                           ; an attribute NASM does not have
+    jnz     .unknown
     mov     rdi, rbx
     call    preprocessor_next_token        ; "="
     cmp     byte [rdx + TOKEN_kind], TOK_EQUAL
@@ -4128,6 +4152,95 @@ parser_section_attrs:
     test    rax, rax
     jnz     .ret
     mov     [r13 + SECTION_align], rdx
+    jmp     .next
+.unknown:
+    ; an attribute NASM does not have: ignored with NASM's warning, its
+    ; value too ("name=3", "name=(1+2)": one token, or one in parentheses)
+    mov     qword [rel attr_value], 0
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_EQUAL
+    jne     .unknown_warn
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; "="
+    mov     rdi, rbx
+    call    prep_rec_begin
+    test    rax, rax
+    jnz     .ret
+    mov     qword [rel attr_depth], 0
+.value_token:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .value_done
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .value_done
+    cmp     eax, TOK_EOF
+    je      .value_done
+    cmp     eax, TOK_LPAREN
+    jne     .value_not_open
+    inc     qword [rel attr_depth]
+.value_not_open:
+    cmp     eax, TOK_RPAREN
+    jne     .value_take
+    dec     qword [rel attr_depth]
+.value_take:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    cmp     qword [rel attr_depth], 0
+    jg      .value_token                   ; inside the parentheses
+.value_done:
+    call    prep_rec_end                   ; rdx = tokens, rcx = how many
+    test    rcx, rcx
+    jz      .value_none
+    mov     rdi, rbx
+    mov     rsi, rdx
+    mov     rdx, rcx
+    call    prep_tokens_text
+    test    rax, rax
+    jnz     .value_none
+    mov     [rel attr_value], rdx
+.value_none:
+    call    prep_rec_drop
+.unknown_warn:
+    mov     edi, WC_OTHER
+    call    warn_begin
+    lea     rax, [rel global_ctx]
+    cmp     byte [rax + ASMCTX_fmt], FMT_BIN
+    jne     .unknown_named
+    ; a flat binary: ignoring unknown section attribute: "name=value"
+    lea     rsi, [rel s_attr_bin]
+    call    warn_text
+    mov     rsi, r12
+    call    warn_text
+    cmp     qword [rel attr_value], 0
+    je      .unknown_quote
+    lea     rsi, [rel s_attr_eq]
+    call    warn_text
+    mov     rsi, [rel attr_value]
+    call    warn_text
+.unknown_quote:
+    lea     rsi, [rel s_attr_q]
+    call    warn_text
+    call    warn_end
+    jmp     .next
+.unknown_named:
+    ; an object: unknown section attribute 'name' ignored on declaration
+    ; of section `.s'
+    lea     rsi, [rel s_attr_a]
+    call    warn_text
+    mov     rsi, r12
+    call    warn_text
+    lea     rsi, [rel s_attr_b]
+    call    warn_text
+    mov     rsi, [r13 + SECTION_name]
+    call    warn_text
+    lea     rsi, [rel s_attr_c]
+    call    warn_text
+    call    warn_end
     jmp     .next
 .vstart:
     call    .bin_only
@@ -4572,10 +4685,11 @@ inst_mnem_text: resq 1                  ; the mnemonic of the instruction read
 ;*
 ; * [parser_check_prefix]
 ; * Purpose: Is the word an instruction prefix? rep/repe/repz, repne/repnz,
-; *   lock, xacquire/xrelease, bnd, o16/o32/o64, a32/a64 and the segment
-; *   prefixes cs ds es ss fs gs, as NASM writes them.
+; *   lock, xacquire/xrelease, bnd, o16/o32/o64, a16/a32/a64 and the
+; *   segment prefixes cs ds es ss fs gs, as NASM writes them.
 ; * Input: RSI = String pointer
-; * Output: EAX = Prefix byte, 1 (accepted, nothing to emit) or 0
+; * Output: EAX = Prefix byte, 1 (accepted, nothing to emit), 2 / 3 / 4
+; *         (a16 / a32 / a64: the caller decides) or 0
 ; ;
 parser_check_prefix:
     push    r12
@@ -4617,8 +4731,9 @@ prefix_words:
     db "o16", 0, 0,0,0,0,0, 0x66
     db "o32", 0, 0,0,0,0,0, 1
     db "o64", 0, 0,0,0,0,0, 1
-    db "a32", 0, 0,0,0,0,0, 0x67
-    db "a64", 0, 0,0,0,0,0, 1
+    db "a16", 0, 0,0,0,0,0, 2              ; the address sizes: by the mode
+    db "a32", 0, 0,0,0,0,0, 3
+    db "a64", 0, 0,0,0,0,0, 4
     db "cs", 0, 0,0,0,0,0,0, 0x2E
     db "ds", 0, 0,0,0,0,0,0, 0x3E
     db "es", 0, 0,0,0,0,0,0, 0x26
@@ -4677,7 +4792,26 @@ parser_parse_struc:
 
     ; Build struct-name string ("StructName", null-terminated from token)
     mov     r13, [r15 + TOKEN_value]  ; r13 = struct name ptr
-    
+
+    ; the struct itself: kind=SYM_STRUCT, defined here as in NASM (its
+    ; place in .symtab under -g: before its fields); its size at endstruc
+    test    r13, r13
+    jz      .field_loop                    ; "struc" alone: no name
+    sub     rsp, SYMBOL_SIZE
+    mov     rdi, rsp
+    xor     rax, rax
+    mov     rcx, (SYMBOL_SIZE / 8)
+    rep stosq
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, rsp
+    mov     byte [rsi + SYMBOL_tag],  TAG_SYMBOL
+    mov     byte [rsi + SYMBOL_kind], SYM_STRUCT
+    mov     byte [rsi + SYMBOL_vis],  VIS_LOCAL
+    mov     word [rsi + SYMBOL_section], SHN_ABS ; a number, as for equ
+    mov     [rsi + SYMBOL_name],  r13     ; struct name ptr
+    call    symbol_add
+    add     rsp, SYMBOL_SIZE
+
 .field_loop:
     ; Read next meaningful token (skip newlines)
     mov     rdi, rbx
@@ -4922,24 +5056,19 @@ call    str_compare
     jmp     .field_loop
 
 .register_struct:
-    ; Register the struct itself: kind=SYM_STRUCT, size=total
-    sub     rsp, SYMBOL_SIZE
-    mov     rdi, rsp
-    xor     rax, rax
-    mov     rcx, (SYMBOL_SIZE / 8)
-    rep stosq
+    ; the struct's total byte size (defined at struc)
+    test    r13, r13
+    jz      .no_nasm_size                  ; "struc" alone: nothing to name
     mov     rdi, [rbx + PREP_ctx]
-    mov     rsi, rsp
-    mov     byte [rsi + SYMBOL_tag],  TAG_SYMBOL
-    mov     byte [rsi + SYMBOL_kind], SYM_STRUCT
-    mov     byte [rsi + SYMBOL_vis],  VIS_LOCAL
-    mov     word [rsi + SYMBOL_section], SHN_ABS ; a number, as for equ
-    mov     [rsi + SYMBOL_name],  r13     ; struct name ptr
-    mov     qword [rsi + SYMBOL_value], 0
+    mov     rsi, r13
+    call    symbol_find
+    test    rax, rax
+    jnz     .struct_sized
+    cmp     byte [rdx + SYMBOL_kind], SYM_STRUCT
+    jne     .struct_sized
     mov     rax, [rbp - 48]
-    mov     [rsi + SYMBOL_size],  rax     ; total byte size
-    call    symbol_add
-    add     rsp, SYMBOL_SIZE
+    mov     [rdx + SYMBOL_size], rax
+.struct_sized:
 
     ; Register the struct size constant: "[StructName]_SIZE"
     ; 1. Calculate struct name length
@@ -5086,6 +5215,7 @@ parser_define_label:
     cmp     rax, [rel abs_section]
     jne     .not_abs_new
     mov     byte [rsi + SYMBOL_kind], SYM_CONSTANT
+    or      byte [rsi + SYMBOL_pflags], SYMF_STRUC
     mov     rcx, [rax + SECTION_addr]
     add     [rsi + SYMBOL_value], rcx
     mov     word [rsi + SYMBOL_section], 0
@@ -5120,6 +5250,7 @@ parser_define_label:
     cmp     rax, [rel abs_section]
     jne     .not_abs_old
     mov     byte [rdx + SYMBOL_kind], SYM_CONSTANT
+    or      byte [rdx + SYMBOL_pflags], SYMF_STRUC
     mov     rcx, [rax + SECTION_addr]
     add     [rdx + SYMBOL_value], rcx
     mov     word [rdx + SYMBOL_section], 0
@@ -6594,6 +6725,7 @@ parser_struc_const:
     ; a number, as for equ: a use before the structure (thread_t.x in a
     ; file included first) is resolved to it at the end
     mov     word [rsp + SYMBOL_section], SHN_ABS
+    mov     byte [rsp + SYMBOL_pflags], SYMF_STRUC
     mov     [rsp + SYMBOL_name], r12
     mov     [rsp + SYMBOL_value], r13
     mov     qword [rsp + SYMBOL_size], 8
@@ -7939,6 +8071,14 @@ s_zeroing_b:   db "': zeroing", 0
 s_attr_a:      db "unknown section attribute '", 0
 s_attr_b:      db "' ignored on declaration of section `", 0
 s_attr_c:      db "'", 0
+s_attr_bin:    db 'ignoring unknown section attribute: "', 0
+s_attr_eq:     db "=", 0
+s_attr_q:      db '"', 0
+[SECTION .bss]
+alignb 8
+attr_value:    resq 1              ; an unknown section attribute's value text
+attr_depth:    resq 1              ; ... the parentheses open in it
+[SECTION .rodata]
 s_bits64:      db "64", 0
 s_bits32:      db "32", 0
 s_bits16:      db "16", 0
