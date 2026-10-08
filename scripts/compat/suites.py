@@ -589,6 +589,9 @@ def modes(utasm, verbose=False):
             return bits, line, nb, ub, ru
 
     items = [(b, l) for b in (32, 16) for l in lines]
+    # what the address size changes (the count register of jcxz / jecxz /
+    # jrcxz / loop): in all three modes
+    items += [(b, l) for b in (64, 32, 16) for l in cases.MODE_LINES]
     with cf.ThreadPoolExecutor(JOBS) as ex:
         for bits, line, nb, ub, ru in ex.map(one, items):
             name = "bits %d: %s" % (bits, line)
@@ -872,8 +875,8 @@ def explanations(utasm, verbose=False):
 
 
 def lints(utasm, verbose=False):
-    """utasm's own warnings (off by default): where they must and must not
-    appear."""
+    """utasm's own warnings (pie off by default, slash-comment on): where
+    they must and must not appear."""
     s = Suite("lints", verbose)
     for name, src, opts, must, must_not in cases.LINT_CASES:
         fmt = ["-f", "bin"] if "-fbin" in opts else ["-f", "elf64"]
