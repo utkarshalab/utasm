@@ -114,16 +114,14 @@ preprocessor_next_token:
 
     mov     rdi, r12
     lea     rsi, [rbx + PREP_peek]
-    mov     rcx, TOKEN_SIZE
-    rep movsb
+    copy_token
 
     ; a token queued behind the one just taken moves up
     cmp     byte [rel has_putback_next], TRUE
     jne     .peek_taken
     lea     rdi, [rbx + PREP_peek]
     lea     rsi, [rel putback_next]
-    mov     rcx, TOKEN_SIZE
-    rep movsb
+    copy_token
     mov     byte [rbx + PREP_has_peek], TRUE
     mov     byte [rel has_putback_next], FALSE
 .peek_taken:
@@ -230,8 +228,7 @@ preprocessor_unread_token:
     push    rsi
     lea     rsi, [rdi + PREP_peek]
     lea     rdi, [rel putback_next]
-    mov     rcx, TOKEN_SIZE
-    rep movsb
+    copy_token
     mov     byte [rel has_putback_next], TRUE
     pop     rsi
     pop     rdi
@@ -249,8 +246,7 @@ preprocessor_putback_token:
     ; Copy token into peek slot
     lea     rdi, [rbx + PREP_peek]
     mov     rsi, r12
-    mov     rcx, TOKEN_SIZE
-    rep     movsb
+    copy_token
     
     mov     byte [rbx + PREP_has_peek], TRUE
     
@@ -293,8 +289,7 @@ preprocessor_peek_token:
     mov     byte [rbx + PREP_has_peek], TRUE
     lea     rdi, [rbx + PREP_peek]
     mov     rsi, r12
-    mov     rcx, TOKEN_SIZE
-    rep movsb
+    copy_token
     
 .done:
     lea     rdx, [rbx + PREP_peek]
@@ -1010,8 +1005,7 @@ prep_expand_start:
     jnz     .error
     mov     rsi, rdx
     mov     rdi, [r13 + MACROEXP_pend_ptr]
-    mov     rcx, (TOKEN_SIZE / 8)
-    rep movsq
+    copy_token
 
     mov     rsi, [r13 + MACROEXP_pend_ptr]
     movzx   eax, byte [rsi + TOKEN_kind]
@@ -1354,8 +1348,7 @@ prep_expand_next:
     jz      .no_pending
         mov     rsi, [r13 + MACROEXP_pend_ptr]
         mov     rdi, r12
-        mov     rcx, (TOKEN_SIZE / 8)
-        rep movsq
+        copy_token
         add     qword [r13 + MACROEXP_pend_ptr], TOKEN_SIZE
         dec     dword [r13 + MACROEXP_pend_cnt]
         jmp     .produced
@@ -1376,8 +1369,7 @@ prep_expand_next:
     ; copy to dest
     mov     rdi, r12
     mov     rsi, r10
-    mov     rcx, (TOKEN_SIZE / 8)
-    rep movsq
+    copy_token
 
     ; increment body pos
     inc     qword [r13 + MACROEXP_body]
@@ -1521,8 +1513,7 @@ prep_expand_next:
         mov     [r13 + MACROEXP_pend_ptr], rax
 
         mov     rdi, r12
-        mov     rcx, (TOKEN_SIZE / 8)
-        rep movsq
+        copy_token
         jmp     .produced
 .not_case2:
 
@@ -1625,8 +1616,7 @@ prep_expand_next:
     je      .rng_filled
     mov     rdi, r8
     mov     rsi, r12                       ; the use's line and column
-    mov     ecx, TOKEN_SIZE / 8
-    rep movsq
+    copy_token
     mov     byte [r8 + TOKEN_kind], TOK_COMMA
     mov     qword [r8 + TOKEN_value], 0
     mov     byte [r8 + TOKEN_flags], 0
@@ -1642,8 +1632,7 @@ prep_expand_next:
     lea     rax, [rsi + TOKEN_SIZE]
     mov     [r13 + MACROEXP_pend_ptr], rax
     mov     rdi, r12
-    mov     ecx, TOKEN_SIZE / 8
-    rep movsq
+    copy_token
     jmp     .produced
 
 ; r9 one step from rng_a toward rng_b
@@ -1730,8 +1719,7 @@ prep_expand_next:
                 mov     rsi, [r11 + rax * 8]
                 
                 mov     rdi, r12
-                mov     rcx, (TOKEN_SIZE / 8)
-                rep movsq
+                copy_token
                 jmp     .produced
 .not_case3:
 
@@ -3406,8 +3394,7 @@ prep_file_paste:
     ; followed is read next
     lea     rdi, [r13 + LEXER_peek]
     mov     rsi, rsp
-    mov     ecx, TOKEN_SIZE
-    rep     movsb
+    copy_token
     mov     byte [r13 + LEXER_has_peek], TRUE
     mov     eax, EXIT_INVALID_EXPR
     jmp     .out
@@ -3974,8 +3961,7 @@ prep_raw_next:
     add     r10, rax
     mov     rdi, r12
     mov     rsi, r10
-    mov     rcx, (TOKEN_SIZE / 8)
-    rep movsq
+    copy_token
     inc     qword [r13 + MACROEXP_body]
     xor     rax, rax
     jmp     .done
@@ -4014,8 +4000,7 @@ prep_raw_peek:
     push    rsi
     mov     rdi, rsi
     mov     rsi, rcx
-    mov     rcx, (TOKEN_SIZE / 8)
-    rep movsq
+    copy_token
     pop     rsi
     pop     rdi
     xor     eax, eax
@@ -5285,8 +5270,7 @@ prep_dynamic_macro:
     imul    rdi, rcx, TOKEN_SIZE
     add     rdi, r14
     mov     rsi, r12                       ; line, column, file of the use
-    mov     ecx, TOKEN_SIZE / 8
-    rep movsq
+    copy_token
     pop     rcx
     imul    rax, rcx, TOKEN_SIZE
     mov     byte [r14 + rax + TOKEN_flags], 0
@@ -6964,8 +6948,7 @@ prep_handle_def:
     add     rdi, rax
     mov     r8, rdi                        ; r8 = the captured token
     mov     rsi, rdx
-    mov     ecx, TOKEN_SIZE / 8
-    rep movsq
+    copy_token
     inc     r15d
     ; a parameter name becomes a %N reference
     cmp     byte [r8 + TOKEN_kind], TOK_IDENT
@@ -7926,8 +7909,7 @@ prep_rec_note:
     jnz     .full
     mov     rdi, rdx
     mov     rsi, [rsp + 16]                ; the token
-    mov     ecx, TOKEN_SIZE / 8
-    rep movsq
+    copy_token
     inc     qword [rel rec_n]
     jmp     .done
 .full:
