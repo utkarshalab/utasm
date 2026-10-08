@@ -62,6 +62,12 @@ linker_run:
     call    binary_layout
 .not_flat:
 
+    ; 0.9 equs of something defined later, from the code as laid out
+    ;     (what uses them refers to them: before the relocations)
+    extern  parser_late_equs
+    call    parser_late_equs
+    check_err
+
     ; 1. Resolve all relocations
     extern  global_profstate
     extern  profiler_start_phase
