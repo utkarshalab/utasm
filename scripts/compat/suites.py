@@ -841,3 +841,31 @@ def warnings(utasm, verbose=False):
                 # NASM writes the listing after an error too; utasm does not
                 s.result(name, rn.returncode != 0 or ln == lu, "listings differ")
     return s
+
+
+# ---------------------------------------------------------------------------
+# explanations: with --color, utasm shows the line and marks the place, and
+# explains operand errors (no NASM to compare with: the expected text)
+# ---------------------------------------------------------------------------
+def explanations(utasm, verbose=False):
+    s = Suite("explanations", verbose)
+    for name, src, marked, notes in cases.EXPLAIN_CASES:
+        with tempdir() as d:
+            open(os.path.join(d, "e.s"), "w").write(src)
+            r = run([utasm, "-f", "elf64", "e.s", "-o", "e.o", "--color"], cwd=d)
+        out = re.sub(r"\x1b\[[0-9;]*m", "", r.stderr or "")
+        rows = out.splitlines()
+        line, mark = marked.split("|", 1)
+        shown = [x for x in rows if re.match(r"^ +\d+ \| ", x)]
+        marks = [x for x in rows if re.match(r"^ +\| ", x)]
+        good = (any(x.split(" | ", 1)[1] == line for x in shown)
+                and any(x.split("| ", 1)[1] == mark for x in marks)
+                and all(n in rows for n in notes))
+        s.result(name, good, "got: %r" % out[:300])
+    # piped, without --color: NASM's lines (no source shown)
+    with tempdir() as d:
+        open(os.path.join(d, "e.s"), "w").write("bits 64\nmov al, rax\n")
+        r = run([utasm, "-f", "elf64", "e.s", "-o", "e.o"], cwd=d)
+    s.result("plain when piped", " | " not in (r.stderr or "") and "\x1b" not in (r.stderr or ""),
+             "got: %r" % (r.stderr or "")[:200])
+    return s
