@@ -6,7 +6,8 @@
              jump shortening)
   macros     multi-line macros, %define with parameters, %assign
   data       labelled dd / db lines (symbol and string tables)
-  sources    utasm's own sources, one run each
+  sources    utasm's own sources, one run each (NASM with the Makefile's
+             -d__NASM__=1 -I./)
 
 usage: scripts/compat/bench.py [utasm-binary] [--scale N] [--only NAME]
        --scale  input sizes times N (default 1: about a second for NASM)
@@ -89,9 +90,19 @@ def main(argv):
         if not only or only == "sources":
             files = [f for f in glob.glob(os.path.join(ROOT, "**", "*.s"), recursive=True)
                      if "/tests/" not in f and "/build/" not in f]
-            tn = sum(timed(["nasm", "-f", "elf64", f, "-o", os.path.join(d, "x.o")], ROOT)[0] for f in files)
-            tu = sum(timed([utasm, "-f", "elf64", f, "-o", os.path.join(d, "y.o")], ROOT)[0] for f in files)
-            print("%-10s %8d %9.2fs %9.2fs %7.1fx  (%d files)" % ("sources", 0, tn, tu, tn / tu, len(files)))
+            # NASM with the Makefile's flags (without them it stops at the
+            # first include, and its time means nothing)
+            tn = tu = 0.0
+            failed = 0
+            for f in files:
+                t, rn = timed(["nasm", "-d__NASM__=1", "-I./", "-f", "elf64", f, "-o", os.path.join(d, "x.o")], ROOT)
+                tn += t
+                t, ru = timed([utasm, "-f", "elf64", f, "-o", os.path.join(d, "y.o")], ROOT)
+                tu += t
+                failed += rn != 0 or ru != 0
+            lines = sum(open(f, errors="replace").read().count("\n") for f in files)
+            print("%-10s %8d %9.2fs %9.2fs %7.1fx  %d files%s" % ("sources", lines, tn, tu, tn / tu if tu else 0,
+                  len(files), ", %d FAILED" % failed if failed else ""))
     return 0
 
 
