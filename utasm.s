@@ -113,6 +113,9 @@ _start:
     call    cli_parse
     test    rax, rax
     jnz     .show_usage
+    ; on a terminal, messages show the line and explain (error/format)
+    extern  diag_init
+    call    diag_init
 
     test    dword [rbx + ASMCTX_flags], CTX_FLAG_SHOW_HELP
     jnz     .show_help
@@ -494,7 +497,10 @@ _start:
     jmp     .exit
 
 .error_in_encoder:
-    ; "file:line: error: <message>" for the statement being encoded
+    ; "file:line: error: <message>" for the statement being encoded, and
+    ; what its operands were (error/format/source.s)
+    extern  diag_inst
+    mov     [rel diag_inst], r12
     mov     r15, rax
     mov     edi, eax
     call    error_report_code
