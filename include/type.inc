@@ -383,7 +383,8 @@ struc INST
     field op_id,     2       ; mnemonic ID
     field pad1,      2       ; explicit padding to align next field to 8-byte boundary
     field prefixes,  4       ; instruction prefixes (up to 4 slots)
-    field pad2,      4       ; padding to align op0 to 8-byte boundary
+    field asize,     1       ; a16 / a32 / a64 written: 16, 32, 64 (0: none)
+    field pad2,      3       ; padding to align op0 to 8-byte boundary
     field op0,       OPERAND_SIZE
     field op1,       OPERAND_SIZE
     field op2,       OPERAND_SIZE
