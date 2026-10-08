@@ -104,6 +104,7 @@
 %define EXIT_MACRO_EOF         85  ; no %endmacro before the end of the file
 %define EXIT_NOT_DEFINING      86  ; %endmacro with no %macro
 %define EXIT_NO_REP            87  ; %endrep with no %rep
+%define EXIT_NO_SIZE           88  ; "inc [rax]": operation size not specified
 
 ; warning classes, by NASM's names (error/warnings.s)
 %define WC_OTHER               0   ; other
