@@ -89,6 +89,11 @@ linker_run:
         check_err
         ENDIF
 
+    ; 1.55 Pass 2 of two: the values taken for kept expressions hold, now
+    ;      that the code is laid out (or utasm runs again: core/known.s)
+    extern  known_verify
+    call    known_verify
+
     ; 1.6 Open Output File
     mov     rdi, [rbx + ASMCTX_output]
     test    rdi, rdi
