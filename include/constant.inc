@@ -79,6 +79,7 @@
 %define EXIT_ALIGN_ERROR       44  ; alignment directive could not be satisfied
 %define EXIT_STRUCT_BOUNDS     45  ; memory write size exceeds struct field byte width
 %define EXIT_BITS_MODE         46  ; not encodable in the current bits 16/32/64 mode
+%define EXIT_NON64_OPERANDS    73  ; r9d, sil, [r8d]: registers only 64-bit mode has
 %define EXIT_USE_PACKAGE       47  ; %use of a package utasm does not know
 %define EXIT_ALIGN_MODE        48  ; alignmode with an unknown mode
 %define EXIT_REG_SIZE          49  ; "dword ax": a size that is not the register's
@@ -117,7 +118,8 @@
 %define WC_PP_MACRO_DEFAULTS   7   ; pp-macro-defaults: too many defaults
 %define WC_LABEL_ORPHAN        8   ; label-orphan: "rett" alone on its line
 %define WC_PIE                 9   ; pie (utasm's, off): won't link as PIE
-%define WC_COUNT               10
+%define WC_SLASH_COMMENT       10  ; slash-comment (utasm's): "x // 2" NASM divides
+%define WC_COUNT               11
 
 ; a kept expression's record (parser_defer_record): +0 RELOC_EXPR_MARK,
 ; +8 text, +16 tokens, +24 count; and for core/known.s:
@@ -355,6 +357,8 @@
 %define SYMF_SHADOW            0x08        ; a %define over an equ: SYMBOL_size keeps its value
 %define SYMF_LATE              0x10        ; an equ of something defined later: undefined
                                            ; until parser_late_equs works it out
+%define SYMF_STRUC             0x20        ; a struc's field or <struct>_size, a label in
+                                           ; an absolute block: in .symtab under -g
 %define SYM_SET                0x0E        ; mutable variable defined via %assign or SET
 %define SYM_EQU                0x0F        ; immutable assembler constant defined via EQU
 %define SYM_IFUNC              0x10        ; ELF indirect function symbol
