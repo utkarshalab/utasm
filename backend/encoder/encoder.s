@@ -72,6 +72,8 @@ amd64_encode_instruction:
     jb      .sym_ops
     cmp     eax, 6529                      ; LOOPcc, JECXZ, JRCXZ
     jbe     .sym_done
+    cmp     eax, 6536                      ; JCXZ
+    je      .sym_done
 .sym_ops:
     xor     ecx, ecx
 .sym_op:
@@ -117,7 +119,8 @@ amd64_encode_instruction:
     jnz     .done
     ; ... and, outside 64-bit mode, operands that do not exist there
     ; (rax, r8, sil, [rax]) - or, in it, 16-bit addressing (mode.s)
-    extern  amd64_mode_check
+    extern  amd64_asize_mem, amd64_mode_check
+    call    amd64_asize_mem                ; ("a32 mov al, [0]")
     call    amd64_mode_check
     test    rax, rax
     jnz     .done
@@ -325,6 +328,8 @@ amd64_encode_instruction:
     cmp     eax, 3099
     jbe     .ph_done
 .ph_not_jcc:
+    cmp     eax, 6536                      ; JCXZ
+    je      .ph_done
     cmp     eax, 6524
     jb      .ph_not_loop
     cmp     eax, 6529
@@ -1779,22 +1784,29 @@ amd64_encode_instruction:
         mov     al, 0xC9
         call    amd64_emit_byte
     ELSEIF ax, e, 1373             ; LOOP: rel8 only, like jmp short
-        mov     r13, 0xE2
-        call    amd64_encode_branch_short
+        mov     r13d, 0xE2
+        xor     edi, edi                   ; (the count: "loop l, ecx")
+        call    .count_branch
     ELSEIF_RANGE ax, 6524, 6525    ; LOOPE / LOOPZ
-        mov     r13, 0xE1
-        call    amd64_encode_branch_short
+        mov     r13d, 0xE1
+        xor     edi, edi
+        call    .count_branch
     ELSEIF_RANGE ax, 6526, 6527    ; LOOPNE / LOOPNZ
-        mov     r13, 0xE0
-        call    amd64_encode_branch_short
+        mov     r13d, 0xE0
+        xor     edi, edi
+        call    .count_branch
     ELSEIF ax, e, 6529             ; JRCXZ
-        mov     r13, 0xE3
-        call    amd64_encode_branch_short
-    ELSEIF ax, e, 6528             ; JECXZ: jrcxz with a 32-bit count (67)
-        mov     al, 0x67
-        call    amd64_emit_byte
-        mov     r13, 0xE3
-        call    amd64_encode_branch_short
+        mov     r13d, 0xE3
+        mov     edi, 64
+        call    .count_branch
+    ELSEIF ax, e, 6528             ; JECXZ
+        mov     r13d, 0xE3
+        mov     edi, 32
+        call    .count_branch
+    ELSEIF ax, e, 6536             ; JCXZ
+        mov     r13d, 0xE3
+        mov     edi, 16
+        call    .count_branch
     ELSEIF ax, e, 1685             ; SYSRET
         call    amd64_encode_sysret
     ELSEIF ax, e, 1682             ; SYSCALL
@@ -1945,6 +1957,8 @@ amd64_encode_instruction:
     je      .done
     cmp     rax, EXIT_INVALID_OPERAND
     je      .done
+    cmp     rax, EXIT_BITS_MODE            ; (amd64_count_size)
+    je      .done
 .encoded:
     cmp     byte [rel imm_ph_active], 0
     je      .no_placeholder
@@ -1972,6 +1986,17 @@ amd64_encode_instruction:
     pop     r12
     pop     rbx
     epilogue
+
+; .count_branch: a branch on the count register (loop, jcxz, ...): the
+; address size it works with (amd64_count_size, edi), then E0-E3 rel8 (r13)
+.count_branch:
+    extern  amd64_count_size
+    call    amd64_count_size
+    test    rax, rax
+    jnz     .count_ret
+    call    amd64_encode_branch_short
+.count_ret:
+    ret
 
 ;*
 ; * [amd64_imm_fixup]
@@ -4962,6 +4987,8 @@ amd64_encode_tracked:
     cmp     eax, 3099
     jbe     amd64_encode_instruction
 .not_jcc:
+    cmp     eax, 6536                      ; JCXZ
+    je      amd64_encode_instruction
     cmp     eax, 6524
     jb      .not_loopcc
     cmp     eax, 6529
@@ -5599,6 +5626,8 @@ amd64_emit_modrm_sib:
     ja      .a16_bad
     mov     eax, edx
 .a16_one:
+    cmp     eax, 0xFF
+    je      .a16_direct                    ; no register: [word 0x10]
     mov     r9d, 4
     cmp     eax, 6                         ; si
     je      .a16_rm
@@ -5653,6 +5682,15 @@ amd64_emit_modrm_sib:
     jmp     .disp_n
 .a16_bad:
     jmp     amd64_encode_instruction.error
+.a16_direct:
+    ; [disp16]: mod 00, r/m 110 ("a16 add eax, [0x10]" in 32-bit code)
+    mov     cl, r14b
+    shl     cl, 3
+    mov     al, cl
+    or      al, 6
+    call    amd64_emit_byte
+    mov     ecx, 2
+    jmp     .disp_n
 
 ; .disp_n: the displacement, ecx bytes (1, 2 or 4): a label's is relocated
 ; (its offset in the addend), a number's written as is
