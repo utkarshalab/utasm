@@ -4266,25 +4266,130 @@ parser_is_register:
 ;*
 ; * [parser_lookup_mnemonic]
 ; * Input: RDI = Hash, RSI = Table Pointer
+; * Output: RAX = the mnemonic's id (the first entry with that hash), or 0
+; * The table (16-byte entries, a zero hash last) was walked for every
+; * statement - all of it for a word that is no instruction; it is indexed
+; * by hash the first time it is used.
 ; ;
 parser_lookup_mnemonic:
-    prologue
-.loop:
+    cmp     rsi, [rel mnc_idx_of]
+    jne     .index
+.probe:
+    push    rcx
+    mov     rax, rdi
+    mov     rcx, [rel mnc_idx_slots]
+.slot:
+    and     rax, [rel mnc_idx_mask]
+    mov     rsi, [rcx + rax * 8]
+    test    rsi, rsi
+    jz      .not_found
+    cmp     [rsi], rdi
+    je      .found
+    inc     rax
+    jmp     .slot
+.found:
+    movzx   eax, word [rsi + 9]
+    pop     rcx
+    ret
+.not_found:
+    xor     eax, eax
+    pop     rcx
+    ret
+.index:
+    ; slots: a power of two, at least twice the entries
+    push    rcx
+    push    rdx
+    push    rdi
+    push    rsi
+    push    r8
+    push    r9
+    push    r10
+    push    r11
+    xor     ecx, ecx
+.count:
+    cmp     qword [rsi + rcx * 8], 0
+    je      .counted
+    add     rcx, 2
+    jmp     .count
+.counted:
+    mov     eax, 64
+.size:
+    cmp     rax, rcx                       ; (rcx = entries * 2)
+    jae     .sized
+    shl     rax, 1
+    jmp     .size
+.sized:
+    lea     rdx, [rax - 1]
+    mov     [rel mnc_idx_mask], rdx
+    lea     rsi, [rax * 8]
+    extern  mem_reserve
+    call    mem_reserve
+    test    rax, rax
+    jnz     .no_index
+    mov     [rel mnc_idx_slots], rdx
+    mov     r8, rdx
+    mov     rsi, [rsp + 32]                ; the table (pushed fourth)
+    mov     [rel mnc_idx_of], rsi
+.entry:
+    mov     r9, [rsi]
+    test    r9, r9
+    jz      .indexed
+    mov     rax, r9
+.place:
+    and     rax, [rel mnc_idx_mask]
+    mov     r10, [r8 + rax * 8]
+    test    r10, r10
+    jz      .put
+    cmp     [r10], r9
+    je      .placed                        ; the first entry of a name stays
+    inc     rax
+    jmp     .place
+.put:
+    mov     [r8 + rax * 8], rsi
+.placed:
+    add     rsi, 16
+    jmp     .entry
+.indexed:
+    pop     r11
+    pop     r10
+    pop     r9
+    pop     r8
+    pop     rsi
+    pop     rdi
+    pop     rdx
+    pop     rcx
+    jmp     .probe
+.no_index:
+    ; (no memory: the walk)
+    pop     r11
+    pop     r10
+    pop     r9
+    pop     r8
+    pop     rsi
+    pop     rdi
+    pop     rdx
+    pop     rcx
+.walk:
     mov     rax, [rsi]
     test    rax, rax
-    jz      .not_found
+    jz      .walk_none
     cmp     rax, rdi
-    je      .found
+    je      .walk_found
     add     rsi, 16
-    jmp     .loop
+    jmp     .walk
+.walk_found:
+    movzx   eax, word [rsi + 9]
+    ret
+.walk_none:
+    xor     eax, eax
+    ret
 
-.found:
-    movzx   rax, word [rsi + 9]
-    epilogue
-
-.not_found:
-    xor     rax, rax
-    epilogue
+[SECTION .bss]
+alignb 8
+mnc_idx_of:     resq 1                  ; the table indexed (parser_lookup_mnemonic)
+mnc_idx_slots:  resq 1                  ; its entries by hash
+mnc_idx_mask:   resq 1
+[SECTION .text]
 
 ; parser_check_size: a memory operand with no size where nothing else gives
 ; one - "inc [rax]", "mov [rax], 5", "shl [rax], cl" - is NASM's "operation
