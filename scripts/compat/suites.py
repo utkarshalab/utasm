@@ -725,8 +725,8 @@ def expressions(utasm, verbose=False):
             else:
                 s.result(name, a == b, "nasm %s | utasm %s" % (str(a)[:60], str(b)[:60]))
 
-    # where the value is needed when the line is read, utasm (one pass)
-    # refuses a label defined later - an error, never a wrong value
+    # a name never defined, equs naming each other: an error (NASM takes
+    # the circular one as 0), never a value
     for name, src in cases.EXPR_REJECT.items():
         with tempdir() as d:
             open(os.path.join(d, "p.s"), "w").write(src)
