@@ -174,10 +174,7 @@ lexer_next:
     ; copy inline peek token to output
     lea     rsi, [rbx + LEXER_peek]
     mov     rdi, r12
-    mov     rdx, TOKEN_SIZE
-    call    mem_copy
-    test    rax, rax
-    jnz     .fail
+    copy_token                     ; (mem_copy, for 32 bytes)
 
     ; clear peek slot
     mov     byte [rbx + LEXER_has_peek], FALSE
@@ -2243,10 +2240,7 @@ lexer_peek:
 
     lea     rsi, [rbx + LEXER_peek]
     mov     rdi, r12
-    mov     rdx, TOKEN_SIZE
-    call    mem_copy
-    test    rax, rax
-    jnz     .fail
+    copy_token                     ; (mem_copy, for 32 bytes)
 
     xor     rax, rax
     mov     rdx, r12
@@ -2266,10 +2260,7 @@ lexer_peek:
     ; copy to caller output
     lea     rsi, [rbx + LEXER_peek]
     mov     rdi, r12
-    mov     rdx, TOKEN_SIZE
-    call    mem_copy
-    test    rax, rax
-    jnz     .fail
+    copy_token                     ; (mem_copy, for 32 bytes)
 
     xor     rax, rax
     mov     rdx, r12
