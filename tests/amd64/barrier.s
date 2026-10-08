@@ -23,18 +23,18 @@ pause
 
 // ---- LOCK prefix: atomic read-modify-write -------------
 lock add  [rax], rbx
-lock add  [rbx], 1
+lock add  dword [rbx], 1
 lock sub  [rcx], rdx
-lock sub  [rdx], 1
+lock sub  dword [rdx], 1
 lock adc  [r8], r9
 lock sbb  [r10], r11
 lock and  [rax], rbx
 lock or   [rcx], rdx
 lock xor  [r12], r13
-lock inc  [r14]
-lock dec  [r15]
-lock neg  [rax]
-lock not  [rbx]
+lock inc  dword [r14]
+lock dec  dword [r15]
+lock neg  dword [rax]
+lock not  dword [rbx]
 lock xchg [rcx], rdx       // XCHG is always atomic
 lock xadd [rdx], r8
 lock cmpxchg [r9], r10
