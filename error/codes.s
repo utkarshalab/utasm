@@ -618,7 +618,7 @@ code_table:
     code_msg EXIT_UNDEF_SYMBOL,      m_undef, t_undef
     code_msg EXIT_DUP_SYMBOL,        m_dup, t_dup
     code_msg EXIT_SYMBOL_RANGE,      m_sym_range
-    code_msg EXIT_CIRCULAR_REF,      m_circular
+    code_msg EXIT_CIRCULAR_REF,      m_circular, t_circular
     code_msg EXIT_LD_SCRIPT_404,     m_ld_404
     code_msg EXIT_LD_SCRIPT_PARSE,   m_ld_parse
     code_msg EXIT_SECTION_OVERLAP,   m_overlap
@@ -658,7 +658,7 @@ m_macro_arity:  db "no macro of this name takes this number of parameters", 0
 m_define:       db "invalid %define", 0
 m_inc_name:     db "`%include' expects a quoted file name", 0
 m_inc_depth:    db "includes nested too deeply (does a file include itself?)", 0
-m_equ_fwd:      db "equ refers to a symbol defined later (utasm reads the source once)", 0
+m_equ_fwd:      db "equ refers to a symbol defined later", 0
 m_instr:        db "parser: instruction expected", 0
 m_operand:      db "invalid operand", 0
 m_reg:          db "invalid register", 0
@@ -716,7 +716,8 @@ m_ubf_big:      db "-f ubf: a component is larger than 4 GiB", 0
 
 t_no_file:      db "unable to open `^': no such file", 0
 t_read:         db "error reading `^'", 0
-t_equ_fwd:      db "equ refers to `^', defined later (utasm reads the source once)", 0
+t_circular:     db "`^' is defined in terms of itself", 0
+t_equ_fwd:      db "equ refers to `^', defined later", 0
 t_include:      db "unable to open include file `^'", 0
 t_macro_arity:  db "multi-line macro `^' does not take this number of parameters", 0
 t_undef:        db "symbol `^' not defined", 0
