@@ -451,11 +451,14 @@ table_end:
 ```
 
 utasm reads the source once, so such a value is worked out at the end, once
-every label is placed, and written in place. An instruction keeps room for
-any value there: `push dword (table_end - table) / 4` is `68 imm32` where
-NASM, which reads the source again, writes `6A ib`. Where the value is
-needed when the line is read - the count of `times` or `resb`, an `equ` -
-a label defined later is an error.
+every label is placed, and written in place. When an instruction uses one,
+utasm reads the source a second time knowing it, so the instruction gets
+the form NASM gives it: `push dword (table_end - table) / 4` is `6A ib`,
+`add rsp, frame_end - frame` takes an imm8. The second pass checks each
+value once the code is laid out; one that measures its own instruction
+(`s: push dword (e - s)`) keeps the long form, where NASM converges on the
+short one. Where the value is needed when the line is read - the count of
+`times` or `resb`, an `equ` - a label defined later is an error.
 
 ---
 
