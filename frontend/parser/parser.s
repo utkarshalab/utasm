@@ -1425,6 +1425,8 @@ parser_evaluate_expression:
     push    r15
     mov     rbx, rdi
     mov     byte [rel expr_lost], 0
+    mov     qword [rel expr_last_record], 0
+    mov     qword [rel expr_undef_uses], 0
     extern  prep_rec_begin
     extern  prep_rec_end
     extern  prep_rec_drop
@@ -1445,9 +1447,9 @@ parser_evaluate_expression:
     ; "end - start" of labels not defined yet, kept as a distance
     ; (RELOC_OFFSET_MARK): a record too, for a second pass (core/known.s)
     test    r14, r14
-    jz      .top_drop
+    jz      .top_named
     cmp     byte [r14], RELOC_OFFSET_MARK
-    jne     .top_drop
+    jne     .top_plain
     test    eax, eax
     jnz     .top_drop
     push    r14
@@ -1458,6 +1460,7 @@ parser_evaluate_expression:
     pop     rcx                            ; the distance's name
     test    rax, rax
     jnz     .top_out                       ; (as it was: no record)
+    mov     [rel expr_last_record], rdx
     mov     r14, rcx
     cmp     byte [rel known_active], 0
     je      .top_out
@@ -1477,9 +1480,23 @@ parser_evaluate_expression:
     xor     r14d, r14d
     xor     r15d, r15d
     jmp     .top_out
+.top_named:
+    ; a name referred to before but not defined yet went in as 0 ("a equ
+    ; b" with b used above): an equ keeps that too, as below
+    cmp     qword [rel expr_undef_uses], 0
+    je      .top_drop
+.top_plain:
+    ; a name not defined yet, alone: an equ keeps it as well (its value is
+    ; worked out once the code is laid out: parser_late_equs)
+    cmp     byte [rel expr_keep_forward], 0
+    je      .top_drop
+    test    eax, eax
+    jnz     .top_drop
+    jmp     .top_keep
 .top_lost:
     test    eax, eax
     jnz     .top_too_long
+.top_keep:
     ; kept: a record of its own, under the deferred name
     mov     rdi, rbx
     mov     rsi, rdx
@@ -1488,6 +1505,7 @@ parser_evaluate_expression:
     test    rax, rax
     jnz     .top_fail
     mov     r14, rdx                       ; the deferred name
+    mov     [rel expr_last_record], rdx
     xor     r13d, r13d
     xor     r15d, r15d
     ; pass 2: the value pass 1 found for an instruction's (core/known.s) -
@@ -2778,6 +2796,8 @@ parser_evaluate_factor:
             jmp     .done
 .sym_unknown:
             call    known_note_forward     ; (pass 1: noted)
+            inc     qword [rel expr_undef_uses]
+            mov     [rel expr_undef_name], rsi
             pop     rdx
 .sym_defined:
             mov     r15, rdx               ; return SYMBOL* in r11 (A78)
@@ -2808,6 +2828,8 @@ parser_evaluate_factor:
             jmp     .done
 .unknown_yet:
             call    known_note_forward
+            inc     qword [rel expr_undef_uses]
+            mov     [rel expr_undef_name], rsi
             inc     qword [rel known_pos_uses]
             ; Deferred symbol (R_ABS64 reloc)
             mov     rdx, 0
@@ -6283,6 +6305,15 @@ expr_coeff:    resq 1              ; how the last value moves with $ (1: $ itsel
 times_newline: resq 1; the token that ends a times line
 times_padto:   resb 1              ; this times count is K - ($ - $$)
 equ_again:     resb 1              ; this equ defines a constant again
+expr_keep_forward: resb 1           ; an equ: keep a name not defined yet too
+alignb 8
+expr_last_record: resq 1            ; the record the last expression was kept as
+expr_undef_uses: resq 1            ; names met not defined (parser_late_equs)
+expr_undef_name: resq 1            ; ... the last
+late_list:     resq 1              ; equs of something defined later:
+global late_equ_n                  ; {SYMBOL*, record, file, line}
+late_equ_n:    resq 1
+%define LATE_CAP (1 << 20)
 pseudo_lc:     resb 64             ; a statement word in lower case
 ds_chars:      resq 2              ; a quoted literal's characters
 ds_pad:        resq 1
@@ -6789,10 +6820,19 @@ parser_handle_times:
     test    rax, rax
     jnz     .ret
     mov     r15, rdx
-    ; a count not known yet (a label defined later): NASM's error; utasm
-    ; reads the source once (it repeated the line 0 times)
+    ; a count not known yet (a label or an equ defined later): pass 1
+    ; repeats the line 0 times and makes a second pass, which may know it;
+    ; the error is the last pass's
     call    parser_count_known
+    jz      .count_known
+    mov     edi, EXIT_TIMES_NONCONST
+    extern  known_defer_error
+    call    known_defer_error
+    test    eax, eax
     jnz     .times_nonconst
+    xor     r15d, r15d
+    jmp     .count_done
+.count_known:
     cmp     qword [rel expr_coeff], -1
     jne     .count_done
     test    r15, r15
@@ -7184,12 +7224,14 @@ parser_handle_equ:
     mov     qword [rel known_pos_uses], 0
     extern  known_diff_n
     mov     qword [rel known_diff_n], 0
+    mov     byte [rel expr_keep_forward], 1
     call    parser_evaluate_expression
+    mov     byte [rel expr_keep_forward], 0
     check_err_to .error
     mov     r12, rdx               ; r12 = value
 
     ; a symbol not defined yet: its value is unknown here, and utasm reads
-    ; the source once
+    ; the source once - the expression is kept and worked out later
     test    rcx, rcx
     jnz     .forward
 
@@ -7253,6 +7295,25 @@ parser_handle_equ:
     jmp     .error
 
 .forward:
+    ; "len equ end - start" above "end:", "size equ 4 * PAGE" above
+    ; "PAGE equ ...": the name stays undefined - what uses it is a forward
+    ; reference - and its value is worked out once the code is laid out
+    ; (parser_late_equs): at the end of pass 1, for pass 2 to take as a
+    ; number (core/known.s), and before the relocations are resolved
+    cmp     byte [rel equ_again], 0
+    jne     .forward_error                 ; (a constant defined again)
+    mov     rsi, [rel expr_last_record]
+    test    rsi, rsi
+    jz      .forward_error
+    mov     r12, rcx
+    mov     rdi, r13
+    call    parser_late_note
+    mov     rcx, r12
+    test    rax, rax
+    jnz     .forward_error
+    jmp     .error                         ; (rax = OK)
+.forward_error:
+    mov     byte [rel equ_again], 0
     mov     rdi, rcx               ; "equ: `y' is not defined yet"
     call    error_set_subject
     mov     rax, EXIT_EQU_FORWARD
@@ -7263,6 +7324,186 @@ parser_handle_equ:
     pop     r13
     pop     r12
     epilogue
+
+; ---- parser_late_note (internal) ----------
+; An equ of something not defined yet: the symbol rdi is undefined until
+; parser_late_equs works out the record rsi. Output: rax = OK, or an error
+; when there is no room.
+parser_late_note:
+    push    rbx
+    mov     rbx, rdi
+    mov     rax, [rel late_list]
+    test    rax, rax
+    jnz     .have
+    push    rsi
+    mov     rsi, LATE_CAP * 32
+    extern  mem_reserve
+    call    mem_reserve
+    pop     rsi
+    test    rax, rax
+    jnz     .ret
+    mov     [rel late_list], rdx
+    mov     rax, rdx
+.have:
+    mov     rcx, [rel late_equ_n]
+    cmp     rcx, LATE_CAP
+    jae     .full
+    shl     rcx, 5
+    add     rax, rcx
+    mov     [rax], rbx
+    mov     [rax + 8], rsi
+    extern  error_loc_file
+    mov     rdx, [rel error_loc_file]
+    mov     [rax + 16], rdx
+    mov     edx, [rel error_loc_line]
+    mov     [rax + 24], rdx
+    inc     qword [rel late_equ_n]
+    mov     word [rbx + SYMBOL_section], 0
+    mov     qword [rbx + SYMBOL_value], 0
+    or      byte [rbx + SYMBOL_pflags], SYMF_LATE
+    xor     eax, eax
+    jmp     .ret
+.full:
+    mov     eax, EXIT_EQU_FORWARD
+.ret:
+    pop     rbx
+    ret
+
+;*
+; * [parser_late_equs]
+; * Purpose: The equs of something defined later (parser_late_note), worked
+; *   out now that every label is placed: round after round, as one may
+; *   name another ("a equ b + 1" above "b equ end - start"). Each becomes
+; *   what parser_handle_equ makes of a value: a constant, or a label of
+; *   its section ("x equ later + 4").
+; * Output : RAX = OK, or the error of one that names something never
+; *          defined, at its line
+; ;
+global parser_late_equs
+parser_late_equs:
+    xor     eax, eax
+    cmp     qword [rel late_equ_n], 0
+    jne     .work
+    ret
+.work:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+.round:
+    xor     r13d, r13d                     ; r13 = worked out this round
+    xor     r14d, r14d                     ; r14 = the first still not
+    xor     r12d, r12d
+.item:
+    cmp     r12, [rel late_equ_n]
+    jae     .round_done
+    mov     rbx, r12
+    shl     rbx, 5
+    add     rbx, [rel late_list]
+    inc     r12
+    mov     r15, [rbx]                     ; the symbol
+    test    byte [r15 + SYMBOL_pflags], SYMF_LATE
+    jz      .item
+    mov     qword [rel known_pos_uses], 0
+    mov     qword [rel expr_undef_uses], 0
+    mov     rdi, [rbx + 8]
+    call    parser_deferred_value
+    test    rax, rax
+    jnz     .not_yet
+    ; a name in it not defined (yet): taken as 0 in arithmetic
+    cmp     qword [rel expr_undef_uses], 0
+    je      .value
+.not_yet:
+    test    r14, r14
+    jnz     .item
+    mov     r14, rbx
+    jmp     .item
+.value:
+    and     byte [r15 + SYMBOL_pflags], ~SYMF_LATE
+    mov     [r15 + SYMBOL_value], rdx
+    mov     word [r15 + SYMBOL_section], SHN_ABS
+    test    r11, r11
+    jz      .posdep
+    cmp     byte [r11], TAG_SYMBOL
+    jne     .posdep
+    cmp     byte [r11 + SYMBOL_kind], SYM_LABEL
+    jne     .posdep
+    movzx   eax, word [r11 + SYMBOL_section]
+    test    eax, eax
+    jz      .posdep
+    cmp     eax, 0xFF00
+    jae     .posdep
+    mov     [r15 + SYMBOL_section], ax
+    mov     byte [r15 + SYMBOL_kind], SYM_LABEL
+    ; its offset in that section: placed sections (a flat binary, an
+    ; executable) came with their address (expr_deferred_addr)
+    lea     rcx, [rel global_ctx]
+    cmp     byte [rcx + ASMCTX_fmt], FMT_BIN
+    je      .unplace
+    cmp     byte [rcx + ASMCTX_standalone], 0
+    je      .posdep
+.unplace:
+    cmp     ax, [rcx + ASMCTX_seccount]
+    ja      .posdep
+    mov     rcx, [rcx + ASMCTX_sections]
+    mov     rcx, [rcx + rax * 8 - 8]
+    test    rcx, rcx
+    jz      .posdep
+    mov     rax, [rcx + SECTION_addr]
+    sub     [r15 + SYMBOL_value], rax
+.posdep:
+    cmp     qword [rel known_pos_uses], 0
+    je      .worked
+    or      byte [r15 + SYMBOL_pflags], SYMF_POSDEP
+.worked:
+    inc     r13
+    jmp     .item
+.round_done:
+    xor     eax, eax
+    test    r14, r14
+    jz      .ret
+    test    r13, r13
+    jnz     .round
+    ; nothing more can be worked out: the first one left names something
+    ; never defined (or they name each other) - its error, at its line
+    mov     qword [rel expr_undef_name], 0
+    mov     rdi, [r14 + 8]
+    call    parser_deferred_value
+    test    rax, rax
+    jnz     .located
+    mov     rsi, [rel expr_undef_name]
+    test    rsi, rsi
+    jz      .undefined
+    ; one of these equs: they name each other
+    lea     rdi, [rel global_ctx]
+    call    symbol_find
+    test    rax, rax
+    jnz     .undefined_name
+    test    byte [rdx + SYMBOL_pflags], SYMF_LATE
+    jz      .undefined_name
+    mov     rax, [r14]
+    mov     rdi, [rax + SYMBOL_name]
+    call    error_set_subject
+    mov     eax, EXIT_CIRCULAR_REF
+    jmp     .located
+.undefined_name:
+    mov     rdi, [rel expr_undef_name]
+    call    error_set_subject
+.undefined:
+    mov     eax, EXIT_UNDEF_SYMBOL
+.located:
+    mov     rdx, [r14 + 16]
+    mov     [rel error_loc_file], rdx
+    mov     rdx, [r14 + 24]
+    mov     [rel error_loc_line], edx
+.ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
 
 [SECTION .rodata]
 str_equ:    db "equ", 0
@@ -7732,10 +7973,13 @@ parser_handle_res:
     mov     rdi, rbx
     call    parser_evaluate_expression
     check_err
-    call    parser_count_known     ; a count not known yet: NASM's error
+    call    parser_count_known     ; a count not known yet: as for times
     jz      .count_known
-    mov     rax, EXIT_RES_NONCONST
-    jmp     .error
+    mov     edi, EXIT_RES_NONCONST
+    call    known_defer_error
+    test    eax, eax
+    jnz     .error
+    xor     edx, edx
 .count_known:
     imul    rdx, r12               ; total bytes to reserve
 
