@@ -513,15 +513,38 @@ parser_parse_instruction:
     jnz     .no_label
     movzx   eax, byte [rdx + TOKEN_kind]
     cmp     eax, TOK_NEWLINE
-    je      .colonless
+    je      .orphan
     cmp     eax, TOK_EOF
-    je      .colonless
+    je      .orphan
     cmp     eax, TOK_IDENT
     jne     .no_label
     mov     rsi, [rdx + TOKEN_value]
     call    parser_is_statement_word
     test    eax, eax
     jz      .no_label
+    jmp     .colonless
+.orphan:
+    ; alone on its line: NASM's warning - and a misspelt instruction
+    ; ("rett", "nopp") becomes a label: one letter from one, a hint
+    mov     edi, WC_LABEL_ORPHAN
+    call    warn_begin
+    test    eax, eax
+    jz      .colonless
+    lea     rsi, [rel s_orphan]
+    call    warn_text
+    call    warn_end
+    mov     rdi, [r12 + TOKEN_value]
+    call    error_hint_mnemonic
+    test    eax, eax
+    jz      .colonless
+    extern  suggest_result, error_hint_clear, warn_hint
+    call    suggest_result
+    cmp     rax, 1
+    jbe     .orphan_hint
+    call    error_hint_clear
+    jmp     .colonless
+.orphan_hint:
+    call    warn_hint
 .colonless:
     mov     rsi, [r12 + TOKEN_value]
     cmp     byte [rsi], '.'
@@ -7580,6 +7603,7 @@ s_bits32:      db "32", 0
 s_bits16:      db "16", 0
 s_rel_regs:    db "indirect address displacements cannot be RIP-relative", 0
 s_db_empty:    db "no operand for data declaration", 0
+s_orphan:      db "label alone on a line without a colon might be in error", 0
 data_letters:  db "bwdqtoyz", 0
 [SECTION .bss]
 alignb 8
