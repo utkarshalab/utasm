@@ -1566,8 +1566,7 @@ parser_defer_record:
     imul    rax, r13, TOKEN_SIZE
     lea     rdi, [r12 + rax]               ; slot N: the last token, as a newline
     lea     rsi, [rdi - TOKEN_SIZE]
-    mov     ecx, TOKEN_SIZE / 8
-    rep movsq
+    copy_token
     mov     byte [rdi - TOKEN_SIZE + TOKEN_kind], TOK_NEWLINE
     mov     qword [rdi - TOKEN_SIZE + TOKEN_value], 0
     mov     rdi, [rbx + PREP_arena]
@@ -1636,8 +1635,7 @@ parser_deferred_value:
     mov     [rsp + TOKEN_SIZE], al
     lea     rsi, [rbx + PREP_peek]
     mov     rdi, rsp
-    mov     ecx, TOKEN_SIZE / 8
-    rep movsq
+    copy_token
     mov     byte [rbx + PREP_has_peek], FALSE
     ; an anonymous macro holding the tokens, expanded once
     mov     rdi, [rbx + PREP_arena]
@@ -1708,8 +1706,7 @@ parser_deferred_value:
     push    rdx
     lea     rsi, [rsp + 16]
     lea     rdi, [rbx + PREP_peek]
-    mov     ecx, TOKEN_SIZE / 8
-    rep movsq
+    copy_token
     mov     cl, [rsp + 16 + TOKEN_SIZE]
     mov     [rbx + PREP_has_peek], cl
     pop     rdx
@@ -6846,8 +6843,7 @@ parser_handle_times:
     mov     rsi, rdx
     imul    rdi, r13, TOKEN_SIZE
     add     rdi, r12
-    mov     ecx, TOKEN_SIZE / 8
-    rep movsq
+    copy_token
     inc     r13d
     jmp     .token
 .captured:
@@ -6933,8 +6929,7 @@ parser_handle_times:
     imul    rdi, r13, TOKEN_SIZE
     add     rdi, r12
     mov     r14, rdi
-    mov     ecx, TOKEN_SIZE / 8
-    rep movsq
+    copy_token
     mov     byte [r14 + TOKEN_kind], TOK_NEWLINE
     inc     r13d
     mov     rdi, [rbx + PREP_arena]
@@ -8465,8 +8460,7 @@ parser_handle_visibility:
     mov     rsi, rdx
     imul    rdi, r15, TOKEN_SIZE
     add     rdi, r14
-    mov     ecx, TOKEN_SIZE / 8
-    rep movsq
+    copy_token
     inc     r15d
     jmp     .size_tok
 .size_kept:
@@ -8546,8 +8540,7 @@ parser_finish:
     imul    rdi, r14, TOKEN_SIZE
     add     rdi, r13
     lea     rsi, [rdi - TOKEN_SIZE]
-    mov     ecx, TOKEN_SIZE / 8
-    rep movsq
+    copy_token
     imul    rax, r14, TOKEN_SIZE
     mov     byte [r13 + rax + TOKEN_kind], TOK_NEWLINE
     inc     r14d
