@@ -206,16 +206,9 @@ arena_alloc:
     cmp     rdx, r8
     ja      .out_of_memory         ; new ptr > end = no space
 
-    ; zero the allocated region (optimized using stosq)
-    mov     rdi, rax               ; rdi = current ptr
-    push    rax                    ; save start of block for return
-    mov     rax, 0                 ; zero value
-    push    rcx                    ; save aligned size
-    shr     rcx, 3                 ; rcx = number of 8-byte quads
-    cld                            ; ensure stosq moves forward
-    rep stosq                      ; zero the memory
-    pop     rcx                    ; restore aligned size
-    pop     rax                    ; restore start of block
+    ; (zeroed already: the arena is mapped fresh, and arena_reset /
+    ; arena_rollback zero what they hand back - clearing every block here
+    ; cost a rep stosq per token)
 
     ; advance arena ptr
     mov     rdx, rax               ; rdx = result pointer
@@ -338,7 +331,17 @@ arena_reset:
     cmp     byte [rdi + ARENA_tag], TAG_ARENA
     jne     .bad_arena
 
-    ; reset ptr to base
+    ; zero what was used (arena_alloc hands out zeroed memory without
+    ; clearing it), then reset ptr to base
+    push    rdi
+    mov     rcx, [rdi + ARENA_ptr]
+    mov     rax, [rdi + ARENA_base]
+    sub     rcx, rax
+    mov     rdi, rax
+    xor     eax, eax
+    cld
+    rep     stosb
+    pop     rdi
     mov     rcx, [rdi + ARENA_base]
     mov     [rdi + ARENA_ptr], rcx
 
@@ -481,7 +484,16 @@ arena_rollback:
     mov     rax, [rdi + ARENA_ptr]
     cmp     rsi, rax
     ja      .invalid_rollback
-    
+
+    ; zero what is handed back (arena_alloc does not clear)
+    push    rdi
+    mov     rcx, rax
+    sub     rcx, rsi
+    mov     rdi, rsi
+    xor     eax, eax
+    cld
+    rep     stosb
+    pop     rdi
     mov     [rdi + ARENA_ptr], rsi
     xor     rax, rax
     ret
