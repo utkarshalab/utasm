@@ -57,6 +57,10 @@ extern lst_parent_exp
 extern lst_enabled
 extern warn_flush
 extern warn_before_error
+extern diag_code, diag_inst, diag_notes, diag_snippet
+extern diag_color_on, diag_color_off
+extern diag_tok_file, diag_tok_line, diag_tok_col, diag_tok_len
+extern c_bold, c_red, c_magenta
 extern stderr_hold
 extern global_ctx
 
@@ -173,6 +177,18 @@ error_track_token:
     mov     rax, [rdi + TOKEN_file]
     mov     [rel error_loc_file], rax
     mov     [rel error_loc_line], ecx
+    ; where the parser stopped, should it stop here (error/format/source.s)
+    cmp     byte [rdi + TOKEN_kind], TOK_NEWLINE
+    je      .not_marked
+    cmp     byte [rdi + TOKEN_kind], TOK_EOF
+    je      .not_marked
+    mov     [rel diag_tok_file], rax
+    mov     [rel diag_tok_line], ecx
+    movzx   eax, word [rdi + TOKEN_col]
+    mov     [rel diag_tok_col], eax
+    movzx   eax, word [rdi + TOKEN_len]
+    mov     [rel diag_tok_len], eax
+.not_marked:
     ; the listing: an include's lines are marked with their depth
     xor     edx, edx
     lea     rax, [rel global_ctx]
@@ -328,6 +344,7 @@ error_code_message:
 global error_report_code
 error_report_code:
     call    warn_before_error              ; the warnings held: given or not
+    mov     [rel diag_code], edi           ; (error/format/source.s)
     push    rbx
     mov     ebx, edi
     lea     rdi, [rel sev_error]
@@ -387,6 +404,9 @@ error_report_code:
 .tail:
     call    report_tail
     call    error_hint_flush
+    call    diag_notes                     ; what the operands were
+    mov     qword [rel diag_inst], 0
+    mov     dword [rel diag_code], 0
     mov     qword [rel error_subject], 0
     pop     rbx
     ret
@@ -400,6 +420,7 @@ error_report_code:
 ;
 global error_report_text
 error_report_text:
+    mov     dword [rel diag_code], 0
     lea     rax, [rel sev_warning]
     cmp     edi, 1
     jb      .go
@@ -430,6 +451,8 @@ error_report_end:
 report_head:
     push    rbx
     mov     rbx, rdi
+    lea     rsi, [rel c_bold]              ; (on a terminal: color)
+    call    diag_color_on
     mov     rsi, [rel error_loc_file]
     test    rsi, rsi
     jz      .anon
@@ -441,9 +464,18 @@ report_head:
     lea     rsi, [rel msg_utasm]
     call    print_str
 .sev:
+    call    diag_color_off
+    lea     rsi, [rel c_magenta]
+    lea     rax, [rel sev_warning]
+    cmp     rbx, rax
+    je      .sev_color
+    lea     rsi, [rel c_red]
+.sev_color:
+    call    diag_color_on
     mov     rdi, 2
     mov     rsi, rbx
     call    print_str
+    call    diag_color_off
     pop     rbx
     ret
 
@@ -481,6 +513,7 @@ report_tail:
     mov     rdi, 2
     lea     rsi, [rel msg_newline]
     call    print_str
+    call    diag_snippet                   ; on a terminal: the line, marked
     cmp     qword [rel error_mac_name], 0
     je      .done
     mov     rsi, [rel error_mac_file]
@@ -551,6 +584,7 @@ code_table:
     code_msg EXIT_MACRO_EOF,         m_macro_def, t_macro_eof
     code_msg EXIT_NOT_DEFINING,      m_macro_def, t_not_defining
     code_msg EXIT_NO_REP,            m_no_rep
+    code_msg EXIT_NO_SIZE,           m_no_size
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -654,6 +688,7 @@ m_ea_too_many:  db "invalid effective address: too many registers", 0
 m_ea_size_mix:  db "impossible combination of address sizes", 0
 m_macro_minmax: db "minimum parameter count exceeds maximum", 0
 m_no_rep:       db "`%endrep': no matching `%rep'", 0
+m_no_size:      db "operation size not specified", 0
 m_ctx_deep:     db "context stack nested too deeply", 0
 m_align_mode:   db "unknown alignment mode", 0
 m_reg_size:     db "invalid register size specification", 0
