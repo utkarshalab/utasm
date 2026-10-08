@@ -394,11 +394,14 @@ cli_parse:
 .handle_color:
     and     dword [rbx + ASMCTX_flags], ~CTX_FLAG_NO_COLOR
     or      dword [rbx + ASMCTX_flags], CTX_FLAG_COLOR
+    extern  diag_color
+    mov     byte [rel diag_color], 1       ; messages: the rich form
     jmp     .next_arg
 
 .handle_no_color:
     and     dword [rbx + ASMCTX_flags], ~CTX_FLAG_COLOR
     or      dword [rbx + ASMCTX_flags], CTX_FLAG_NO_COLOR
+    mov     byte [rel diag_color], 2       ; messages: NASM's lines only
     jmp     .next_arg
 
 .handle_werror:
