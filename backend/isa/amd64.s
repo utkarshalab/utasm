@@ -1914,6 +1914,7 @@ mnc_tb_x64:
     mnc_ent "retf", 0, 6532
     mnc_ent "retfq", 0, 6533
     mnc_ent "retn", 0, 6534
+    mnc_ent "jcxz", 0, 6536
 
     dq 0
 
