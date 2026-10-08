@@ -621,6 +621,20 @@ This folder is permanent memory. Every entry is an hour transformed into permane
 
 ---
 
+## Speed
+
+`scripts/compat/bench.py` assembles the same large inputs with NASM and
+utasm - straight-line code, jumps among labels, macro calls, labelled data -
+and times them, checking that the code is the same:
+
+```sh
+python3 scripts/compat/bench.py build/gen1/utasm            # about a minute
+python3 scripts/compat/bench.py build/gen1/utasm --scale 5  # larger inputs
+python3 scripts/compat/bench.py build/gen1/utasm --only jumps
+```
+
+---
+
 ## Fuzz Tests
 
 `scripts/compat/fuzz.py` changes the test sources and the compatibility
