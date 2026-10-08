@@ -19,7 +19,7 @@ after the source file (for example, `source.s` becomes `source.o`).
 | `--standalone` | Produce a standalone executable and require `_start`. |
 | `--profile`, `-P` | Print the assembler's internal performance profile. |
 | `--verbose` | Enable verbose diagnostics. |
-| `--color`, `--no-color` | Explicitly enable or disable ANSI diagnostic color. |
+| `--color`, `--no-color` | The rich diagnostics (the source line, the place marked, color) or NASM's plain lines; by default rich on a terminal. |
 | `-Werror` | Treat warnings as errors. |
 | `-O0`, `-O1`, `-O2` (`-Ox`) | Jump optimization level; `-O1` is the default (see below). |
 | `-I dir`, `-i dir` | Add a directory to the include search path (see [NASM's options](#nasms-options)). |
@@ -287,6 +287,18 @@ prog.s:9: warning: value is 16 ok [-w+user]
 prog.s:14: warning: uninitialized space declared in non-BSS section `.text': zeroing [-w+zeroing]
 ```
 
+- On a terminal (stderr a tty), or with `--color`, each message also
+  shows its source line, with the place marked - the name the message is
+  about, else where the parser stopped, else the statement - in color.
+  An error about an instruction's operands says what they were and what
+  clashes ("note: `al' is an 8-bit register, `rax' a 64-bit register");
+  "operation size not specified" says what to write (`dword [rax]`).
+  `--no-color`, `NO_COLOR` or `TERM=dumb` keep NASM's plain lines; piped
+  into a file or a program the output is NASM's, plus the `hint:` and
+  `note:` lines after an error.
+- An operand size utasm cannot know (`inc [rax]`, `mov [rax], 5`,
+  `shl [rax], cl`) is NASM's error "operation size not specified"; utasm
+  used to pick one.
 - A statement that comes from a multi-line macro is reported at the line
   that invoked the macro, followed by the line of the macro's body:
   `prog.s:4: ... from macro `m' defined here`. One from a `%rep` body (or
