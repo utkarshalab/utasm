@@ -12,7 +12,7 @@
 - **Self-Hosting** — Bootstrap pipeline that compiles Gen0 via NASM and Gen1+ via itself
 - **Self-Patching** — Runtime binary self-modification engine that rewrites hot paths based on profiler data
 - **Integrated Linker** — ELF64/PE32+ emission with section layout, relocation resolution, and dead code elimination
-- **Industrial Error Engine** — Rich errors with file:line:col, source context, `^^^` underlines, macro expansion chains, and actionable hints (E1xx–E30xx, W1xx–W20xx)
+- **Diagnostics that explain** — on a terminal, each error and warning shows its source line with the place marked, in color; operand errors say what the operands were and what clashes; misspelt instructions and symbols get a "did you mean". Piped, the output is NASM's lines (see [Beyond NASM](#beyond-nasm))
 - **Recursive Preprocessor** — `%define`, `%macro`, `%if`, `%rep`, `%rotate`, token pasting, stringification, macro libraries
 - **O(1) Symbol Table** — Hash-based lookup with quadratic probing and ELF index tracking
 - **Full x86-64 Encoding** — REX, VEX-3, EVEX, AVX-512 (F/BW/DQ/VL/VNNI/BF16), AMX, AES-NI
@@ -454,34 +454,55 @@ utasm/
 
 ## Error System
 
-utasm uses a structured error system with four output levels:
-
-| Prefix | Range | Meaning |
-|---|---|---|
-| `E` | E1xx–E30xx | Fatal errors — assembly stops |
-| `W` | W1xx–W20xx | Warnings — configurable severity |
-| `N` | N1xx–N5xx | Notes — informational context |
-| `H` | H1xx–H5xx | Hints — actionable fix suggestions |
-
-**Example output:**
+Messages are NASM's, at the line of the statement they are about, so editors
+and scripts that read NASM's output read utasm's:
 
 ```
-error[E501]: operand size mismatch
-  --> kernel/scheduler.s:247:14
-   |
-245|     mov rax, [rbx]
-246|     add rax, rcx
-247|     mov al, rax
-   |     ^^  ^^^
-   |     8-bit register receiving 64-bit value
-   |
-   = note: al is the low byte of rax (bits 7:0)
-   = hint[H201]: did you mean 'movzx rax, al'?
-   |
-   → expanded from macro 'LOAD_VAL' at include/utils.inc:17
+prog.s:12: error: invalid combination of opcode and operands
 ```
 
-See [Error Reference](docs/error_reference.md) for the full error code table.
+On a terminal (or with `--color`) utasm shows more: the line, the place
+marked, and why:
+
+```
+prog.s:12: error: invalid combination of opcode and operands
+    12 |     mov al, rax
+       |     ^~~~~~~~~~~
+note: `al' is an 8-bit register, `rax' a 64-bit register
+note: the operands' sizes differ: 8 and 64 bits
+
+prog.s:7: error: symbol `counter' not defined
+     7 | mov eax, [counter]
+       |           ^~~~~~~
+hint: did you mean 'count'?
+```
+
+The mark is on the name the message is about, else where the parser
+stopped, else the statement. `--no-color`, `NO_COLOR` or `TERM=dumb` keep
+the plain form. Warnings carry NASM's classes (`[-w+zeroing]`) and the
+`-w` / `-W` options; see [docs/cli.md](docs/cli.md).
+
+---
+
+## Beyond NASM
+
+utasm takes NASM's syntax and gives NASM's bytes - the compatibility suites
+compare them over tens of thousands of cases - and goes further where NASM
+leaves the programmer alone:
+
+- **It explains.** The line, the place, the operands' sizes, what to write
+  instead (above).
+- **It is one pass.** No `-O` passes over the source; labels used before
+  their definition are worked out at the end, and an instruction that
+  uses one gets NASM's short form through a checked second pass.
+- **It never guesses silently.** An operand size it cannot know is an
+  error that says what to write (`dword [rax]`), as are addresses NASM
+  rejects - two index registers, mixed address sizes.
+- **It finds its own bugs.** A fault inside utasm is reported as an
+  internal error at the statement being read, not a core dump; the
+  fuzzer (`scripts/compat/fuzz.py`) keeps it that way.
+- **No fixed limits.** Macro parameters, nesting, line and section counts
+  grow as needed.
 
 ---
 
