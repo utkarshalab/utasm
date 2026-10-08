@@ -869,3 +869,25 @@ def explanations(utasm, verbose=False):
     s.result("plain when piped", " | " not in (r.stderr or "") and "\x1b" not in (r.stderr or ""),
              "got: %r" % (r.stderr or "")[:200])
     return s
+
+
+def lints(utasm, verbose=False):
+    """utasm's own warnings (off by default): where they must and must not
+    appear."""
+    s = Suite("lints", verbose)
+    for name, src, opts, must, must_not in cases.LINT_CASES:
+        fmt = ["-f", "bin"] if "-fbin" in opts else ["-f", "elf64"]
+        opts = [o for o in opts if o != "-fbin"]
+        with tempdir() as d:
+            open(os.path.join(d, "l.s"), "w").write(src)
+            r = run([utasm] + fmt + ["l.s", "-o", "l.o"] + opts, cwd=d)
+        rows = (r.stderr or "").splitlines()
+        def at(n):
+            return [x for x in rows if x.startswith("l.s:%d: warning:" % n)]
+        good = r.returncode == 0
+        for n, text in must.items():
+            good = good and any(text in x for x in at(n))
+        for n in must_not:
+            good = good and not at(n)
+        s.result(name, good, "got: %r" % (r.stderr or "")[:300])
+    return s
