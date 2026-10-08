@@ -357,6 +357,8 @@ _start:
     call    prep_unshadow                  ; equ values a %define hid
     extern  known_second_pass
     call    known_second_pass
+    test    rax, rax
+    jnz     .error_in_parser               ; (one a second pass was to settle)
 
     extern  lst_close
     call    lst_close                      ; the listing's last line
