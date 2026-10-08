@@ -1349,6 +1349,12 @@ elf64_write_rodata_section:
 .done:
     epilogue
 
+[SECTION .bss]
+alignb 8
+strtab_slots:   resq 1              ; elf64_prepare_strtab: SYMBOL* by hash
+strtab_mask:    resq 1
+[SECTION .text]
+
 ; ============================================================================
 ; elf64_prepare_strtab
 ; ============================================================================
@@ -1362,7 +1368,28 @@ elf64_prepare_strtab:
     
     mov     r12, rdi               ; AsmCtx
     mov     rbx, [r12 + ASMCTX_symtab]
-    
+
+    ; the names given an index so far, by hash (a name met again reuses
+    ; its index): each one was compared with every symbol before it, which
+    ; on 30,000 labels took longer than assembling them
+    mov     eax, [r12 + ASMCTX_symcount]
+    lea     rax, [rax * 2]
+    mov     ecx, 1024
+.slots:
+    cmp     rcx, rax
+    jae     .sized
+    shl     rcx, 1
+    jmp     .slots
+.sized:
+    lea     rdx, [rcx - 1]
+    mov     [rel strtab_mask], rdx
+    lea     rsi, [rcx * 8]
+    extern  mem_reserve
+    call    mem_reserve
+    test    rax, rax
+    jnz     .epilogue
+    mov     [rel strtab_slots], rdx
+
     ; Start at index 1 (0 is null byte)
     mov     r15, 1
     xor     r14, r14               ; i = 0
@@ -1384,52 +1411,46 @@ elf64_prepare_strtab:
     test    rax, rax
     jz      .next_outer
 
-    ; Check if this string appeared before index r14
-    xor     rcx, rcx               ; j = 0
-.inner_loop:
-    cmp     ecx, r14d
-    jge     .is_unique
-
-    mov     rdi, rcx
-    imul    rdi, SYMBOL_SIZE
-    add     rdi, rbx                       ; rdi = SYMBOL*
-    mov     rax, [rdi + SYMBOL_name]
-    test    rax, rax
-    jz      .next_inner
-
-    ; Only compare against symbols that were themselves assigned a name index
-    mov     r8, rdi
+    ; Has this name been given an index? (FNV-1a, open addressing)
+    mov     rax, 0xcbf29ce484222325
+    mov     rdi, rsi
+.hash:
+    movzx   ecx, byte [rdi]
+    test    ecx, ecx
+    jz      .hashed
+    xor     al, cl
+    mov     rcx, 0x100000001b3
+    imul    rax, rcx
+    inc     rdi
+    jmp     .hash
+.hashed:
+    mov     r9, [rel strtab_slots]
+.probe:
+    and     rax, [rel strtab_mask]
+    mov     rdi, [r9 + rax * 8]
+    test    rdi, rdi
+    jz      .claim
+    push    rax
     push    rsi
-    push    rcx
-    call    elf64_symbol_is_emitted
-    pop     rcx
-    pop     rsi
-    test    rax, rax
-    jz      .next_inner
-    mov     rax, [r8 + SYMBOL_name]        ; reload: the check above used RAX
-
-    ; Compare names
-    push    rsi
-    push    rcx
-    mov     rdi, rax
+    push    rdi
+    mov     rdi, [rdi + SYMBOL_name]
     extern  str_cmp
     call    str_cmp
-    pop     rcx
+    mov     rcx, rax
+    pop     rdi
     pop     rsi
-    
-    test    rax, rax
-    jnz     .next_inner
-    
+    pop     rax
+    test    rcx, rcx
+    jz      .seen
+    inc     rax
+    jmp     .probe
+.seen:
     ; Found duplicate! Reuse index
-    mov     rax, rcx
-    imul    rax, SYMBOL_SIZE
-    mov     eax, [rbx + rax + SYMBOL_name_idx]
+    mov     eax, [rdi + SYMBOL_name_idx]
     mov     [r13 + SYMBOL_name_idx], eax
     jmp     .next_outer
-
-.next_inner:
-    inc     ecx
-    jmp     .inner_loop
+.claim:
+    mov     [r9 + rax * 8], r13
 
 .is_unique:
     ; Store current offset
@@ -1624,10 +1645,14 @@ elf64_write_symtab:
 .ok:
     ; Both loops can fall out here with RAX still holding a predicate result,
     ; so the success code has to be set explicitly.
+    call    elfbuf_flush                   ; the entries buffered
+    test    rax, rax
+    jnz     .done
     xor     rax, rax
     jmp     .done
 
 .error:
+    mov     qword [rel elfbuf_len], 0      ; (what was buffered is dropped)
     mov     rax, EXIT_FILE_WRITE
 .done:
     add     rsp, ELF64_SYM_SIZE
@@ -1698,8 +1723,8 @@ elf64_write_symtab:
     mov     edi, r13d
     lea     rsi, [rsp + 48]
     mov     rdx, ELF64_SYM_SIZE
-    call    io_write
-    
+    call    elfbuf_put                     ; (a write per symbol was slow)
+
     pop     r11
     pop     rcx
     pop     rdx
@@ -1765,7 +1790,9 @@ elf64_write_strtab:
         inc     rdx
 
         mov     edi, r13d
-        call    io_write
+        push    rdx
+        call    elfbuf_put                 ; (a write per name was slow)
+        pop     rdx
         pop     rcx
         check_err
 
@@ -1776,12 +1803,93 @@ elf64_write_strtab:
     jmp     .loop
 
 .error:
+    mov     qword [rel elfbuf_len], 0
     mov     rax, EXIT_FILE_WRITE
+    jmp     .out
 .done:
+    call    elfbuf_flush                   ; the names buffered
+.out:
     pop     r15
     pop     r14
     pop     rbx
     epilogue
+
+; ---- elfbuf_put / elfbuf_flush ------------
+; A buffer for the symbol and string tables, written a few KB at a time
+; (one write per symbol and per name was most of the time spent writing an
+; object with many labels). elfbuf_put: rsi = bytes, rdx = how many, edi =
+; fd; elfbuf_flush writes what is buffered, all of it. rax = OK or
+; EXIT_FILE_WRITE. Both clobber rcx, rdx, rsi, rdi, r8-r11.
+%define ELFBUF_SIZE 65536
+elfbuf_put:
+    mov     [rel elfbuf_fd], edi
+    mov     rax, [rel elfbuf_len]
+    lea     rcx, [rax + rdx]
+    cmp     rcx, ELFBUF_SIZE
+    jbe     .copy
+    push    rsi
+    push    rdx
+    call    elfbuf_flush
+    pop     rdx
+    pop     rsi
+    test    rax, rax
+    jnz     .ret
+    cmp     rdx, ELFBUF_SIZE
+    jbe     .copy
+    mov     edi, [rel elfbuf_fd]           ; (larger than the buffer: as is)
+    jmp     elfbuf_write
+.copy:
+    lea     rdi, [rel elfbuf]
+    add     rdi, [rel elfbuf_len]
+    add     [rel elfbuf_len], rdx
+    mov     rcx, rdx
+    rep     movsb
+    xor     eax, eax
+.ret:
+    ret
+elfbuf_flush:
+    mov     rdx, [rel elfbuf_len]
+    mov     qword [rel elfbuf_len], 0
+    test    rdx, rdx
+    jz      .none
+    mov     edi, [rel elfbuf_fd]
+    lea     rsi, [rel elfbuf]
+    jmp     elfbuf_write
+.none:
+    xor     eax, eax
+    ret
+; elfbuf_write: all rdx bytes at rsi to fd edi (a write can be partial)
+elfbuf_write:
+    test    rdx, rdx
+    jz      .ok
+    mov     eax, 1                         ; write
+    push    rdi
+    push    rsi
+    push    rdx
+    syscall
+    pop     rdx
+    pop     rsi
+    pop     rdi
+    cmp     rax, -4                        ; EINTR: again
+    je      elfbuf_write
+    test    rax, rax
+    jle     .fail
+    add     rsi, rax
+    sub     rdx, rax
+    jmp     elfbuf_write
+.ok:
+    xor     eax, eax
+    ret
+.fail:
+    mov     eax, EXIT_FILE_WRITE
+    ret
+
+[SECTION .bss]
+alignb 8
+elfbuf_len:     resq 1
+elfbuf_fd:      resd 1
+elfbuf:         resb ELFBUF_SIZE
+[SECTION .text]
 
 ;*
 ; * [elf64_write_groups]
