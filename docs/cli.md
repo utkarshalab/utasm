@@ -214,7 +214,7 @@ works with `NASM=utasm`:
 | `-M`, `-MG` | Makefile dependencies on stdout, nothing assembled: `target : source includes incbins`, in NASM's format (lines wrapped with `\`). |
 | `-MD` | Assemble, and write the dependencies too: into the `-MF` file, else the output's name with `.d`. |
 | `-MF file`, `-MT target`, `-MQ target`, `-MP` | Where the dependencies go, the rule's target (default: the output file), and an empty rule for every file (`-MP`). `-MW` is accepted. |
-| `-w+class`, `-w-class`, `-Wclass`, `-Wno-class` | Turn a warning class on or off (`all`: every class). The classes are NASM's: `user` (`%warning`), `zeroing`, `number-overflow`, `prefix-lock-xchg`, `prefix-lock-error`, `other`; a class utasm does not have is accepted and changes nothing. |
+| `-w+class`, `-w-class`, `-Wclass`, `-Wno-class` | Turn a warning class on or off (`all`: every class). The classes are NASM's: `user` (`%warning`), `zeroing`, `number-overflow`, `prefix-lock-xchg`, `prefix-lock-error`, `db-empty`, `pp-macro-defaults`, `label-orphan`, `other`; a class utasm does not have is accepted and changes nothing. utasm adds `pie`, off unless named or `all`: an absolute 32-bit address in a 64-bit object (`mov eax, msg`, `[msg]`, `dd msg`), which the linker refuses in a position-independent executable. |
 | `-w+error`, `-w+error=class`, `-Werror=class` | Warnings (of that class) are errors, like `-Werror`. |
 | `-X gnu`, `-X vc` | Message style: `file:line: error: ...` (the default) or `file(line) : error: ...`. |
 | `-s`, `-Z file` | Messages on stdout, or into a file. |
@@ -296,6 +296,11 @@ prog.s:14: warning: uninitialized space declared in non-BSS section `.text': zer
   `--no-color`, `NO_COLOR` or `TERM=dumb` keep NASM's plain lines; piped
   into a file or a program the output is NASM's, plus the `hint:` and
   `note:` lines after an error.
+- A word alone on its line becomes a label, with NASM's warning ("label alone
+  on a line without a colon might be in error"); one letter from an
+  instruction (`rett`, `nopp`), utasm adds "hint: did you mean 'ret'?".
+- On a terminal, an error inside a macro also shows the macro's body line,
+  marked, after "... from macro `m' defined here".
 - An operand size utasm cannot know (`inc [rax]`, `mov [rax], 5`,
   `shl [rax], cl`) is NASM's error "operation size not specified"; utasm
   used to pick one.
