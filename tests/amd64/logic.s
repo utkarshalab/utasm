@@ -69,25 +69,25 @@ test    dword [rcx + 4], 0xFF
 // BT — test bit N of reg/mem
 bt      rax, 5
 bt      rax, rcx
-bt      [rbx], 8
+bt      dword [rbx], 8
 bt      [rcx + 4], rdx
 
 // BTS — test and set
 bts     rax, 4
 bts     rax, rcx
-bts     [rdx], 16
+bts     dword [rdx], 16
 lock bts [r8 + r9*4], r10
 
 // BTR — test and reset
 btr     rbx, 3
 btr     rbx, rdi
-btr     [rax], 7
+btr     dword [rax], 7
 lock btr [rcx], rsi
 
 // BTC — test and complement
 btc     rcx, 2
 btc     rcx, rbx
-btc     [rdx + 8], 0
+btc     dword [rdx + 8], 0
 lock btc [r11], r12
 
 // ---- BSF / BSR (bit scan forward/reverse) ---------------
