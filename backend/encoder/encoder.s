@@ -5035,7 +5035,10 @@ amd64_encode_tracked:
     mov     [rel p1_nrelax], rax
     mov     rdi, rbx
     mov     rsi, r13
+    extern  reloc_quiet
+    mov     byte [rel reloc_quiet], 1      ; (a trial: no warnings)
     call    amd64_encode_instruction
+    mov     byte [rel reloc_quiet], 0
     mov     r13, -1
     test    rax, rax
     jnz     .undo
@@ -5110,6 +5113,13 @@ amd64_emit_reloc:
     jne     .sym_normalized
     mov     r13, [r13 + SYMBOL_name]
 .sym_normalized:
+    ; utasm's "pie" warning, as for reloc_record
+    test    r13, r13
+    jz      .pie_checked
+    mov     r8d, r12d
+    extern  reloc_warn_pie
+    call    reloc_warn_pie
+.pie_checked:
 
     ; 1. Check capacity
     mov     eax, [rbx + ASMCTX_nrelocs]
