@@ -1499,10 +1499,12 @@ elf64_prepare_strtab:
 ;*
 ; * [elf64_symbol_is_emitted]
 ; * Purpose: Decide whether a symbol belongs in .symtab at all.
-; *   Preprocessor constants, macros and struct definitions are assembly-time
-; *   values, not addresses. NASM does not emit them, nothing can relocate
-; *   against them, and emitting them made objects several times larger than
-; *   they need to be. Anything exported is kept regardless of kind.
+; *   %assign values and macros are not symbols (NASM writes none). A
+; *   struc's name and fields (pt, pt.x, pt_size) and the labels of an
+; *   absolute block are numbers nothing relocates against: NASM writes
+; *   them as absolute symbols, but in struc-heavy code they made objects
+; *   several times larger, so utasm writes them only under -g (nm, a
+; *   debugger). Anything exported is kept regardless of kind.
 ; * Input:
 ; *   R8 = SYMBOL*
 ; * Output:
@@ -1513,13 +1515,13 @@ elf64_symbol_is_emitted:
     jne     .emit                  ; exported: always visible to the linker
     movzx   eax, byte [r8 + SYMBOL_kind]
     cmp     al, SYM_CONSTANT
-    je      .skip
+    je      .constant
     cmp     al, SYM_MACRO
     je      .skip
     cmp     al, SYM_STRUCT
-    je      .skip
+    je      .debug_only
     cmp     al, SYM_STRUCT_FIELD
-    je      .skip
+    je      .debug_only
     ; the hidden labels "$" makes ("L@here.N", parser_pos_label): NASM's
     ; "$" leaves no symbol, and relocations use the section's symbol
     mov     rax, [r8 + SYMBOL_name]
@@ -1534,6 +1536,13 @@ elf64_symbol_is_emitted:
 .emit:
     mov     rax, 1
     ret
+.constant:
+    test    byte [r8 + SYMBOL_pflags], SYMF_STRUC
+    jz      .skip
+.debug_only:
+    extern  dbg_enabled
+    cmp     byte [rel dbg_enabled], 0
+    jne     .emit
 .skip:
     xor     rax, rax
     ret
@@ -1693,8 +1702,24 @@ elf64_write_symtab:
     mov     al, [r10 + SYMBOL_eother]
     mov     [rsp + 48 + SYM64_OTHER], al
     
-    ; st_shndx
+    ; st_shndx. A struc's name or field, a label of an absolute block
+    ; (written under -g): a number of size 0, as NASM writes them
+    xor     r11d, r11d                     ; r11 = 1: one of those
+    movzx   ecx, byte [r10 + SYMBOL_kind]
+    cmp     ecx, SYM_STRUCT
+    je      .sym_struc
+    cmp     ecx, SYM_STRUCT_FIELD
+    je      .sym_struc
+    test    byte [r10 + SYMBOL_pflags], SYMF_STRUC
+    jz      .sym_shndx
+.sym_struc:
+    mov     r11d, 1
+.sym_shndx:
     movzx   eax, word [r10 + SYMBOL_section]
+    test    r11d, r11d
+    jz      .sym_shndx_put
+    mov     eax, SHN_ABS
+.sym_shndx_put:
     mov     [rsp + 48 + SYM64_SHNDX], ax
     
     ; st_value (an address in an executable: add the section's)
@@ -1718,6 +1743,10 @@ elf64_write_symtab:
     
     ; st_size
     mov     rax, [r10 + SYMBOL_size]
+    test    r11d, r11d
+    jz      .sym_size_put
+    xor     eax, eax
+.sym_size_put:
     mov     [rsp + 48 + SYM64_SIZE], rax
     
     mov     edi, r13d
