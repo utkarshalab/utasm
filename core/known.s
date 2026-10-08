@@ -37,6 +37,11 @@ DEFAULT REL
 ;
 ; When pass 1 finds no such constant there is no second pass.
 ;
+; A constant that depends on where code lies ("len equ y - x") is handed on
+; too, under "\x02" and its name: pass 2 takes it as a number, and
+; known_verify checks that the name has that value once the code is laid
+; out (the same as the expressions below).
+;
 ; Expressions with a label not defined yet (parser_evaluate_expression kept
 ; them: "push dword (end - start) / 4") are handed on too, when they are an
 ; instruction's operand: pass 1 lays the code out as linker_run would and
@@ -61,6 +66,8 @@ extern  global_ctx
 extern  utasm_envp
 extern  utasm_argv
 extern  str_cmp
+extern  error_loc_file
+extern  error_loc_line
 
 [SECTION .bss]
 alignb 8
@@ -90,6 +97,9 @@ key_used:       resq 1
 %define DEFER_CAP   (1 << 20)
 %define OCC_SLOTS   (1 << 20)
 %define KEY_HEAP    (1 << 26)
+retry_code:     resq 1              ; pass 1: an error a second pass may not have
+retry_file:     resq 1              ; ... where
+retry_line:     resd 1
 global known_active
 known_active:   resb 1              ; this is pass 2
 defer_laid:     resb 1              ; pass 1 laid the code out (exec, always)
@@ -250,8 +260,11 @@ known_lookup:
     push    rdi
     push    r8
     push    r9
+    push    r10
     mov     r8, rsi
+    xor     r10d, r10d                     ; r10 = 2: looking under "\x02"
     call    known_hash
+.table:
     mov     r9, [rel known_tab]
 .probe:
     and     rax, [rel known_mask]
@@ -261,9 +274,19 @@ known_lookup:
     push    rax
     push    rdx
     lea     rdi, [rdx + 8]                 ; the record's name
+    test    r10d, r10d
+    jz      .compare
+    cmp     byte [rdi], 2
+    jne     .differ
+    inc     rdi
+.compare:
     mov     rsi, r8
     call    str_cmp
     mov     rcx, rax
+    jmp     .compared
+.differ:
+    mov     ecx, 1
+.compared:
     pop     rdx
     pop     rax
     test    rcx, rcx
@@ -271,12 +294,31 @@ known_lookup:
     inc     rax
     jmp     .probe
 .hit:
+    test    r10d, r10d
+    jz      .value
+    ; one that depends on the layout: checked once the code is laid out
+    lea     rdi, [rdx + 8]
+    mov     rsi, [rdx]
+    call    known_note_verify
+.value:
     mov     rdx, [rdx]                     ; the value
     mov     eax, 1
     jmp     .out
 .none:
     xor     eax, eax
+    test    r10d, r10d
+    jnz     .out
+    ; not a constant: perhaps one that depends on the layout
+    mov     r10d, 2
+    mov     rax, 0xcbf29ce484222325
+    xor     al, 2
+    mov     rcx, 0x100000001b3
+    imul    rax, rcx
+    mov     rsi, r8
+    call    known_hash.byte
+    jmp     .table
 .out:
+    pop     r10
     pop     r9
     pop     r8
     pop     rdi
@@ -453,7 +495,10 @@ known_second_pass:
     jne     .quick_ret
     cmp     qword [rel fwd_n], 0
     jne     .work
+    cmp     qword [rel retry_code], 0
+    jne     .work
 .quick_ret:
+    xor     eax, eax
     ret
 .work:
     push    rbx
@@ -483,6 +528,16 @@ known_second_pass:
     and     byte [rax + SYMBOL_pflags], ~SYMF_POSDEP
     jmp     .diff
 .diffs_done:
+    ; equs of something defined later (parser_late_equs): worked out from
+    ; the code laid out, before the names are handed on - a constant among
+    ; them is one (one that names nothing defined fails in the last pass)
+    extern  late_equ_n, parser_late_equs
+    cmp     qword [rel late_equ_n], 0
+    je      .late_done
+    call    known_layout
+    mov     byte [rel defer_laid], 1
+    call    parser_late_equs
+.late_done:
     mov     rsi, KNOWN_OUT_CAP
     call    mem_reserve
     test    rax, rax
@@ -505,7 +560,7 @@ known_second_pass:
     jne     .name
     cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
     je      .name
-    test    byte [rdx + SYMBOL_pflags], SYMF_POSDEP | SYMF_KNOWN
+    test    byte [rdx + SYMBOL_pflags], SYMF_KNOWN
     jnz     .name
     or      byte [rdx + SYMBOL_pflags], SYMF_KNOWN
     mov     rax, KNOWN_OUT_CAP - 4096
@@ -514,6 +569,12 @@ known_second_pass:
     mov     rax, [rdx + SYMBOL_value]
     mov     [r13 + r14], rax
     add     r14, 8
+    ; one that depends on the layout: under "\x02", checked in pass 2
+    test    byte [rdx + SYMBOL_pflags], SYMF_POSDEP
+    jz      .plain_name
+    mov     byte [r13 + r14], 2
+    inc     r14
+.plain_name:
     mov     rsi, [rdx + SYMBOL_name]
 .copy:
     mov     al, [rsi]
@@ -529,8 +590,11 @@ known_second_pass:
     ; code laid out as linker_run lays it
     cmp     qword [rel defer_n], 0
     je      .defers_done
+    cmp     byte [rel defer_laid], 0
+    jne     .laid
     call    known_layout
     mov     byte [rel defer_laid], 1
+.laid:
     xor     r12d, r12d
 .defer:
     cmp     r12, [rel defer_n]
@@ -567,17 +631,57 @@ known_second_pass:
     test    r15, r15
     jnz     .exec
     cmp     byte [rel defer_laid], 0
+    jne     .exec
+    cmp     qword [rel retry_code], 0
     je      .ret                           ; nothing a second pass would change
 .exec:
     mov     rdi, r13
     mov     rsi, r14
     call    known_exec
 .ret:
+    ; no second pass after all: an error kept for one is this pass's
+    mov     rax, [rel retry_code]
+    test    rax, rax
+    jz      .out
+    mov     rdx, [rel retry_file]
+    mov     [rel error_loc_file], rdx
+    mov     edx, [rel retry_line]
+    mov     [rel error_loc_line], edx
+.out:
     pop     r15
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
+    ret
+
+; ---- known_defer_error --------------------
+;
+; known_defer_error
+; Pass 1: an error a second pass may not have - "times n" or "resb n" with
+; n an equ further on. It is kept (the first one, where it is), and a
+; second pass is made; known_second_pass reports it when there is none.
+; Input    : edi = the error
+; Output   : eax = 0 when kept (go on as for 0), else the error (report it)
+; Preserves: everything else
+;
+global known_defer_error
+known_defer_error:
+    mov     eax, edi
+    cmp     byte [rel known_active], 0
+    jne     .ret
+    cmp     qword [rel retry_code], 0
+    jne     .kept
+    push    rdx
+    mov     [rel retry_code], rax
+    mov     rdx, [rel error_loc_file]
+    mov     [rel retry_file], rdx
+    mov     edx, [rel error_loc_line]
+    mov     [rel retry_line], edx
+    pop     rdx
+.kept:
+    xor     eax, eax
+.ret:
     ret
 
 ; ---- known_exec (internal) ----------------
@@ -958,10 +1062,26 @@ known_verify:
     add     rbx, [rel verify_list]
     inc     r12
     mov     rdi, [rbx]
+    cmp     byte [rdi], 2
+    je      .item_name
     call    parser_deferred_value
     test    rax, rax
     jnz     .differs
     cmp     rdx, [rbx + 8]
+    jne     .differs
+    jmp     .item
+.item_name:
+    ; a name taken for a constant that depends on the layout: it must be
+    ; defined, with that value
+    lea     rsi, [rdi + 1]
+    lea     rdi, [rel global_ctx]
+    call    symbol_find
+    test    rax, rax
+    jnz     .differs
+    cmp     word [rdx + SYMBOL_section], SHN_ABS
+    jne     .differs
+    mov     rax, [rdx + SYMBOL_value]
+    cmp     rax, [rbx + 8]
     jne     .differs
     jmp     .item
 .differs:
@@ -989,6 +1109,8 @@ known_verify:
     inc     rcx                            ; past the NUL
     cmp     byte [r15 + rbx + 8], 1
     je      .record                        ; an expression's: dropped
+    cmp     byte [r15 + rbx + 8], 2
+    je      .record                        ; one that depends on the layout
 .keep:
     cmp     rbx, rcx
     jae     .record
