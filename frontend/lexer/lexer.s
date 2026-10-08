@@ -2108,6 +2108,7 @@ lexer_next:
     movzx   r11, byte [r11]
     cmp     r11, '/'
     jne     .skip_check_block
+    call    lexer_slash_check              ; NASM's signed division?
 
 .skip_line_comment:
     ; skip until LF
@@ -2406,6 +2407,144 @@ lexer_char_props:
         db mask
     %assign i i+1
     %endrep
+
+[SECTION .text]
+
+; ---- lexer_slash_check (internal) --------
+; A "//" at r10 begins a comment in utasm; NASM reads "x // 2" as a signed
+; division. When an operand ends just before it and only a number, or an
+; expression in parentheses, follows it on the line ("mov eax, -7 // 2",
+; "dd n // (k + 1)"), the code means something else to NASM: a warning
+; (slash-comment). A comment in words ("// 2 bytes", "// done") gets none.
+; Input: rbx = LEXER, r10 = the first '/'. Preserves every register.
+lexer_slash_check:
+    push    rax
+    push    rcx
+    push    rdx
+    push    rsi
+    push    rdi
+    push    r8
+    push    r9
+    push    r10
+    push    r11
+    ; before it, past blanks: the end of an operand
+    mov     rsi, r10
+.back:
+    cmp     rsi, [rbx + LEXER_buf]
+    jbe     .out
+    dec     rsi
+    movzx   edi, byte [rsi]
+    cmp     edi, ' '
+    je      .back
+    cmp     edi, 9
+    je      .back
+    cmp     edi, ')'
+    je      .after
+    call    str_is_ident_char
+    test    rax, rax
+    jz      .out
+.after:
+    ; after it, past blanks (and a minus sign): a number alone, or (...)
+    lea     rsi, [r10 + 2]
+    mov     rdx, [rbx + LEXER_end]
+    call    .blanks
+    cmp     rsi, rdx
+    jae     .out
+    cmp     byte [rsi], '-'
+    jne     .operand
+    inc     rsi
+    call    .blanks
+    cmp     rsi, rdx
+    jae     .out
+.operand:
+    movzx   eax, byte [rsi]
+    cmp     eax, '('
+    je      .paren
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .out
+.number:
+    ; 2, 0x10, 10h, 1_000: letters, digits and underscores
+    inc     rsi
+    cmp     rsi, rdx
+    jae     .warn
+    movzx   edi, byte [rsi]
+    cmp     edi, '_'
+    je      .number
+    cmp     edi, '.'
+    je      .out                           ; 2.5: not an integer division
+    call    str_is_ident_char
+    test    rax, rax
+    jnz     .number
+    jmp     .rest
+.paren:
+    ; the last character on the line, past blanks, closes it
+    mov     r8, rsi
+.eol:
+    cmp     r8, rdx
+    jae     .eol_found
+    cmp     byte [r8], 10
+    je      .eol_found
+    inc     r8
+    jmp     .eol
+.eol_found:
+    cmp     r8, rsi
+    jbe     .out
+    dec     r8
+    movzx   eax, byte [r8]
+    cmp     eax, ' '
+    je      .eol_found
+    cmp     eax, 9
+    je      .eol_found
+    cmp     eax, 13
+    je      .eol_found
+    cmp     eax, ')'
+    jne     .out
+    jmp     .warn
+.rest:
+    ; nothing else on the line
+    call    .blanks
+    cmp     rsi, rdx
+    jae     .warn
+    movzx   eax, byte [rsi]
+    cmp     eax, 13
+    je      .warn
+    cmp     eax, 10
+    jne     .out
+.warn:
+    mov     edi, WC_SLASH_COMMENT
+    extern  warn_begin, warn_text, warn_end
+    call    warn_begin
+    lea     rsi, [rel s_slash_comment]
+    call    warn_text
+    call    warn_end
+.out:
+    pop     r11
+    pop     r10
+    pop     r9
+    pop     r8
+    pop     rdi
+    pop     rsi
+    pop     rdx
+    pop     rcx
+    pop     rax
+    ret
+; .blanks: rsi past spaces and tabs (rdx = the end)
+.blanks:
+    cmp     rsi, rdx
+    jae     .blanks_done
+    cmp     byte [rsi], ' '
+    je      .blank
+    cmp     byte [rsi], 9
+    jne     .blanks_done
+.blank:
+    inc     rsi
+    jmp     .blanks
+.blanks_done:
+    ret
+
+[SECTION .rodata]
+s_slash_comment: db "`//' starts a comment here; NASM reads it as a signed division", 0
 
 [SECTION .bss]
 lex_char_start: resq 1              ; first character of a quoted literal
