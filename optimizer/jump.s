@@ -66,6 +66,8 @@ DEFAULT REL
 ;        Each keeps the program's behaviour: jumps never touch flags, a
 ;        jcc whose both paths meet does nothing, and a jump is only
 ;        removed when no label and no other branch points at it.
+;        In a section of jumps only, it also takes the fewest long jumps
+;        (rx_fast), where NASM's passes can settle on more.
 ;
 ; Calling convention (AMD64): rdi, rsi, rdx, rcx, r8; callee saved
 ; rbx, rbp, r12-r15.
@@ -82,7 +84,8 @@ DEFAULT REL
 %define RX_end       32     ; q  first byte after the part that can change
 %define RX_change    40     ; q  bytes removed here in the current layout
 %define RX_fill      48     ; q  align: the fill spec (optimizer/align.s)
-%define RX_tprev     56     ; q  candidate: its target in the previous pass
+%define RX_tidx      56     ; q  candidate: the records ending at or before
+                            ;    its target (rx_ub; the same every pass)
 %define RX_SIZE      64
 
 %define RS_LONG       0     ; candidate, not shortened (yet)
@@ -133,6 +136,14 @@ rw_passes:          resq 1              ; passes made choosing the sizes
 rw_ends:            resq 1              ; each record's RX_end
 rw_pref:            resq 1              ; bytes removed before each record
 rw_pref_ok:         resb 1              ; rw_pref and rw_ends hold (rx_new)
+rw_sorted:          resb 1              ; the records' RX_pos never go down
+alignb 8
+fx_fw:              resq 1              ; rx_fast: the Fenwick tree (changes)
+fx_bstart:          resq 1              ; ... where each block's jumps start
+fx_bcur:            resq 1              ; ... filling them
+fx_blist:           resq 1              ; ... the jumps, by block
+fx_stack:           resq 1              ; ... the worklist
+fx_queued:          resq 1              ; ... on it (a byte per record)
 
 [SECTION .text]
 
@@ -763,6 +774,23 @@ rx_section:
     ;      first pass gives them (RELAX_P1). Its layout is what the second
     ;      pass measures forward jumps against. ----
 .first_pass:
+    ; each jump's target in records (the records do not move while the
+    ; sizes are chosen): its position in a pass is RX_aux less
+    ; rw_pref[RX_tidx], with no search
+    xor     r15d, r15d
+.tidx:
+    cmp     r15, [rel rw_n]
+    jae     .tidx_done
+    mov     rax, [rel rw_recs]
+    mov     r13, [rax + r15*8]
+    inc     r15
+    cmp     byte [r13 + RX_kind], RELAX_JCC
+    ja      .tidx
+    mov     rdi, [r13 + RX_aux]
+    call    rx_ub
+    mov     [r13 + RX_tidx], rax
+    jmp     .tidx
+.tidx_done:
     ; from here rw_ends holds the records' ends and rw_pref, kept up to
     ; date by the passes and rx_layout, the bytes removed before each:
     ; rx_new is a binary search
@@ -795,8 +823,7 @@ rx_section:
     mov     rax, [r13 + RX_aux]
     cmp     rax, [r13 + RX_end]
     jae     .fp_short                      ; forward: optimistic
-    mov     rdi, rax
-    call    rx_ub
+    mov     rax, [r13 + RX_tidx]
     mov     rdx, [rel rw_pref]
     mov     rcx, [r13 + RX_aux]
     sub     rcx, [rdx + rax*8]             ; the target in this pass
@@ -854,6 +881,16 @@ rx_section:
     mov     [rdx + r15*8], rax
     jmp     .fp
 .fp_done:
+    ; -O2: the smallest sizes, not NASM's (rx_fast). NASM's passes can
+    ; put a jump back to short after making it long, and in a long run of
+    ; jumps they settle on more long ones than they need; a worklist that
+    ; only ever grows a jump that does not reach finds the fewest, in one
+    ; look per change instead of hundreds of passes.
+    cmp     byte [rbx + ASMCTX_opt], OPT_SIZE
+    jb      .again
+    call    rx_fast
+    test    eax, eax
+    jnz     .stable
 
 .again:
     ; the previous pass: the bytes removed before each record
@@ -871,25 +908,7 @@ rx_section:
     mov     [rdi + r15*8], rax
     jmp     .prefix
 .prefixed:
-    ; forward targets where the previous pass put them
-    xor     r15d, r15d
-.snap:
-    cmp     r15, [rel rw_n]
-    jae     .snapped
-    mov     rax, [rel rw_recs]
-    mov     r13, [rax + r15*8]
-    inc     r15
-    cmp     byte [r13 + RX_kind], RELAX_JCC
-    ja      .snap
-    mov     rdi, [r13 + RX_aux]
-    call    rx_ub
-    mov     rdx, [rel rw_pref]
-    mov     rcx, [r13 + RX_aux]
-    sub     rcx, [rdx + rax*8]
-    mov     [r13 + RX_tprev], rcx
-    jmp     .snap
-.snapped:
-    xor     r14d, r14d                     ; r14 = a size changed
+    xor     r14d, r14d; r14 = a size changed
     mov     qword [rel rw_removed], 0
     xor     r15d, r15d
 .pass:
@@ -913,19 +932,13 @@ rx_section:
     cmp     eax, RS_SHORT
     jne     .p_zero                        ; RS_NO, RS_FORCED: long
 .p_decide:
-    mov     rax, [r13 + RX_aux]
-    cmp     rax, [r13 + RX_end]
-    jae     .p_forward
-    ; backward: this pass's position (the records before it are done)
-    mov     rdi, rax
-    call    rx_ub
+    ; backward: this pass's position (the records before it are done);
+    ; forward: the previous pass's (rw_pref past this record is not
+    ; rewritten yet)
+    mov     rcx, [r13 + RX_tidx]
     mov     rdx, [rel rw_pref]
-    mov     rcx, [r13 + RX_aux]
-    sub     rcx, [rdx + rax*8]
-    mov     rax, rcx
-    jmp     .p_disp
-.p_forward:
-    mov     rax, [r13 + RX_tprev]          ; forward: the previous pass's
+    mov     rax, [r13 + RX_aux]
+    sub     rax, [rdx + rcx*8]
 .p_disp:
     mov     rcx, [r13 + RX_pos]
     sub     rcx, [rel rw_removed]
@@ -1219,6 +1232,24 @@ rx_o2:
     jmp     .w16
 .w16_none:
 
+    ; records in the order of their positions (as emitted): rx_find_jmp_at
+    ; can search instead of walking them all for every jump
+    mov     byte [rel rw_sorted], 1
+    xor     edx, edx                       ; rdx = the previous RX_pos
+    xor     r15d, r15d
+.sorted:
+    cmp     r15, [rel rw_n]
+    jae     .sorted_done
+    mov     rax, [rel rw_recs]
+    mov     rax, [rax + r15*8]
+    inc     r15
+    mov     rax, [rax + RX_pos]
+    cmp     rax, rdx
+    mov     rdx, rax
+    jae     .sorted
+    mov     byte [rel rw_sorted], 0
+.sorted_done:
+
     ; ---- 1. jcc over a jmp ----
     xor     r15d, r15d
 .over:
@@ -1342,11 +1373,36 @@ rx_o2:
 ;
 rx_find_jmp_at:
     xor     ecx, ecx
+    cmp     byte [rel rw_sorted], 0
+    je      .loop
+    ; sorted: from the first record at or after rdi (those before cannot
+    ; match), and only while they lie at rdi or rdi+1
+    mov     r8, [rel rw_n]
+    mov     r9, [rel rw_recs]
+.search:
+    cmp     rcx, r8
+    jae     .loop
+    lea     rdx, [rcx + r8]
+    shr     rdx, 1
+    mov     rax, [r9 + rdx*8]
+    cmp     [rax + RX_pos], rdi
+    jae     .search_upper
+    lea     rcx, [rdx + 1]
+    jmp     .search
+.search_upper:
+    mov     r8, rdx
+    jmp     .search
 .loop:
     cmp     rcx, [rel rw_n]
     jae     .none
     mov     rdx, [rel rw_recs]
     mov     rdx, [rdx + rcx*8]
+    cmp     byte [rel rw_sorted], 0
+    je      .any_pos
+    lea     r9, [rdi + 1]
+    cmp     [rdx + RX_pos], r9
+    ja      .none                          ; past rdi+1: no more to look at
+.any_pos:
     cmp     byte [rdx + RX_kind], RELAX_JMP
     jne     .fixed
     cmp     [rdx + RX_pos], rdi
@@ -1503,6 +1559,323 @@ rx_layout:
     jmp     .loop
 .done:
     pop     rbx
+    ret
+
+; ---- rx_fast (internal) -----------------
+;
+; The sizes the passes would settle on, for a section whose records are
+; all jumps (and displacements resolved in place): from the first pass on,
+; a jump only ever grows (the code after it only moves away), so the
+; layout the passes reach is the one reached by making long, in any order,
+; each short jump that does not reach - looking again only at the short
+; jumps across one that grew. The bytes removed before each record are a
+; Fenwick tree over the records; the short jumps are filed by the 256-byte
+; blocks their spans cover.
+; Output: eax = 1 when the sizes are settled (RX_state / RX_change), 0 when
+;         the section is not one for it (the passes then).
+;
+rx_fast:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    push    rbp
+    xor     eax, eax
+    cmp     byte [rel rw_has_ranges], 0
+    jne     .out
+    mov     r12, [rel rw_recs]
+    mov     r13, [rel rw_n]
+    test    r13, r13
+    jz      .out
+    ; only jumps and resolved displacements
+    xor     ecx, ecx
+.kinds:
+    cmp     rcx, r13
+    jae     .kinds_ok
+    mov     rax, [r12 + rcx * 8]
+    cmp     byte [rax + RX_state], RS_DELETE
+    je      .not_for_it                    ; (-O2: counted only after pass 1)
+    movzx   eax, byte [rax + RX_kind]
+    cmp     eax, RELAX_FIXED
+    je      .kind_next
+    cmp     eax, RELAX_JCC
+    ja      .not_for_it
+.kind_next:
+    inc     rcx
+    jmp     .kinds
+.not_for_it:
+    xor     eax, eax
+    jmp     .out
+.kinds_ok:
+    mov     rbx, [rel rw_ctx]
+    ; the Fenwick tree: fw[1..n] over the records' changes
+    mov     rdi, [rbx + ASMCTX_arena]
+    lea     rsi, [r13 * 8 + 8]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .not_for_it
+    mov     [rel fx_fw], rdx
+    xor     ecx, ecx
+.fw_fill:
+    cmp     rcx, r13
+    jae     .fw_filled
+    mov     rax, [r12 + rcx * 8]
+    mov     rax, [rax + RX_change]
+    add     [rdx + rcx * 8 + 8], rax       ; fw[i+1] += change[i]
+    lea     r8, [rcx + 1]                  ; i+1
+    mov     r9, r8
+    neg     r9
+    and     r9, r8                         ; its lowest bit
+    add     r9, r8                         ; its parent
+    cmp     r9, r13
+    ja      .fw_next
+    mov     rax, [rdx + r8 * 8]
+    add     [rdx + r9 * 8], rax
+.fw_next:
+    inc     rcx
+    jmp     .fw_fill
+.fw_filled:
+    ; the blocks: how many short jumps' spans cover each
+    mov     rax, [rel rw_sec]
+    mov     r14, [rax + SECTION_size]
+    shr     r14, 8
+    add     r14, 2                         ; r14 = blocks
+    mov     rdi, [rbx + ASMCTX_arena]
+    lea     rsi, [r14 * 4 + 8]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .not_for_it
+    mov     [rel fx_bstart], rdx
+    xor     ecx, ecx
+.count:
+    cmp     rcx, r13
+    jae     .counted
+    call    .span                          ; r8 / r9 = first / last block, CF: none
+    jc      .count_next
+.count_block:
+    mov     rax, [rel fx_bstart]
+    inc     dword [rax + r8 * 4 + 4]
+    inc     r8
+    cmp     r8, r9
+    jbe     .count_block
+.count_next:
+    inc     rcx
+    jmp     .count
+.counted:
+    ; where each block's list starts (prefix sums)
+    mov     rax, [rel fx_bstart]
+    xor     ecx, ecx
+    xor     edx, edx
+.starts:
+    cmp     rcx, r14
+    jae     .started
+    add     edx, [rax + rcx * 4 + 4]
+    mov     [rax + rcx * 4 + 4], edx
+    inc     rcx
+    jmp     .starts
+.started:
+    mov     r15d, edx                      ; entries
+    mov     rdi, [rbx + ASMCTX_arena]
+    lea     rsi, [r14 * 4 + 8]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .not_for_it
+    mov     [rel fx_bcur], rdx
+    mov     rsi, [rel fx_bstart]
+    xor     ecx, ecx
+.cursors:
+    cmp     rcx, r14
+    jae     .cursored
+    mov     eax, [rsi + rcx * 4]
+    mov     [rdx + rcx * 4], eax
+    inc     rcx
+    jmp     .cursors
+.cursored:
+    mov     rdi, [rbx + ASMCTX_arena]
+    lea     rsi, [r15 * 4 + 8]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .not_for_it
+    mov     [rel fx_blist], rdx
+    xor     ecx, ecx
+.file:
+    cmp     rcx, r13
+    jae     .filed
+    call    .span
+    jc      .file_next
+.file_block:
+    mov     rax, [rel fx_bcur]
+    mov     edx, [rax + r8 * 4]
+    inc     dword [rax + r8 * 4]
+    mov     rax, [rel fx_blist]
+    mov     [rax + rdx * 4], ecx
+    inc     r8
+    cmp     r8, r9
+    jbe     .file_block
+.file_next:
+    inc     rcx
+    jmp     .file
+.filed:
+    ; the worklist: every short jump, then those a growing one crosses
+    mov     rdi, [rbx + ASMCTX_arena]
+    lea     rsi, [r13 * 4 + 8]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .not_for_it
+    mov     [rel fx_stack], rdx
+    mov     rdi, [rbx + ASMCTX_arena]
+    lea     rsi, [r13 + 8]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .not_for_it
+    mov     [rel fx_queued], rdx
+    xor     r15d, r15d                     ; r15 = stack depth
+    xor     ecx, ecx
+.seed:
+    cmp     rcx, r13
+    jae     .work
+    call    .push_if_short
+    inc     rcx
+    jmp     .seed
+.work:
+    test    r15, r15
+    jz      .settled
+    dec     r15
+    mov     rax, [rel fx_stack]
+    mov     ecx, [rax + r15 * 4]
+    mov     rax, [rel fx_queued]
+    mov     byte [rax + rcx], 0
+    mov     rbp, [r12 + rcx * 8]           ; rbp = the record
+    cmp     byte [rbp + RX_state], RS_SHORT
+    jne     .work
+    ; its rel8 in the current layout
+    push    rcx
+    mov     rdi, [rbp + RX_aux]
+    call    .new
+    mov     r14, rax                       ; the target, now
+    mov     rdi, [rbp + RX_pos]
+    call    .new
+    pop     rcx
+    add     rax, 2
+    sub     r14, rax
+    cmp     r14, -128
+    jl      .grow
+    cmp     r14, 127
+    jle     .work
+.grow:
+    mov     byte [rbp + RX_state], RS_LONG
+    mov     rdx, [rbp + RX_change]
+    mov     qword [rbp + RX_change], 0
+    neg     rdx
+    lea     r8, [rcx + 1]                  ; fw: change[i] loses what it saved
+.fw_add:
+    cmp     r8, r13
+    ja      .fw_added
+    mov     rax, [rel fx_fw]
+    add     [rax + r8 * 8], rdx
+    mov     r9, r8
+    neg     r9
+    and     r9, r8
+    add     r8, r9
+    jmp     .fw_add
+.fw_added:
+    ; the short jumps whose spans cover it
+    mov     rax, [rbp + RX_pos]
+    shr     rax, 8
+    mov     rdx, [rel fx_bstart]
+    mov     r8d, [rdx + rax * 4]
+    mov     r9d, [rdx + rax * 4 + 4]
+.cross:
+    cmp     r8d, r9d
+    jae     .work
+    mov     rax, [rel fx_blist]
+    mov     ecx, [rax + r8 * 4]
+    call    .push_if_short
+    inc     r8d
+    jmp     .cross
+.settled:
+    ; the bytes removed before each record, for rx_new and what follows
+    call    rx_layout
+    mov     eax, 1
+.out:
+    pop     rbp
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+; .push_if_short: record rcx onto the worklist when it is a short jump not
+; already on it. Clobbers rax.
+.push_if_short:
+    mov     rax, [r12 + rcx * 8]
+    cmp     byte [rax + RX_kind], RELAX_JCC
+    ja      .pis_ret
+    cmp     byte [rax + RX_state], RS_SHORT
+    jne     .pis_ret
+    mov     rax, [rel fx_queued]
+    cmp     byte [rax + rcx], 0
+    jne     .pis_ret
+    mov     byte [rax + rcx], 1
+    mov     rax, [rel fx_stack]
+    mov     [rax + r15 * 4], ecx
+    inc     r15
+.pis_ret:
+    ret
+
+; .span: the blocks record rcx's span covers (r8 the first, r9 the last)
+; when it is a short jump that could still reach; CF set when it is not
+; one. A span longer than 1024 bytes cannot be reached by a rel8 whatever
+; shrinks in it (a jump keeps a third of its bytes): such a jump is made
+; long when it is looked at, and nothing need look at it again.
+; Clobbers rax, rdx.
+.span:
+    mov     rax, [r12 + rcx * 8]
+    cmp     byte [rax + RX_kind], RELAX_JCC
+    ja      .no_span
+    cmp     byte [rax + RX_state], RS_SHORT
+    jne     .no_span
+    mov     r8, [rax + RX_pos]
+    mov     r9, [rax + RX_aux]
+    cmp     r8, r9
+    jbe     .ordered
+    xchg    r8, r9
+.ordered:
+    mov     rdx, r9
+    sub     rdx, r8
+    cmp     rdx, 1024
+    ja      .no_span
+    shr     r8, 8
+    shr     r9, 8
+    clc
+    ret
+.no_span:
+    stc
+    ret
+
+; .new: rax = offset rdi in the current layout (rdi less what the records
+; ending at or before it remove). Clobbers rcx, rdx, r8, r9.
+.new:
+    push    rdi
+    call    rx_ub                          ; rax = how many records
+    mov     rcx, rax
+    xor     eax, eax
+    mov     r8, [rel fx_fw]
+.prefix:
+    test    rcx, rcx
+    jz      .prefixed
+    add     rax, [r8 + rcx * 8]
+    mov     r9, rcx
+    neg     r9
+    and     r9, rcx
+    sub     rcx, r9
+    jmp     .prefix
+.prefixed:
+    pop     rdi
+    neg     rax
+    add     rax, rdi
     ret
 
 ; rx_fill_ends: rw_ends from the records' RX_end
