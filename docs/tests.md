@@ -625,7 +625,8 @@ This folder is permanent memory. Every entry is an hour transformed into permane
 
 `scripts/compat/bench.py` assembles the same large inputs with NASM and
 utasm - straight-line code, jumps among labels, macro calls, labelled data -
-and times them, checking that the code is the same:
+and times them, checking that the code is the same. It also times both on
+utasm's own sources, NASM with the Makefile's `-d__NASM__=1 -I./`:
 
 ```sh
 python3 scripts/compat/bench.py build/gen1/utasm            # about a minute
