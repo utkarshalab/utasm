@@ -214,7 +214,7 @@ works with `NASM=utasm`:
 | `-M`, `-MG` | Makefile dependencies on stdout, nothing assembled: `target : source includes incbins`, in NASM's format (lines wrapped with `\`). |
 | `-MD` | Assemble, and write the dependencies too: into the `-MF` file, else the output's name with `.d`. |
 | `-MF file`, `-MT target`, `-MQ target`, `-MP` | Where the dependencies go, the rule's target (default: the output file), and an empty rule for every file (`-MP`). `-MW` is accepted. |
-| `-w+class`, `-w-class`, `-Wclass`, `-Wno-class` | Turn a warning class on or off (`all`: every class). The classes are NASM's: `user` (`%warning`), `zeroing`, `number-overflow`, `prefix-lock-xchg`, `prefix-lock-error`, `db-empty`, `pp-macro-defaults`, `label-orphan`, `other`; a class utasm does not have is accepted and changes nothing. utasm adds `pie`, off unless named or `all`: an absolute 32-bit address in a 64-bit object (`mov eax, msg`, `[msg]`, `dd msg`), which the linker refuses in a position-independent executable. |
+| `-w+class`, `-w-class`, `-Wclass`, `-Wno-class` | Turn a warning class on or off (`all`: every class). The classes are NASM's: `user` (`%warning`), `zeroing`, `number-overflow`, `prefix-lock-xchg`, `prefix-lock-error`, `db-empty`, `pp-macro-defaults`, `label-orphan`, `other`; a class utasm does not have is accepted and changes nothing. utasm adds `pie`, off unless named or `all`: an absolute 32-bit address in a 64-bit object (`mov eax, msg`, `[msg]`, `dd msg`), which the linker refuses in a position-independent executable. It also adds `slash-comment`, on: `//` starts a comment in utasm, but NASM reads `mov eax, -7 // 2` as a signed division, so a `//` after an operand followed only by a number or a parenthesized expression is warned about (`// 2 bytes` and `// done` are not). |
 | `-w+error`, `-w+error=class`, `-Werror=class` | Warnings (of that class) are errors, like `-Werror`. |
 | `-X gnu`, `-X vc` | Message style: `file:line: error: ...` (the default) or `file(line) : error: ...`. |
 | `-s`, `-Z file` | Messages on stdout, or into a file. |
@@ -269,6 +269,13 @@ debugger can show the source and step through it line by line:
 utasm -g prog.s -o prog.o && ld prog.o -o prog
 gdb ./prog        # break work / next / bt: at inc.s:2, p.s:11, ...
 ```
+
+`-g` also puts in `.symtab` what NASM always does there: a `struc`'s name,
+its fields and `<struct>_size` (`pt`, `pt.x`, `pt_size`), and the labels
+of an `absolute` block, as absolute symbols - so `nm` and a debugger know
+them. Without `-g` they are left out: nothing relocates
+against them, and in struc-heavy code they made objects several times
+larger.
 
 Flat binaries and `--standalone` executables carry no debug information.
 
