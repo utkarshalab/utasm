@@ -58,11 +58,13 @@ warn_state:
     db 1                                ; WC_PREFIX_LOCK_ERROR
     db 1                                ; WC_DB_EMPTY
     db 1                                ; WC_PP_MACRO_DEFAULTS
+    db 1                                ; WC_LABEL_ORPHAN
+    db 0                                ; WC_PIE (utasm's own: -w+pie, -w+all)
 
 [SECTION .rodata]
 warn_names:
     dq wn_other, wn_user, wn_zeroing, wn_lock_xchg, wn_overflow
-    dq wn_lock_error, wn_db_empty, wn_macro_defaults
+    dq wn_lock_error, wn_db_empty, wn_macro_defaults, wn_label_orphan, wn_pie
 wn_other:       db "other", 0
 wn_user:        db "user", 0
 wn_zeroing:     db "zeroing", 0
@@ -71,6 +73,8 @@ wn_overflow:    db "number-overflow", 0
 wn_lock_error:  db "prefix-lock-error", 0
 wn_db_empty:    db "db-empty", 0
 wn_macro_defaults: db "pp-macro-defaults", 0
+wn_label_orphan: db "label-orphan", 0
+wn_pie:         db "pie", 0
 wn_all:         db "all", 0
 wn_error:       db "error", 0
 s_warning:      db "warning: ", 0
@@ -94,6 +98,7 @@ warn_buf:       resb WARN_BUF           ; the message, for the listing
 warn_len:       resd 1
 warn_class:     resd 1
 warn_active:    resb 1
+warn_shown:     resb 1                  ; the last warning begun was given
 warn_is_error:  resb 1
 
 [SECTION .text]
@@ -115,6 +120,7 @@ warn_begin:
     jz      .off
     mov     [rel warn_class], edi
     mov     byte [rel warn_active], 1
+    mov     byte [rel warn_shown], 1
     mov     dword [rel warn_len], 0
     xor     ecx, ecx
     test    al, 2
@@ -141,7 +147,25 @@ warn_begin:
     ret
 .off:
     mov     byte [rel warn_active], 0
+    mov     byte [rel warn_shown], 0
     xor     eax, eax
+    ret
+
+; ---- warn_hint ----------------------------
+;
+; warn_hint
+; After a warning, the pending "hint: did you mean" line (error/hints.s),
+; held with it; dropped when the warning's class is off.
+; Clobbers : rax, rcx, rdx, rsi, rdi, r8-r11
+;
+global warn_hint
+extern error_hint_flush, error_hint_clear
+warn_hint:
+    cmp     byte [rel warn_shown], 0
+    je      error_hint_clear
+    mov     byte [rel stderr_hold], 1
+    call    error_hint_flush
+    mov     byte [rel stderr_hold], 0
     ret
 
 ; ---- warn_text ----------------------------
