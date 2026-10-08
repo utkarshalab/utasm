@@ -350,7 +350,7 @@ is known:
 | --- | --- |
 | `-O0` | Nothing: every jump keeps the long form it was emitted with (5 bytes for `jmp`, 6 for `jcc`). |
 | `-O1` (default) | Uses the 2-byte form for every `jmp`/`jcc` whose target is within reach, backward and forward, and moves the following code up. The result matches NASM's. |
-| `-O2` / `-Ox` | Also rewrites jumps, which NASM does not do: `jcc L1` / `jmp L2` / `L1:` becomes one inverted `jcc L2`; a jump to a `jmp` goes straight to that jump's target; a jump to the very next instruction is removed. |
+| `-O2` / `-Ox` | Also rewrites jumps, which NASM does not do: `jcc L1` / `jmp L2` / `L1:` becomes one inverted `jcc L2`; a jump to a `jmp` goes straight to that jump's target; a jump to the very next instruction is removed. In a section without `align` padding it also uses the fewest long jumps: NASM's passes can settle on more long jumps than are needed. |
 
 `-O2` keeps the program's behaviour - jumps never change flags, and a jump
 is only removed when no label and no other branch points at it - but the
@@ -366,6 +366,6 @@ whether the label is `global` or not, and a PC-relative reference to it
 `wrt ..plt` and the like keep their relocation.
 
 On utasm's own 276 source files, `-O1` produces 7.3% less code than no
-optimization (within 0.3% of NASM), and a utasm built with `-O2` has 68
-fewer jumps and 126 fewer bytes than one built with `-O1` while producing
+optimization (within 0.3% of NASM), and a utasm built with `-O2` has 81
+fewer jumps and 85 fewer bytes than one built with `-O1` while producing
 byte-for-byte identical output.
