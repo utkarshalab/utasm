@@ -804,3 +804,39 @@ EXPR_BIN.update({
 EXPR_ELF.update({
     "elf_distance_imm": "section .text\nadd rsp, (l2 - l1)\nsub rsp, (l2 - l1) / 2\nl1: times 20 db 0\nl2:\n",
 })
+
+
+# operand sizes utasm used to guess, and empty address terms
+DIAG_CASES += [
+    ("unsized inc", "nop\ninc [rax]\n"),
+    ("unsized mov imm", "nop\nmov [rbx + 8], 5\n"),
+    ("unsized shift by cl", "nop\nnop\nshl [rax], cl\n"),
+    ("unsized push", "push [rax]\n"),
+    ("unsized fld", "nop\nfld [rax]\n"),
+    ("unsized lock add", "nop\nlock add [rbx], 1\n"),
+    ("empty address", "nop\nmov eax, [ ]\n"),
+    ("dangling plus", "mov eax, [rbx + ]\n"),
+]
+BIN_PROBES.update({
+    "op_string_constants": "cmp eax, \"'\"\ncmp eax, '\"'\nmov al, `'`\ncmp eax, \"ab\"\nmov eax, \"'\" + 1\n",
+})
+
+# ---------------------------------------------------------------------------
+# explanations: utasm's own (rich) diagnostics - the line shown, the place
+# marked, the notes. (source, the line marked as "line|mark", the notes)
+# ---------------------------------------------------------------------------
+EXPLAIN_CASES = [
+    ("size clash", "bits 64\nstart:\n    mov al, rax   ; oops\n",
+     "    mov al, rax   ; oops|    ^~~~~~~~~~~",
+     ["note: `al' is an 8-bit register, `rax' a 64-bit register",
+      "note: the operands' sizes differ: 8 and 64 bits"]),
+    ("misspelt mnemonic", "bits 64\n\tmvo eax, 1\n", "\tmvo eax, 1|\t^~~", ["hint: did you mean 'mov'?"]),
+    ("undefined symbol", "bits 64\nmov eax, [counter]\n", "mov eax, [counter]|          ^~~~~~~", []),
+    ("number as destination", "bits 64\nmov 5, eax\n", "mov 5, eax|^~~~~~~~~~",
+     ["note: `5' is a number, `eax' a 32-bit register",
+      "note: the first operand cannot be a number: it is where the result goes"]),
+    ("no size", "bits 64\nlabel: inc [rax]\n", "label: inc [rax]|           ^~~~~",
+     ["note: `[rax]' has no size: write `dword [rax]' (or byte, word, qword)"]),
+    ("syntax error", "bits 64\nmov eax, [ ]\n", "mov eax, [ ]|           ^", []),
+    ("warning", "bits 64\ndb ?\n", "db ?|^~~~", []),
+]
