@@ -12,9 +12,10 @@ KNOWN = {
     "op_cmp3": "NASM's <=> disagrees with its own manual",
     # one pass: an equ cannot use a symbol defined after it (an error)
     "elf_equ_forward_ref": "equ with a forward reference",
-    # one pass: a value worked out at the end keeps room for any value
-    "expr push_imm": "push dword: 68 imm32 (NASM: 6A ib once it knows the value)",
-    "expr mov_imm64": "mov rax: the 64-bit immediate (NASM: mov eax once it knows the value)",
+    # a value that measures its own instruction: NASM converges on the short
+    # form; utasm keeps the long one (correct, the value of that layout)
+    "expr self_push": "push dword (e - s) over itself: 68 id (NASM: 6A ib)",
+    "expr self_add": "add eax, (e - s) * 30 over itself: 05 id (NASM: 83 /0 ib)",
     # NASM writes a meaningless number for a negated address in an object
     "scalar -l1 back elf64": "NASM's value for -label in an object",
     "scalar 2 - l1 back elf64": "NASM's value for n - label in an object",
