@@ -57,7 +57,7 @@ extern lst_parent_exp
 extern lst_enabled
 extern warn_flush
 extern warn_before_error
-extern diag_code, diag_inst, diag_notes, diag_snippet
+extern diag_code, diag_inst, diag_notes, diag_snippet, diag_snippet_macro
 extern diag_color_on, diag_color_off
 extern diag_tok_file, diag_tok_line, diag_tok_col, diag_tok_len
 extern c_bold, c_red, c_magenta
@@ -69,6 +69,9 @@ alignb 8
 global error_loc_file
 global error_loc_line
 global error_subject
+global error_mac_file
+global error_mac_line
+global error_mac_name
 global error_deferred
 error_loc_file:  resq 1                 ; file of the current statement, or 0
 error_mac_name:  resq 1                 ; macro being expanded, or 0
@@ -530,6 +533,7 @@ report_tail:
     mov     rdi, 2
     lea     rsi, [rel msg_defined_here]
     call    print_str
+    call    diag_snippet_macro             ; on a terminal: the body's line
 .done:
     add     rsp, 8
     ret
