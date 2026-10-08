@@ -10,9 +10,7 @@ KNOWN = {
     "op_signed_div": "// is a comment in utasm",
     # NASM 2.16.03 gives 0/0/1 for <=>; its manual (and utasm) say -1/0/1.
     "op_cmp3": "NASM's <=> disagrees with its own manual",
-    # one pass: an equ cannot use a symbol defined after it (an error)
-    "elf_equ_forward_ref": "equ with a forward reference",
-    # a value that measures its own instruction: NASM converges on the short
+# a value that measures its own instruction: NASM converges on the short
     # form; utasm keeps the long one (correct, the value of that layout)
     "expr self_push": "push dword (e - s) over itself: 68 id (NASM: 6A ib)",
     "expr self_add": "add eax, (e - s) * 30 over itself: 05 id (NASM: 83 /0 ib)",
