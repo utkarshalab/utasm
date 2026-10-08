@@ -1492,4 +1492,22 @@
     db      "UTASM_SIG:", %1, 0
 %endmacro
 
+;*
+; * [copy_token]
+; * Purpose: [rdi] <- [rsi], one TOKEN (32 bytes): rsi and rdi past it,
+; *   rcx = 0, the flags kept (TOKEN_SIZE is 32) - what "rep movsb / movsq" with TOKEN_SIZE did,
+; *   without their start-up cost, paid for every token (most of the time
+; *   spent reading a macro-heavy source). Uses xmm0 / xmm1 (nothing in
+; *   utasm keeps values there).
+; ;
+%macro copy_token 0
+    movdqu  xmm0, [rsi]
+    movdqu  xmm1, [rsi + 16]
+    movdqu  [rdi], xmm0
+    movdqu  [rdi + 16], xmm1
+    lea     rsi, [rsi + 32]
+    lea     rdi, [rdi + 32]
+    mov     ecx, 0
+%endmacro
+
 %endif
