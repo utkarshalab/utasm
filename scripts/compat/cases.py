@@ -620,6 +620,21 @@ EXPR_ELF.update({
     "elf_equ_later": "section .text\nadd ecx, len\nlen equ y - x\nx: db 1,2,3\ny:\nmov eax, a\na equ len * 2\n",
     "elf_equ_later_alias": "section .text\ndq p\np equ y + 4\nsection .data\ny: dd 1, 2\n",
 })
+# lines whose encoding depends on the mode's address size (the count
+# register, a16 / a32 / a64): the modes suite assembles them as bits 64, 32
+# and 16
+MODE_LINES = [
+    "l: jcxz l", "l: jecxz l", "l: jrcxz l", "l: loop l", "l: loope l", "l: loopne l",
+    "l: loop l, cx", "l: loop l, ecx", "l: loop l, rcx", "l: a16 loop l", "l: a32 jecxz l",
+    "l: a16 jecxz l", "l: a32 jcxz l", "l: a64 loop l, ecx", "l: a16 loop l, ecx",
+    "jecxz $ + 0x7f", "jcxz $ - 0x7e",
+    "a32 movsb", "a16 movsb", "a64 movsb", "a32 rep movsd", "a16 stosb", "a32 lodsb", "a16 xlatb",
+    "a32 xlatb", "a16 nop", "a32 nop", "a64 nop",
+    "a32 mov al, [0]", "a16 mov al, [0]", "a32 mov eax, [0x10]", "a16 mov eax, [0x10]",
+    "a32 mov rax, [0x10]", "a32 mov [0x20], al", "a32 lea eax, [0x10]", "a16 lea eax, [0x10]",
+    "a32 add eax, [0x10]", "a16 add eax, [0x10]", "a32 inc dword [0x10]", "a16 mov ebx, [0x10]",
+    "add eax, [word 0x10]", "add eax, [dword 0x10]",
+]
 # names never defined, or equs naming each other: an error, never a value
 EXPR_REJECT = {
     "equ_undefined": "bits 64\nlen equ nothere + 1\nmov eax, len\n",
@@ -866,6 +881,8 @@ EXPLAIN_CASES = [
 # a label alone on its line (NASM's label-orphan); in a macro, the body line
 WARN_CASES.update({
     "warn_label_orphan": "foo\nstart\nnop\nbar:\n.local_x\n",
+    # an attribute NASM does not know: ignored, with its warning
+    "warn_section_attr_unknown": "section .a foo=3\ndb 1\nsection .b progbits bar baz=x align=4\ndb 2\n",
 })
 EXPLAIN_CASES += [
     ("error in a macro", "bits 64\n%macro load 1\n    mov al, %1\n%endmacro\nnop\nload rax\n",
@@ -885,4 +902,10 @@ LINT_CASES = [
      ["-w+pie"], {}, [3]),
     ("pie: -w+all", "bits 64\nmov eax, msg\nsection .data\nmsg: db 1\n", ["-w+all"], {2: "[-w+pie]"}, []),
     ("pie: a flat binary", "bits 64\nmov eax, msg\nmsg: db 1\n", ["-w+pie", "-fbin"], {}, [2]),
+    # "//" is a comment in utasm, a signed division in NASM: on by default
+    ("slash-comment", "bits 64\nmov eax, -7 // 2\nmov eax, 5 // five\nmov eax, 5 // 2 bytes\n"
+                      "dd 4 // (1 + 1)\n// 2\nmov eax, 1 // 0x10\nmov eax, 1 // 2.5\n",
+     [], {2: "`//' starts a comment here; NASM reads it as a signed division", 5: "[-w+slash-comment]",
+          7: "`//'"}, [3, 4, 6, 8]),
+    ("slash-comment off", "bits 64\nmov eax, -7 // 2\n", ["-w-slash-comment"], {}, [2]),
 ]
