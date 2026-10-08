@@ -353,6 +353,8 @@
 %define SYMF_POSDEP            0x02        ; an equ whose value depends on code positions
 %define SYMF_KNOWN             0x04        ; handed to the second pass (core/known.s)
 %define SYMF_SHADOW            0x08        ; a %define over an equ: SYMBOL_size keeps its value
+%define SYMF_LATE              0x10        ; an equ of something defined later: undefined
+                                           ; until parser_late_equs works it out
 %define SYM_SET                0x0E        ; mutable variable defined via %assign or SET
 %define SYM_EQU                0x0F        ; immutable assembler constant defined via EQU
 %define SYM_IFUNC              0x10        ; ELF indirect function symbol
