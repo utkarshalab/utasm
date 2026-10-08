@@ -39,6 +39,9 @@ DEFAULT REL
 extern print_str
 extern error_loc_file
 extern error_loc_line
+extern error_mac_file
+extern error_mac_line
+extern error_mac_name
 extern error_subject
 extern utasm_envp
 
@@ -57,6 +60,9 @@ diag_tok_line:  resd 1
 diag_tok_col:   resd 1
 diag_tok_len:   resd 1
 diag_code:      resd 1              ; the error being reported (0: a message)
+diag_src_line:  resd 1              ; the line read back (diag_read_line):
+alignb 8
+diag_src_file:  resq 1              ; ... of this file
 diag_map:       resq 1              ; the file read back, mapped
 diag_map_len:   resq 1
 diag_line:      resq 1              ; the line in it
@@ -209,7 +215,7 @@ diag_read_line:
     push    rbx
     push    r12
     mov     qword [rel diag_map], 0
-    mov     rdi, [rel error_loc_file]
+    mov     rdi, [rel diag_src_file]
     test    rdi, rdi
     jz      .fail
     mov     eax, AMD64_SYS_OPEN_
@@ -245,7 +251,7 @@ diag_read_line:
     mov     [rel diag_map], rax
     mov     [rel diag_map_len], r12
     ; to the line
-    mov     ecx, [rel error_loc_line]
+    mov     ecx, [rel diag_src_line]
     test    ecx, ecx
     jz      .unmap_fail
     mov     rsi, rax                       ; position
@@ -379,6 +385,16 @@ diag_mark:
     mov     eax, [rel diag_code]
     cmp     eax, EXIT_NO_SIZE
     jne     .not_size
+    ; (the line that called a macro: its operands are not the instruction's)
+    cmp     qword [rel error_mac_name], 0
+    je      .size_operand
+    mov     eax, [rel diag_src_line]
+    cmp     eax, [rel error_mac_line]
+    jne     .statement
+    mov     rax, [rel diag_src_file]
+    cmp     rax, [rel error_mac_file]
+    jne     .statement
+.size_operand:
     call    diag_split_operands
     cmp     dword [rel diag_nops], 0
     je      .statement
@@ -395,10 +411,10 @@ diag_mark:
     jne     .statement
 .stopped:
     mov     rax, [rel diag_tok_file]
-    cmp     rax, [rel error_loc_file]
+    cmp     rax, [rel diag_src_file]
     jne     .statement
     mov     eax, [rel diag_tok_line]
-    cmp     eax, [rel error_loc_line]
+    cmp     eax, [rel diag_src_line]
     jne     .statement
     mov     eax, [rel diag_tok_col]
     test    eax, eax
@@ -562,6 +578,52 @@ diag_mark:
 ;
 global diag_snippet
 diag_snippet:
+    call    diag_src_statement
+    jmp     diag_show_line
+
+; ---- diag_snippet_macro -------------------
+;
+; diag_snippet_macro
+; Rich: after "... from macro `m' defined here", the line of the macro's
+; body the statement came from, marked as the statement's is.
+;
+global diag_snippet_macro
+diag_snippet_macro:
+    cmp     qword [rel error_mac_name], 0
+    je      .ret
+    mov     rax, [rel error_mac_file]
+    test    rax, rax
+    jz      .ret
+    mov     [rel diag_src_file], rax
+    mov     eax, [rel error_mac_line]
+    mov     [rel diag_src_line], eax
+    jmp     diag_show_line
+.ret:
+    ret
+
+; diag_src_text: diag_read_line reads the line the statement's text is on:
+; its macro body's line when it came from a macro, else its own
+diag_src_text:
+    cmp     qword [rel error_mac_name], 0
+    je      diag_src_statement
+    mov     rax, [rel error_mac_file]
+    test    rax, rax
+    jz      diag_src_statement
+    mov     [rel diag_src_file], rax
+    mov     eax, [rel error_mac_line]
+    mov     [rel diag_src_line], eax
+    ret
+
+; diag_src_statement: diag_read_line reads the statement's line
+diag_src_statement:
+    mov     rax, [rel error_loc_file]
+    mov     [rel diag_src_file], rax
+    mov     eax, [rel error_loc_line]
+    mov     [rel diag_src_line], eax
+    ret
+
+; diag_show_line: the line diag_src_* names, and the place marked
+diag_show_line:
     cmp     byte [rel diag_rich], 0
     je      .ret
     push    rbx
@@ -578,7 +640,7 @@ diag_snippet:
     lea     rsi, [rel c_dim]
     call    diag_color_on
     lea     rdi, [rel diag_buf]
-    mov     eax, [rel error_loc_line]
+    mov     eax, [rel diag_src_line]
     call    diag_number5
     mov     byte [rdi], 0
     mov     edi, 2
@@ -749,6 +811,7 @@ diag_notes:
     ja      .out
     ; the operands' text, from the line (when it splits as the parser did)
     mov     dword [rel diag_nops], 0
+    call    diag_src_text
     call    diag_read_line
     test    eax, eax
     jnz     .described
@@ -889,6 +952,7 @@ diag_notes:
 ;     note: `[rax]' has no size: write `dword [rax]' (byte, word, dword, qword)
 diag_note_size:
     push    rbx
+    call    diag_src_text
     call    diag_read_line
     test    eax, eax
     jnz     .ret
