@@ -17,6 +17,9 @@ DEFAULT REL
 extern arena_alloc
 extern float_encode
 extern warn_begin
+extern known_active
+extern known_lookup
+extern known_note_verify
 extern warn_data_bounds
 extern warn_text
 extern warn_end
@@ -1412,7 +1415,43 @@ parser_evaluate_expression:
     test    r12, r12
     jnz     .top_drop
     cmp     byte [rel expr_lost], 0
-    je      .top_drop
+    jne     .top_lost
+    ; "end - start" of labels not defined yet, kept as a distance
+    ; (RELOC_OFFSET_MARK): a record too, for a second pass (core/known.s)
+    test    r14, r14
+    jz      .top_drop
+    cmp     byte [r14], RELOC_OFFSET_MARK
+    jne     .top_drop
+    test    eax, eax
+    jnz     .top_drop
+    push    r14
+    mov     rdi, rbx
+    mov     rsi, rdx
+    mov     rdx, rcx
+    call    parser_defer_record
+    pop     rcx                            ; the distance's name
+    test    rax, rax
+    jnz     .top_out                       ; (as it was: no record)
+    mov     r14, rcx
+    cmp     byte [rel known_active], 0
+    je      .top_out
+    cmp     byte [rdx + DEFER_DATA], 0
+    jne     .top_out
+    mov     rsi, [rdx + DEFER_KEY]
+    test    rsi, rsi
+    jz      .top_out
+    push    rdx
+    call    known_lookup
+    pop     rdi                            ; the record
+    test    eax, eax
+    jz      .top_out
+    mov     r13, rdx                       ; the value, a number now
+    mov     rsi, rdx
+    call    known_note_verify
+    xor     r14d, r14d
+    xor     r15d, r15d
+    jmp     .top_out
+.top_lost:
     test    eax, eax
     jnz     .top_too_long
     ; kept: a record of its own, under the deferred name
@@ -1425,6 +1464,23 @@ parser_evaluate_expression:
     mov     r14, rdx                       ; the deferred name
     xor     r13d, r13d
     xor     r15d, r15d
+    ; pass 2: the value pass 1 found for an instruction's (core/known.s) -
+    ; a number now, checked once the code is laid out (known_verify)
+    cmp     byte [rel known_active], 0
+    je      .top_out
+    cmp     byte [r14 + DEFER_DATA], 0
+    jne     .top_out
+    mov     rsi, [r14 + DEFER_KEY]
+    test    rsi, rsi
+    jz      .top_out
+    call    known_lookup
+    test    eax, eax
+    jz      .top_out
+    mov     r13, rdx                       ; the value
+    mov     rdi, r14
+    mov     rsi, rdx
+    call    known_note_verify
+    xor     r14d, r14d                     ; no deferred name
     jmp     .top_out
 .top_too_long:
     mov     r12, EXIT_EXPR_TOO_DEEP        ; (the capture area could not hold it)
@@ -1489,7 +1545,7 @@ parser_defer_record:
     mov     byte [rdi - TOKEN_SIZE + TOKEN_kind], TOK_NEWLINE
     mov     qword [rdi - TOKEN_SIZE + TOKEN_value], 0
     mov     rdi, [rbx + PREP_arena]
-    mov     rsi, 32
+    mov     rsi, DEFER_SIZE
     call    arena_alloc                    ; zeroed
     test    rax, rax
     jnz     .ret
@@ -1498,6 +1554,26 @@ parser_defer_record:
     mov     [rdx + 16], r12
     lea     eax, [r13d + 1]
     mov     [rdx + 24], eax
+    ; its name across the passes (core/known.s), and pass 1 hands an
+    ; instruction's on: a second pass can give it its short form
+    mov     r12, rdx
+    mov     rdi, r14
+    extern  error_loc_line
+    mov     esi, [rel error_loc_line]
+    extern  known_defer_key
+    call    known_defer_key
+    mov     [r12 + DEFER_KEY], rax
+    movzx   eax, byte [rel expr_in_data]
+    mov     [r12 + DEFER_DATA], al
+    test    eax, eax
+    jnz     .noted
+    cmp     qword [r12 + DEFER_KEY], 0
+    je      .noted
+    mov     rdi, r12
+    extern  known_note_defer
+    call    known_note_defer
+.noted:
+    mov     rdx, r12
     xor     eax, eax
 .ret:
     pop     r14
@@ -4898,6 +4974,7 @@ parser_handle_pseudo_op:
     cmp     byte [r12 + 2], 0
     jne     .not_data
     mov     byte [rel zero_warned], 0      ; one warning a line (db ?, ?)
+    mov     byte [rel expr_in_data], 1     ; (kept expressions: no pass 2)
     ; "db" alone: NASM's warning, nothing written
     cmp     byte [r12], 'd'
     jne     .data_word
@@ -5331,6 +5408,7 @@ parser_handle_pseudo_op:
     jmp     .done
 
 .check_handler_result:
+    mov     byte [rel expr_in_data], 0
     test    rax, rax
     jnz     .done
     mov     rax, 1
@@ -7387,6 +7465,7 @@ alignb 8
 item_start:    resq 1                  ; parser_item_begin: the item's offset
 expr_question: resb 1                  ; "?" was read (an uninitialised item)
 zero_warned:   resb 1                  ; this data line has warned (zeroing)
+expr_in_data:  resb 1                  ; a data directive is being read
 [SECTION .text]
 
 ;*
