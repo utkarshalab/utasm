@@ -1508,7 +1508,30 @@ parser_evaluate_expression:
     ; a name referred to before but not defined yet went in as 0 ("a equ
     ; b" with b used above): an equ keeps that too, as below
     cmp     qword [rel expr_undef_uses], 0
+    jne     .top_plain
+.top_quiet:
+    ; every name known: an equ asks for a record all the same, not handed
+    ; on (parser_handle_equ hands it on when the value measures code that
+    ; jumps may shorten)
+    cmp     byte [rel expr_keep_quiet], 0
     je      .top_drop
+    test    eax, eax
+    jnz     .top_drop
+    movzx   r8d, byte [rel expr_in_data]
+    push    r8
+    mov     byte [rel expr_in_data], 1     ; (a record not handed on)
+    mov     rdi, rbx
+    mov     rsi, rdx
+    mov     rdx, rcx
+    call    parser_defer_record
+    pop     r8
+    mov     [rel expr_in_data], r8b
+    test    rax, rax
+    jnz     .top_quiet_none
+    mov     [rel expr_last_record], rdx
+.top_quiet_none:
+    xor     eax, eax
+    jmp     .top_out
 .top_plain:
     ; a name not defined yet, alone: an equ keeps it as well (its value is
     ; worked out once the code is laid out: parser_late_equs)
@@ -1700,6 +1723,7 @@ parser_deferred_value:
     mov     byte [rel expr_deferring], 1
     extern  prep_noexpand
     mov     byte [rel prep_noexpand], 1
+    mov     qword [rel expr_undef_uses], 0
     mov     rdi, rbx
     call    parser_evaluate_expression
     mov     byte [rel prep_noexpand], 0
@@ -1711,8 +1735,17 @@ parser_deferred_value:
     jnz     .drain
     ; a name still not defined: the error an undefined symbol gets
     test    rcx, rcx
-    jz      .ends
+    jz      .all_defined
     mov     rdi, rcx
+    call    error_set_subject
+    mov     r13, EXIT_UNDEF_SYMBOL
+    jmp     .drain
+.all_defined:
+    ; one referred to before but never defined went into arithmetic as 0
+    ; ("dd 2 * nothere"): the same error
+    cmp     qword [rel expr_undef_uses], 0
+    je      .ends
+    mov     rdi, [rel expr_undef_name]
     call    error_set_subject
     mov     r13, EXIT_UNDEF_SYMBOL
     jmp     .drain
@@ -6437,10 +6470,13 @@ times_newline: resq 1; the token that ends a times line
 times_padto:   resb 1              ; this times count is K - ($ - $$)
 equ_again:     resb 1              ; this equ defines a constant again
 expr_keep_forward: resb 1           ; an equ: keep a name not defined yet too
+expr_keep_quiet: resb 1             ; an equ: a record of a known value too
 alignb 8
 expr_last_record: resq 1            ; the record the last expression was kept as
 expr_undef_uses: resq 1            ; names met not defined (parser_late_equs)
 expr_undef_name: resq 1            ; ... the last
+late_only_alias: resb 1            ; parser_late_aliases: labels only
+alignb 8
 late_list:     resq 1              ; equs of something defined later:
 global late_equ_n                  ; {SYMBOL*, record, file, line}
 late_equ_n:    resq 1
@@ -7357,15 +7393,87 @@ parser_handle_equ:
     extern  known_diff_n
     mov     qword [rel known_diff_n], 0
     mov     byte [rel expr_keep_forward], 1
+    mov     byte [rel expr_keep_quiet], 1
+    call    relax_defer_begin              ; (the ranges it freezes held)
     call    parser_evaluate_expression
     mov     byte [rel expr_keep_forward], 0
-    check_err_to .error
+    mov     byte [rel expr_keep_quiet], 0
+    test    rax, rax
+    jz      .evaluated
+    mov     edi, 1
+    call    relax_defer_end
+    jmp     .error
+.evaluated:
     mov     r12, rdx               ; r12 = value
 
     ; a symbol not defined yet: its value is unknown here, and utasm reads
-    ; the source once - the expression is kept and worked out later
+    ; the source once - the expression is kept and worked out later (no
+    ; code need keep its size for it)
     test    rcx, rcx
-    jnz     .forward
+    jz      .known
+    xor     edi, edi
+    call    relax_defer_end
+    jmp     .forward
+.known:
+    ; "len equ y - x" over code jumps may shorten: freezing it kept them
+    ; long where NASM shortens them. Such an equ is worked out once the
+    ; code is laid out, as one of something defined later; pass 2 takes
+    ; the value pass 1 found, checked once its code is laid out
+    push    r11
+    cmp     byte [rel equ_again], 0
+    jne     .commit
+    cmp     qword [rel known_diff_n], 1
+    jne     .commit
+    cmp     qword [rel known_pos_uses], 2
+    jne     .commit
+    cmp     qword [rel expr_last_record], 0
+    je      .commit
+    extern  known_diff
+    mov     rdi, [rel known_diff]
+    test    rdi, rdi
+    jz      .commit
+    cmp     byte [rdi + SECTION_type], SEC_TEXT
+    jne     .commit
+    mov     rax, [rbx + PREP_ctx]
+    cmp     byte [rax + ASMCTX_opt], OPT_NONE
+    je      .commit                        ; (-O0: nothing changes size)
+    mov     rsi, [rel known_diff + 8]
+    mov     rdx, [rel known_diff + 16]
+    extern  relax_range_fixed
+    call    relax_range_fixed
+    test    eax, eax
+    jnz     .commit                        ; nothing there changes size
+    xor     edi, edi
+    call    relax_defer_end                ; (nothing frozen for it)
+    pop     r11
+    mov     rdi, [rel expr_last_record]
+    cmp     byte [rel known_active], 0
+    je      .measure_late
+    mov     rsi, [rdi + DEFER_KEY]
+    test    rsi, rsi
+    jz      .measure_late
+    push    rdi
+    call    known_lookup
+    pop     rdi
+    test    eax, eax
+    jz      .measure_late
+    ; pass 2: the value from pass 1's layout, checked at the end
+    mov     r12, rdx
+    mov     rsi, rdx
+    call    known_note_verify
+    xor     r11d, r11d
+    jmp     .first
+.measure_late:
+    mov     byte [rdi + DEFER_DATA], 0
+    call    known_note_defer               ; (pass 1: handed on)
+    mov     rsi, rdi
+    mov     rdi, r13
+    call    parser_late_note
+    jmp     .error                         ; (rax = OK or the error)
+.commit:
+    mov     edi, 1
+    call    relax_defer_end
+    pop     r11
 
     ; a constant defined again: the same value, or the error a label
     ; defined twice gets
@@ -7502,6 +7610,21 @@ parser_late_note:
     ret
 
 ;*
+; * [parser_late_aliases]
+; * Purpose: Before jumps are shortened: the late equs that are a label of
+; *   a section ("p equ y + 1") become that label now, so that a jump to
+; *   them is shortened and they move with the code; the others wait for
+; *   parser_late_equs. Nothing is frozen by working them out.
+; ;
+global parser_late_aliases
+parser_late_aliases:
+    mov     byte [rel late_only_alias], 1
+    call    parser_late_equs
+    mov     byte [rel late_only_alias], 0
+    xor     eax, eax
+    ret
+
+;*
 ; * [parser_late_equs]
 ; * Purpose: The equs of something defined later (parser_late_note), worked
 ; *   out now that every label is placed: round after round, as one may
@@ -7539,8 +7662,12 @@ parser_late_equs:
     jz      .item
     mov     qword [rel known_pos_uses], 0
     mov     qword [rel expr_undef_uses], 0
+    extern  relax_no_freeze
+    movzx   eax, byte [rel late_only_alias]
+    mov     [rel relax_no_freeze], al      ; (before the jumps: freeze nothing)
     mov     rdi, [rbx + 8]
     call    parser_deferred_value
+    mov     byte [rel relax_no_freeze], 0
     test    rax, rax
     jnz     .not_yet
     ; a name in it not defined (yet): taken as 0 in arithmetic
@@ -7552,6 +7679,21 @@ parser_late_equs:
     mov     r14, rbx
     jmp     .item
 .value:
+    cmp     byte [rel late_only_alias], 0
+    je      .define
+    ; before the jumps are shortened: only a label of a section now
+    test    r11, r11
+    jz      .item
+    cmp     byte [r11], TAG_SYMBOL
+    jne     .item
+    cmp     byte [r11 + SYMBOL_kind], SYM_LABEL
+    jne     .item
+    movzx   eax, word [r11 + SYMBOL_section]
+    test    eax, eax
+    jz      .item
+    cmp     eax, 0xFF00
+    jae     .item
+.define:
     and     byte [r15 + SYMBOL_pflags], ~SYMF_LATE
     mov     [r15 + SYMBOL_value], rdx
     mov     word [r15 + SYMBOL_section], SHN_ABS
@@ -7593,20 +7735,28 @@ parser_late_equs:
     jmp     .item
 .round_done:
     xor     eax, eax
+    test    r13, r13
+    jz      .no_progress
+    test    r14, r14
+    jnz     .round
+    jmp     .ret
+.no_progress:
     test    r14, r14
     jz      .ret
-    test    r13, r13
-    jnz     .round
+    cmp     byte [rel late_only_alias], 0
+    jne     .ret                           ; (the rest after the jumps)
     ; nothing more can be worked out: the first one left names something
     ; never defined (or they name each other) - its error, at its line
     mov     qword [rel expr_undef_name], 0
     mov     rdi, [r14 + 8]
     call    parser_deferred_value
-    test    rax, rax
-    jnz     .located
     mov     rsi, [rel expr_undef_name]
     test    rsi, rsi
-    jz      .undefined
+    jnz     .named
+    test    rax, rax
+    jnz     .located
+    jmp     .undefined
+.named:
     ; one of these equs: they name each other
     lea     rdi, [rel global_ctx]
     call    symbol_find
@@ -8118,7 +8268,7 @@ parser_handle_res:
     mov     edi, EXIT_RES_NONCONST
     call    known_defer_error
     test    eax, eax
-    jnz     .error
+    jnz     .res_unknown
     xor     edx, edx
 .count_known:
     imul    rdx, r12               ; total bytes to reserve
@@ -8148,7 +8298,16 @@ parser_handle_res:
 
 .no_section:
     mov     rax, EXIT_INTERNAL
+    jmp     .done
 
+.res_unknown:
+    ; the last pass: a name never defined in the count is NASM's "symbol
+    ; `x' not defined" ("resb 2 * nothere")
+    cmp     qword [rel expr_undef_uses], 0
+    je      .error
+    mov     rdi, [rel expr_undef_name]
+    call    error_set_subject
+    mov     eax, EXIT_UNDEF_SYMBOL
 .error:
 .done:
     pop     r12
@@ -8354,13 +8513,27 @@ parser_handle_section_directive:
     cmp     eax, TOK_EOF
     je      .no_name
     cmp     eax, TOK_RBRACKET
-    jne     .name_piece
+    jne     .name_text
 .no_name:
     mov     rdi, rbx
     mov     rsi, r12
     call    preprocessor_putback_token
     xor     eax, eax
     jmp     .done
+
+.name_text:
+    ; "section /": any word names a section in NASM; a token with no text
+    ; of its own (an operator) is named by what was written (it made a
+    ; section with no name, which the ELF writer could not write)
+    cmp     qword [r12 + TOKEN_value], 0
+    jne     .name_piece
+    mov     rdi, rbx
+    mov     rsi, r12
+    mov     edx, 1
+    extern  prep_tokens_text
+    call    prep_tokens_text
+    check_err
+    mov     [r12 + TOKEN_value], rdx
 
     ; ".note.GNU-stack": a name with '-' in it lexes as several tokens;
     ; join the ones written together
