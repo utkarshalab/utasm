@@ -613,6 +613,7 @@ code_table:
     code_msg EXIT_STRUCT_BOUNDS,     m_struct
     code_msg EXIT_BITS_MODE,         m_bits_mode, t_bits_mode
     code_msg EXIT_NON64_OPERANDS,    m_non64
+    code_msg EXIT_ALIGN_LARGE,       m_align_large, t_align_large
     code_msg EXIT_USE_PACKAGE,       m_use, t_use
     code_msg EXIT_ALIGN_MODE,        m_align_mode, t_align_mode
     code_msg EXIT_REG_SIZE,          m_reg_size
@@ -679,6 +680,8 @@ m_struct:       db "operand larger than the structure field", 0
 m_bits_mode:    db "instruction not supported in this bits mode (16/32/64)", 0
 t_bits_mode:    db "instruction not supported in ^ mode", 0
 m_non64:        db "invalid operands in non-64-bit mode", 0
+m_align_large:  db "absurdly large segment alignment", 0
+t_align_large:  db "absurdly large segment alignment `^'", 0
 m_use:          db "unknown `%use' package", 0
 m_cond_deep:    db "conditionals nested too deeply", 0
 m_not_simple:   db "expression is not simple or relocatable", 0
