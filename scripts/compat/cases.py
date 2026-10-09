@@ -676,6 +676,12 @@ def limit_cases():
     nl = lambda lines: "\n".join(lines) + "\n"
     long = "x" * 700
     c = {
+        # file names in single quotes (eight characters or fewer lex as a
+        # character constant)
+        "include_single_quote": ("%include 'inc.inc'\n%include 'inc.inc'\ndb X\n",
+                                 {"inc.inc": "%ifndef INCX\n%define INCX\nX equ 9\n%endif\n"}, "bin"),
+        "pathsearch_single_quote": ("%pathsearch P 'inc.inc'\ndb P\n", {"inc.inc": "db 0\n"}, "bin"),
+        "depend_single_quote": ("%depend 'inc.inc'\nnop\n", {"inc.inc": "db 0\n"}, "bin"),
         "times_line_300_items": ("times 3 db " + ", ".join(str(i % 256) for i in range(300)) + "\n", {}, "bin"),
         "times_db_string": ("times 1000 db 'ab'\n", {}, "bin"),
         "ifidn_long": (nl(["%%ifidn %s, %s" % (long, long), "db 1", "%else", "db 2", "%endif"]), {}, "bin"),
@@ -781,6 +787,16 @@ def address_forms():
 
 # %+ outside a macro body, each side first as the %define / %assign it names
 BIN_PROBES.update({
+    # %ifmacro with a parameter count (overloads, ranges); %iftoken; %?
+    "pp_ifmacro_counts": "%macro m 1\n%endmacro\n%macro m 3\n%endmacro\n%macro v 2-*\n%endmacro\n%ifmacro m\ndb 0\n%endif\n%ifnmacro m\ndb 100\n%endif\n%ifmacro m 1\ndb 1\n%endif\n%ifnmacro m 1\ndb 101\n%endif\n%ifmacro m 2\ndb 2\n%endif\n%ifnmacro m 2\ndb 102\n%endif\n%ifmacro m 3\ndb 3\n%endif\n%ifnmacro m 3\ndb 103\n%endif\n%ifmacro m 0-1\ndb 4\n%endif\n%ifnmacro m 0-1\ndb 104\n%endif\n%ifmacro m 2-3\ndb 5\n%endif\n%ifnmacro m 2-3\ndb 105\n%endif\n%ifmacro m 4-*\ndb 6\n%endif\n%ifnmacro m 4-*\ndb 106\n%endif\n%ifmacro v 1\ndb 7\n%endif\n%ifnmacro v 1\ndb 107\n%endif\n%ifmacro v 5\ndb 8\n%endif\n%ifnmacro v 5\ndb 108\n%endif\n%ifmacro v 0-1\ndb 9\n%endif\n%ifnmacro v 0-1\ndb 109\n%endif\n%ifmacro v 1-2\ndb 10\n%endif\n%ifnmacro v 1-2\ndb 110\n%endif\n%ifmacro nope\ndb 11\n%endif\n%ifnmacro nope\ndb 111\n%endif\n%ifmacro nope 1\ndb 12\n%endif\n%ifnmacro nope 1\ndb 112\n%endif\n",
+    "pp_iftoken": "%iftoken 1\ndb 1\n%endif\n%iftoken 1 2\ndb 2\n%endif\n%ifntoken\ndb 3\n%endif\n"
+                  "%iftoken foo\ndb 4\n%endif\n",
+    # a multi-line macro is called at the start of a line or after "label:"
+    # only; elsewhere its name is a word (here a string, a label's macro)
+    "pp_macro_after_label": "%macro mm 0\nnop\n%endmacro\nlab: mm\njmp lab\n",
+    "pp_macro_name_defstr": "%macro mm 0\nnop\n%endmacro\n%defstr S mm\ndb S\n",
+    "pp_macro_arg_is_macro": "%macro qq 0\nnop\n%endmacro\n%macro mm 1\ndb 1\n%endmacro\nmm qq\n",
+    "pp_macro_name": "%macro mm 0\n%defstr S %?\ndb S\n%endmacro\nmm\n%macro nn 0\n%defstr T %??\ndb T\n%endmacro\nnn\n",
     "pp_paste_define_rhs": "%define C cd\n%define abcd 7\ndb ab %+ C\n",
     "pp_paste_chain": "db 1 %+ 2 %+ 3\n",
     "pp_paste_assign": "%assign x 3\ndb x %+ 4\n",
@@ -862,6 +878,14 @@ EXPR_ELF.update({
     "elf_distance_imm": "section .text\nadd rsp, (l2 - l1)\nsub rsp, (l2 - l1) / 2\nl1: times 20 db 0\nl2:\n",
 })
 
+
+# a multi-line macro's name in the middle of a line is no call: the symbol
+# is not defined (utasm expanded the macro there)
+DIAG_CASES += [
+    ("macro name as a data item", "%macro mm 0\nnop\n%endmacro\ndb 1, mm\n"),
+    ("macro name as an immediate", "bits 64\n%macro mm 0\nnop\n%endmacro\nmov eax, mm\n"),
+    ("macro given its own name", "%macro mm 1\ndb %1\n%endmacro\nmm mm\n"),
+]
 
 # operand sizes utasm used to guess, and empty address terms
 DIAG_CASES += [
