@@ -5985,9 +5985,23 @@ amd64_emit_byte:
     inc     dword [rbx + ASMCTX_inst_len]
     
     pop     rax
+    ; the section's buffer grows by system calls now and then, which
+    ; clobber r10 / r11 (and rdx): the encoders keep operands there ("int
+    ; 0x21" read its vector through r10 after the CD - a fault, once the
+    ; buffer had just grown)
+    push    rdx
+    push    r8
+    push    r9
+    push    r10
+    push    r11
     mov     rdi, rbx
     movzx   rsi, al
     call    asm_ctx_emit_byte
+    pop     r11
+    pop     r10
+    pop     r9
+    pop     r8
+    pop     rdx
     ret
 
 ;*
