@@ -872,9 +872,16 @@ prep_expand_start:
     jmp .error
 
 .depth_ok:
-    ; Increment global expansion ID (A70)
+    ; a number for each call of a multi-line macro (%%locals: NASM's
+    ; ..@N.name) - not for a %define, a %rep body or a times line, which
+    ; NASM does not count either
     mov     r8, [rbx + PREP_ctx]
+    cmp     qword [r12 + MACRO_name], 0
+    je      .no_new_id
+    test    byte [r12 + MACRO_flags], MACRO_FLAG_DEFINE | MACRO_FLAG_TIMES
+    jnz     .no_new_id
     inc     dword [r8 + ASMCTX_mac_exp_id]
+.no_new_id:
 
     ; 1. Allocate MACROEXP struct
     mov     rdi, [rbx + PREP_arena]
@@ -1742,22 +1749,22 @@ prep_expand_next:
         extern  str_int_to_str
         call    str_int_to_str
         
-        ; 2. Allocate the label: "..@" + ID + name + NUL. Only what it needs:
-        ;    compile_time_hash expands its %%names once per character, so a
-        ;    MAX_TOKEN buffer each time used up the arena on large tables.
+        ; 2. Allocate the label: "..@" + ID + "." + name + NUL. Only what it
+        ;    needs: compile_time_hash expands its %%names once per character,
+        ;    so a MAX_TOKEN buffer each time used up the arena on large tables.
         mov     rdi, r15
         call    str_len
         mov     r14, rax
         mov     rdi, [r12 + TOKEN_value]
         call    str_len
-        lea     rsi, [r14 + rax + 4]
+        lea     rsi, [r14 + rax + 5]
         mov     rdi, [rbx + PREP_arena]
         call    arena_alloc
         test    rax, rax
         jnz     .produced
         mov     r14, rdx               ; r14 = final label buffer
         
-        ; 3. Construct "..@ID_label"
+        ; 3. Construct "..@ID.label", as NASM names it
         mov     byte [r14], '.'
         mov     byte [r14+1], '.'
         mov     byte [r14+2], '@'
@@ -1766,6 +1773,9 @@ prep_expand_next:
         mov     rdi, r14
         mov     rsi, r15               ; ID string
         extern  str_concat
+        call    str_concat
+        mov     rdi, r14
+        lea     rsi, [rel s_dot]
         call    str_concat
         
         mov     rdi, r14
@@ -2764,6 +2774,7 @@ prep_handle_inc:
 
 
 [SECTION .rodata]
+s_dot:          db ".", 0             ; (..@N.name)
 dir_inc:    db "include", 0
 dir_def:    db "define", 0
 dir_assign: db "assign", 0
@@ -4919,6 +4930,8 @@ prep_resolve_interp:
     lea     rdi, [r14 + r15]
     call    str_len
     add     r15, rax
+    mov     byte [r14 + r15], '.'          ; ..@N.name, as NASM
+    inc     r15
     jmp     .scan
 
 .finish:
