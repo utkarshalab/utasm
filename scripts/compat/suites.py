@@ -499,6 +499,24 @@ def command_line(utasm, verbose=False):
                 s.result(name, False, "utasm error: " + first_line(ru))
             else:
                 s.result(name, a == b, "nasm %r | utasm %r" % (a[:60], b[:60]))
+
+    # utasm's own: --bits 16 starts a flat binary as NASM does (utasm's
+    # default is 64); a bad option value fails (it exited 0)
+    src = "mov eax, 5\nmov ax, 5\npush word 1\n"
+    for args in (["--bits", "16", "-f", "bin"], ["-f", "bin", "--bits", "16"]):
+        with tempdir() as d:
+            open(os.path.join(d, "b.s"), "w").write(src)
+            rn = run(["nasm", "-f", "bin", "b.s", "-o", "n.bin"], cwd=d)
+            ru = run([utasm] + args + ["b.s", "-o", "u.bin"], cwd=d)
+            same = rn.returncode == 0 and ru.returncode == 0 and (
+                open(os.path.join(d, "n.bin"), "rb").read() ==
+                open(os.path.join(d, "u.bin"), "rb").read())
+        s.result(" ".join(args), same, "utasm: " + first_line(ru))
+    for args in (["--bits", "15"], ["--format", "nope"], ["--bits"]):
+        with tempdir() as d:
+            open(os.path.join(d, "b.s"), "w").write("nop\n")
+            ru = run([utasm] + args + ["b.s", "-o", "u.bin"], cwd=d)
+        s.result("bad: " + " ".join(args), ru.returncode != 0, "exited %d" % ru.returncode)
     return s
 
 
