@@ -5259,6 +5259,15 @@ amd64_emit_reloc:
     mov     byte [rdx + RELOC_flags], RELOC_FLAG_SYM
     jmp     .wrt_done
 .wrt_type:
+    ; "wrt ..imagebase" (-f win64): the COFF converter's type
+    cmp     eax, WRT_IMAGEBASE
+    jne     .wrt_not_imagebase
+    mov     ecx, R_UTASM_IMAGEBASE
+    cmp     dword [rdx + RELOC_type], R_X86_64_64
+    jne     .wrt_set
+    mov     ecx, R_UTASM_IMAGEBASE64
+    jmp     .wrt_set
+.wrt_not_imagebase:
     mov     ecx, R_X86_64_PLT32
     cmp     eax, WRT_PLT
     je      .wrt_set
