@@ -2836,6 +2836,14 @@ parser_evaluate_factor:
         mov     rdi, [rbx + PREP_ctx]
         extern  symbol_find
         call    symbol_find
+        ; a macro's name is no symbol: "db 1, m" with m a multi-line macro
+        ; is NASM's "symbol `m' not defined"
+        test    rax, rax
+        jnz     .looked_up
+        cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
+        jne     .looked_up
+        mov     eax, 1
+.looked_up:
         IF rax, e, OK
             ; an entry not defined yet (named by global, or by a reference
             ; before): the second pass may know it as a constant
