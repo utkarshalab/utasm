@@ -589,6 +589,8 @@ code_table:
     code_msg EXIT_NOT_DEFINING,      m_macro_def, t_not_defining
     code_msg EXIT_NO_REP,            m_no_rep
     code_msg EXIT_NO_SIZE,           m_no_size
+    code_msg EXIT_COFF_RELOC,        m_coff_reloc, t_coff_reloc
+    code_msg EXIT_COFF_SPECIAL,      m_coff_special
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -681,6 +683,9 @@ m_bits_mode:    db "instruction not supported in this bits mode (16/32/64)", 0
 t_bits_mode:    db "instruction not supported in ^ mode", 0
 m_non64:        db "invalid operands in non-64-bit mode", 0
 m_align_large:  db "absurdly large segment alignment", 0
+m_coff_reloc:   db "COFF format has no relocation for this reference", 0
+t_coff_reloc:   db "COFF format has no ^ relocation", 0
+m_coff_special: db "COFF format does not support any special symbol types", 0
 t_align_large:  db "absurdly large segment alignment `^'", 0
 m_use:          db "unknown `%use' package", 0
 m_cond_deep:    db "conditionals nested too deeply", 0
