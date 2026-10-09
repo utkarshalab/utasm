@@ -936,6 +936,36 @@ EXPR_ELF.update({
 })
 
 
+# ELF: section defaults by name and with attributes, TLS, sectalign, extern
+# and global types and bindings, common, unused externs, differences across
+# sections (PC-relative), negated special floats
+ELF_PROBES.update({
+    "elf_tls_sections": "section .tdata\ndd 1\nsection .tbss\nresd 1\nsection .tdata2 progbits alloc write tls\ndd 2\n",
+    "elf_known_sections": "section .init_array\ndq 0\nsection .fini_array\ndq 0\nsection .preinit_array\ndq 0\n"
+                          "section .comment\ndb 'x', 0\nsection .ldata\ndd 1\nsection .lbss\nresd 1\nsection .lrodata\ndd 2\n",
+    "elf_attrs_align1": "section .text progbits\nnop\nsection .data progbits\ndd 1\nsection .bss nobits\nresb 1\n"
+                        "section .x write align=8\ndb 1\n",
+    "elf_sectalign": "section .data\ndb 1\nsectalign 32\nsection .text\nsectalign 64\nnop\n"
+                     "section .rodata\nsectalign off\nalign 64\ndb 2\nsectalign on\n",
+    "elf_extern_types": "extern f:function, d:data, w:weak, h:function hidden\nsection .text\ncall f\ncall w\ncall h\nmov eax, [d]\n",
+    "elf_global_weak": "global g:function weak, k:weak\nsection .text\ng: ret\nk: ret\n",
+    "elf_common_align": "common c 16\ncommon d 8:4\nsection .text\nnop\n",
+    "elf_extern_unused": "extern used, unused\nsection .text\ncall used\n",
+    "elf_xsec_data": "extern e\nsection .data\na: dd 1\nsection .text\nb: nop\nsection .data\n"
+                     "dq b - a\ndd b - a\ndq b - $\ndd b - $ + 4\ndw b - $\ndd e - a\ndq e - $\n",
+    "elf_xsec_code": "extern e\nsection .data\na: dd 1\nsection .text\nnop\nmov eax, a - $\nadd eax, a - $\npush a - $\n"
+                     "cmp eax, e - $\nmov ax, a - $\nimul eax, ebx, a - $\nmov rax, a - $\n",
+})
+BIN_PROBES.update({
+    "float_special_neg": "dd __Infinity__, -__Infinity__, -__QNaN__\ndq -__Infinity__\ndw -__Infinity__\n",
+})
+DIAG_CASES += [
+    ("difference of two other sections", "section .text\nb: nop\nsection .bss\na: resb 4\nsection .data\ndq b - a\n"),
+    ("current section minus another", "section .data\na: dd 1\nsection .text\nb: nop\nsection .data\ndq a - b\n"),
+    ("absurdly large alignment", "nop\nalign 0x100000000\n"),
+    ("absurdly large alignment, top bit", "nop\nalign 0x8000000000000000\n"),
+]
+
 # a multi-line macro's name in the middle of a line is no call: the symbol
 # is not defined (utasm expanded the macro there)
 DIAG_CASES += [
