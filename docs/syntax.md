@@ -442,6 +442,15 @@ dd label < 2                ; `<': operands differ by a non-scalar
 dd (end - start) / 4        ; fine: a distance is a number
 ```
 
+In an object file, the difference of a label of another section (or an
+extern) and one of the section being written is a PC-relative reference,
+as in NASM: `dd func - $` and `mov eax, table - $` get an
+`R_X86_64_PC32` relocation against `func` / `table` (`PC16` for `dw`,
+`PC64` for `dq`), the distance from the right-hand label to the field in
+its addend. Labels of two other sections (`dd b - a` with neither here)
+have no relocation for them: ``expression is not simple or relocatable``.
+With `-f bin` the sections are placed, so any difference is a number.
+
 A label may be used before the line that defines it, in arithmetic too:
 
 ```asm
@@ -744,6 +753,35 @@ section .myrodata               ; default: read only
 ; section .bad write exec       ; NEVER — security violation
 ```
 
+With `-f elf64` / `-f elf32`, a section's type, flags and alignment come
+from its name, as NASM's do: besides `.text`, `.data`, `.rodata` and
+`.bss`, the names `.tdata` / `.tbss` (thread-local, `tls`),
+`.init_array`, `.fini_array`, `.preinit_array`, `.comment`, `.note`,
+`.lrodata`, `.ldata` and `.lbss` have their defaults. Attributes given on a
+section's first line replace them: `progbits`, `nobits`, `alloc`,
+`noalloc`, `exec`, `noexec`, `write`, `nowrite`, `tls`, `notls`,
+`align=N`. As in NASM, attributes without `align=` leave a new section's
+alignment at 1 (`section .data progbits` is 1-aligned, `section .data` is
+4-aligned).
+
+```asm
+section .tdata                  ; progbits, alloc write tls, align 4
+section .tbss                   ; nobits,   alloc write tls, align 4
+section .tls2 progbits alloc write tls align=8
+```
+
+`align N` and `alignb N` raise the section's alignment to N as well.
+`sectalign` controls that:
+
+```asm
+sectalign 32                    ; this section is at least 32-aligned
+sectalign off                   ; align / alignb pad, but no longer raise it
+sectalign on                    ; they do again
+```
+
+An `align` of 2^32 or more is NASM's error ``absurdly large segment
+alignment `0x100000000'``.
+
 ---
 
 ### Symbol Visibility
@@ -761,7 +799,24 @@ extern free
 
 ; common (shared across object files)
 common shared_buffer 1024       ; 1024 byte common block
+common aligned_buffer 64:16     ; ... aligned to 16
 ```
+
+`global` and `extern` take NASM's ELF attributes after a colon: a type
+(`function`, `data`, `object`, `notype`), a visibility (`default`,
+`internal`, `hidden`, `protected`) and a binding (`weak`, `strong`):
+
+```asm
+global main:function            ; STT_FUNC
+global table:data hidden        ; STT_OBJECT, STV_HIDDEN
+global hook:function weak       ; STB_WEAK
+extern helper:function hidden
+extern optional:weak            ; an undefined weak reference
+```
+
+An `extern` that nothing uses is left out of the object's symbol table, as
+NASM leaves it out. The table starts with an `STT_FILE` symbol naming the
+source file.
 
 ---
 
