@@ -71,7 +71,7 @@ extern  error_loc_line
 
 [SECTION .bss]
 alignb 8
-global known_pos_uses, known_diff_n, known_fwd_uses
+global known_pos_uses, known_diff_n, known_fwd_uses, known_diff
 known_fwd_uses: resq 1              ; names used before their definition (any)
 known_pos_uses: resq 1              ; positions met in the expression (equ)
 known_diff_n:   resq 1              ; "b - a" label differences in it
@@ -531,9 +531,10 @@ known_second_pass:
     ; equs of something defined later (parser_late_equs): worked out from
     ; the code laid out, before the names are handed on - a constant among
     ; them is one (one that names nothing defined fails in the last pass)
-    extern  late_equ_n, parser_late_equs
+    extern  late_equ_n, parser_late_equs, parser_late_aliases
     cmp     qword [rel late_equ_n], 0
     je      .late_done
+    call    parser_late_aliases            ; (labels: before the jumps)
     call    known_layout
     mov     byte [rel defer_laid], 1
     call    parser_late_equs
