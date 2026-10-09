@@ -38,7 +38,11 @@ DEFAULT REL
 ;                          distance into a plain number: nothing between a
 ;                          and b may change size (a frozen range); no jump
 ;                          inside one is shortened, and when padding in
-;                          one would change the section is left as it is
+;                          one would change the section is left as it is.
+;                          An equ that is one such difference over code
+;                          jumps may shorten freezes nothing: it is worked
+;                          out after them (parser_late_equs), as NASM's
+;                          passes would
 ;   times K-($-$$) db F    padding up to offset K (RELAX_PADTO): it grows
 ;                          by what is removed before it
 ;   other uses of a        a position in arithmetic NASM cannot relocate
@@ -137,6 +141,8 @@ rw_ends:            resq 1              ; each record's RX_end
 rw_pref:            resq 1              ; bytes removed before each record
 rw_pref_ok:         resb 1              ; rw_pref and rw_ends hold (rx_new)
 rw_sorted:          resb 1              ; the records' RX_pos never go down
+global relax_no_freeze
+relax_no_freeze:    resb 1              ; nothing freezes (parser_late_aliases)
 alignb 8
 fx_fw:              resq 1              ; rx_fast: the Fenwick tree (changes)
 fx_bstart:          resq 1              ; ... where each block's jumps start
@@ -229,6 +235,8 @@ relax_note:
 global relax_freeze_current
 relax_freeze_current:
     push    rax
+    cmp     byte [rel relax_no_freeze], 0
+    jne     .out
     lea     rax, [rel global_ctx]
     mov     rax, [rax + ASMCTX_curr_sec]
     test    rax, rax
@@ -251,6 +259,8 @@ relax_freeze_range:
     push    rcx
     push    rdx
     push    rsi
+    cmp     byte [rel relax_no_freeze], 0
+    jne     .out
     test    rdi, rdi
     jz      .out
     cmp     rsi, rdx
@@ -456,6 +466,10 @@ relax_truncate:
 global relax_range_fixed
 relax_range_fixed:
     push    rbx
+    cmp     rsi, rdx
+    jbe     .ordered
+    xchg    rsi, rdx                       ; ("b - a": the two either way)
+.ordered:
     xor     eax, eax
     lea     rcx, [rel relax_vec]
     cmp     byte [rcx + VEC_tag], TAG_VEC
@@ -499,6 +513,8 @@ relax_freeze_symref:
     push    rax
     push    rcx
     push    rdx
+    cmp     byte [rel relax_no_freeze], 0
+    jne     .out
     test    rdi, rdi
     jz      .deferred
     movzx   eax, word [rdi + SYMBOL_section]
