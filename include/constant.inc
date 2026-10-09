@@ -80,6 +80,7 @@
 %define EXIT_STRUCT_BOUNDS     45  ; memory write size exceeds struct field byte width
 %define EXIT_BITS_MODE         46  ; not encodable in the current bits 16/32/64 mode
 %define EXIT_NON64_OPERANDS    73  ; r9d, sil, [r8d]: registers only 64-bit mode has
+%define EXIT_ALIGN_LARGE       74  ; align 0x100000000 and above (NASM's limit)
 %define EXIT_USE_PACKAGE       47  ; %use of a package utasm does not know
 %define EXIT_ALIGN_MODE        48  ; alignmode with an unknown mode
 %define EXIT_REG_SIZE          49  ; "dword ax": a size that is not the register's
@@ -360,6 +361,8 @@
                                            ; until parser_late_equs works it out
 %define SYMF_STRUC             0x20        ; a struc's field or <struct>_size, a label in
                                            ; an absolute block: in .symtab under -g
+%define SYMF_USED              0x40        ; a relocation names it (an extern no
+                                           ; relocation names stays out of .symtab)
 %define SYM_SET                0x0E        ; mutable variable defined via %assign or SET
 %define SYM_EQU                0x0F        ; immutable assembler constant defined via EQU
 %define SYM_IFUNC              0x10        ; ELF indirect function symbol
