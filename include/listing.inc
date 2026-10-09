@@ -32,6 +32,8 @@
 %define LE_WARN     72              ; q its warnings: {q next, text}, or 0
 %define LE_UNINIT   80              ; q its "?" bytes: {q from, q to (from
                                     ;   the entry's start), q next}, or 0
-%define LE_SIZE     88
+%define LE_TEXT     88              ; q its text, when it is no line of a
+                                    ;   file ("lab: " before a macro call)
+%define LE_SIZE     96
 %define LST_DEPTHS  32              ; include depths remembered
 
