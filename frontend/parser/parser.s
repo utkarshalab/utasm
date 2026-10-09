@@ -1912,16 +1912,41 @@ parser_eval_expr_body:
     call    preprocessor_next_token
     test    rax, rax
     jnz     .done
+    ; "..imagebase" (-f win64): the address less the image's base
+    push    qword [rdx + TOKEN_value]
     mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel str_imagebase]
+    call    str_cmp
+    pop     rdi
+    test    rax, rax
+    jnz     .wrt_table
+    extern  coff_enabled
+    cmp     byte [rel coff_enabled], 0
+    je      .wrt_unknown
+    mov     byte [rel reloc_wrt], WRT_IMAGEBASE
+    jmp     .ternary
+.wrt_table:
+    push    rdi
     lea     rsi, [rel wrt_words]
     call    parser_word_index
+    pop     rdi
     test    eax, eax
-    jz      .wrt_bad
+    jz      .wrt_unknown
     imul    eax, eax, 12
     lea     rcx, [rel wrt_words]
     movzx   eax, byte [rcx + rax - 1]      ; the row's WRT_*
     mov     [rel reloc_wrt], al
     jmp     .ternary
+.wrt_unknown:
+    ; "wrt ..name" with no such special symbol (..imagebase outside
+    ; -f win64): NASM's "symbol `..name' not defined"
+    test    rdi, rdi
+    jz      .wrt_bad
+    cmp     word [rdi], '..'
+    jne     .wrt_bad
+    call    error_set_subject
+    mov     rax, EXIT_UNDEF_SYMBOL
+    jmp     .done
 .wrt_bad:
     mov     rax, EXIT_UNEXPECTED_TOKEN
     jmp     .done
@@ -4202,6 +4227,65 @@ parser_skip_to_eol:
     ret
 
 ;*
+; * [parser_coff_section]
+; * Purpose: -f win64: a new section's type, flags and alignment by its
+; *   name, as NASM's COFF output has them: .text code (aligned 16), .data
+; *   data (4), .bss (4), .rdata and .xdata read-only data (8), .pdata (4);
+; *   any other name code (16). Attributes after the name change them.
+; * Input  : RDI = the name, R13 = SECTION
+; ;
+parser_coff_section:
+    push    r12
+    push    r14
+    mov     r12, rdi
+    lea     r14, [rel coff_sec_names]
+.row:
+    cmp     byte [r14], 0
+    je      .other
+    mov     rdi, r12
+    mov     rsi, r14
+    call    str_cmp
+    test    rax, rax
+    jz      .hit
+    add     r14, 10
+    jmp     .row
+.hit:
+    movzx   eax, byte [r14 + 9]            ; SEC_TEXT / DATA / BSS / CUSTOM
+    mov     [r13 + SECTION_type], al
+    movzx   edi, byte [r14 + 8]            ; the class
+    jmp     .class
+.other:
+    mov     byte [r13 + SECTION_type], SEC_CUSTOM
+    mov     edi, COFF_CODE
+.class:
+    mov     esi, 1
+    call    parser_coff_class
+    pop     r14
+    pop     r12
+    ret
+
+;*
+; * [parser_coff_class]
+; * Purpose: -f win64: section R13 made one of NASM's COFF classes (EDI:
+; *   COFF_CODE, DATA, RDATA, BSS, INFO, PDATA): its ELF type and flags,
+; *   which the COFF converter reads back, and, when ESI = 1, the class's
+; *   alignment
+; ;
+parser_coff_class:
+    lea     rax, [rel coff_classes]
+    lea     rax, [rax + rdi*8]
+    mov     ecx, [rax]
+    mov     [r13 + SECTION_elf_type], ecx
+    mov     cx, [rax + 4]
+    mov     [r13 + SECTION_flags], cx
+    test    esi, esi
+    jz      .ret
+    movzx   ecx, word [rax + 6]
+    mov     [r13 + SECTION_align], rcx
+.ret:
+    ret
+
+;*
 ; * [parser_section_attrs]
 ; * Purpose: NASM's section attributes after the name: progbits / nobits,
 ; *          alloc / noalloc, exec / noexec, write / nowrite, align=N.
@@ -4266,6 +4350,25 @@ parser_section_attrs:
     and     [r13 + SECTION_flags], ax      ; noalloc / noexec / nowrite
     jmp     .next
 .not_flag:
+    ; -f win64: NASM's COFF words - code / text, data, rdata, bss, info -
+    ; each with its alignment unless align= says it
+    extern  coff_enabled
+    cmp     byte [rel coff_enabled], 0
+    je      .not_coff_word
+    mov     rdi, r12
+    lea     rsi, [rel coff_attr_words]
+    call    parser_word_index
+    test    eax, eax
+    jz      .not_coff_word
+    imul    eax, eax, 12
+    lea     rcx, [rel coff_attr_words]
+    movzx   edi, byte [rcx + rax - 1]
+    xor     esi, esi
+    cmp     byte [rel attr_seen + 1], 0
+    sete    sil
+    call    parser_coff_class
+    jmp     .next
+.not_coff_word:
     ; flat binary placement: vstart=, start=, follows=
     mov     rdi, r12
     lea     rsi, [rel attr_vstart]
@@ -4990,6 +5093,9 @@ parser_parse_struc:
         extern  str_compare
         call    str_cmp_kw
         IF rax, e, 0
+            ; a standard macro in NASM: one number of its %% counter
+            mov     rax, [rbx + PREP_ctx]
+            inc     dword [rax + ASMCTX_mac_exp_id]
             jmp .register_struct
             ENDIF
         
@@ -5201,6 +5307,20 @@ call    str_compare
     jmp     .field_loop
 
 .register_struct:
+    ; NASM's endstruc goes back to the section (__SECT__), which makes
+    ; .text if the source has named none: utasm's own .text is named here
+    ; then (its place among the sections, and a COFF object has it)
+    mov     rax, [rbx + PREP_ctx]
+    mov     rcx, [rax + ASMCTX_curr_sec]
+    test    rcx, rcx
+    jz      .sect_back
+    cmp     byte [rcx + SECTION_implicit], 0
+    je      .sect_back
+    cmp     dword [rcx + SECTION_named_at], 0
+    jne     .sect_back
+    movzx   eax, word [rax + ASMCTX_seccount]
+    mov     [rcx + SECTION_named_at], eax
+.sect_back:
     ; the struct's total byte size (defined at struc)
     test    r13, r13
     jz      .no_nasm_size                  ; "struc" alone: nothing to name
@@ -5381,7 +5501,13 @@ parser_define_label:
 .define_existing:
     mov     byte [rdx + SYMBOL_kind], SYM_LABEL
     mov     byte [rdx + SYMBOL_tag], TAG_SYMBOL
-    
+    ; defined now (declared global, or used, before): its place in
+    ; NASM's order (-f win64)
+    extern  sym_defseq
+    inc     dword [rel sym_defseq]
+    mov     eax, [rel sym_defseq]
+    mov     [rdx + SYMBOL_defseq], eax
+
     ; Set value to current section location
     mov     rax, [rbx + ASMCTX_curr_sec]
     IF rax, ne, 0
@@ -5512,6 +5638,23 @@ parser_handle_pseudo_op:
 .lc_done:
     mov     r12, rdi
 .lc_keep:
+
+    ; the directives NASM makes standard macros (section, global, align
+    ; ...) move its %% counter as a macro call does - so many numbers each
+    ; (std_macro_words) - which ..@N names show; not in [ ] (the primitive)
+    cmp     byte [rel stmt_bracketed], 0
+    jne     .counted
+    mov     rdi, r12
+    lea     rsi, [rel std_macro_words]
+    call    parser_word_index
+    test    eax, eax
+    jz      .counted
+    imul    eax, eax, 12
+    lea     rcx, [rel std_macro_words]
+    movzx   ecx, byte [rcx + rax - 1]
+    mov     rax, [rbx + PREP_ctx]
+    add     [rax + ASMCTX_mac_exp_id], ecx
+.counted:
 
     ; 1. Data Directives (db, dw, dd, dq) - the whole word, not a prefix
     ;    ("dbg" or "dword_table" as a statement word is not db / dw)
@@ -6677,6 +6820,39 @@ use_words:      db "use16", 0, 0, 16
 str_sectalign:  db "sectalign", 0
 str_sa_on:      db "on", 0
 str_sa_off:     db "off", 0
+; -f win64 (parser_coff_section): a name (8 bytes), its class, its SEC_*
+coff_sec_names:
+    db ".text", 0, 0, 0, COFF_CODE, SEC_TEXT
+    db ".data", 0, 0, 0, COFF_DATA, SEC_DATA
+    db ".bss", 0, 0, 0, 0, COFF_BSS, SEC_BSS
+    db ".rdata", 0, 0, COFF_RDATA, SEC_CUSTOM
+    db ".xdata", 0, 0, COFF_RDATA, SEC_CUSTOM
+    db ".pdata", 0, 0, COFF_PDATA, SEC_CUSTOM
+    db 0
+; the classes (parser_coff_class): ELF type, flags, alignment
+align 8
+coff_classes:
+    dd SHT_PROGBITS
+    dw SHF_ALLOC | SHF_EXECINSTR, 16       ; COFF_CODE
+    dd SHT_PROGBITS
+    dw SHF_ALLOC | SHF_WRITE, 4            ; COFF_DATA
+    dd SHT_PROGBITS
+    dw SHF_ALLOC, 8                        ; COFF_RDATA
+    dd SHT_NOBITS
+    dw SHF_ALLOC | SHF_WRITE, 4            ; COFF_BSS
+    dd SHT_PROGBITS
+    dw 0, 1                                ; COFF_INFO
+    dd SHT_PROGBITS
+    dw SHF_ALLOC, 4                        ; COFF_PDATA
+; the attribute words: word (11 bytes) + class
+coff_attr_words:
+    db "code", 0, 0,0,0,0,0,0, COFF_CODE
+    db "text", 0, 0,0,0,0,0,0, COFF_CODE
+    db "data", 0, 0,0,0,0,0,0, COFF_DATA
+    db "rdata", 0, 0,0,0,0,0, COFF_RDATA
+    db "bss", 0, 0,0,0,0,0,0,0, COFF_BSS
+    db "info", 0, 0,0,0,0,0,0, COFF_INFO
+    db 0
 ; directive names, 10 bytes each
 ignored_words:db "warning", 0, 0, 0
                 db "map", 0, 0, 0, 0, 0, 0, 0
@@ -7051,7 +7227,37 @@ parser_istruc:
     mov     rax, [rax + ASMCTX_curr_sec]
     mov     rax, [rax + SECTION_size]
     mov     [rel istruc_base], rax
-    xor     eax, eax
+    ; NASM's istruc is a macro that opens a context and puts the label
+    ; "%$strucstart" here: "..@N.strucstart", N the context's number (the
+    ; macro's own is counted already). The same label, as NASM's objects
+    ; and listings have it
+    push    r12
+    mov     rdi, [rbx + PREP_arena]
+    mov     esi, 32
+    call    arena_alloc
+    test    rax, rax
+    jnz     .label_ret
+    mov     r12, rdx
+    mov     dword [r12], '..@'
+    mov     rax, [rbx + PREP_ctx]
+    mov     esi, [rax + ASMCTX_mac_exp_id]
+    inc     dword [rax + ASMCTX_mac_exp_id]
+    lea     rdi, [r12 + 3]
+    extern  str_int_to_str
+    call    str_int_to_str
+    lea     rdi, [r12 + 3]
+    call    str_len
+    lea     rdi, [r12 + rax + 3]
+    lea     rsi, [rel str_strucstart]
+.copy:
+    lodsb
+    stosb
+    test    al, al
+    jnz     .copy
+    mov     rsi, r12
+    call    parser_define_label
+.label_ret:
+    pop     r12
     ret
 .bad:
     mov     rax, EXIT_UNEXPECTED_TOKEN
@@ -8609,6 +8815,16 @@ parser_handle_extern:
     jmp     .attrs
 
 .declare:
+    ; -f win64: no visibility or weak binding, as for global
+    extern  coff_enabled
+    cmp     byte [rel coff_enabled], 0
+    je      .special_ok
+    mov     rax, EXIT_COFF_SPECIAL
+    test    r15b, r15b
+    jnz     .done
+    cmp     r13d, VIS_WEAK
+    je      .done
+.special_ok:
     ; Create symbol with SYM_EXTERN kind
     sub     rsp, SYMBOL_SIZE
     mov     rdi, rsp
@@ -8917,6 +9133,17 @@ parser_handle_section_directive:
     mov     [rel user_sect_name], rax
 .sect_noted:
 
+    ; -f win64: NASM's COFF defaults by name (parser_coff_section)
+    extern  coff_enabled
+    cmp     byte [rel coff_enabled], 0
+    je      .elf_defaults
+    cmp     r15, OK
+    je      .default_align_done            ; an existing one: as it is
+    mov     rdi, [r12 + TOKEN_value]
+    call    parser_coff_section
+    jmp     .default_align_done
+.elf_defaults:
+
     ; 2. Auto-assign flags and type for standard sections if new
     IF r15, ne, OK
         mov     rdi, [r12 + TOKEN_value]
@@ -8990,6 +9217,8 @@ parser_handle_section_directive:
     mov     word [rel attr_seen], 0
     call    parser_section_attrs
     check_err
+    cmp     byte [rel coff_enabled], 0
+    jne     .attrs_applied                 ; (ELF's rule, below)
     ; a new section declared with attributes and no align=: aligned to 1,
     ; whatever its name's default (NASM's: "section .text progbits") -
     ; .text too, which utasm makes before the source names it, while it
@@ -9291,6 +9520,16 @@ parser_handle_visibility:
     call    preprocessor_next_token
     jmp     .type_word
 .have_name:
+    ; -f win64: a visibility or a weak binding has no COFF form (NASM's
+    ; error); a type does - a function's is written
+    extern  coff_enabled
+    cmp     byte [rel coff_enabled], 0
+    je      .special_ok
+    test    r15d, 0x2FF
+    jz      .special_ok
+    mov     rax, EXIT_COFF_SPECIAL
+    jmp     .error
+.special_ok:
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, [r13 + TOKEN_value]
     extern  symbol_find
@@ -9587,6 +9826,11 @@ parser_handle_common:
     jnz     .ret
     cmp     byte [rdx + TOKEN_kind], TOK_COLON
     jne     .define
+    ; -f win64: a common block has no alignment there (NASM's error)
+    extern  coff_enabled
+    mov     rax, EXIT_COFF_SPECIAL
+    cmp     byte [rel coff_enabled], 0
+    jne     .ret
     mov     rdi, rbx
     call    preprocessor_next_token
     mov     rdi, rbx
@@ -9649,6 +9893,7 @@ sym_attr_words:
 str_common_d:  db "common", 0
 str_static_d:  db "static", 0
 str_wrt:       db "wrt", 0
+str_imagebase: db "..imagebase", 0
 ; "wrt ..name": word (11 bytes) + WRT_*
 wrt_words:
     db "..plt", 0, 0,0,0,0,0, WRT_PLT
@@ -9812,6 +10057,36 @@ str_section_upper: db "SECTION", 0
 str_times:     db "times", 0
 str_struc:     db "struc", 0
 str_endstruc:  db "endstruc", 0
+str_strucstart: db ".strucstart", 0
+; the directives NASM makes standard macros, word (11 bytes) + the numbers
+; of its %% counter each takes (parser_handle_pseudo_op): one for the
+; macro, one more for a context it opens (struc, istruc) or a macro it
+; calls (align, alignb, incbin); endstruc counts at parser_parse_struc
+std_macro_words:
+    db "section", 0, 0,0,0, 1
+    db "segment", 0, 0,0,0, 1
+    db "absolute", 0, 0,0, 1
+    db "global", 0, 0,0,0,0, 1
+    db "extern", 0, 0,0,0,0, 1
+    db "common", 0, 0,0,0,0, 1
+    db "static", 0, 0,0,0,0, 1
+    db "required", 0, 0,0, 1
+    db "bits", 0, 0,0,0,0,0,0, 1
+    db "use16", 0, 0,0,0,0,0, 1
+    db "use32", 0, 0,0,0,0,0, 1
+    db "use64", 0, 0,0,0,0,0, 1
+    db "default", 0, 0,0,0, 1
+    db "cpu", 0, 0,0,0,0,0,0,0, 1
+    db "float", 0, 0,0,0,0,0, 1
+    db "sectalign", 0, 0, 1
+    db "align", 0, 0,0,0,0,0, 2
+    db "alignb", 0, 0,0,0,0, 2
+    db "incbin", 0, 0,0,0,0, 2
+    db "struc", 0, 0,0,0,0,0, 2
+    db "istruc", 0, 0,0,0,0, 1             ; (its context: parser_istruc)
+    db "at", 0, 0,0,0,0,0,0,0,0, 1
+    db "iend", 0, 0,0,0,0,0,0, 1
+    db 0
 str_field:     db "field", 0
     ; str_rel (Defined at line 759)
 str_comm:      db "comm", 0
