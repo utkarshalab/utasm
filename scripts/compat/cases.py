@@ -635,11 +635,32 @@ MODE_LINES = [
     "a32 add eax, [0x10]", "a16 add eax, [0x10]", "a32 inc dword [0x10]", "a16 mov ebx, [0x10]",
     "add eax, [word 0x10]", "add eax, [dword 0x10]",
 ]
+# an equ that measures code jumps shorten: worked out once they are, so
+# the jumps are as short as NASM makes them (it froze them before); a jump
+# to a label alias defined later; resb of a name never defined
+_J = "jz z\ntimes 100 nop\nz: nop\n"
+EXPR_BIN.update({
+    "measure_after_use": "bits 64\nstart:\n" + _J + "len equ $ - start\nadd ecx, len\nmov eax, len\n",
+    "measure_before_after": "bits 64\nadd ecx, len\nstart:\n" + _J + "e:\nlen equ e - start\nsub ecx, len\n",
+    "measure_times": "bits 64\nstart:\n" + _J + "len equ $ - start\ntimes len - 100 db 0\n",
+    "measure_data": "bits 64\nstart:\n" + _J + "len equ $ - start\ndd len\n",
+    "measure_boundary": "bits 64\nadd ecx, len\ns: jmp z\ntimes 124 nop\nz: nop\nlen equ $ - s\n",
+    "measure_at_end": "bits 64\nadd ecx, len\nx: jmp z\ntimes 120 nop\nz: nop\ny:\nlen equ y - x\n",
+    "alias_later_jump": "bits 64\njmp p\np equ y + 1\nnop\ny: nop\nnop\n",
+})
+EXPR_ELF.update({
+    "elf_measure_macro": "section .text\n%macro f 0\n%%s: jz %%z\ntimes 100 nop\n%%z: nop\n"
+                         "%%len equ $ - %%s\nadd ecx, %%len\n%endmacro\nf\nf\n",
+    "elf_macro_locals": "section .text\n%macro f 0\n%%s: nop\n%endmacro\n%macro g 0\nnop\n%endmacro\n"
+                        "%define D 1\nf\n%rep 2\nnop\n%endrep\ntimes 2 nop\ndb D\ng\nf\n",
+})
 # names never defined, or equs naming each other: an error, never a value
 EXPR_REJECT = {
     "equ_undefined": "bits 64\nlen equ nothere + 1\nmov eax, len\n",
     "equ_circular": "bits 64\na equ b\nb equ a\nmov eax, a\n",
     "times_undefined": "bits 64\ntimes nothere nop\n",
+    "resb_undefined": "bits 64\nsection .bss\nresb 2 * nothere\n",
+    "data_undefined": "bits 64\ndd 2 * nothere\n",
 }
 # each with the label defined before and after it, as bin and elf64
 SCALAR_EXPRS = ["l1 * 2", "2 * l1", "-l1", "~l1", "!l1", "l1 | 1", "l1 ^ 1", "l1 & 0xff",
