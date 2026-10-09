@@ -1041,3 +1041,84 @@ LINT_CASES = [
           7: "`//'"}, [3, 4, 6, 8]),
     ("slash-comment off", "bits 64\nmov eax, -7 // 2\n", ["-w-slash-comment"], {}, [2]),
 ]
+
+# -f win64 (scripts/compat/suites.py coff): objects compared field by field
+COFF_CASES = {
+    "basic": "global main\nextern printf\nsection .text\nmain:\n sub rsp, 40\n lea rcx, [rel msg]\n call printf\n"
+             " add rsp, 40\n ret\nsection .data\nmsg: db 'hi', 10, 0\nsection .bss\nbuf: resb 16\n",
+    "relocs": "extern e\nglobal g\nsection .text\ng: nop\nl: nop\n mov rax, l\n mov rax, e\n mov eax, [rel l]\n"
+              " mov eax, [rel e]\n mov dword [rel l], 5\n mov dword [rel e+4], 5\n call e\n call l\n jmp e\n"
+              "section .data\nd: dq l, e, e+8, g\n dd l, e\n dd l wrt ..imagebase\n",
+    "rel_more": "extern e\nsection .text\nl: nop\n mov eax, [rel e]\n mov dword [rel e], 7\n mov byte [rel l], 7\n"
+                " dd e - $\n dd l - $\n mov eax, [l]\n mov eax, [e]\n",
+    "rel_sections": "extern e\nsection .data\nd: dd 1\nsection .text\n mov rax, d\n lea rax, [rel d+4]\n dq d + 3\n"
+                    " dd d wrt ..imagebase\n",
+    "push_imm": "extern e\nsection .text\npush e\npush qword e\nmov qword [rax], e\n",
+    "xsec_call": "section .text\ncall f2\nsection .text2\nf2: ret\n",
+    "pcrel_xsec": "section .data\na: dd 1\nsection .text\nnop\n dd a - $\n",
+    "forward": "section .text\ncall later\njmp later2\nlater: ret\nsection .data\ndq later2\nsection .text\nlater2: ret\n",
+    "long_names": "global a_rather_long_symbol_name\nsection .text\na_rather_long_symbol_name: ret\n"
+                  "section .a_long_section_name\ndb 1\nsection .rdata\ndb 2\n",
+    "eight": "global abcdefgh, abcdefghi\nsection .text\nabcdefgh: nop\nabcdefghi: nop\nsection .abcdefgh\nnop\n"
+             "section .abcdefghi\nnop\n",
+    "attrs": "section .t1 code\nnop\nsection .d1 data\ndb 1\nsection .b1 bss\nresb 4\nsection .r1 rdata\ndb 1\n"
+             "section .a16 data align=16\ndb 1\nsection .info info\ndb 1\nsection .x\ndb 1\n",
+    "attrs_align": "section .s1 text\nnop\nsection .s2 rdata align=4\ndb 1\nsection .s3 info align=8\ndb 1\n"
+                   "section .s4 bss align=2\nresb 1\nsection .s5 code align=8192\nnop\nsection .data align=2\ndb 1\n"
+                   "section .text align=4\nnop\n",
+    "names": "".join("section %s\ndb 1\n" % n for n in
+                     [".pdata", ".xdata", ".drectve", ".comment", ".tls$", ".CRT$XCU", ".code", ".rodata",
+                      ".tdata", ".data$x", ".text$mn", ".bss$x", ".rdata$r", ".idata$2"]),
+    "redeclared": "section .data align=8\ndb 1\nsection .data align=16\ndb 2\n",
+    "align": "section .text\nnop\nalign 16\nnop\nsection .data\ndb 1\nalign 32\ndb 2\nsection .bss\nalignb 64\nresb 1\n",
+    "empty": "nop\n",
+    "nothing": "",
+    "only_data": "section .data\ndb 1\n",
+    "bss": "section .bss\nresb 1\n",
+    "reopened": "section .text\nnop\nsection .data\ndb 1\nsection .text\nnop\n",
+    "common": "common c 16\nglobal s\nsection .text\ns: ret\n",
+    "static": "static st\nsection .text\nst: ret\nlocal1: ret\n.inner: ret\n",
+    "absolute_equ": "global k\nk equ 42\nextern e\nsection .text\nmov eax, k\nret\n",
+    "order": "global b\nextern x\nsection .text\na: call x\nb: ret\nextern y\ncall y\nglobal c\nc equ 5\n",
+    "constants": "k equ 42\nstruc pt\n.x resd 1\nendstruc\nsection .text\n%macro m 0\n%%l: nop\n%endmacro\nm\n"
+                 "mov eax, k\n..@x: nop\n",
+    "absolute": "absolute 0x100\nab: resb 4\nsection .text\nnop\n",
+    "istruc": "struc s\n.a resb 4\n.b resb 4\nendstruc\nsection .data\nistruc s\nat s.a, db 1\nat s.b, db 2\niend\n",
+    "contexts": "section .text\n%push\n%$x: nop\n%pop\n%push\n%$y: nop\n%pop\n",
+    "format": "%ifidn __OUTPUT_FORMAT__, win64\ndb 1\n%endif\ndb __BITS__\n",
+    "seh": "global f\nsection .text\nf: ret\nf_end:\nsection .pdata\n"
+           "dd f wrt ..imagebase, f_end wrt ..imagebase, xd wrt ..imagebase\nsection .xdata\nxd: db 1, 0, 0, 0\n",
+    "label_only": "a:\n",
+}
+# what COFF has no relocation for (NASM writes a broken object), and the
+# symbol types it cannot say (NASM's error): (name, source, line, message)
+COFF_ERRORS = [
+    ("dw extern", "extern e\nsection .data\nnop\ndw e\n", 4, "COFF format has no 16-bit relocation"),
+    ("db extern", "extern e\nsection .data\ndb e\n", 3, "COFF format has no 8-bit relocation"),
+    ("dw label", "section .data\nl: dw l\n", 2, "COFF format has no 16-bit relocation"),
+    ("dq extern - $", "extern e\nsection .data\ndq e - $\n", 3, "COFF format has no 64-bit relative relocation"),
+    ("jmp short extern", "extern e\nsection .text\njmp short e\n", 3,
+     "COFF format has no 8-bit relative relocation"),
+    ("wrt ..gotpcrel", "extern e\nsection .text\nmov rax, [rel e wrt ..gotpcrel]\n", 3,
+     "COFF format has no ..gotpcrel relocation"),
+    ("dq imagebase", "extern e\nsection .data\ndq e wrt ..imagebase\n", 3,
+     "COFF format has no 64-bit image-relative relocation"),
+    ("global hidden", "global f:function hidden\nsection .text\nf: ret\n", 1,
+     "COFF format does not support any special symbol types"),
+    ("global weak", "global f:weak\nsection .text\nf: ret\n", 1,
+     "COFF format does not support any special symbol types"),
+    ("extern weak", "extern w:weak\nsection .text\ncall w\n", 1,
+     "COFF format does not support any special symbol types"),
+    ("common alignment", "common c 8:4\n", 1, "COFF format does not support any special symbol types"),
+]
+
+# %% and %$ names (..@N.name): NASM numbers macro calls, %push contexts and
+# its standard-macro directives (section, global, align, struc ...) from one
+# counter
+ELF_PROBES.update({
+    "elf_macro_numbers": "%macro m 0\n%%l: nop\n%endmacro\nm\nsection .text\nm\nsection .data\nalign 4\nm\n"
+                         "global g\ng: nop\nextern y\ncommon c 4\nm\n[section .text]\nm\nbits 64\n"
+                         "default rel\ncpu x64\nsectalign 4\nalignb 4\nm\nincbin '/dev/null'\nm\n",
+    "elf_context_names": "section .text\n%macro m 0\n%%l: nop\n%endmacro\nm\n%push\n%$x: nop\nm\n%pop\n%push one\n"
+                         "%$y: nop\n%push two\n%$$z: nop\n%pop\n%pop\nm\n",
+})
