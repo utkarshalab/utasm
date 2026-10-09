@@ -107,6 +107,8 @@
 %define EXIT_NOT_DEFINING      86  ; %endmacro with no %macro
 %define EXIT_NO_REP            87  ; %endrep with no %rep
 %define EXIT_NO_SIZE           88  ; "inc [rax]": operation size not specified
+%define EXIT_COFF_RELOC        89  ; -f win64: "dw e", "dq e - $": no COFF relocation
+%define EXIT_COFF_SPECIAL      90  ; -f win64: "global f:hidden", "common c 8:4"
 
 ; warning classes, by NASM's names (error/warnings.s)
 %define WC_OTHER               0   ; other
@@ -481,6 +483,20 @@
 %define WRT_GOTOFF             4           ; ..gotoff   R_X86_64_GOTOFF64
 %define WRT_TLSIE              5           ; ..tlsie    R_X86_64_GOTTPOFF
 %define WRT_SYM                6           ; ..sym      as usual, against the symbol
+%define WRT_IMAGEBASE          7           ; ..imagebase (-f win64) IMAGE_REL_AMD64_ADDR32NB
+
+; -f win64: NASM's section classes (parser_coff_class)
+%define COFF_CODE              0
+%define COFF_DATA              1
+%define COFF_RDATA             2
+%define COFF_BSS               3
+%define COFF_INFO              4
+%define COFF_PDATA             5
+
+; -f win64's "wrt ..imagebase", carried through the ELF64 object to the COFF
+; converter (backend/output/coff/coff.s) in types ELF does not use
+%define R_UTASM_IMAGEBASE      0x7F        ; a 32-bit field: ADDR32NB
+%define R_UTASM_IMAGEBASE64    0x7E        ; a 64-bit one: COFF has none
 
 ; SYMBOL_etype / SYMBOL_eother (the ELF values)
 %define ETYPE_NOTYPE           0
