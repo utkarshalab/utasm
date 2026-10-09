@@ -367,7 +367,10 @@ surprise you when reading a disassembly. That is why it is opt-in.
 Jumps written `jmp short`, `jmp near` or `strict` keep the size you wrote.
 Code in a section that turns a position into a number (`$`, a difference
 of two labels, or `equ` of a label) is never moved, since that number
-could not be updated. Jumps to a label of the same section are shortened
+could not be updated - except under an `equ` that is one difference of
+two labels (`len equ $ - start`): its value is worked out after the jumps
+are shortened, as NASM's passes do, and an instruction that uses it gets
+it on utasm's second reading of the source.Jumps to a label of the same section are shortened
 whether the label is `global` or not, and a PC-relative reference to it
 (`call f`, `[rel x]`) is written in place with no relocation, as NASM does;
 `wrt ..plt` and the like keep their relocation.
