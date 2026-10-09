@@ -119,7 +119,8 @@
 %define WC_LABEL_ORPHAN        8   ; label-orphan: "rett" alone on its line
 %define WC_PIE                 9   ; pie (utasm's, off): won't link as PIE
 %define WC_SLASH_COMMENT       10  ; slash-comment (utasm's): "x // 2" NASM divides
-%define WC_COUNT               11
+%define WC_PP_SEL_RANGE        11  ; pp-sel-range: %sel(n) past its arguments
+%define WC_COUNT               12
 
 ; a kept expression's record (parser_defer_record): +0 RELOC_EXPR_MARK,
 ; +8 text, +16 tokens, +24 count; and for core/known.s:
