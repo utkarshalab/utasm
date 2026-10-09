@@ -40,9 +40,11 @@ reloc_warn_pie:
     jne     .ret
     cmp     byte [rbx + ASMCTX_standalone], 0
     jne     .ret                           ; an executable of its own: fixed
-    extern  elf32_enabled, asm_bits
+    extern  elf32_enabled, asm_bits, coff_enabled
     cmp     byte [rel elf32_enabled], 0
     jne     .ret
+    cmp     byte [rel coff_enabled], 0
+    jne     .ret                           ; (a COFF object: no PIE)
     cmp     byte [rel asm_bits], 64
     jne     .ret
     cmp     r8d, R_X86_64_32
@@ -135,6 +137,16 @@ reloc_record:
     mov     r9d, RELOC_FLAG_SYM
     jmp     .wrt_done
 .wrt_type:
+    ; "dd f wrt ..imagebase" (-f win64): to the COFF converter as a type
+    ; of its own
+    cmp     eax, WRT_IMAGEBASE
+    jne     .wrt_not_imagebase
+    mov     ecx, R_UTASM_IMAGEBASE
+    cmp     r8d, R_X86_64_64
+    jne     .wrt_set
+    mov     ecx, R_UTASM_IMAGEBASE64
+    jmp     .wrt_set
+.wrt_not_imagebase:
     mov     ecx, R_X86_64_PLT32
     cmp     eax, WRT_PLT
     je      .wrt_set
@@ -450,7 +462,7 @@ reloc_resolve_all:
 .check_done:
     ; drop the relocations written in place, keeping the others in order
     cmp     byte [rel resolved_here], 0
-    je      .done
+    je      .coff_check
     xor     ecx, ecx                       ; read index
     xor     edx, edx                       ; write index
 .compact:
@@ -474,7 +486,42 @@ reloc_resolve_all:
     jmp     .compact
 .compacted:
     mov     [rbx + ASMCTX_nrelocs], edx
-    jmp     .done
+
+.coff_check:
+    ; -f win64: a relocation COFF has no form of ("dw e", "dq e - $",
+    ; "jmp short e") is an error at the statement that made it, before
+    ; anything is written; NASM writes a broken object
+    extern  coff_enabled
+    cmp     byte [rbx + ASMCTX_fmt], FMT_ELF64
+    jne     .done
+    cmp     byte [rel coff_enabled], 0
+    je      .done
+    mov     r14, [rbx + ASMCTX_relocs]
+    mov     r15d, [rbx + ASMCTX_nrelocs]
+.coff_next:
+    test    r15d, r15d
+    jz      .done
+    test    byte [r14 + RELOC_flags], RELOC_FLAG_SECTION
+    jnz     .coff_ok                       ; (debug information: not written)
+    mov     edi, [r14 + RELOC_type]
+    extern  coff_reloc_name
+    call    coff_reloc_name                ; rax = 0, or what it is
+    test    rax, rax
+    jnz     .coff_bad
+.coff_ok:
+    add     r14, RELOC_SIZE
+    dec     r15d
+    jmp     .coff_next
+.coff_bad:
+    push    rax
+    mov     rdi, [r14 + RELOC_file]
+    mov     esi, [r14 + RELOC_line]
+    call    error_set_location
+    pop     rdi
+    extern  error_set_subject
+    call    error_set_subject
+    mov     rax, EXIT_COFF_RELOC
+    jmp     .ret
 
 .patch:
 
