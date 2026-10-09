@@ -280,6 +280,34 @@ lst_rep_tick:
 ; *          %rep body line
 ; * Clobbers: nothing (the preprocessor calls it mid-flight)
 ; ;
+; ---- lst_label_line ----------------------
+;
+; lst_label_line
+; "lab: m": NASM lists the label as the first line of the macro's
+; expansion ("     4                              <1> lab: "). An entry of
+; the call's line at the expansion's depth, with that text.
+; Input    : rdi = file, esi = line, edx = depth, rcx = the text
+; Preserves: rbx, r12-r15
+;
+global lst_label_line
+lst_label_line:
+    cmp     byte [rel lst_enabled], 0
+    jne     .on
+    ret
+.on:
+    push    rcx
+    mov     ecx, 1                         ; a body line
+    mov     byte [rel lst_split], 1        ; an entry of its own
+    call    lst_note
+    pop     rcx
+    mov     rax, [rel lst_cur]
+    test    rax, rax
+    jz      .ret
+    mov     [rax + LE_TEXT], rcx
+    mov     byte [rel lst_split], 1        ; the body's first line: anew
+.ret:
+    ret
+
 global lst_note
 lst_note:
     cmp     byte [rel lst_enabled], 0
@@ -375,6 +403,7 @@ lst_note:
     mov     [rel lst_cur], r8
     mov     qword [r8 + LE_WARN], 0
     mov     qword [r8 + LE_UNINIT], 0
+    mov     qword [r8 + LE_TEXT], 0
     mov     dword [r8 + LE_REPS], 0
     mov     byte [r8 + LE_KIND], LK_CODE
     mov     al, [rel lst_hidden]
@@ -995,6 +1024,22 @@ lst_entry:
     jmp     .done
 
 .text_only:
+    ; a text of its own ("lab: " before a macro call): that, as a row
+    cmp     qword [rbx + LE_TEXT], 0
+    je      .text_file
+    mov     edi, [rbx + LE_LINE]
+    call    lst_put_lineno
+    lea     rsi, [rel lst_blank]
+    mov     edx, 29                        ; offset and bytes columns
+    call    lst_put
+    movzx   edi, byte [rbx + LE_DEPTH]
+    call    lst_put_marker
+    mov     rdi, rbx
+    xor     esi, esi
+    call    lst_put_source
+    call    lst_put_newline
+    jmp     .done
+.text_file:
     test    r15, r15
     jz      .done                          ; no file to show it from
     mov     edi, [rbx + LE_LINE]
@@ -1114,8 +1159,19 @@ lst_text_row:
     jmp     lst_text_row_entry
 
 ; lst_put_source: an entry's source text (rdi = entry, rsi = slot or 0);
-; a body line has its indentation cut to one blank, as NASM shows it
+; a body line has its indentation cut to one blank, as NASM shows it; an
+; entry with a text of its own (LE_TEXT) shows that
 lst_put_source:
+    cmp     qword [rdi + LE_TEXT], 0
+    je      .from_file
+    push    rdi
+    mov     rdi, [rdi + LE_TEXT]
+    call    str_len
+    pop     rdi
+    mov     edx, eax
+    mov     rsi, [rdi + LE_TEXT]
+    jmp     lst_put
+.from_file:
     test    rsi, rsi
     jz      .none
     push    rbx
