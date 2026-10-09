@@ -40,12 +40,14 @@ def elf_view(path):
     secs = run(["readelf", "-SW", path]).stdout
     names, out = {}, []
     for m in re.finditer(r"^\s+\[\s*(\d+)\]\s+(\S+)\s+(\S+)\s+[0-9a-f]+\s+[0-9a-f]+\s+([0-9a-f]+)"
-                         r"\s+[0-9a-f]+\s+(\S*)\s", secs, re.M):
-        idx, name, typ, size, flg = m.groups()
+                         r"\s+[0-9a-f]+\s+(\S*)\s+\d+\s+\d+\s+(\d+)\s*$", secs, re.M):
+        idx, name, typ, size, flg, al = m.groups()
+        if flg.isdigit():                  # no flags: the columns shift
+            flg, al = "", al
         names[idx] = name
         if name in (".symtab", ".strtab", ".shstrtab") or name.startswith((".rela", ".note")):
             continue
-        out.append("S %s %s %s %s" % (name, typ, int(size, 16), flg))
+        out.append("S %s %s %s %s align %s" % (name, typ, int(size, 16), flg, al))
         binf = "%s.%d.bin" % (path, len(out))
         dump = run(["objcopy", "-O", "binary", "--only-section=" + name, path, binf])
         data = open(binf, "rb").read() if dump.returncode == 0 and os.path.exists(binf) else None
@@ -59,7 +61,9 @@ def elf_view(path):
     for line in run(["readelf", "-sW", path]).stdout.splitlines():
         f = line.split()
         if len(f) >= 8 and f[0].rstrip(":").isdigit() and f[3] != "FILE":
-            out.append("Y %s %s %s %s %s %s" % (f[7], f[3], f[4], f[5], names.get(f[6], f[6]), f[2]))
+            # (a common symbol's value is its alignment)
+            out.append("Y %s %s %s %s %s %s%s" % (f[7], f[3], f[4], f[5], names.get(f[6], f[6]), f[2],
+                                                 " value " + f[1] if f[6] == "COM" else ""))
     return sorted(out)
 
 
