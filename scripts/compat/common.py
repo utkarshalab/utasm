@@ -25,6 +25,10 @@ KNOWN = {
     "listing pp_line": "%line: the text of the renumbered line",
     "listing pp_macro_range": "NASM shows %{2:3} as %2:3",
     "listing pp_nested_macro_def": "a macro defined by a macro: its body lines",
+    # -f win64: a label with no section before it is an undefined external in
+    # NASM's object (its .text is made only for code or data); utasm's is a
+    # label of .text
+    "coff label_only": "a label before any section: NASM makes it external",
 }
 
 
