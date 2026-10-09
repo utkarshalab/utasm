@@ -322,17 +322,34 @@ cli_parse:
     test    rax, rax
     jz      .set_elf32
 
+    mov     rdi, r14
+    lea     rsi, [rel .val_win64]
+    call    str_cmp
+    test    rax, rax
+    jz      .set_win64
+
     jmp     .unknown_val
+
+.set_win64:
+    ; a COFF object for Windows (backend/output/coff/coff.s rewrites the
+    ; ELF64 object), in bits 64
+    extern  elf32_enabled, asm_bits, coff_enabled
+    mov     byte [rel elf32_enabled], 0
+    mov     byte [rel coff_enabled], 1
+    mov     byte [rel asm_bits], 64
+    jmp     .set_elf
 
 .set_elf32:
     ; an i386 object (backend/output/elf/elf32.s), in bits 32 by default
-    extern  elf32_enabled, asm_bits
+    extern  elf32_enabled, asm_bits, coff_enabled
     mov     byte [rel elf32_enabled], 1
+    mov     byte [rel coff_enabled], 0
     mov     byte [rel asm_bits], 32
     jmp     .set_elf
 .set_elf64:
-    extern  elf32_enabled, asm_bits
+    extern  elf32_enabled, asm_bits, coff_enabled
     mov     byte [rel elf32_enabled], 0
+    mov     byte [rel coff_enabled], 0
     mov     byte [rel asm_bits], 64
 .set_elf:
     mov     byte [rbx + ASMCTX_fmt], FMT_ELF64
@@ -602,6 +619,11 @@ cli_derive_output:
 .elf_suffix:
     lea     r15, [rel cli_parse.suffix_obj]
     mov     esi, 3                  ; ".o" plus NUL
+    extern  coff_enabled
+    cmp     byte [rel coff_enabled], 0
+    je      .allocate
+    lea     r15, [rel cli_parse.suffix_coff]
+    mov     esi, 5                  ; ".obj" plus NUL (NASM's for win64)
 .allocate:
     add     rsi, rbx
     mov     rdi, [r12 + ASMCTX_arena]
@@ -738,7 +760,8 @@ cli_parse.exit:
 ;   -s                      messages on stdout; -Z file: into a file
 ;   -l file                 the listing: lines, offsets and bytes
 ;   -g, -F dwarf            DWARF debug information (ELF objects)
-;   --no-line, --reproducible, --keep-all: accepted
+;   --no-line, --keep-all: accepted; --reproducible: a COFF object's time
+;   stamp 0
 ; Input    : rdi = the argument (it starts with '-'), rsi = the next
 ;            argument or 0
 ; Output   : eax = 0 not one of these, 1 taken, 2 taken with the next
@@ -1025,7 +1048,7 @@ cli_nasm_option:
     lea     rsi, [rel .s_reproducible]
     call    str_cmp
     test    rax, rax
-    jz      .taken
+    jz      .reproducible
     mov     rdi, r12
     lea     rsi, [rel .s_keep_all]
     call    str_cmp
@@ -1047,6 +1070,10 @@ cli_nasm_option:
     lea     rbx, [rel .s_empty]            ; the value is the next argument
     jmp     .line
 
+.reproducible:
+    ; the time stamp of a COFF object 0 (NASM's --reproducible)
+    extern  coff_reproducible
+    mov     byte [rel coff_reproducible], 1
 .taken:
     mov     eax, 1
     jmp     .ret
@@ -1242,6 +1269,7 @@ cli_parse.val_elf64:    db "elf64", 0
 cli_parse.val_bin:      db "bin", 0
 cli_parse.val_elf32:    db "elf32", 0
 cli_parse.val_elf:      db "elf", 0
+cli_parse.val_win64:    db "win64", 0
 cli_parse.val_ubf:      db "ubf", 0
 cli_parse.flag_ubf_add: db "--ubf-add", 0
 cli_parse.flag_bits: db "--bits", 0
@@ -1257,6 +1285,7 @@ cli_parse.flag_profile: db "--profile", 0
 cli_parse.flag_profile_short: db "-P", 0
 cli_parse.default_output: db "a.out", 0
 cli_parse.suffix_obj: db ".o", 0
+cli_parse.suffix_coff: db ".obj", 0
 cli_parse.suffix_bin: db ".bin", 0
 cli_parse.msg_unknown_flag: db "utasm: unknown option: ", 0
 cli_parse.msg_unknown_value: db "utasm: unknown option value: ", 0
