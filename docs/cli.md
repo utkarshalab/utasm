@@ -12,8 +12,8 @@ after the source file (for example, `source.s` becomes `source.o`).
 
 | Option | Meaning |
 | --- | --- |
-| `-f`, `--format <format>` | Output format: `elf64` (default), `elf32` (or `elf`: an i386 object, `bits 32` by default), `bin`, or `ubf` (a UBF boot image, see [ubf.md](ubf.md)). Non-standalone ELF output is a relocatable object. |
-| `-o <file>` | Output path; defaults to a source-derived `.o`, `.bin` or `.ubf` filename. |
+| `-f`, `--format <format>` | Output format: `elf64` (default), `elf32` (or `elf`: an i386 object, `bits 32` by default), `win64` (a COFF object for Windows, see [COFF objects](#coff-objects--f-win64)), `bin`, or `ubf` (a UBF boot image, see [ubf.md](ubf.md)). Non-standalone ELF output is a relocatable object. |
+| `-o <file>` | Output path; defaults to a source-derived `.o`, `.obj` (`-f win64`), `.bin` or `.ubf` filename. |
 | `--ubf-add TYPE=FILE[@ADDR]` | With `-f ubf`: add a component (`initrd`, `dtb`, `config`, `module`, `firmware`) read from FILE, loaded at ADDR. Repeatable, up to 7. |
 | `-a`, `-arch`, `--arch <arch>` | Target architecture: `amd64` (default), `aarch64`, or `riscv64`. |
 | `--standalone` | Produce a standalone executable and require `_start`. |
@@ -199,6 +199,48 @@ Relocations are `.rel` sections with the i386 types (`R_386_32`,
 writes them; a reference with no 32-bit relocation (`dq label`) is an
 error. With `-g` the debug information uses 4-byte addresses.
 
+## COFF objects (`-f win64`)
+
+`-f win64` writes an x86-64 COFF object (`IMAGE_FILE_MACHINE_AMD64`), the
+format of Windows' linkers, laid out field for field as NASM's `-f win64`
+writes it, and starts in `bits 64`:
+
+```sh
+utasm -f win64 prog.asm            # prog.obj
+link /subsystem:console /entry:main prog.obj kernel32.lib
+```
+
+- The symbols are `.file` (the source's name), each section's symbol (its
+  length and relocation count in an auxiliary record), `.absolut`, then
+  every label, constant, struc name and field, `..@` name, used extern and
+  common in the order the source defines them. Names longer than 8 bytes
+  are in the string table, sections' as `/N`.
+- A reference to a label of this file is relocated against its section's
+  symbol, the label's offset in the field; one to an extern or a common
+  against its own symbol. `dq label` is `IMAGE_REL_AMD64_ADDR64`,
+  `dd label` and `[label]` `ADDR32`, `call f` and `[rel x]` `REL32`,
+  `dd f wrt ..imagebase` `ADDR32NB` (for `.pdata` and `.xdata`).
+- Sections have NASM's defaults by name (see the [syntax](syntax.md#sections)),
+  and `.text` is left out when the source neither names it nor puts
+  anything in it.
+- `__OUTPUT_FORMAT__` is `win64`. The time stamp is the time of assembly,
+  or 0 under `--reproducible`. `-g` adds no debug information.
+
+Where utasm and NASM differ:
+
+- COFF has no 8- or 16-bit relocation, no 64-bit PC-relative one and no
+  GOT: `dw label`, `db extern`, `dq extern - $`, `jmp short extern` and
+  `wrt ..gotpcrel` are errors at their line ("COFF format has no 16-bit
+  relocation"), and no object is written. NASM writes an object the
+  linker then corrupts or rejects (a 32-bit relocation on a 2-byte field,
+  a `dq` with no bytes, a short jump with no relocation).
+- `global f:function` marks `f` a function (COFF type `0x20`, as Microsoft's
+  tools write functions); NASM refuses any type. A visibility (`hidden`),
+  `weak`, or a `common` alignment is NASM's error "COFF format does not
+  support any special symbol types".
+- A label before any section (`a:` alone) is a label of `.text`; NASM's
+  object has it as an undefined external.
+
 ## NASM's options
 
 utasm takes NASM's command-line options, so a Makefile written for NASM
@@ -221,7 +263,8 @@ works with `NASM=utasm`:
 | `-s`, `-Z file` | Messages on stdout, or into a file. |
 | `-l file` | The listing (see [Listings](#listings)). |
 | `-g`, `-F dwarf` | DWARF debug information (see [Debug information](#debug-information)); `-F` takes any format name and gives DWARF. |
-| `--no-line`, `--reproducible`, `--keep-all` | Accepted. |
+| `--reproducible` | A COFF object's time stamp and file name left out (0), so that the same source gives the same bytes, as NASM's `--reproducible` does. Other formats have no time stamp. |
+| `--no-line`, `--keep-all` | Accepted. |
 
 `-D`, `-U`, `-p` and `--before` are read in the order given, as if a file
 holding those lines were included at the top of the source; an error in
