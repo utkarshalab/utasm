@@ -855,7 +855,7 @@ lexer_next:
 
 ; ---- %$name context local -------------------
 ;
-; Kept as raw text and rewritten to "__ctxN$name" when the token is served,
+; Kept as raw text and rewritten to "..@N.name" when the token is served,
 ; because which context is innermost depends on the expansion, not the file.
 ;
 .lex_ctx_local:
