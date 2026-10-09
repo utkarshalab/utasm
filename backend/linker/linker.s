@@ -37,7 +37,11 @@ linker_run:
     mov     rbx, rdi               ; RBX = AsmCtx
 
     ; 0. Shorten forward jumps now that every label is known (moves code,
-    ;    so it must run before relocations are resolved)
+    ;    so it must run before relocations are resolved); equs of a label
+    ;    defined later ("p equ y + 1") are that label first, so a jump to
+    ;    them is shortened too
+    extern  parser_late_aliases
+    call    parser_late_aliases
     extern  relax_run
     mov     rdi, rbx
     call    relax_run
