@@ -523,6 +523,12 @@ once the code is laid out. A name that is never defined is an error at the
 `equ` line, and so are `equ`s that name each other (`a equ b`, `b equ a`),
 which NASM takes as 0.
 
+The same goes for an `equ` that measures code jumps may shorten
+(`len equ $ - start` after a function): it is worked out after the
+jumps are shortened, so they are as short as NASM makes them and `len`
+is the same number. An `equ` of a label written later (`p equ y + 1`)
+is that label before the jumps are shortened, so `jmp p` is short too.
+
 ---
 
 ### Macros
