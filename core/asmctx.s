@@ -433,16 +433,22 @@ asm_ctx_align:
     ; Safety: ignore zero or non-power-of-2 alignment (caller should have validated)
     test    r12, r12
     jz      .done
-    ; A93: Industrial sanity limit (Max 64KB alignment)
-    IF r12, g, 0x10000
-        jmp .done
-    ENDIF
+    ; at most 2^31 (the parser refuses 2^32 and above, as NASM). It was
+    ; 64 KB, compared signed: "align 0x100000" padded nothing, silently,
+    ; and 2^63 - negative - passed and padded forever
+    mov     eax, 0x80000000
+    cmp     r12, rax
+    ja      .done
     mov     rax, r12
     dec     rax
     test    rax, r12               ; (n & (n-1)) == 0
     jnz     .done
     
-    ; 2. Update Section-wide maximum alignment (A85)
+    ; 2. Update Section-wide maximum alignment (A85) - not after
+    ;    "sectalign off" (parser_sectalign)
+    extern  sectalign_off
+    cmp     byte [rel sectalign_off], 0
+    jne     .calc_padding
     cmp     r12, [r13 + SECTION_align]
     jbe     .calc_padding
     mov     [r13 + SECTION_align], r12
