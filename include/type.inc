@@ -120,6 +120,9 @@ struc SYMBOL
     field elf_idx,  4       ; final index in ELF .symtab
     field line,     4       ; definition line
     field file,     8       ; definition filename pointer
+    field defseq,   4       ; when it was defined (sym_defseq): COFF writes
+                            ; the symbols in that order, as NASM does
+    field pad3,     4
 endstruc
 
 ; ============================================================================
