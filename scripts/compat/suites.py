@@ -681,6 +681,72 @@ def elf32(utasm, verbose=False):
 
 
 # ---------------------------------------------------------------------------
+# -f win64: COFF objects, every field as NASM writes it (--reproducible: no
+# time stamp, no file name), and the references COFF has no relocation for
+# ---------------------------------------------------------------------------
+def coff_view(path):
+    """Every field of a COFF object, a line each: the header, the sections
+    with their bytes and relocations, the symbols with their auxiliary
+    records, the strings."""
+    b = open(path, "rb").read()
+    mach, nsec, ts, symoff, nsym, opt, ch = struct.unpack_from("<HHIIIHH", b, 0)
+    out = ["F %#x %d %#x %#x %d %d %#x %d" % (mach, nsec, ts, symoff, nsym, opt, ch, len(b))]
+    for i in range(nsec):
+        o = 20 + opt + i * 40
+        f = struct.unpack_from("<IIIIIIHHI", b, o + 8)
+        out.append("S %r %s" % (b[o:o + 8], " ".join("%#x" % x for x in f)))
+        if f[2] and f[3]:
+            out.append("  D " + b[f[3]:f[3] + f[2]].hex())
+        for r in range(f[6]):
+            out.append("  R %d %d %d" % struct.unpack_from("<IIH", b, f[4] + r * 10))
+    for i in range(nsym):
+        out.append("Y " + b[symoff + i * 18:symoff + i * 18 + 18].hex())
+    out.append("T " + b[symoff + nsym * 18:].hex())
+    return out
+
+
+def coff(utasm, verbose=False):
+    s = Suite("coff objects", verbose)
+
+    def one(item):
+        name, src = item
+        with tempdir() as d:
+            p = os.path.join(d, name + ".asm")
+            open(p, "w").write(src)
+            n, u = os.path.join(d, "n.obj"), os.path.join(d, "u.obj")
+            rn = run(["nasm", "-f", "win64", "--reproducible", p, "-o", n], cwd=d)
+            ru = run([utasm, "-f", "win64", "--reproducible", p, "-o", u], cwd=d)
+            if rn.returncode:
+                return name, None, None, ru
+            if ru.returncode:
+                return name, coff_view(n), None, ru
+            return name, coff_view(n), coff_view(u), ru
+
+    with cf.ThreadPoolExecutor(JOBS) as ex:
+        for name, a, b, ru in ex.map(one, sorted(cases.COFF_CASES.items())):
+            if a is None:
+                s.skip()
+            elif b is None:
+                s.result("coff " + name, False, "utasm error: " + first_line(ru))
+            else:
+                diff = [x for x in difflib.unified_diff(a, b, lineterm="", n=0)
+                        if x[:1] in "+-" and x[:3] not in ("+++", "---")]
+                s.result("coff " + name, a == b, " | ".join(diff[:4]))
+    # what COFF cannot say: an error at the line, and no object
+    for name, src, line, text in cases.COFF_ERRORS:
+        with tempdir() as d:
+            p = os.path.join(d, "e.asm")
+            open(p, "w").write(src)
+            u = os.path.join(d, "e.obj")
+            ru = run([utasm, "-f", "win64", p, "-o", u])
+            want = "e.asm:%d: error: %s" % (line, text)
+            got = first_line(ru)
+            s.result("coff error " + name, ru.returncode != 0 and want in ru.stderr
+                     and not os.path.exists(u), "%r, object %s" % (got, os.path.exists(u)))
+    return s
+
+
+# ---------------------------------------------------------------------------
 # expressions: labels defined later in arithmetic, and NASM's scalar rule
 # ---------------------------------------------------------------------------
 def _error_text(r):
