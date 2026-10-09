@@ -364,7 +364,9 @@ struc OPERAND
     field xsize,      2       ; size in bits as a word: 256/512 do not fit OPERAND_size
     field reloc,      4       ; relocation type (e.g. :lo12:)
     field dispsize,   1       ; [byte x] / [word x] / [dword x]: 8, 16, 32
-    field pad1,       3       ; padding to align imm to 8-byte boundary
+    field pcrel,      1       ; 1: "x - $" with x elsewhere - a PC-relative
+                              ; relocation against x (OPERAND_sym)
+    field pad1,       2       ; padding to align imm to 8-byte boundary
     field imm,        8       ; immediate or displacement value
     field sym,        8       ; pointer to Symbol
     field vsib,       1       ; vector index register: 1 xmm, 2 ymm, 3 zmm (gathers)
