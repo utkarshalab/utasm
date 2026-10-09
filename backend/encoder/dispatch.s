@@ -1191,6 +1191,20 @@ te_emit:
     je      .ei_rtype
     mov     ecx, R_X86_64_32S              ; 64-bit, or push's own width
 .ei_rtype:
+    ; "add eax, x - $", x elsewhere: PC-relative, by the field's width
+    cmp     byte [rdi + OPERAND_pcrel], 0
+    je      .ei_type_set
+    mov     ecx, R_X86_64_PC64
+    cmp     r8d, 8
+    je      .ei_type_set
+    mov     ecx, R_X86_64_PC16
+    cmp     r8d, 2
+    je      .ei_type_set
+    mov     ecx, R_X86_64_PC8
+    cmp     r8d, 1
+    je      .ei_type_set
+    mov     ecx, R_X86_64_PC32
+.ei_type_set:
     push    r8
     push    rdi
     mov     r8d, ecx
@@ -1198,6 +1212,10 @@ te_emit:
     mov     rdx, [rdi + OPERAND_sym]
     mov     rax, [rbx + ASMCTX_curr_sec]
     mov     rsi, [rax + SECTION_size]      ; where the field goes
+    cmp     byte [rdi + OPERAND_pcrel], 0
+    je      .ei_record
+    add     rcx, rsi                       ; (PC-relative: its place added)
+.ei_record:
     mov     rdi, rbx
     extern  reloc_record
     call    reloc_record
