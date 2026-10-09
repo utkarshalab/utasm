@@ -21,6 +21,13 @@
 %define IFT_DEF     6                      ; %ifdef: a single-line macro
 %define IFT_CTX     7                      ; %ifctx: the innermost context's name
 %define IFT_ENV     8                      ; %ifenv: an environment variable
+%define IFT_TOKEN   9                      ; %iftoken: exactly one token
+; ml_state: where the token being read stands in its line - a multi-line
+; macro is called at ML_START or ML_COLON only
+%define ML_START    0                      ; the first word
+%define ML_LABEL    1                      ; after a first word (a label?)
+%define ML_COLON    2                      ; after "label:"
+%define ML_NONE     3                      ; anywhere else
 %define STK_TEXT    4096                   ; %arg / %local text for one line
 extern asm_bits
 extern user_sect_name
@@ -443,7 +450,29 @@ prep_internal_next:
     jne     .not_macro_call
 
 .macro_found:
-    ; Found a macro call!
+    ; Found a macro call! A multi-line macro is called only as the first
+    ; word of a line or after "label:", as in NASM - "db 1, m" is the
+    ; symbol m. (NASM also tries the second word after a label with no
+    ; colon, when its parameters fit; "db m" in a body would then call m.)
+    ; A %define expands anywhere.
+    mov     rax, [rdx + SYMBOL_value]
+    test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE
+    jnz     .call_macro
+    cmp     byte [rel ml_state], ML_START
+    je      .ml_call
+    cmp     byte [rel ml_state], ML_COLON
+    jne     .not_macro_call
+.ml_call:
+    ; its arguments call no multi-line macro; its body is lines of its own
+    mov     byte [rel ml_state], ML_NONE
+    mov     rdi, rbx
+    mov     rsi, [rdx + SYMBOL_value] ; rsi = pointer to MACRO struct
+    call    prep_expand_start
+    mov     byte [rel ml_state], ML_START
+    test    rax, rax
+    jnz     .done                  ; error starting expansion
+    jmp     .next                  ; get first token of expansion
+.call_macro:
     mov     rdi, rbx
     mov     rsi, [rdx + SYMBOL_value] ; rsi = pointer to MACRO struct
     call    prep_expand_start
@@ -452,6 +481,41 @@ prep_internal_next:
     jmp     .next                  ; get first token of expansion
 
 .not_macro_call:
+    ; where the next token stands in its line (ml_state)
+    movzx   eax, byte [r12 + TOKEN_kind]
+    mov     cl, ML_NONE
+    cmp     eax, TOK_NEWLINE
+    je      .ml_start
+    cmp     eax, TOK_EOF
+    je      .ml_start
+    cmp     eax, TOK_IDENT
+    je      .ml_ident
+    cmp     eax, TOK_COLON
+    je      .ml_colon
+    cmp     eax, TOK_LABEL
+    je      .ml_label
+    cmp     eax, TOK_LOCAL_LABEL
+    je      .ml_label
+    jmp     .ml_set
+.ml_start:
+    mov     cl, ML_START
+    jmp     .ml_set
+.ml_ident:
+    cmp     byte [rel ml_state], ML_START
+    jne     .ml_set
+    mov     cl, ML_LABEL                   ; perhaps a label
+    jmp     .ml_set
+.ml_colon:
+    cmp     byte [rel ml_state], ML_LABEL
+    jne     .ml_set
+    mov     cl, ML_COLON
+    jmp     .ml_set
+.ml_label:
+    cmp     byte [rel ml_state], ML_START
+    jne     .ml_set
+    mov     cl, ML_COLON
+.ml_set:
+    mov     [rel ml_state], cl
     xor     rax, rax
     cmp     byte [r12 + TOKEN_kind], TOK_DIRECTIVE
     je      .is_directive
@@ -1437,7 +1501,37 @@ prep_expand_next:
 
     mov     rdi, [r12 + TOKEN_value]
     movzx   rax, byte [rdi]
-    
+
+    ; CASE 0: %? / %??, the name of the macro being expanded (as called,
+    ; as defined: the same, names keeping their case)
+    cmp     al, '?'
+    jne     .not_case0
+    cmp     byte [rdi + 1], 0
+    je      .case0
+    cmp     byte [rdi + 1], '?'
+    jne     .not_case0
+    cmp     byte [rdi + 2], 0
+    jne     .not_case0
+.case0:
+        mov     r11, r13
+.name_owner:
+        mov     rax, [r11 + MACROEXP_macro]
+        test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE | MACRO_FLAG_TIMES
+        jnz     .name_up
+        mov     rax, [rax + MACRO_name]
+        test    rax, rax
+        jnz     .name_found
+.name_up:
+        mov     r11, [r11 + MACROEXP_parent]
+        test    r11, r11
+        jnz     .name_owner
+        jmp     .retry_body
+.name_found:
+        mov     byte [r12 + TOKEN_kind], TOK_IDENT
+        mov     [r12 + TOKEN_value], rax
+        jmp     .produced
+.not_case0:
+
     ; CASE 1: %0 (Parameter Count)
     cmp     al, '0'
     jne     .not_case1
@@ -2627,9 +2721,17 @@ prep_handle_inc:
     jnz     .error
 
     cmp     byte [r12 + TOKEN_kind], TOK_STRING
+    je      .name_string
+    ; 'file.inc': eight characters or fewer lex as a character constant
+    cmp     byte [r12 + TOKEN_kind], TOK_CHAR
     jne     .error_expected_string
-    
+    mov     rdx, r12
+    call    prep_token_text
+    mov     r12, rax                 ; r12 = filename string
+    jmp     .name_done
+.name_string:
     mov     r12, [r12 + TOKEN_value] ; r12 = filename string
+.name_done:
 
     ; 2. Check include depth
     mov     r8, [rbx + PREP_ctx]
@@ -2879,6 +2981,10 @@ dir_more:     db "ifidn", 0, 0,0,0,0,0,0,0,0,0, 0
               db "ifnenv", 0, 0, 0, 0, 0, 0, 0, 0, 0, 97
               db "elifenv", 0, 0, 0, 0, 0, 0, 0, 0, 98
               db "elifnenv", 0, 0, 0, 0, 0, 0, 0, 99
+              db "iftoken", 0, 0, 0, 0, 0, 0, 0, 0, 100
+              db "ifntoken", 0, 0, 0, 0, 0, 0, 0, 101
+              db "eliftoken", 0, 0, 0, 0, 0, 0, 102
+              db "elifntoken", 0, 0, 0, 0, 0, 103
               db "ifn", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20
               db "elifn", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 21
               db "ixdefine", 0, 0, 0, 0, 0, 0, 0, 22
@@ -5675,6 +5781,26 @@ prep_handle_iftest:
     jnz     .restore
     xor     r15d, r15d
     movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     r12d, IFT_TOKEN
+    jne     .t_empty
+    ; one token, then the end of the line
+    cmp     eax, TOK_NEWLINE
+    je      .decided
+    cmp     eax, TOK_EOF
+    je      .decided
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .restore
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .true
+    cmp     eax, TOK_EOF
+    je      .true
+    jmp     .decided
+.t_empty:
     cmp     r12d, IFT_EMPTY
     jne     .t_num
     cmp     eax, TOK_NEWLINE
@@ -5721,7 +5847,73 @@ prep_handle_iftest:
     mov     rax, [rdx + SYMBOL_value]
     test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE
     jnz     .decided
+    ; "%ifmacro m 2", "m 1-3", "m 1-*": one of that name taking such a
+    ; count (overloads by MACRO_next); with no count, any
+    push    rax                            ; [rsp + 16] the macro
+    push    0                              ; [rsp + 8] the count from
+    push    MACRO_VARIADIC                 ; [rsp] ... to
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the name
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .tm_check
+    cmp     byte [rdx + TOKEN_kind], TOK_NUMBER
+    jne     .tm_check
+    mov     rdi, [rdx + TOKEN_value]       ; (its text)
+    call    str_to_int
+    test    rax, rax
+    jnz     .tm_check
+    mov     [rsp + 8], rdx
+    mov     [rsp], rdx
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .tm_check
+    cmp     byte [rdx + TOKEN_kind], TOK_MINUS
+    jne     .tm_check
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the '-'
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .tm_check
+    cmp     byte [rdx + TOKEN_kind], TOK_STAR
+    je      .tm_any
+    cmp     byte [rdx + TOKEN_kind], TOK_NUMBER
+    jne     .tm_check
+    mov     rdi, [rdx + TOKEN_value]
+    call    str_to_int
+    test    rax, rax
+    jnz     .tm_check
+    mov     [rsp], rdx
+    jmp     .tm_take
+.tm_any:
+    mov     qword [rsp], MACRO_VARIADIC
+.tm_take:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+.tm_check:
+    mov     rax, [rsp + 16]
+.tm_macro:
+    test    rax, rax
+    jz      .tm_none
+    movzx   ecx, word [rax + MACRO_min_params]
+    cmp     rcx, [rsp]
+    ja      .tm_next                       ; takes more than asked
+    movzx   ecx, word [rax + MACRO_max_params]
+    cmp     rcx, [rsp + 8]
+    jb      .tm_next                       ; takes fewer
+    add     rsp, 24
     jmp     .true
+.tm_next:
+    mov     rax, [rax + MACRO_next]
+    jmp     .tm_macro
+.tm_none:
+    add     rsp, 24
+    jmp     .decided
 .t_def:
     cmp     eax, TOK_IDENT
     jne     .decided
@@ -6348,6 +6540,22 @@ prep_define_string:
     pop     rbx
     ret
 
+; ---- prep_quoted_text ---------------------
+; The text of a quoted token: "file", `file`, or 'file' (eight characters
+; or fewer lex as a character constant, its characters packed).
+; Input : rdx = token, rbx = PrepState. Output: rax = the text, or 0 when
+; the token is not quoted.
+prep_quoted_text:
+    cmp     byte [rdx + TOKEN_kind], TOK_STRING
+    jne     .not_string
+    mov     rax, [rdx + TOKEN_value]
+    ret
+.not_string:
+    cmp     byte [rdx + TOKEN_kind], TOK_CHAR
+    je      prep_token_text
+    xor     eax, eax
+    ret
+
 ; ---- %depend / %pathsearch ---------------
 ;
 ; "%depend 'file'": the file is a dependency (-M) without being read.
@@ -6360,9 +6568,10 @@ prep_handle_depend:
     call    preprocessor_next_token
     test    rax, rax
     jnz     .ret
-    cmp     byte [rdx + TOKEN_kind], TOK_STRING
-    jne     .bad
-    mov     rdi, [rdx + TOKEN_value]
+    call    prep_quoted_text
+    test    rax, rax
+    jz      .bad
+    mov     rdi, rax
     extern  deps_add
     call    deps_add
     xor     eax, eax
@@ -6388,9 +6597,10 @@ prep_handle_pathsearch:
     call    preprocessor_next_token
     test    rax, rax
     jnz     .ret
-    cmp     byte [rdx + TOKEN_kind], TOK_STRING
-    jne     .bad
-    mov     r13, [rdx + TOKEN_value]       ; the file
+    call    prep_quoted_text
+    test    rax, rax
+    jz      .bad
+    mov     r13, rax                       ; the file
     mov     rdi, r13
     extern  incpath_find
     call    incpath_find                   ; rax = its path, or 0
@@ -8255,6 +8465,7 @@ prep_handle_rep:
     ret
 
 [SECTION .bss]
+ml_state:      resb 1              ; ML_*: where the token read stands
 global prep_noexpand
 prep_noexpand: resb 1              ; 1: identifiers are not macro calls (a directive reads a name)
 def_eager:     resb 1              ; 1: %xdefine, expand the body now
