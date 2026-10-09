@@ -354,6 +354,8 @@ amd64_encode_instruction:
     mov     [rel imm_ph_sym], rax
     mov     rax, [rdi + OPERAND_imm]
     mov     [rel imm_ph_addend], rax
+    mov     al, [rdi + OPERAND_pcrel]
+    mov     [rel imm_ph_pcrel], al
     mov     byte [rdi + OPERAND_kind], OP_IMM
     mov     qword [rdi + OPERAND_imm], IMM_PLACEHOLDER
     mov     qword [rdi + OPERAND_sym], 0
@@ -2034,6 +2036,7 @@ amd64_imm_fixup:
     sub     rcx, 4
     mov     dword [rdx + rcx], 0
     mov     r8d, R_X86_64_32
+    mov     r9d, R_X86_64_PC32
     cmp     byte [rel imm_ph_wide], 0
     je      .record
     mov     r8d, R_X86_64_32S
@@ -2042,16 +2045,26 @@ amd64_imm_fixup:
     sub     rcx, 2
     mov     word [rdx + rcx], 0
     mov     r8d, R_X86_64_16
+    mov     r9d, R_X86_64_PC16
     jmp     .record
 .w1:
     dec     rcx
     mov     byte [rdx + rcx], 0
     mov     r8d, R_X86_64_8
+    mov     r9d, R_X86_64_PC8
 .record:
     mov     rdi, rbx
     mov     rsi, rcx
     mov     rdx, [rel imm_ph_sym]
     mov     rcx, [rel imm_ph_addend]
+    ; "mov eax, x - $", x elsewhere: PC-relative, the field's place in the
+    ; addend
+    cmp     byte [rel imm_ph_pcrel], 0
+    je      .record_it
+    mov     r8d, r9d
+    add     rcx, rsi
+    mov     byte [rel imm_ph_pcrel], 0
+.record_it:
     call    reloc_record
     ret
 
@@ -2060,6 +2073,7 @@ imm_ph_sym:     resq 1              ; the label a placeholder stands for
 imm_ph_addend:  resq 1
 imm_ph_active:  resb 1
 imm_ph_wide:    resb 1              ; a 64-bit operation
+imm_ph_pcrel:   resb 1              ; PC-relative (OPERAND_pcrel)
 [SECTION .text]
 
 ;*
@@ -2349,6 +2363,11 @@ amd64_encode_mov:
                     mov rdx, [r14 + OPERAND_sym]
                     mov rcx, [r14 + OPERAND_imm]      ; Addend
                     mov r8, R_X86_64_64
+                    cmp byte [r14 + OPERAND_pcrel], 0   ; "mov eax, x - $"
+                    je .abs_64
+                    mov r8, R_X86_64_PC64
+                    add rcx, rsi                       ; (the field's place)
+.abs_64:
                     call reloc_record
                     xor rdi, rdi
                     call amd64_emit_qword
@@ -2378,6 +2397,11 @@ amd64_encode_mov:
                     mov rdx, [r14 + OPERAND_sym]
                     mov rcx, [r14 + OPERAND_imm]      ; Addend
                     mov r8, R_X86_64_32
+                    cmp byte [r14 + OPERAND_pcrel], 0   ; "mov eax, x - $"
+                    je .abs_32
+                    mov r8, R_X86_64_PC32
+                    add rcx, rsi                       ; (the field's place)
+.abs_32:
                     call reloc_record
                     xor rdi, rdi
                     call amd64_emit_dword
@@ -2407,6 +2431,11 @@ amd64_encode_mov:
                     mov rdx, [r14 + OPERAND_sym]
                     mov rcx, [r14 + OPERAND_imm]      ; Addend
                     mov r8, R_X86_64_16
+                    cmp byte [r14 + OPERAND_pcrel], 0   ; "mov eax, x - $"
+                    je .abs_16
+                    mov r8, R_X86_64_PC16
+                    add rcx, rsi                       ; (the field's place)
+.abs_16:
                     call reloc_record
                     xor rdi, rdi
                     call amd64_emit_word
@@ -2435,6 +2464,11 @@ amd64_encode_mov:
                     mov rdx, [r14 + OPERAND_sym]
                     mov rcx, [r14 + OPERAND_imm]      ; Addend
                     mov r8, R_X86_64_8
+                    cmp byte [r14 + OPERAND_pcrel], 0   ; "mov eax, x - $"
+                    je .abs_8
+                    mov r8, R_X86_64_PC8
+                    add rcx, rsi                       ; (the field's place)
+.abs_8:
                     call reloc_record
                     xor eax, eax
                     call amd64_emit_byte
@@ -3027,6 +3061,11 @@ amd64_encode_push:
         mov     rdx, [r10 + OPERAND_sym]
         mov     rcx, [r10 + OPERAND_imm]
         mov     r8, R_X86_64_32S
+        cmp     byte [r10 + OPERAND_pcrel], 0
+        je      .push_abs
+        mov     r8, R_X86_64_PC32          ; "push x - $", x elsewhere
+        add     rcx, rsi
+.push_abs:
         call    reloc_record
         xor     edi, edi
         call    amd64_emit_dword
