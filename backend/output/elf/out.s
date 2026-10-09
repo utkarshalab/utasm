@@ -322,6 +322,7 @@ elf64_emit:
     check_err
 
     ; ---- 5. Write Metadata sections ----
+    call    elf64_mark_used                ; (the externs relocations name)
     mov     rdi, r12
     call    elf64_prepare_strtab
     check_err
@@ -332,6 +333,12 @@ elf64_emit:
 
     ; ---- Write .symtab ----
     lea     ebx, [r14d + 1]
+    ; its entries are 8-byte aligned: so is its offset (sh_addralign 8; it
+    ; came right after the data, at any offset)
+    mov     edi, r13d
+    mov     esi, 8
+    call    elf64_align_file
+    check_err
     
     mov     edi, r13d
     xor     rsi, rsi
@@ -428,9 +435,14 @@ elf64_emit:
     test    rax, rax
     jz      .rela_sec_next
 
-    ; Record start offset for this rela section
+    ; Record start offset for this rela section (8-byte aligned, as its
+    ; sh_addralign says: it followed .shstrtab, at any offset)
     push    r10
     push    rbx
+    mov     edi, r13d
+    mov     esi, 8
+    call    elf64_align_file
+    check_err
     mov     edi, r13d
     xor     rsi, rsi
     mov     rdx, 1
@@ -475,6 +487,11 @@ elf64_emit:
     check_err
 
     ; ---- 6. Write Section Header Table ----
+    ; (8-byte aligned, as the ELF headers are read)
+    mov     edi, r13d
+    mov     esi, 8
+    call    elf64_align_file
+    check_err
     ; Query position for e_shoff
     mov     edi, r13d
     xor     rsi, rsi
@@ -1358,6 +1375,62 @@ strtab_mask:    resq 1
 ; ============================================================================
 ; elf64_prepare_strtab
 ; ============================================================================
+; ---- elf64_mark_used (internal) ----------
+; Marks the symbols the relocations name (SYMF_USED): an extern none of
+; them names stays out of .symtab. r12 = AsmCtx. Preserves rbx, r12-r15.
+elf64_mark_used:
+    push    rbx
+    push    r13
+    push    r14
+    mov     rbx, [r12 + ASMCTX_relocs]
+    mov     r13d, [r12 + ASMCTX_nrelocs]
+    xor     r14d, r14d
+.reloc:
+    cmp     r14d, r13d
+    jae     .done
+    imul    rax, r14, RELOC_SIZE
+    add     rax, rbx
+    inc     r14d
+    test    byte [rax + RELOC_flags], RELOC_FLAG_SECTION
+    jnz     .reloc
+    mov     rsi, [rax + RELOC_sym]
+    test    rsi, rsi
+    jz      .reloc
+    mov     rdi, r12
+    call    symbol_find
+    test    rax, rax
+    jnz     .reloc
+    or      byte [rdx + SYMBOL_pflags], SYMF_USED
+    jmp     .reloc
+.done:
+    pop     r14
+    pop     r13
+    pop     rbx
+    ret
+
+; ---- elf64_file_name (internal) ----------
+; The source file's name, for the STT_FILE symbol: rax = it, rdx = its
+; length with its NUL, or rdx = 0 when there is none (or -f bin, or a
+; standalone executable's). r12 = AsmCtx. Preserves the others but rcx.
+elf64_file_name:
+    xor     edx, edx
+    mov     rax, [r12 + ASMCTX_input]
+    test    rax, rax
+    jz      .ret
+    cmp     byte [r12 + ASMCTX_standalone], 0
+    jne     .ret
+.len:
+    cmp     byte [rax + rdx], 0
+    je      .found
+    inc     rdx
+    jmp     .len
+.found:
+    test    rdx, rdx
+    jz      .ret
+    inc     rdx                            ; the NUL
+.ret:
+    ret
+
 elf64_prepare_strtab:
     prologue
     push    rbx
@@ -1390,8 +1463,10 @@ elf64_prepare_strtab:
     jnz     .epilogue
     mov     [rel strtab_slots], rdx
 
-    ; Start at index 1 (0 is null byte)
-    mov     r15, 1
+    ; Start at index 1 (0 is null byte), after the source file's name (the
+    ; STT_FILE symbol's, at 1)
+    call    elf64_file_name                ; rax = it, rdx = its length + 1, or 0
+    lea     r15, [rdx + 1]
     xor     r14, r14               ; i = 0
     
 .outer_loop:
@@ -1511,6 +1586,15 @@ elf64_prepare_strtab:
 ; *   RAX = 1 to emit, 0 to skip.  Clobbers RAX only.
 ; ;
 elf64_symbol_is_emitted:
+    ; an extern no relocation names: not written, as NASM does (before the
+    ; exported ones: it is one)
+    cmp     byte [r8 + SYMBOL_kind], SYM_EXTERN
+    jne     .not_unused_extern
+    cmp     word [r8 + SYMBOL_section], 0
+    jne     .not_unused_extern
+    test    byte [r8 + SYMBOL_pflags], SYMF_USED
+    jz      .skip
+.not_unused_extern:
     cmp     byte [r8 + SYMBOL_vis], VIS_LOCAL
     jne     .emit                  ; exported: always visible to the linker
     movzx   eax, byte [r8 + SYMBOL_kind]
@@ -1518,6 +1602,8 @@ elf64_symbol_is_emitted:
     je      .constant
     cmp     al, SYM_MACRO
     je      .skip
+    cmp     al, SYM_EXTERN
+    je      .extern
     cmp     al, SYM_STRUCT
     je      .debug_only
     cmp     al, SYM_STRUCT_FIELD
@@ -1536,6 +1622,13 @@ elf64_symbol_is_emitted:
 .emit:
     mov     rax, 1
     ret
+.extern:
+    ; an extern no relocation names: not written, as NASM does
+    cmp     word [r8 + SYMBOL_section], 0
+    jne     .emit
+    test    byte [r8 + SYMBOL_pflags], SYMF_USED
+    jz      .skip
+    jmp     .emit
 .constant:
     test    byte [r8 + SYMBOL_pflags], SYMF_STRUC
     jz      .skip
@@ -1600,9 +1693,33 @@ elf64_write_symtab:
     jmp     .secsym
 .secsym_done:
 
+    ; ---- 1c. The source file (STT_FILE, local, SHN_ABS), as NASM writes
+    ;      it: debuggers and the linker's messages name the file by it.
+    ;      After the section symbols, whose indices are their sections' ----
+    call    elf64_file_name
+    test    rdx, rdx
+    jz      .no_file_sym
+    mov     rdi, rsp
+    mov     rsi, ELF64_SYM_SIZE
+    call    mem_zero
+    mov     dword [rsp + SYM64_NAME], 1
+    mov     byte [rsp + SYM64_INFO], 4     ; STT_FILE, STB_LOCAL
+    mov     word [rsp + SYM64_SHNDX], SHN_ABS
+    mov     edi, r13d
+    mov     rsi, rsp
+    mov     rdx, ELF64_SYM_SIZE
+    call    io_write
+    check_err
+.no_file_sym:
+
     ; ---- 2. Pass 1: Local Symbols ----
     movzx   r11d, word [r12 + ASMCTX_seccount]
     inc     r11                    ; after the null and the section symbols
+    call    elf64_file_name
+    test    rdx, rdx
+    jz      .locals_from
+    inc     r11                    ; ... and the file's
+.locals_from:
     xor     r14, r14               ; internal loop index
     mov     r15, [r12 + ASMCTX_symtab]
     mov     ebx, [r12 + ASMCTX_symcount]
@@ -1794,6 +1911,17 @@ elf64_write_strtab:
     call    io_write
     add     rsp, 8
     check_err
+
+    ; the source file's name (the STT_FILE symbol's), NUL included
+    call    elf64_file_name
+    test    rdx, rdx
+    jz      .no_file
+    add     r15, rdx
+    mov     edi, r13d
+    mov     rsi, rax
+    call    io_write
+    check_err
+.no_file:
 
     ; Walk symbols and write each name
     mov     rbx, [r12 + ASMCTX_symtab]
@@ -2613,6 +2741,14 @@ elf64_write_shdrs:
     ; Info = first global symbol index
     movzx   r10d, word [rbx + ASMCTX_seccount]
     inc     r10                    ; the NULL symbol and the section symbols
+    push    r12
+    mov     r12, rbx
+    call    elf64_file_name
+    pop     r12
+    test    rdx, rdx
+    jz      .info_locals
+    inc     r10                    ; ... and the file's
+.info_locals:
     mov     rsi, [rbx + ASMCTX_symtab]
     mov     edi, [rbx + ASMCTX_symcount]
     xor     ecx, ecx
