@@ -972,7 +972,10 @@ prep_expand_start:
 .depth_ok:
     ; a number for each call of a multi-line macro (%%locals: NASM's
     ; ..@N.name) - not for a %define, a %rep body or a times line, which
-    ; NASM does not count either
+    ; NASM does not count either. ASMCTX_mac_exp_id is the next number,
+    ; from 0: NASM's one counter, which %push contexts and the directives
+    ; NASM makes standard macros (section, global, align ...) take from
+    ; too (prep_handle_push, parser_handle_pseudo_op)
     mov     r8, [rbx + PREP_ctx]
     cmp     qword [r12 + MACRO_name], 0
     je      .no_new_id
@@ -998,6 +1001,7 @@ prep_expand_start:
     ; %%names inside the loop would not match those outside it.
     mov     r8, [rbx + PREP_ctx]
     mov     eax, [r8 + ASMCTX_mac_exp_id]
+    dec     eax                            ; (the one just taken)
     cmp     qword [r12 + MACRO_name], 0
     jne     .own_exp_id
     mov     r9, [r8 + ASMCTX_mac_exp]
@@ -3088,6 +3092,7 @@ dn_sect_q:   db "__?SECT?__", 0
 dyn_fmt_bin: db "bin", 0
 dyn_fmt_elf64: db "elf64", 0
 dyn_fmt_elf32: db "elf32", 0
+dyn_fmt_win64: db "win64", 0
 dyn_section_word: db "section", 0
 dyn_no_file: db 0
 use_altreg:  db "altreg", 0
@@ -4700,10 +4705,11 @@ prep_handle_push:
     mov     r12, [rdx + TOKEN_value]
 
 .store:
+    ; its number from the macro calls' counter, as NASM numbers both
     mov     eax, [rbx + PREP_ctx_depth]
-    mov     ecx, [rbx + PREP_ctx_next_id]
-    inc     ecx
-    mov     [rbx + PREP_ctx_next_id], ecx
+    mov     rdx, [rbx + PREP_ctx]
+    mov     ecx, [rdx + ASMCTX_mac_exp_id]
+    inc     dword [rdx + ASMCTX_mac_exp_id]
     mov     [rbx + PREP_ctx_ids + rax * 4], ecx
     lea     rdx, [rbx + PREP_ctx_names]
     mov     [rdx + rax * 8], r12
@@ -4886,9 +4892,10 @@ prep_resolve_interp:
     jmp     .scan
 
 .ctx_local:
-    ; "%$name" is local to the innermost %push context: rewrite it as the
-    ; ordinary symbol "__ctxN$name", which makes each IF/ENDIF pair unique.
-    ; "%$$name" is the context around it, one more '$' one more level out.
+    ; "%$name" is local to the innermost %push context: rewrite it as
+    ; "..@N.name", N the context's number, as NASM names it (which makes
+    ; each IF/ENDIF pair unique). "%$$name" is the context around it, one
+    ; more '$' one more level out.
     add     r13, 2
     mov     eax, [rbx + PREP_ctx_depth]
 .ctx_outer:
@@ -4906,19 +4913,17 @@ prep_resolve_interp:
 .ctx_id_zero:
     xor     eax, eax
 .ctx_id_ready:
-    mov     byte [r14 + r15], '_'
-    mov     byte [r14 + r15 + 1], '_'
-    mov     byte [r14 + r15 + 2], 'c'
-    mov     byte [r14 + r15 + 3], 't'
-    mov     byte [r14 + r15 + 4], 'x'
-    add     r15, 5
+    mov     byte [r14 + r15], '.'
+    mov     byte [r14 + r15 + 1], '.'
+    mov     byte [r14 + r15 + 2], '@'
+    add     r15, 3
     mov     rsi, rax
     lea     rdi, [r14 + r15]
     call    str_int_to_str
     lea     rdi, [r14 + r15]
     call    str_len
     add     r15, rax
-    mov     byte [r14 + r15], '$'
+    mov     byte [r14 + r15], '.'
     inc     r15
     jmp     .scan
 
@@ -5069,7 +5074,7 @@ prep_resolve_interp:
 .append_end:
     ret
 
-; .ensure: room for 40 more bytes at r14 + r15 (a number, "__ctxN$" or
+; .ensure: room for 40 more bytes at r14 + r15 (a number, "..@N." or
 ; "..@N", and the NUL), the buffer twice the size when there is not. CF
 ; set when there is no memory. Preserves rax, rcx; clobbers rdx, rsi, rdi,
 ; r8-r11.
@@ -5433,10 +5438,14 @@ prep_dynamic_macro:
     jmp     .as_token
 .format:
     lea     rax, [rel dyn_fmt_elf64]
-    extern  elf32_enabled
+    extern  elf32_enabled, coff_enabled
     cmp     byte [rel elf32_enabled], 0
-    je      .format_class
+    je      .format_coff
     lea     rax, [rel dyn_fmt_elf32]
+.format_coff:
+    cmp     byte [rel coff_enabled], 0
+    je      .format_class
+    lea     rax, [rel dyn_fmt_win64]
 .format_class:
     mov     rcx, [rbx + PREP_ctx]
     cmp     byte [rcx + ASMCTX_fmt], FMT_BIN
