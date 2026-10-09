@@ -139,6 +139,13 @@ cli_parse:
     test    rax, rax
     jz      .handle_standalone
 
+    ; --bits 16|32|64: the mode the source starts in
+    mov     rdi, r14
+    lea     rsi, [rel .flag_bits]
+    call    str_cmp
+    test    rax, rax
+    jz      .handle_bits
+
     ; --ubf-add TYPE=FILE[@ADDR]: another component of a UBF image
     mov     rdi, r14
     lea     rsi, [rel .flag_ubf_add]
@@ -412,6 +419,28 @@ cli_parse:
     mov     byte [rbx + ASMCTX_standalone], 1
     jmp     .next_arg
 
+.handle_bits:
+    ; the mode the source starts in, whatever the format's default (-f
+    ; bin is 64-bit; NASM starts a flat binary in 16-bit mode)
+    dec     r12
+    jle     .missing_val
+    add     r13, 8
+    mov     r14, [r13]
+    mov     al, 16
+    cmp     word [r14], '16'
+    je      .bits_two
+    mov     al, 32
+    cmp     word [r14], '32'
+    je      .bits_two
+    mov     al, 64
+    cmp     word [r14], '64'
+    jne     .unknown_val
+.bits_two:
+    cmp     byte [r14 + 2], 0
+    jne     .unknown_val
+    mov     [rel cli_bits], al
+    jmp     .next_arg
+
 .handle_ubf_add:
     dec     r12
     jle     .missing_val
@@ -467,6 +496,14 @@ cli_parse:
     jmp     .next_arg
 
 .done:
+    ; --bits: the starting mode, over the format's default (whatever the
+    ; order of -f and --bits)
+    movzx   eax, byte [rel cli_bits]
+    test    eax, eax
+    jz      .bits_kept
+    extern  asm_bits
+    mov     [rel asm_bits], al
+.bits_kept:
     ; Inspecting reads an existing file and writes nothing.
     cmp     byte [rbx + ASMCTX_inspect], 0
     jne     .success
@@ -1207,6 +1244,7 @@ cli_parse.val_elf32:    db "elf32", 0
 cli_parse.val_elf:      db "elf", 0
 cli_parse.val_ubf:      db "ubf", 0
 cli_parse.flag_ubf_add: db "--ubf-add", 0
+cli_parse.flag_bits: db "--bits", 0
 cli_parse.suffix_ubf:   db ".ubf", 0
 cli_parse.val_amd64:    db "amd64", 0
 cli_parse.val_aarch64:  db "aarch64", 0
@@ -1246,6 +1284,7 @@ cli_nasm_option.s_keep_all:   db "--keep-all", 0
 cli_write_deps.s_dot_d:       db ".d", 0
 
 [SECTION .bss]
+cli_bits:       resb 1              ; --bits 16 / 32 / 64, or 0
 global cli_mode
 global cli_prelude
 global cli_prelude_len
