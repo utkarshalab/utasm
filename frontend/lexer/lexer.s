@@ -1655,6 +1655,8 @@ lexer_next:
     mov     [r12 + TOKEN_value], r13
     mov     word [r12 + TOKEN_len], r10w
     or      byte [r12 + TOKEN_flags], TOK_FLAG_COUNTED  ; may hold NULs
+    mov     al, [rel lex_quote]
+    mov     [r12 + TOKEN_quote], al        ; " or `, for %defstr
     xor     rax, rax
     mov     rdx, r12
     jmp     .done
@@ -1767,6 +1769,7 @@ lexer_next:
     inc     word  [rbx + LEXER_col]
 
     mov     byte [r12 + TOKEN_kind], TOK_CHAR
+    mov     byte [r12 + TOKEN_quote], 0x27
     mov     [r12 + TOKEN_value], r13
     mov     rax, [rel lex_char_count]
     mov     word [r12 + TOKEN_len], ax     ; characters: db emits them all
@@ -1792,6 +1795,7 @@ lexer_next:
     inc     qword [rbx + LEXER_pos]        ; the closing '
     inc     word  [rbx + LEXER_col]
     mov     byte [r12 + TOKEN_kind], TOK_STRING
+    mov     byte [r12 + TOKEN_quote], 0x27
     mov     [r12 + TOKEN_value], rdx
     xor     rax, rax
     mov     rdx, r12
