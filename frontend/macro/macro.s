@@ -377,6 +377,18 @@ prep_internal_next:
     ; replayed with different symbol values on each %rep iteration.
     test    byte [r12 + TOKEN_flags], TOK_FLAG_INTERP
     jz      .no_interp
+    ; "%[...]" standing alone (the lexer makes it a TOK_NUMBER): the tokens
+    ; inside, expanded now ("%[X]*2", X a %define of 2+3, is 2+3*2)
+    cmp     byte [r12 + TOKEN_kind], TOK_NUMBER
+    jne     .interp_text
+    mov     rsi, r12
+    call    prep_interp_standalone
+    test    rax, rax
+    jnz     .done
+    test    edx, edx
+    jnz     .next                          ; it was nothing ("%[EMPTY]")
+    jmp     .no_interp
+.interp_text:
     mov     rdi, rbx
     mov     rsi, r12
     call    prep_resolve_interp
@@ -464,6 +476,8 @@ prep_internal_next:
     jne     .not_macro_call
 .ml_call:
     ; its arguments call no multi-line macro; its body is lines of its own
+    movzx   eax, byte [rel ml_state]
+    mov     [rel ml_called_at], al
     mov     byte [rel ml_state], ML_NONE
     mov     rdi, rbx
     mov     rsi, [rdx + SYMBOL_value] ; rsi = pointer to MACRO struct
@@ -471,6 +485,13 @@ prep_internal_next:
     mov     byte [rel ml_state], ML_START
     test    rax, rax
     jnz     .done                  ; error starting expansion
+    ; "lab: m": the listing shows "lab: " as the expansion's first line
+    cmp     byte [rel ml_called_at], ML_COLON
+    jne     .next
+    extern  lst_enabled
+    cmp     byte [rel lst_enabled], 0
+    je      .next
+    call    prep_list_label
     jmp     .next                  ; get first token of expansion
 .call_macro:
     mov     rdi, rbx
@@ -504,6 +525,8 @@ prep_internal_next:
     cmp     byte [rel ml_state], ML_START
     jne     .ml_set
     mov     cl, ML_LABEL                   ; perhaps a label
+    mov     rax, [r12 + TOKEN_value]
+    mov     [rel ml_label], rax
     jmp     .ml_set
 .ml_colon:
     cmp     byte [rel ml_state], ML_LABEL
@@ -514,6 +537,8 @@ prep_internal_next:
     cmp     byte [rel ml_state], ML_START
     jne     .ml_set
     mov     cl, ML_COLON
+    mov     rax, [r12 + TOKEN_value]
+    mov     [rel ml_label], rax
 .ml_set:
     mov     [rel ml_state], cl
     xor     rax, rax
@@ -6540,6 +6565,271 @@ prep_define_string:
     pop     rbx
     ret
 
+; ---- prep_interp_standalone ----------------
+;
+; prep_interp_standalone
+; "%[...]" written on its own: NASM reads the tokens inside, macros
+; expanded there and then - in a %define's body or a %rep line, the value
+; of the moment. They are lexed from the text inside the brackets; a name
+; that is a %define with no parameters gives its tokens, an %assign its
+; value (one level: what they give expands as it is read). The first takes
+; the place of the token, the others come right after it (an anonymous,
+; %define-like expansion that reads nothing of the line).
+; Input    : rbx = PrepState, rsi = the token ("%[...]" in TOKEN_value)
+; Output   : rax = EXIT_OK or an error; edx = 1 when there is no token
+;            (the token is to be dropped)
+;
+prep_interp_standalone:
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    push    rbp
+    mov     r12, rsi
+    and     byte [r12 + TOKEN_flags], ~TOK_FLAG_INTERP
+    ; the text inside: past "%[", up to the last ']'
+    mov     r13, [r12 + TOKEN_value]
+    add     r13, 2
+    mov     rdi, r13
+    call    str_len
+    mov     rdx, rax
+    test    rdx, rdx
+    jz      .lexed_none
+    cmp     byte [r13 + rdx - 1], ']'
+    jne     .text_len
+    dec     rdx
+.text_len:
+    ; its own lexer
+    push    rdx
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, LEXER_SIZE
+    call    arena_alloc
+    pop     rcx
+    test    rax, rax
+    jnz     .ret
+    mov     r14, rdx                       ; r14 = the lexer
+    mov     rdi, r14
+    mov     rsi, r13
+    mov     rdx, rcx
+    mov     rcx, [r12 + TOKEN_file]
+    mov     r8, [rbx + PREP_ctx]
+    mov     r9, [rbx + PREP_arena]
+    call    lexer_init
+    test    rax, rax
+    jnz     .ret
+    ; the output (it grows)
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, TOKEN_SIZE * 16
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     r13, rdx                       ; r13 = the output
+    mov     qword [rel relex_cap], 16
+    xor     r15d, r15d                     ; r15 = how many
+.token:
+    lea     rsi, [rel relex_tok]
+    mov     rdi, r14
+    call    lexer_next
+    test    rax, rax
+    jnz     .ret
+    lea     rbp, [rel relex_tok]           ; rbp = the token read
+    movzx   eax, byte [rbp + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .lexed
+    cmp     eax, TOK_EOF
+    je      .lexed
+    ; where the %[...] was written (messages, the listing)
+    mov     eax, [r12 + TOKEN_line]
+    mov     [rbp + TOKEN_line], eax
+    mov     ax, [r12 + TOKEN_col]
+    mov     [rbp + TOKEN_col], ax
+    mov     rax, [r12 + TOKEN_file]
+    mov     [rbp + TOKEN_file], rax
+    cmp     byte [rbp + TOKEN_kind], TOK_IDENT
+    jne     .put_it
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, [rbp + TOKEN_value]
+    call    symbol_find
+    test    rax, rax
+    jnz     .put_it
+    cmp     byte [rdx + SYMBOL_kind], SYM_CONSTANT
+    je      .assign
+    cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
+    jne     .put_it
+    mov     rax, [rdx + SYMBOL_value]
+    test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE
+    jz      .put_it
+    test    byte [rax + MACRO_flags], MACRO_FLAG_FUNC
+    jnz     .put_it
+    ; a %define: its tokens
+    mov     r8, [rax + MACRO_tokens]
+    mov     r9d, [rax + MACRO_ntokens]
+.body:
+    test    r9d, r9d
+    jz      .token
+    push    r8
+    push    r9
+    mov     rbp, r8
+    call    .append
+    pop     r9
+    pop     r8
+    test    rax, rax
+    jnz     .ret
+    add     r8, TOKEN_SIZE
+    dec     r9d
+    jmp     .body
+.assign:
+    ; an %assign: its value, a number
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, 32
+    push    rdx
+    call    arena_alloc
+    pop     rcx
+    test    rax, rax
+    jnz     .ret
+    push    rdx
+    mov     rdi, rdx
+    mov     rsi, [rcx + SYMBOL_value]
+    call    str_int_to_str
+    pop     rdx
+    mov     byte [rbp + TOKEN_kind], TOK_NUMBER
+    mov     [rbp + TOKEN_value], rdx
+.put_it:
+    call    .append
+    test    rax, rax
+    jnz     .ret
+    jmp     .token
+.lexed:
+    xor     eax, eax
+    test    r15, r15
+    jnz     .some
+.lexed_none:
+    xor     eax, eax
+    mov     edx, 1                         ; nothing: the token goes
+    jmp     .out
+.some:
+    ; the first in its place
+    mov     rdi, r12
+    mov     rsi, r13
+    copy_token
+    cmp     r15, 1
+    je      .one
+    ; the others after it
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, MACRO_SIZE
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     byte [rdx + MACRO_tag], TAG_MACRO
+    mov     byte [rdx + MACRO_flags], MACRO_FLAG_DEFINE
+    mov     qword [rdx + MACRO_name], 0
+    lea     rax, [r13 + TOKEN_SIZE]
+    mov     [rdx + MACRO_tokens], rax
+    lea     eax, [r15d - 1]
+    mov     [rdx + MACRO_ntokens], eax
+    mov     rdi, rbx
+    mov     rsi, rdx
+    call    prep_expand_start
+    test    rax, rax
+    jnz     .ret
+.one:
+    xor     eax, eax
+.ret:
+    xor     edx, edx
+.out:
+    pop     rbp
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    ret
+; .append: the token at rbp onto the output (r13, r15). rax = 0 or an
+; error. Clobbers rcx, rdx, rsi, rdi, r8-r11
+.append:
+    cmp     r15, [rel relex_cap]
+    jb      .append_room
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, [rel relex_cap]
+    shl     rsi, 1
+    imul    rsi, rsi, TOKEN_SIZE
+    call    arena_alloc
+    test    rax, rax
+    jnz     .append_ret
+    mov     rdi, rdx
+    mov     rsi, r13
+    imul    rcx, r15, TOKEN_SIZE
+    rep movsb
+    mov     r13, rdx
+    shl     qword [rel relex_cap], 1
+.append_room:
+    imul    rdi, r15, TOKEN_SIZE
+    add     rdi, r13
+    mov     rsi, rbp
+    copy_token
+    inc     r15
+    xor     eax, eax
+.append_ret:
+    ret
+
+; ---- prep_list_label (internal) -----------
+; "lab: m" with -l: "lab: " listed as the first line of m's expansion, at
+; the call's line (lst_label_line) - unless m takes the label itself
+; (%00 in its body), as NASM. rbx = PrepState; preserves r12-r15.
+prep_list_label:
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_mac_exp]
+    test    rax, rax
+    jz      .ret
+    mov     rax, [rax + MACROEXP_macro]
+    mov     rsi, [rax + MACRO_tokens]
+    mov     ecx, [rax + MACRO_ntokens]
+.scan_00:
+    test    ecx, ecx
+    jz      .no_00
+    cmp     byte [rsi + TOKEN_kind], TOK_DIRECTIVE
+    jne     .scan_next
+    mov     rdx, [rsi + TOKEN_value]
+    cmp     word [rdx], '00'
+    jne     .scan_next
+    cmp     byte [rdx + 2], 0
+    je      .ret                           ; %00: the macro takes it
+.scan_next:
+    add     rsi, TOKEN_SIZE
+    dec     ecx
+    jmp     .scan_00
+.no_00:
+    mov     rdi, [rel ml_label]
+    test    rdi, rdi
+    jz      .ret
+    call    str_len
+    push    rax
+    lea     rsi, [rax + 3]
+    mov     rdi, [rbx + PREP_arena]
+    call    arena_alloc
+    pop     rcx
+    test    rax, rax
+    jnz     .ret
+    mov     rdi, rdx
+    mov     rsi, [rel ml_label]
+    push    rdx
+    rep movsb
+    mov     word [rdi], ': '
+    mov     byte [rdi + 2], 0
+    pop     rcx                            ; the text
+    extern  error_loc_file, error_loc_line, lst_label_line
+    mov     rdi, [rel error_loc_file]
+    mov     esi, [rel error_loc_line]
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_mac_exp]
+    xor     edx, edx
+    test    rax, rax
+    jz      .depth
+    mov     edx, [rax + MACROEXP_lst_depth]
+.depth:
+    call    lst_label_line
+.ret:
+    ret
+
 ; ---- prep_quoted_text ---------------------
 ; The text of a quoted token: "file", `file`, or 'file' (eight characters
 ; or fewer lex as a character constant, its characters packed).
@@ -8466,6 +8756,11 @@ prep_handle_rep:
 
 [SECTION .bss]
 ml_state:      resb 1              ; ML_*: where the token read stands
+ml_called_at:  resb 1              ; ml_state where a multi-line macro was called
+alignb 8
+relex_cap:     resq 1              ; prep_interp_relex: its array's room
+ml_label:      resq 1              ; the line's first word (a label?)
+relex_tok:     resb TOKEN_SIZE     ; ... the token just read
 global prep_noexpand
 prep_noexpand: resb 1              ; 1: identifiers are not macro calls (a directive reads a name)
 def_eager:     resb 1              ; 1: %xdefine, expand the body now
