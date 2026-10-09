@@ -17,6 +17,7 @@ after the source file (for example, `source.s` becomes `source.o`).
 | `--ubf-add TYPE=FILE[@ADDR]` | With `-f ubf`: add a component (`initrd`, `dtb`, `config`, `module`, `firmware`) read from FILE, loaded at ADDR. Repeatable, up to 7. |
 | `-a`, `-arch`, `--arch <arch>` | Target architecture: `amd64` (default), `aarch64`, or `riscv64`. |
 | `--standalone` | Produce a standalone executable and require `_start`. |
+| `--bits 16`, `--bits 32`, `--bits 64` | The mode the source starts in, as if it began with `bits N`, whatever `-f` is. `-f bin` starts in 64-bit mode (utasm's targets are 64-bit); NASM starts a flat binary in 16-bit mode, so a NASM source with no `bits` line - a boot sector - needs `--bits 16` to come out the same. |
 | `--profile`, `-P` | Print the assembler's internal performance profile. |
 | `--verbose` | Enable verbose diagnostics. |
 | `--color`, `--no-color` | The rich diagnostics (the source line, the place marked, color) or NASM's plain lines; by default rich on a terminal. |
