@@ -834,8 +834,10 @@ parser_parse_operand:
     call    preprocessor_putback_token
 
     push    qword [rel known_fwd_uses]
+    mov     byte [rel expr_pcrel_ok], 1    ; ("mov eax, x - $", x elsewhere)
     mov     rdi, rbx
     call    parser_evaluate_expression
+    mov     byte [rel expr_pcrel_ok], 0
     pop     r8
     cmp     r8, [rel known_fwd_uses]
     je      .not_fwd
@@ -850,6 +852,8 @@ parser_parse_operand:
         IF rcx, ne, 0
              mov     byte [r12 + OPERAND_kind], OP_SYMBOL
              mov     [r12 + OPERAND_sym], rcx
+             mov     al, [rel expr_pcrel]
+             mov     [r12 + OPERAND_pcrel], al
         ELSEIF r11, ne, 0
              ; Already-defined symbol: the value is usable as an immediate,
              ; but record the symbol so branches can still emit a relocation.
@@ -1139,6 +1143,73 @@ parser_evaluate_additive:
         call    known_note_diff            ; (core/known.s: "len equ $ - msg")
         jmp     .diff_number
 .diff_other:
+        ; labels of two sections, or an extern ("dd func - $", "dd e - x"):
+        ; with the right one in the section being written, a PC-relative
+        ; reference to the left one, as NASM makes it. Where the writer
+        ; takes one (expr_pcrel_ok: data, an immediate) the left one's name
+        ; comes back, the rest of the value its addend, and expr_pcrel says
+        ; so; anywhere else no relocation can say it: NASM's "not simple or
+        ; relocatable". It was the difference of the two offsets, silently.
+        ; A flat binary or an executable has its sections placed: worked
+        ; out at the end. (Both in one section: a number, above.)
+        test    r14, r14
+        jnz     .diff_freeze
+        test    rcx, rcx
+        jnz     .diff_freeze
+        test    r15, r15
+        jz      .diff_freeze
+        test    r11, r11
+        jz      .diff_freeze
+        push    rdi
+        push    rsi
+        mov     rdi, r15
+        call    expr_sym_class
+        mov     r8d, eax
+        mov     rdi, r11
+        call    expr_sym_class
+        cmp     r8d, 1
+        jne     .diff_back                     ; (a number on either side)
+        cmp     eax, 1
+        jne     .diff_back
+        mov     rax, [rbx + PREP_ctx]
+        cmp     byte [rax + ASMCTX_fmt], FMT_BIN
+        je      .diff_lost
+        cmp     byte [rax + ASMCTX_standalone], 0
+        jne     .diff_lost
+        mov     r8, [rax + ASMCTX_curr_sec]
+        test    r8, r8
+        jz      .diff_not_simple
+        movzx   eax, word [r11 + SYMBOL_section]
+        cmp     ax, [r8 + SECTION_index]
+        jne     .diff_not_simple
+        cmp     byte [rel expr_pcrel_ok], 0
+        je      .diff_not_simple
+        ; the distance from the right one to here is in the addend: the
+        ; code between keeps its size
+        mov     rdi, r8
+        mov     rsi, [r11 + SYMBOL_value]
+        mov     rdx, [r8 + SECTION_size]
+        call    relax_freeze_range
+        pop     rsi
+        pop     rdi
+        mov     byte [rel expr_pcrel], 1
+        sub     r13, [r15 + SYMBOL_value]      ; (an extern's is 0)
+        mov     r14, [r15 + SYMBOL_name]
+        xor     r15d, r15d
+        jmp     .loop
+.diff_lost:
+        pop     rsi
+        pop     rdi
+        jmp     .minus_lost
+.diff_not_simple:
+        pop     rsi
+        pop     rdi
+        mov     rax, EXIT_NOT_SIMPLE
+        jmp     .error
+.diff_back:
+        pop     rsi
+        pop     rdi
+.diff_freeze:
         push    rdi
         push    rsi
         mov     rdi, r11
@@ -1449,6 +1520,7 @@ parser_evaluate_expression:
     push    r15
     mov     rbx, rdi
     mov     byte [rel expr_lost], 0
+    mov     byte [rel expr_pcrel], 0
     mov     qword [rel expr_last_record], 0
     mov     qword [rel expr_undef_uses], 0
     extern  prep_rec_begin
@@ -2590,9 +2662,39 @@ parser_evaluate_factor:
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
+        ; "-__Infinity__": a float's sign, not an integer's (it was
+        ; 0x80800000 for dd, NASM's is 0xFF800000)
+        cmp     byte [rel float_seen], 0
+        jne     .negate_float
         call    expr_unary_lost
         neg     rdx
         neg     qword [rel expr_coeff]
+        xor     rax, rax
+        jmp     .done
+.negate_float:
+        movzx   eax, byte [rel float_fmt]
+        cmp     eax, FLT_HALF
+        jne     .neg_single
+        xor     edx, 0x8000
+        jmp     .negated
+.neg_single:
+        cmp     eax, FLT_SINGLE
+        jne     .neg_double
+        xor     edx, 0x80000000
+        jmp     .negated
+.neg_double:
+        cmp     eax, FLT_DOUBLE
+        jne     .neg_ext
+        btc     rdx, 63
+        jmp     .negated
+.neg_ext:
+        cmp     eax, FLT_EXT
+        jne     .neg_quad
+        xor     qword [rel float_hi], 0x8000   ; sign and exponent word
+        jmp     .negated
+.neg_quad:
+        btc     qword [rel float_hi], 63       ; the high half
+.negated:
         xor     rax, rax
         jmp     .done
     ELSEIF al, e, TOK_TILDE
@@ -4118,6 +4220,7 @@ parser_section_attrs:
     mov     rdi, rbx
     call    preprocessor_next_token
     mov     r12, [rdx + TOKEN_value]
+    mov     byte [rel attr_seen], 1        ; (an attribute, known or not)
     mov     rdi, r12
     lea     rsi, [rel attr_progbits]
     call    str_cmp
@@ -4137,7 +4240,7 @@ parser_section_attrs:
     lea     r8, [rel attr_flag_names]
     xor     ecx, ecx
 .flag:
-    cmp     ecx, 6
+    cmp     ecx, 8                         ; (alloc exec write tls, and no...)
     jae     .not_flag
     push    rcx
     push    r8
@@ -4184,6 +4287,7 @@ parser_section_attrs:
     call    str_cmp
     test    rax, rax
     jnz     .unknown
+    mov     byte [rel attr_seen + 1], 1    ; align= given
     mov     rdi, rbx
     call    preprocessor_next_token        ; "="
     cmp     byte [rdx + TOKEN_kind], TOK_EQUAL
@@ -5624,8 +5728,21 @@ parser_handle_pseudo_op:
     xor     eax, eax
     jmp     .check_handler_result
 .not_use:
-    ; warning, map, list, float, sectalign, debug, required: accepted,
-    ; nothing for utasm to do
+    ; sectalign N / on / off
+    mov     rdi, r12
+    lea     rsi, [rel str_sectalign]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .not_sectalign
+    call    parser_sectalign
+    test    rax, rax
+    jnz     .check_handler_result
+    call    parser_skip_to_eol
+    mov     rax, 1
+    jmp     .check_handler_result
+.not_sectalign:
+    ; warning, map, list, float, debug, required: accepted, nothing for
+    ; utasm to do
     lea     r13, [rel ignored_words]
 .ignored_word:
     cmp     byte [r13], 0
@@ -6479,6 +6596,9 @@ times_padto:   resb 1              ; this times count is K - ($ - $$)
 equ_again:     resb 1              ; this equ defines a constant again
 expr_keep_forward: resb 1           ; an equ: keep a name not defined yet too
 expr_keep_quiet: resb 1             ; an equ: a record of a known value too
+global expr_pcrel, expr_pcrel_ok
+expr_pcrel:    resb 1              ; the value is PC-relative ("x - $", x elsewhere)
+expr_pcrel_ok: resb 1              ; ... and the writer can make it so
 alignb 8
 expr_last_record: resq 1            ; the record the last expression was kept as
 expr_undef_uses: resq 1            ; names met not defined (parser_late_equs)
@@ -6554,18 +6674,80 @@ use_words:      db "use16", 0, 0, 16
                 db "use32", 0, 0, 32
                 db "use64", 0, 0, 64
                 db 0
+str_sectalign:  db "sectalign", 0
+str_sa_on:      db "on", 0
+str_sa_off:     db "off", 0
 ; directive names, 10 bytes each
-ignored_words:  db "warning", 0, 0, 0
+ignored_words:db "warning", 0, 0, 0
                 db "map", 0, 0, 0, 0, 0, 0, 0
                 db "list", 0, 0, 0, 0, 0, 0
                 db "float", 0, 0, 0, 0, 0
-                db "sectalign", 0
-                db "debug", 0, 0, 0, 0, 0
+db "debug", 0, 0, 0, 0, 0
                 db "required", 0, 0
                 db 0
 [SECTION .bss]
 stmt_bracketed: resb 1              ; the statement is in [ ]
+global sectalign_off
+sectalign_off:  resb 1              ; "sectalign off": align leaves the section's
 [SECTION .text]
+
+;*
+; * [parser_sectalign]
+; * Purpose: "sectalign N": the current section's alignment at least N (a
+; *   power of two); "sectalign off": align / alignb no longer raise a
+; *   section's alignment; "sectalign on": they do again (NASM's).
+; * Input  : RBX = PrepState. Output: RAX = OK or an error
+; ;
+parser_sectalign:
+    push    r12
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .value
+    mov     r12, [rdx + TOKEN_value]
+    mov     rdi, r12
+    lea     rsi, [rel str_sa_off]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .not_off
+    mov     byte [rel sectalign_off], 1
+    jmp     .word
+.not_off:
+    mov     rdi, r12
+    lea     rsi, [rel str_sa_on]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .value
+    mov     byte [rel sectalign_off], 0
+.word:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    xor     eax, eax
+    jmp     .ret
+.value:
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .ret
+    test    rdx, rdx
+    jz      .ok
+    lea     rcx, [rdx - 1]
+    test    rcx, rdx
+    jnz     .ok                            ; not a power of two: nothing
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_curr_sec]
+    test    rax, rax
+    jz      .ok
+    cmp     rdx, [rax + SECTION_align]
+    jbe     .ok
+    mov     [rax + SECTION_align], rdx
+.ok:
+    xor     eax, eax
+.ret:
+    pop     r12
+    ret
 
 ;*
 ; * [parser_absolute]
@@ -6632,6 +6814,8 @@ parser_alignb:
     lea     r8, [rdx - 1]
     and     rcx, r8
     add     [rax + SECTION_size], rcx
+    cmp     byte [rel sectalign_off], 0
+    jne     .fill                          ; "sectalign off"
     cmp     rdx, [rax + SECTION_align]
     jbe     .fill
     mov     [rax + SECTION_align], rdx
@@ -7273,8 +7457,8 @@ parser_handle_align:
     
     ; If p2, convert to byte
     IF r12, e, 1
-        ; Safety: Limit exponent to 16 (64KB max alignment for industrial stability)
-        IF r13, g, 16
+        ; 2^31 at most, as for align N
+        IF r13, a, 31
             mov rax, EXIT_ALIGN_ERROR
             jmp .error
             ENDIF
@@ -7291,6 +7475,10 @@ parser_handle_align:
         dec     rcx
         test    rax, rcx
         jnz     .error_invalid_align
+        ; 2^32 and above: NASM's "absurdly large segment alignment"
+        mov     rax, 0x100000000
+        cmp     r13, rax
+        jae     .error_align_large
         ENDIF
     
     ; Check for optional fill
@@ -7356,6 +7544,18 @@ parser_handle_align:
 
 .error_invalid_align:
     mov     rax, EXIT_ALIGN_ERROR
+    jmp     .error
+.error_align_large:
+    ; the value in hex, as NASM writes it
+    mov     word [rel align_hex], '0x'
+    lea     rdi, [rel align_hex + 2]
+    mov     rsi, r13
+    mov     edx, 16
+    extern  int_to_str
+    call    int_to_str
+    lea     rdi, [rel align_hex]
+    call    error_set_subject
+    mov     rax, EXIT_ALIGN_LARGE
     jmp     .error
 
 .error:
@@ -7916,8 +8116,10 @@ parser_emit_data_16:
     test    edx, edx
     jnz     .next
     mov     byte [rel float_fmt], FLT_HALF
+    mov     byte [rel expr_pcrel_ok], 1
     mov     rdi, rbx
     call    parser_evaluate_expression
+    mov     byte [rel expr_pcrel_ok], 0
     mov     byte [rel float_fmt], 0
     check_err
     mov     r10, rdx
@@ -7932,6 +8134,11 @@ parser_emit_data_16:
     mov     rax, [rdi + ASMCTX_curr_sec]
     mov     rsi, [rax + SECTION_size]
     mov     r8, R_X86_64_16
+    cmp     byte [rel expr_pcrel], 0
+    je      .abs16
+    mov     r8, R_X86_64_PC16      ; "dw x - $": PC-relative
+    add     rcx, rsi
+.abs16:
     call    reloc_record
     check_err
     xor     esi, esi
@@ -8020,8 +8227,10 @@ parser_emit_data_32:
     test    edx, edx
     jnz     .next
     mov     byte [rel float_fmt], FLT_SINGLE
+    mov     byte [rel expr_pcrel_ok], 1
     mov     rdi, rbx
     call    parser_evaluate_expression
+    mov     byte [rel expr_pcrel_ok], 0
     mov     byte [rel float_fmt], 0
     check_err
 
@@ -8038,6 +8247,11 @@ parser_emit_data_32:
     mov     rax, [rdi + ASMCTX_curr_sec]
     mov     rsi, [rax + SECTION_size]
     mov     r8, R_X86_64_32
+    cmp     byte [rel expr_pcrel], 0
+    je      .abs32
+    mov     r8, R_X86_64_PC32      ; "dd func - $": PC-relative, the field's
+    add     rcx, rsi               ; place in the addend
+.abs32:
     extern  reloc_record
     call    reloc_record
     check_err
@@ -8084,8 +8298,10 @@ parser_emit_data_64:
     test    edx, edx
     jnz     .next
     mov     byte [rel float_fmt], FLT_DOUBLE
+    mov     byte [rel expr_pcrel_ok], 1
     mov     rdi, rbx
     call    parser_evaluate_expression
+    mov     byte [rel expr_pcrel_ok], 0
     mov     byte [rel float_fmt], 0
     check_err
 
@@ -8102,6 +8318,11 @@ parser_emit_data_64:
     mov     rax, [rdi + ASMCTX_curr_sec]
     mov     rsi, [rax + SECTION_size]
     mov     r8, R_X86_64_64
+    cmp     byte [rel expr_pcrel], 0
+    je      .abs64
+    mov     r8, R_X86_64_PC64      ; "dq x - $": PC-relative
+    add     rcx, rsi
+.abs64:
     call    reloc_record
     check_err
     mov     rdi, [rbx + PREP_ctx]
@@ -8235,6 +8456,9 @@ s_attr_q:      db '"', 0
 [SECTION .bss]
 alignb 8
 attr_value:    resq 1              ; an unknown section attribute's value text
+attr_seen:     resb 2              ; parser_section_attrs: an attribute, align=
+align_hex:     resb 24             ; "0x..." for an alignment's error
+text_declared: resb 1              ; "section .text" was read
 attr_depth:    resq 1              ; ... the parentheses open in it
 [SECTION .rodata]
 s_bits64:      db "64", 0
@@ -8330,39 +8554,101 @@ parser_handle_extern:
     prologue
     push    rbx
     push    r12
+    push    r13
+    push    r14
+    push    r15
     mov     rbx, rdi               ; rbx = PrepState
 .loop:
     mov     rdi, rbx
     call    preprocessor_next_token
     check_err_to .done
     mov     r12, rdx               ; r12 = token (name)
-    
+    xor     r14d, r14d             ; the ELF type
+    xor     r15d, r15d             ; bit 9: weak; low byte: visibility
+    mov     r13d, VIS_GLOBAL
+    ; "extern f:function hidden", "extern w:weak": as for global
+    cmp     byte [r12 + TOKEN_kind], TOK_LABEL
+    je      .attrs
     IF byte [r12 + TOKEN_kind], ne, TOK_IDENT
         mov     rax, EXIT_UNEXPECTED_TOKEN
         jmp     .done
         ENDIF
+    jmp     .declare
+.attrs:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    check_err_to .done
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .declare
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel sym_attr_words]
+    call    parser_word_index
+    test    eax, eax
+    jz      .declare
+    imul    eax, eax, 12
+    lea     rcx, [rel sym_attr_words]
+    movzx   ecx, byte [rcx + rax - 1]
+    cmp     ecx, 0x20
+    jb      .attr_vis
+    mov     r13d, VIS_GLOBAL
+    cmp     ecx, 0x20
+    jne     .attr_taken
+    mov     r13d, VIS_WEAK
+    jmp     .attr_taken
+.attr_vis:
+    cmp     ecx, 0x10
+    jb      .attr_type
+    and     ecx, 0x0F
+    mov     r15b, cl
+    jmp     .attr_taken
+.attr_type:
+    mov     r14d, ecx
+.attr_taken:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    jmp     .attrs
 
+.declare:
     ; Create symbol with SYM_EXTERN kind
     sub     rsp, SYMBOL_SIZE
     mov     rdi, rsp
     xor     rax, rax
     mov     rcx, (SYMBOL_SIZE / 8)
     rep stosq
-    
+
     mov     r11, [rbx + PREP_ctx]
     mov     rsi, rsp
     mov     byte [rsi + SYMBOL_tag], TAG_SYMBOL
     mov     byte [rsi + SYMBOL_kind], SYM_EXTERN
-    mov     byte [rsi + SYMBOL_vis], VIS_GLOBAL
+    mov     [rsi + SYMBOL_vis], r13b
+    mov     [rsi + SYMBOL_etype], r14b
+    mov     [rsi + SYMBOL_eother], r15b
     mov     rax, [r12 + TOKEN_value]
     mov     [rsi + SYMBOL_name], rax
-    
+
     mov     rdi, r11               ; rdi = AsmCtx
     extern  symbol_add
     call    symbol_add
     add     rsp, SYMBOL_SIZE
-    ; Re-declaring an extern is legal and idempotent
+    ; Re-declaring an extern is legal and idempotent; a type or binding
+    ; given again applies
     IF rax, e, EXIT_DUP_SYMBOL
+        mov     rdi, [rbx + PREP_ctx]
+        mov     rsi, [r12 + TOKEN_value]
+        call    symbol_find
+        test    rax, rax
+        jnz     .redeclared
+        cmp     byte [rdx + SYMBOL_kind], SYM_EXTERN
+        jne     .redeclared
+        mov     [rdx + SYMBOL_vis], r13b
+        test    r14b, r14b
+        jz      .redeclared_type
+        mov     [rdx + SYMBOL_etype], r14b
+.redeclared_type:
+        test    r15b, r15b
+        jz      .redeclared
+        mov     [rdx + SYMBOL_eother], r15b
+.redeclared:
         xor     rax, rax
         ENDIF
     check_err
@@ -8377,6 +8663,9 @@ parser_handle_extern:
         ENDIF
 
 .done:
+    pop     r15
+    pop     r14
+    pop     r13
     pop     r12
     pop     rbx
     epilogue
@@ -8633,6 +8922,10 @@ parser_handle_section_directive:
         mov     rdi, [r12 + TOKEN_value]
         mov     dword [r13 + SECTION_elf_type], SHT_PROGBITS ; Default
         mov     word [r13 + SECTION_flags], SHF_ALLOC  ; NASM's for other names
+        ; .tdata / .tbss (TLS), .init_array & co (their own types: the
+        ; linker runs what they hold by those), .note, .comment, .ldata ...
+        call    .known_name
+        mov     rdi, [r12 + TOKEN_value]
         
         ; .text -> AX
         lea     rsi, [str_text]
@@ -8694,8 +8987,32 @@ parser_handle_section_directive:
 .default_align_done:
 
     ; 3. NASM attributes: progbits, nobits, alloc, exec, write, align=N
+    mov     word [rel attr_seen], 0
     call    parser_section_attrs
     check_err
+    ; a new section declared with attributes and no align=: aligned to 1,
+    ; whatever its name's default (NASM's: "section .text progbits") -
+    ; .text too, which utasm makes before the source names it, while it
+    ; is still empty and not named before
+    cmp     r15, OK
+    jne     .attrs_new
+    cmp     byte [rel text_declared], 0
+    jne     .attrs_applied
+    cmp     qword [r13 + SECTION_size], 0
+    jne     .attrs_applied
+    cmp     byte [r13 + SECTION_type], SEC_TEXT
+    jne     .attrs_applied
+.attrs_new:
+    cmp     byte [rel attr_seen], 0
+    je      .attrs_applied
+    cmp     byte [rel attr_seen + 1], 0
+    jne     .attrs_applied
+    mov     qword [r13 + SECTION_align], 1
+.attrs_applied:
+    cmp     byte [r13 + SECTION_type], SEC_TEXT
+    jne     .text_noted
+    mov     byte [rel text_declared], 1
+.text_noted:
 
     ; Reset last_global on section change (Removed to support local labels after section directives)
     
@@ -8881,6 +9198,33 @@ parser_handle_section_directive:
     pop     rbx
     epilogue
 
+; .known_name: a new section named as one of sec_known gets its type,
+; flags and alignment (r12 = the name's token, r13 = the SECTION).
+; Clobbers rax, rcx, rdx, rsi, rdi, r8-r11.
+.known_name:
+    lea     r8, [rel sec_known]
+.known_next:
+    cmp     byte [r8], 0
+    je      .known_ret
+    push    r8
+    mov     rdi, [r12 + TOKEN_value]
+    mov     rsi, r8
+    call    str_cmp
+    pop     r8
+    test    rax, rax
+    jz      .known_hit
+    add     r8, 24
+    jmp     .known_next
+.known_hit:
+    mov     eax, [r8 + 16]
+    mov     [r13 + SECTION_elf_type], eax
+    mov     ax, [r8 + 20]
+    mov     [r13 + SECTION_flags], ax
+    movzx   eax, word [r8 + 22]
+    mov     [r13 + SECTION_align], rax
+.known_ret:
+    ret
+
 ;*
 ; * [parser_handle_visibility]
 ; * RSI = Target visibility (SYM_GLOBAL, SYM_WEAK)
@@ -8901,7 +9245,8 @@ parser_handle_visibility:
     check_err
     mov     r13, rdx               ; r13 = token
     xor     r14d, r14d             ; the declared ELF type
-    xor     r15d, r15d             ; bit 8: typed; low byte: visibility
+    xor     r15d, r15d             ; bit 8: typed, bit 9: weak; low byte:
+                                   ; visibility
     cmp     byte [r13 + TOKEN_kind], TOK_LABEL
     je      .typed                 ; "f:function": the colon made a label
     IF byte [r13 + TOKEN_kind], ne, TOK_IDENT
@@ -8925,6 +9270,15 @@ parser_handle_visibility:
     imul    eax, eax, 12
     lea     rcx, [rel sym_attr_words]
     movzx   ecx, byte [rcx + rax - 1]      ; the row's value byte
+    cmp     ecx, 0x20
+    jb      .not_binding
+    ; "global f:function weak": its binding
+    and     r15d, ~0x200
+    cmp     ecx, 0x20
+    jne     .attr_used                     ; strong
+    or      r15d, 0x200
+    jmp     .attr_used
+.not_binding:
     cmp     ecx, 0x10
     jb      .is_type
     and     ecx, 0x0F
@@ -8959,6 +9313,10 @@ parser_handle_visibility:
         jmp     .error
 .vis_ok:
         mov     byte [rdx + SYMBOL_vis], r12b
+        test    r15d, 0x200
+        jz      .vis_set
+        mov     byte [rdx + SYMBOL_vis], VIS_WEAK   ; "global g:weak"
+.vis_set:
         test    r15d, 0x100
         jz      .next_name
         mov     [rdx + SYMBOL_etype], r14b
@@ -8976,6 +9334,10 @@ parser_handle_visibility:
         mov     rax, [r13 + TOKEN_value]
         mov     [rsi + SYMBOL_name], rax
         mov     byte [rsi + SYMBOL_vis], r12b
+        test    r15d, 0x200
+        jz      .new_vis_set
+        mov     byte [rsi + SYMBOL_vis], VIS_WEAK
+.new_vis_set:
         mov     [rsi + SYMBOL_etype], r14b
         mov     [rsi + SYMBOL_eother], r15b
         call    symbol_add
@@ -9218,7 +9580,7 @@ parser_handle_common:
     test    rax, rax
     jnz     .ret
     mov     r13, rdx                       ; size
-    mov     r14d, 1                        ; alignment
+    xor     r14d, r14d                     ; alignment (none given: 0, NASM's)
     mov     rdi, rbx
     call    preprocessor_peek_token
     test    rax, rax
@@ -9281,6 +9643,8 @@ sym_attr_words:
     db "internal", 0, 0, 0, 0x11
     db "hidden", 0, 0,0,0,0, 0x12
     db "protected", 0, 0, 0x13
+    db "weak", 0, 0,0,0,0,0,0, 0x20        ; the binding
+    db "strong", 0, 0,0,0,0, 0x21
     db 0
 str_common_d:  db "common", 0
 str_static_d:  db "static", 0
@@ -9441,7 +9805,9 @@ attr_align:    db "align", 0
 ; alloc/noalloc, exec/noexec, write/nowrite: 8 bytes each, even = set
 attr_flag_names: db "alloc", 0, 0, 0, "noalloc", 0, "exec", 0, 0, 0, 0
                db "noexec", 0, 0, "write", 0, 0, 0, "nowrite", 0
+               db "tls", 0, 0, 0, 0, 0, "notls", 0, 0, 0
 attr_flag_bits: dw SHF_ALLOC, SHF_ALLOC, SHF_EXECINSTR, SHF_EXECINSTR, SHF_WRITE, SHF_WRITE
+               dw SHF_TLS, SHF_TLS
 str_section_upper: db "SECTION", 0
 str_times:     db "times", 0
 str_struc:     db "struc", 0
@@ -9458,6 +9824,39 @@ str_org:       db "org", 0
 str_text:      db ".text", 0
 str_db:        db "db", 0
 str_data:      db ".data", 0
+; NASM's defaults for other known names: 16-byte name, sh_type, flags, align
+sec_known:
+               db ".tdata", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+               dd 1
+               dw SHF_ALLOC | SHF_WRITE | SHF_TLS, 4
+               db ".tbss", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+               dd 8
+               dw SHF_ALLOC | SHF_WRITE | SHF_TLS, 4
+               db ".init_array", 0, 0, 0, 0, 0
+               dd 14
+               dw SHF_ALLOC, 8
+               db ".fini_array", 0, 0, 0, 0, 0
+               dd 15
+               dw SHF_ALLOC, 8
+               db ".preinit_array", 0, 0
+               dd 16
+               dw SHF_ALLOC, 8
+               db ".comment", 0, 0, 0, 0, 0, 0, 0, 0
+               dd 1
+               dw 0, 1
+               db ".note", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+               dd 7
+               dw 0, 4
+               db ".lrodata", 0, 0, 0, 0, 0, 0, 0, 0
+               dd 1
+               dw SHF_ALLOC, 4
+               db ".ldata", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+               dd 1
+               dw SHF_ALLOC | SHF_WRITE, 4
+               db ".lbss", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+               dd 8
+               dw SHF_ALLOC | SHF_WRITE, 4
+               db 0
 str_bss:       db ".bss", 0
 str_rodata:    db ".rodata", 0
 str_extern:    db "extern", 0
