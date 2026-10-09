@@ -23,7 +23,8 @@ struc TOKEN
     field tag,      1       ; always TAG_TOKEN
     field kind,     1       ; TOK_* value
     field flags,    1       ; TOK_FLAG_* values
-    field pad0,     5       ; alignment padding
+    field quote,    1       ; a string's quote, as written (%defstr)
+    field pad0,     4       ; alignment padding
     field value,    8       ; pointer or integer
     field line,     4       ; source line number (1-based)
     field col,      2       ; source column number (1-based)
