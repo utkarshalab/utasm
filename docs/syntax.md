@@ -584,6 +584,34 @@ error ("`%macro' expects a parameter count"), as is a minimum above the
 maximum. A macro may be defined again with another count; each definition
 is an overload, chosen by the number of arguments of a call.
 
+A multi-line macro is called as the first word of a line, or after a
+label (`lab: m` - the listing shows `lab:` as the first line of the
+expansion unless the macro takes the label with `%00`). Elsewhere its name
+is an ordinary word: `db 1, m` is the symbol `m`.
+
+### Preprocessor functions
+
+NASM 2.16's functions work anywhere on a line, their arguments expanded
+first; the call is replaced by its result:
+
+```asm
+db %eval(2 + 3), %abs(-7)          ; 5, 7     (%hex: 0x...)
+db %num(255, 4, 16)                ; '00ff'   (a string: digits, base)
+db %strlen('abc'), %count(a, b)    ; 3, 2
+db %sel(2, 10, 20, 30)             ; 20
+db %cond(DEBUG, 1, 0)              ; the second or the third
+db %str(a + b), %strcat('a', "b")  ; 'a + b', 'ab'
+db %substr('abcd', 2, 2)           ; 'bc'     (no length: to the end)
+%tok('nop')                        ; the tokens a string spells
+db %map(F, 1, 2)                   ; F(1), F(2)  (%map(F:(x), a): F(x, a))
+db %isdef(DEBUG), %isnum(5)        ; 1 or 0: every %if test as a function
+```
+
+`%is(expr)`, `%isdef`, `%isnum`, `%isstr`, `%isid`, `%isempty`, `%istoken`,
+`%ismacro`, `%isidn`, `%isidni`, `%isenv`, `%isctx` and their `%isn...`
+forms give 1 or 0. A `%[...]` standing alone gives the tokens inside it,
+expanded there and then: in a `%define`'s body, the value of the moment.
+
 ---
 
 ### Conditionals
