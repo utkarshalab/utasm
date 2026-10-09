@@ -61,12 +61,13 @@ warn_state:
     db 1                                ; WC_LABEL_ORPHAN
     db 0                                ; WC_PIE (utasm's own: -w+pie, -w+all)
     db 1                                ; WC_SLASH_COMMENT (utasm's own)
+    db 1                                ; WC_PP_SEL_RANGE
 
 [SECTION .rodata]
 warn_names:
     dq wn_other, wn_user, wn_zeroing, wn_lock_xchg, wn_overflow
     dq wn_lock_error, wn_db_empty, wn_macro_defaults, wn_label_orphan, wn_pie
-    dq wn_slash_comment
+    dq wn_slash_comment, wn_pp_sel_range
 wn_other:       db "other", 0
 wn_user:        db "user", 0
 wn_zeroing:     db "zeroing", 0
@@ -78,6 +79,7 @@ wn_macro_defaults: db "pp-macro-defaults", 0
 wn_label_orphan: db "label-orphan", 0
 wn_pie:         db "pie", 0
 wn_slash_comment: db "slash-comment", 0
+wn_pp_sel_range: db "pp-sel-range", 0
 wn_all:         db "all", 0
 wn_error:       db "error", 0
 s_warning:      db "warning: ", 0
