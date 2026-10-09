@@ -22,6 +22,10 @@ extern arena_alloc
 ; Implements a high-performance FNV-1a 64-bit hash table with linear probing.
 ; ============================================================================
 
+[SECTION .bss]
+global sym_defseq
+sym_defseq:     resd 1              ; symbols defined so far (SYMBOL_defseq)
+
 [SECTION .text]
 
 ; ---- symbol_init ------------------------
@@ -150,6 +154,10 @@ symbol_add:
     mov     rsi, r12
     mov     rcx, (SYMBOL_SIZE / 8)
     rep movsq
+    ; the order symbols are defined in (-f win64 writes them so)
+    inc     dword [rel sym_defseq]
+    mov     eax, [rel sym_defseq]
+    mov     [r13 + SYMBOL_defseq], eax
 
     ; 3. Index in Hash Table (Quadratic Probing)
     mov     rsi, [r13 + SYMBOL_name]
