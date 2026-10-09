@@ -782,6 +782,19 @@ sectalign on                    ; they do again
 An `align` of 2^32 or more is NASM's error ``absurdly large segment
 alignment `0x100000000'``.
 
+With `-f win64` the defaults are NASM's COFF ones: `.text` code (aligned
+16), `.data` data (4), `.bss` uninitialised data (4), `.rdata` and `.xdata`
+read-only data (8), `.pdata` read-only data (4), and any other name code
+(16). The attributes are `code` (or `text`), `data`, `rdata`, `bss`,
+`info` (removed by the linker: `.drectve` directives) and `align=N` (up to
+8192), which sets the alignment, below the default too:
+
+```asm
+section .rdata rdata align=16
+section .mycode code
+section .drectve info           ; "-defaultlib:kernel32 " and the like
+```
+
 ---
 
 ### Symbol Visibility
@@ -801,6 +814,11 @@ extern free
 common shared_buffer 1024       ; 1024 byte common block
 common aligned_buffer 64:16     ; ... aligned to 16
 ```
+
+With `-f win64`, `dd f wrt ..imagebase` is the address of `f` less the
+image's base (`IMAGE_REL_AMD64_ADDR32NB`), as `.pdata` unwind entries need;
+only `global f:function` / `:data` of these attributes are accepted (see
+[cli.md](cli.md#coff-objects--f-win64)).
 
 `global` and `extern` take NASM's ELF attributes after a colon: a type
 (`function`, `data`, `object`, `notype`), a visibility (`default`,
