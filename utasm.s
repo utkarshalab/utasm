@@ -453,6 +453,12 @@ _start:
     call    lst_close                      ; the listing's last line
 
     lea     rbx, [rel global_ctx]
+    ; --noexecstack, --execstack, --cet: their note sections
+    extern  elf_add_notes
+    mov     rdi, rbx
+    call    elf_add_notes
+    test    rax, rax
+    jnz     .error_in_linker
     mov     rdi, rbx
     call    linker_run
     test    rax, rax
