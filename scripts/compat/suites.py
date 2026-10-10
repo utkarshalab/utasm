@@ -544,6 +544,29 @@ def command_line(utasm, verbose=False):
         re_ = run(["sh", "-c", "printf 'nop\\nbad bad\\n' | %s -f elf64 -o e.o -" % utasm], cwd=d)
         s.result("stdin error names -", re_.returncode != 0 and re_.stderr.startswith("-:2: error"),
                  first_line(re_))
+    # --noexecstack / --execstack / --cet (NASM has none): the note
+    # sections, and what ld makes of them; a standalone executable's stack
+    src = "global _start\nsection .text\n_start:\nendbr64\nmov eax, 60\nmov edi, 7\nsyscall\n"
+    with tempdir() as d:
+        open(os.path.join(d, "n.s"), "w").write(src)
+        def secs(args):
+            r = run([utasm, "-f", "elf64"] + args + ["n.s", "-o", "n.o"], cwd=d)
+            return r, run(["readelf", "-SW", "-n", "n.o"], cwd=d).stdout
+        r, out = secs([])
+        s.result("no stack note by default", r.returncode == 0 and ".note" not in out, first_line(r))
+        r, out = secs(["--noexecstack"])
+        s.result("--noexecstack", r.returncode == 0 and re.search(r"\.note\.GNU-stack\s+PROGBITS(\s+\S+){3}\s+00\s+0\s+0\s+1", out)
+                 is not None, out[-200:])
+        r, out = secs(["--execstack"])
+        s.result("--execstack", r.returncode == 0 and re.search(r"\.note\.GNU-stack\s+PROGBITS(\s+\S+){3}\s+00\s+X\s", out)
+                 is not None, out[-200:])
+        r, out = secs(["--cet"])
+        s.result("--cet", r.returncode == 0 and "x86 feature: IBT, SHSTK" in out, out[-200:])
+        rs = run([utasm, "--standalone", "n.s", "-o", "n"], cwd=d)
+        ph = run(["readelf", "-lW", "n"], cwd=d).stdout
+        rr = run([os.path.join(d, "n")]) if rs.returncode == 0 else rs
+        s.result("standalone stack not executable", rs.returncode == 0 and
+                 re.search(r"GNU_STACK(\s+\S+){5}\s+RW\s", ph) is not None and rr.returncode == 7, ph[-160:])
     return s
 
 
