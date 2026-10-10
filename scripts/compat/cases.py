@@ -1172,3 +1172,21 @@ DIAG_CASES += [
     ("ilog2 of no power of two", "%use ifunc\ndb 1\ndb ilog2(9)\n"),
     ("lea of a register", "bits 64\nnop\nlea rax, rbx\n"),
 ]
+
+
+# a parameter with what follows it pasted on: %{1}0, %{1}y, %{1}%{2}; a
+# body listed as NASM lists it (%{2:3} as %2:3), %line, %exitrep, a macro
+# defined by a macro
+BIN_PROBES.update({
+    "paste_braced": "bits 64\n%macro m 2\ndb %{1}0, %{1}%{2}\n%{2}y: db 2\ndq %{2}y\nx%{1}: dq x%{1}\n%endmacro\nm 1, z\n",
+    "paste_hex": "bits 64\n%macro m 1\nmov eax, 0x%{1}\ndb %1%1\n%endmacro\nm 1f\nm 3\n",
+    "pp_body_braces": "%macro m 1-*\ndb %{1}\ndb %{-1:1}\ndb %{3:2}, %{2: 3}\ndb %1, %{1:1}\ndb %{1}+%{2:2}\n%endmacro\nm 1, 2, 3, 4\n",
+    "pp_line_text": "nop\n%line 100 foo.s\ndb __LINE__\n  dw 5 ; a comment\n",
+    "pp_exitrep_nested": "%assign i 0\n%rep 4\n%rep 2\ndb i\n%exitrep\ndb 9\n%endrep\n%assign i i+1\n%endrep\n",
+    "pp_macro_by_rep": "%rep 2\n%macro x 0\ndb 3\n%endmacro\n%endrep\nx\n",
+})
+
+# a multi-line macro defined again with the same parameter range
+WARN_CASES.update({
+    "warn_macro_redef": "%macro m 0\nnop\n%endmacro\n%macro m 0\nint3\n%endmacro\n%macro m 1\nnop\n%endmacro\nm\n",
+})
