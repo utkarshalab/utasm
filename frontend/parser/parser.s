@@ -702,6 +702,19 @@ parser_parse_operand:
 
     ; 2. Registers or Size Specifiers (handled via ident lookup)
     IF al, e, TOK_IDENT
+        ; %use masm: "ptr [x]", "ptr x" with no size
+        mov     rdi, [r13 + TOKEN_value]
+        lea     rsi, [rel str_masm_ptr]
+        call    str_cmp
+        test    rax, rax
+        jnz     .not_bare_ptr
+        mov     rdi, rbx
+        call    preprocessor_next_token
+        mov     r13, rdx
+        cmp     byte [r13 + TOKEN_kind], TOK_LBRACKET
+        je      .sized_mem
+        jmp     .open_mem
+.not_bare_ptr:
         mov     rdi, [r13 + TOKEN_value]
         call    parser_parse_size_specifier_string
         test    rax, rax
@@ -711,26 +724,46 @@ parser_parse_operand:
         mov     [r12 + OPERAND_size], al
         mov     [r12 + OPERAND_xsize], ax      ; yword/zword need 16 bits
         
-        ; Peek next token. If "ptr", consume
+        ; Peek next token. "ptr" (MASM's) is taken, with NASM's warning;
+        ; under %use masm (__?masm_ptr?__) what follows is a memory
+        ; operand, in brackets or not ("dword ptr x", "dword ptr fs:[x]")
+        mov     byte [rel masm_mem], 0
         mov     rdi, rbx
         call    preprocessor_peek_token
         mov     rcx, rdx
         IF byte [rcx + TOKEN_kind], e, TOK_IDENT
             mov     rdi, [rcx + TOKEN_value]
+            lea     rsi, [rel str_masm_ptr]
+            call    str_cmp
+            test    rax, rax
+            jnz     .not_masm_ptr
+            mov     byte [rel masm_mem], 1
+            jmp     .take_ptr
+.not_masm_ptr:
+            mov     rdi, rbx
+            call    preprocessor_peek_token
+            mov     rdi, [rdx + TOKEN_value]
             lea     rsi, [rel str_ptr]
             call    str_cmp_kw
             test    rax, rax
             jnz     .no_ptr
             mov     rdi, rbx
+            call    preprocessor_peek_token
+            mov     rdi, [rdx + TOKEN_value]
+            call    parser_ptr_warn
+.take_ptr:
+            mov     rdi, rbx
             call    preprocessor_next_token ; consume "ptr"
 .no_ptr:
             ENDIF
-            
+
         mov     rdi, rbx
         call    preprocessor_next_token
         mov     r13, rdx
         cmp     byte [r13 + TOKEN_kind], TOK_LBRACKET
         je      .sized_mem
+        cmp     byte [rel masm_mem], 0
+        jne     .open_mem
         ; A register with its size written out ("movzx r9d, byte al"): the
         ; size must be the register's. Anything else is a sized immediate.
         cmp     byte [r13 + TOKEN_kind], TOK_IDENT
@@ -762,7 +795,19 @@ parser_parse_operand:
         call    parser_parse_mem_operand
         check_err
         jmp     .success
-        
+.open_mem:
+        ; %use masm: "ptr x", "ptr fs:[x]": a memory operand with no
+        ; bracket of its own (parser_parse_mem_operand ends it at a comma
+        ; or the end of the line)
+        mov     rdi, rbx
+        mov     rsi, r13
+        call    preprocessor_putback_token
+        mov     byte [rel mem_open], 1
+        call    parser_parse_mem_operand
+        mov     byte [rel mem_open], 0
+        check_err
+        jmp     .success
+
 .try_register:
         call    parser_get_arch_tables
         mov     rdi, rdx                ; RDI = Register Table Pointer
@@ -2811,6 +2856,12 @@ parser_evaluate_factor:
     xor     eax, eax
     jmp     .done
 .not_special:
+    ; __?ilog2e?__(x) & co (NASM's, which %use ifunc names ilog2e(x) ...):
+    ; log2 of x as an unsigned number, exact, warned, floor or ceiling
+    mov     rdi, [r12 + TOKEN_value]
+    call    parser_ilog2_func
+    test    eax, eax
+    jnz     .ilog2
     mov     rdi, [r12 + TOKEN_value]
     call    parser_float_func
     test    eax, eax
@@ -2848,6 +2899,81 @@ parser_evaluate_factor:
     mov     rax, EXIT_UNEXPECTED_TOKEN
 .float_fn_end:
     mov     [rel float_fmt], r13b
+    jmp     .done
+.ilog2:
+    push    rax                            ; 1 exact, 2 warned, 3 floor, 4 ceiling
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ilog2_out1
+    cmp     byte [rdx + TOKEN_kind], TOK_LPAREN
+    jne     .ilog2_bad1
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .ilog2_out1
+    push    rdx                            ; x
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ilog2_out2
+    cmp     byte [rdx + TOKEN_kind], TOK_RPAREN
+    jne     .ilog2_bad2
+    pop     rcx                            ; x
+    pop     rax                            ; the kind
+    xor     edx, edx                       ; floor(log2 x), 0 for 0
+    test    rcx, rcx
+    jz      .ilog2_floor
+    bsr     rdx, rcx
+.ilog2_floor:
+    cmp     eax, 4
+    jne     .ilog2_not_ceil
+    xor     edx, edx                       ; ceiling: 0 for 0 and 1
+    cmp     rcx, 1
+    jbe     .ilog2_ok
+    lea     r8, [rcx - 1]
+    bsr     rdx, r8
+    inc     edx
+    jmp     .ilog2_ok
+.ilog2_not_ceil:
+    cmp     eax, 3
+    je      .ilog2_ok
+    ; exact or warned: x a power of two
+    test    rcx, rcx
+    jz      .ilog2_not_pow2
+    lea     r8, [rcx - 1]
+    test    rcx, r8
+    jz      .ilog2_ok
+.ilog2_not_pow2:
+    cmp     eax, 1
+    jne     .ilog2_warn
+    mov     rax, EXIT_ILOG2
+    jmp     .done
+.ilog2_warn:
+    push    rdx
+    mov     edi, WC_OTHER
+    extern  warn_begin, warn_end
+    call    warn_begin
+    test    eax, eax
+    jz      .ilog2_quiet
+    lea     rsi, [rel str_ilog2_warn]
+    call    warn_text
+    call    warn_end
+.ilog2_quiet:
+    pop     rdx
+.ilog2_ok:
+    xor     eax, eax
+    jmp     .done
+.ilog2_bad2:
+    pop     rcx
+.ilog2_bad1:
+    pop     rcx
+    mov     rax, EXIT_UNEXPECTED_TOKEN
+    jmp     .done
+.ilog2_out2:
+    pop     rcx
+.ilog2_out1:
+    pop     rcx
     jmp     .done
 .not_float_fn_ident:
     mov     al, TOK_IDENT
@@ -2955,6 +3081,26 @@ parser_evaluate_factor:
         mov     rsi, rdx               ; namespaced name
 
 .do_sym_lookup:
+        mov     rdi, rsi
+        call    parser_ptr_warn                ; "ptr": NASM's warning
+        ; %use masm's ptr / flat in a value: NASM's syntax error
+        push    rsi
+        mov     rdi, rsi
+        lea     rsi, [rel str_masm_flat]
+        call    str_cmp
+        mov     rdi, [rsp]
+        test    rax, rax
+        jz      .masm_word
+        lea     rsi, [rel str_masm_ptr]
+        call    str_cmp
+        test    rax, rax
+        jnz     .not_masm_word
+.masm_word:
+        pop     rsi
+        mov     rax, EXIT_INVALID_EXPR
+        jmp     .done
+.not_masm_word:
+        pop     rsi
         ; recorded under the name it resolved to (".x" under its global
         ; label, "1f" as the label it means), for an expression kept
         mov     edi, 1
@@ -3234,6 +3380,52 @@ parser_parse_mem_operand:
     check_err_to .error
     mov     r13, rdx
     mov     al, [r13 + TOKEN_kind]
+
+    ; %use masm's "ptr x" (mem_open): the operand ends at a comma or the
+    ; end of the line, which are handed back; "ptr fs:[x]": its bracket
+    ; makes it an ordinary one
+    cmp     byte [rel mem_open], 0
+    je      .closed
+    cmp     al, TOK_LBRACKET
+    jne     .open_end
+    mov     byte [rel mem_open], 0
+    jmp     .loop
+.open_end:
+    cmp     al, TOK_COMMA
+    je      .open_done
+    cmp     al, TOK_NEWLINE
+    je      .open_done
+    cmp     al, TOK_EOF
+    je      .open_done
+    cmp     al, TOK_LBRACE
+    jne     .closed
+.open_done:
+    mov     rdi, rbx
+    mov     rsi, r13
+    call    preprocessor_putback_token
+    mov     byte [rel mem_open], 0
+    mov     al, TOK_RBRACKET
+.closed:
+
+    ; %use masm's "flat:": nothing (an address is flat)
+    cmp     al, TOK_IDENT
+    jne     .not_flat
+    mov     rdi, [r13 + TOKEN_value]
+    lea     rsi, [rel str_masm_flat]
+    call    str_cmp
+    test    rax, rax
+    jnz     .not_flat_ident
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    check_err_to .error
+    cmp     byte [rdx + TOKEN_kind], TOK_COLON
+    jne     .loop
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    jmp     .loop
+.not_flat_ident:
+    mov     al, [r13 + TOKEN_kind]
+.not_flat:
 
     IF al, e, TOK_RBRACKET
         ; "[ ]", "[rbx + ]": NASM's syntax error (they were [0], [rbx])
@@ -3593,7 +3785,7 @@ parser_parse_mem_operand:
     je      .rel_done
     mov     rax, [r12 + OPERAND_sym]
     test    rax, rax
-    jz      .rel_done                      ; no symbol: numeric address
+    jz      .ea_absolute                   ; no symbol: numeric address
     cmp     byte [rax], TAG_SYMBOL
     jne     .make_rel                      ; raw name: a forward label
     cmp     byte [rax + SYMBOL_kind], SYM_CONSTANT
@@ -3607,6 +3799,16 @@ parser_parse_mem_operand:
 .make_rel:
     or      byte [r12 + OPERAND_flags], OP_FLAG_REL
     mov     byte [r12 + OPERAND_base], REG_RIP
+    jmp     .rel_done
+.ea_absolute:
+    ; "[5]" under default rel: absolute, with NASM's warning
+    mov     edi, WC_EA_ABSOLUTE
+    call    warn_begin
+    test    eax, eax
+    jz      .rel_done
+    lea     rsi, [rel str_ea_absolute]
+    call    warn_text
+    call    warn_end
 .rel_done:
     mov     rax, OK
 .done:
@@ -4561,6 +4763,33 @@ parser_section_attrs:
     ret
 
 ;*
+; * [parser_seg_override_flat]
+; * Purpose: Is RSI "flat" under %use masm, or __?masm_flat?__ (the
+; *   address is flat: no override)? ZF set when it is. Preserves rsi.
+; ;
+parser_seg_override_flat:
+    push    rsi
+    mov     rdi, rsi
+    lea     rsi, [rel str_masm_flat]
+    call    str_cmp
+    pop     rsi
+    test    rax, rax
+    jz      .ret
+    cmp     byte [rel masm_enabled], 0
+    je      .no
+    push    rsi
+    mov     rdi, rsi
+    lea     rsi, [rel str_flat]
+    call    str_cmp_kw
+    pop     rsi
+    test    rax, rax
+    ret
+.no:
+    or      eax, 1                         ; (ZF clear)
+.ret:
+    ret
+
+;*
 ; * [parser_seg_override]
 ; * Purpose: Record a segment override written inside brackets ([fs:0x28]).
 ; * Input  : RSI = register name, R12 = OPERAND
@@ -4570,6 +4799,9 @@ parser_seg_override:
     push    rbx
     push    r13
     mov     r13, rsi
+    call    parser_seg_override_flat
+    mov     rax, OK
+    jz      .ret                           ; "flat:" (%use masm): none
     xor     ebx, ebx
 .next:
     mov     rdi, r13
@@ -5514,6 +5746,8 @@ parser_define_label:
     prologue
     push    rbx
     push    rsi
+    mov     rdi, rsi
+    call    parser_ptr_warn                ; "ptr:" / "ptr equ": NASM's warning
     mov     rbx, [rbx + PREP_ctx]
     
     ; 1. Check if the symbol already exists
@@ -6628,6 +6862,80 @@ parser_float_special:
     ret
 
 ;*
+; * [parser_ilog2_func]
+; * Purpose: Is this name one of NASM's integer log2 functions?
+; * Input  : RDI = name
+; * Output : EAX = 1 __?ilog2e?__ (exact), 2 __?ilog2w?__ (warned), 3
+; *          __?ilog2f?__ (floor), 4 __?ilog2c?__ (ceiling); 0: none
+; ;
+parser_ilog2_func:
+    push    r12
+    push    r13
+    mov     r12, rdi
+    lea     r13, [rel ilog2_fn_names]
+.name:
+    cmp     byte [r13], 0
+    je      .none
+    mov     rdi, r12
+    mov     rsi, r13
+    call    str_cmp
+    test    rax, rax
+    jz      .hit
+    add     r13, 16
+    jmp     .name
+.hit:
+    movzx   eax, byte [r13 + 15]
+    jmp     .ret
+.none:
+    xor     eax, eax
+.ret:
+    pop     r13
+    pop     r12
+    ret
+
+;*
+; * [parser_ptr_warn]
+; * Purpose: NASM's warning for the word "ptr" (MASM's) where NASM reads
+; *   a name: "`ptr' is not a NASM keyword" [-w+ptr]; not under %use masm,
+; *   where ptr is a word of its own.
+; * Input  : RDI = a name. Preserves every register but rax.
+; ;
+parser_ptr_warn:
+    push    rdi
+    push    rsi
+    push    rcx
+    push    rdx
+    push    r8
+    push    r9
+    push    r10
+    push    r11
+    cmp     byte [rel masm_enabled], 0
+    jne     .ret
+    test    rdi, rdi
+    jz      .ret
+    lea     rsi, [rel str_ptr]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .ret
+    mov     edi, WC_PTR
+    call    warn_begin
+    test    eax, eax
+    jz      .ret
+    lea     rsi, [rel str_ptr_warn]
+    call    warn_text
+    call    warn_end
+.ret:
+    pop     r11
+    pop     r10
+    pop     r9
+    pop     r8
+    pop     rdx
+    pop     rcx
+    pop     rsi
+    pop     rdi
+    ret
+
+;*
 ; * [parser_float_func]
 ; * Purpose: Is this name __float16__, __float32__ or __float64__?
 ; * Input  : RDI = name
@@ -6797,6 +7105,22 @@ utf_fn_names:
               db "__utf32be__", 0, 0, 0, 0, 6
               db "__?utf32be?__", 0, 0, 6
               db 0
+; name (15 bytes) + parser_ilog2_func's number
+ilog2_fn_names: db "__?ilog2e?__", 0, 0, 0, 1
+               db "__?ilog2w?__", 0, 0, 0, 2
+               db "__?ilog2f?__", 0, 0, 0, 3
+               db "__?ilog2c?__", 0, 0, 0, 4
+               db "__ilog2e__", 0, 0,0,0,0, 1
+               db "__ilog2w__", 0, 0,0,0,0, 2
+               db "__ilog2f__", 0, 0,0,0,0, 3
+               db "__ilog2c__", 0, 0,0,0,0, 4
+               db 0
+str_ilog2_warn: db "ilog2 argument is not a power of two", 0
+str_ptr_warn:  db "`ptr' is not a NASM keyword", 0
+str_ea_absolute: db "absolute address can not be RIP-relative", 0
+str_masm_ptr:  db "__?masm_ptr?__", 0
+str_masm_flat: db "__?masm_flat?__", 0
+str_flat:      db "flat", 0
 float_fn_names: db "__float16__", 0, 0,0,0, FLT_HALF
                db "__float32__", 0, 0,0,0, FLT_SINGLE
                db "__float64__", 0, 0,0,0, FLT_DOUBLE
@@ -8795,6 +9119,10 @@ attr_value:    resq 1              ; an unknown section attribute's value text
 attr_seen:     resb 2              ; parser_section_attrs: an attribute, align=
 align_hex:     resb 24             ; "0x..." for an alignment's error
 struc_open:    resq 1              ; a struc a section line left (its name)
+global masm_enabled
+masm_enabled:  resb 1              ; %use masm: "flat:", a bare "ptr x" known
+masm_mem:      resb 1              ; the operand's ptr was masm's
+mem_open:      resb 1              ; a memory operand with no bracket (masm)
 text_declared: resb 1              ; "section .text" was read
 attr_depth:    resq 1              ; ... the parentheses open in it
 [SECTION .rodata]
