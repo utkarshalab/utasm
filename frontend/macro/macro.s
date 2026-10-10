@@ -502,6 +502,43 @@ prep_internal_next:
     jmp     .next                  ; get first token of expansion
 
 .not_macro_call:
+    ; a first word with a multi-line macro after it ("f proc", "lab: m",
+    ; even "push m"): a label, as NASM reads it, which the macro takes as
+    ; %00 when its body has one (and defines itself), else defined here
+    cmp     byte [rel ml_state], ML_START
+    jne     .ml_plain
+    cmp     byte [rel prep_noexpand], 0
+    jne     .ml_plain
+    cmp     word [rbx + PREP_skip_depth], 0
+    jne     .ml_plain
+    movzx   eax, byte [r12 + TOKEN_kind]
+    cmp     eax, TOK_LABEL
+    je      .ml_first
+    cmp     eax, TOK_IDENT
+    jne     .ml_plain
+    mov     rax, [r12 + TOKEN_value]
+    test    rax, rax
+    jz      .ml_plain
+    cmp     byte [rax], '.'
+    je      .ml_plain
+.ml_first:
+    mov     rdi, rbx
+    mov     rsi, r12
+    call    prep_label_macro               ; eax: 0 no, 1 a label, 2 %00's
+    test    eax, eax
+    jz      .ml_plain
+    mov     rcx, [r12 + TOKEN_value]
+    mov     [rel ml_label], rcx
+    mov     byte [rel ml_state], ML_COLON
+    cmp     eax, 2
+    je      .next                          ; the macro takes it
+    ; (listed "lab2 :" when written with no colon, as NASM lists it)
+    cmp     byte [r12 + TOKEN_kind], TOK_IDENT
+    sete    byte [rel ml_nocolon]
+    mov     byte [r12 + TOKEN_kind], TOK_LABEL
+    xor     eax, eax
+    jmp     .done
+.ml_plain:
     ; where the next token stands in its line (ml_state)
     movzx   eax, byte [r12 + TOKEN_kind]
     mov     cl, ML_NONE
@@ -993,6 +1030,9 @@ prep_expand_start:
     mov     r13, rdx               ; r13 = MACROEXP struct
 
     mov     byte [r13 + MACROEXP_tag], TAG_MACRO_EXP
+    mov     rax, [rel ml_pending00]        ; "f proc": f, for %00
+    mov     [r13 + MACROEXP_label00], rax
+    mov     qword [rel ml_pending00], 0
     mov     [r13 + MACROEXP_macro], r12
     mov     dword [r13 + MACROEXP_rep_count], 1 ; Default: expand once
 
@@ -1021,7 +1061,30 @@ prep_expand_start:
     cmp     qword [r12 + MACRO_next], 0
     jne     .has_params                    ; an overload may take some
     xor     r15, r15
-    jmp     .done_params
+    ; "%macro m 0+": what follows the call is dropped, %0 is 0 (NASM's)
+    test    byte [r12 + MACRO_flags], MACRO_FLAG_GREEDY
+    jz      .done_params
+    test    byte [r12 + MACRO_flags], MACRO_FLAG_DEFINE
+    jnz     .done_params
+.drop_args:
+    sub     rsp, TOKEN_SIZE
+    mov     rdi, rbx
+    mov     rsi, rsp
+    call    prep_raw_peek
+    movzx   ecx, byte [rsp + TOKEN_kind]
+    add     rsp, TOKEN_SIZE
+    test    rax, rax
+    jnz     .done_params
+    cmp     ecx, TOK_NEWLINE
+    je      .done_params
+    cmp     ecx, TOK_EOF
+    je      .done_params
+    sub     rsp, TOKEN_SIZE
+    mov     rdi, rbx
+    mov     rsi, rsp
+    call    prep_raw_next
+    add     rsp, TOKEN_SIZE
+    jmp     .drop_args
 .has_params:
 
     ; params[] and arglens[] for 4 arguments to start with; they double
@@ -1378,6 +1441,17 @@ prep_expand_start:
     mov     [r13 + MACROEXP_parent], r9
     mov     [r8 + ASMCTX_mac_exp], r13
 
+    ; not listed: a .nolist macro's expansion, and any inside one
+    ; (error_track_token)
+    xor     eax, eax
+    test    byte [r12 + MACRO_flags], MACRO_FLAG_NOLIST
+    setnz   al
+    test    r9, r9
+    jz      .nolist_set
+    or      al, [r9 + MACROEXP_nolist]
+.nolist_set:
+    mov     [r13 + MACROEXP_nolist], al
+
     ; the listing's <N> (error_track_token): the macro and %rep expansions
     ; open around this one, from its parent's - counting them per token
     ; walked every open expansion
@@ -1569,6 +1643,43 @@ prep_expand_next:
         mov     [r12 + TOKEN_value], rax
         jmp     .produced
 .not_case0:
+
+    ; CASE 00: %00, the label written before the call ("f proc"), or
+    ; nothing; a %rep body inside takes its macro's
+    cmp     al, '0'
+    jne     .not_case00
+    cmp     byte [rdi + 1], '0'
+    jne     .not_case00
+    cmp     byte [rdi + 2], 0
+    jne     .not_case00
+        mov     r11, r13
+.l00_owner:
+        mov     rax, [r11 + MACROEXP_label00]
+        test    rax, rax
+        jnz     .l00_found
+        mov     rax, [r11 + MACROEXP_macro]
+        cmp     qword [rax + MACRO_name], 0
+        jne     .l00_none                  ; a macro called with none
+        mov     r11, [r11 + MACROEXP_parent]
+        test    r11, r11
+        jnz     .l00_owner
+.l00_none:
+        ; nothing, and "%00:" no empty label: its colon goes too
+        mov     rax, [r13 + MACROEXP_body]
+        mov     r9, [r13 + MACROEXP_macro]
+        cmp     eax, [r9 + MACRO_ntokens]
+        jge     .retry_body
+        imul    rax, TOKEN_SIZE
+        add     rax, [r9 + MACRO_tokens]
+        cmp     byte [rax + TOKEN_kind], TOK_COLON
+        jne     .retry_body
+        inc     qword [r13 + MACROEXP_body]
+        jmp     .retry_body
+.l00_found:
+        mov     byte [r12 + TOKEN_kind], TOK_IDENT
+        mov     [r12 + TOKEN_value], rax
+        jmp     .produced
+.not_case00:
 
     ; CASE 1: %0 (Parameter Count)
     cmp     al, '0'
@@ -3101,11 +3212,9 @@ use_fp:      db "fp", 0
 use_smartalign: db "smartalign", 0
 use_smartalign_text: db 10
              db "%define __?USE_SMARTALIGN?__", 10
-             db "%define __USE_SMARTALIGN__", 10
 use_smartalign_text_len equ $ - use_smartalign_text
 use_fp_text: db 10
              db "%define __?USE_FP?__", 10
-             db "%define __USE_FP__", 10
 db "%define float16(x) __float16__(x)", 10
              db "%define float32(x) __float32__(x)", 10
              db "%define float64(x) __float64__(x)", 10
@@ -3118,6 +3227,57 @@ db "%define float16(x) __float16__(x)", 10
              db "%define QNaN __QNaN__", 10
              db "%define SNaN __SNaN__", 10
 use_fp_text_len equ $ - use_fp_text
+; NASM's ifunc package: integer log2 (parser_evaluate_factor has the
+; __?ilog2?__ functions)
+use_ifunc:   db "ifunc", 0
+use_ifunc_text: db 10
+             db "%define __?USE_IFUNC?__", 10
+             db "%define ilog2(x) (__?ilog2e?__(x))", 10
+             db "%define ilog2e(x) (__?ilog2e?__(x))", 10
+             db "%define ilog2w(x) (__?ilog2w?__(x))", 10
+             db "%define ilog2fw(x) (__?ilog2w?__(x))", 10
+             db "%define ilog2f(x) (__?ilog2f?__(x))", 10
+             db "%define ilog2cw(x) (__?ilog2w?__(x) * 0 + __?ilog2c?__(x))", 10
+             db "%define ilog2c(x) (__?ilog2c?__(x))", 10
+use_ifunc_text_len equ $ - use_ifunc_text
+; NASM's masm package: MASM's segment / ends, proc / endp (ret far or
+; near), end, ptr, flat, offset and tbyte; and default rel. The parser
+; reads __?masm_ptr?__ (a memory operand, brackets or not) and
+; __?masm_flat?__ ("flat:" nothing)
+use_masm:    db "masm", 0
+use_masm_text: db 10
+             db "%define __?USE_MASM?__", 10
+             db "%imacro segment 0-1+.nolist", 10
+             db "%define __?SECT?__ [segment %00 %1]", 10
+             db "[segment %00 %1]", 10
+             db "%endmacro", 10
+             db "%imacro ends 0+.nolist", 10
+             db "%define __?masm_ends?__ %00", 10
+             db "%endmacro", 10
+             db "%imacro proc 0-*.nolist", 10
+             db "%00:", 10
+             db "%if %0 == 1", 10
+             db "%ifidni %1,far", 10
+             db "%idefine ret retf", 10
+             db "%else", 10
+             db "%idefine ret retn", 10
+             db "%endif", 10
+             db "%elif %0 > 1", 10
+             db "%idefine ret retn", 10
+             db "%endif", 10
+             db "%endmacro", 10
+             db "%imacro endp 0.nolist", 10
+             db "%define __?masm_endp?__ %00", 10
+             db "%undef ret", 10
+             db "%endmacro", 10
+             db "%idefine ptr __?masm_ptr?__", 10
+             db "%idefine flat __?masm_flat?__", 10
+             db "%idefine offset", 10
+             db "%imacro end 0+.nolist", 10
+             db "%endmacro", 10
+             db "%idefine tbyte tword", 10
+             db "default rel", 10
+use_masm_text_len equ $ - use_masm_text
 alt_n0: db "r0", 0
 alt_v0: db "rax", 0
 alt_n1: db "r0d", 0
@@ -4181,6 +4341,90 @@ prep_raw_next:
     pop     r12
     pop     rbx
     epilogue
+
+; ---- prep_label_macro ---------------------
+;
+; Is the token after the first word of a line (rsi) a multi-line macro's
+; name? Then the word is a label: 2 when the macro's body has %00, which
+; takes it (ml_pending00), 1 when it is defined where it stands; 0: no.
+; Input    : rdi = PrepState, rsi = the first word's token
+; Output   : eax
+;
+prep_label_macro:
+    push    rbx
+    push    r12
+    push    r13
+    sub     rsp, TOKEN_SIZE + 8
+    mov     rbx, rdi
+    mov     r12, rsi
+    mov     rdi, rbx
+    mov     rsi, rsp
+    call    prep_raw_peek
+    test    rax, rax
+    jnz     .no
+    cmp     byte [rsp + TOKEN_kind], TOK_IDENT
+    jne     .no
+    mov     rsi, [rsp + TOKEN_value]
+    test    rsi, rsi
+    jz      .no
+    mov     rdi, [rbx + PREP_ctx]
+    call    symbol_find
+    test    rax, rax
+    jz      .found
+    cmp     dword [rel idefine_count], 0   ; %imacro: any case
+    je      .no
+    mov     rsi, [rsp + TOKEN_value]
+    call    prep_icase_buf
+    test    rax, rax
+    jnz     .no
+    mov     rdi, [rbx + PREP_ctx]
+    lea     rsi, [rel icase_buf]
+    call    symbol_find
+    test    rax, rax
+    jnz     .no
+.found:
+    cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
+    jne     .no
+    mov     r13, [rdx + SYMBOL_value]
+    test    r13, r13
+    jz      .no
+    test    byte [r13 + MACRO_flags], MACRO_FLAG_DEFINE | MACRO_FLAG_TIMES
+    jnz     .no
+    ; does its body have %00?
+    mov     rsi, [r13 + MACRO_tokens]
+    mov     ecx, [r13 + MACRO_ntokens]
+.scan:
+    test    ecx, ecx
+    jz      .defined_here
+    cmp     byte [rsi + TOKEN_kind], TOK_DIRECTIVE
+    jne     .scan_next
+    mov     rdx, [rsi + TOKEN_value]
+    test    rdx, rdx
+    jz      .scan_next
+    cmp     word [rdx], '00'
+    jne     .scan_next
+    cmp     byte [rdx + 2], 0
+    je      .taken
+.scan_next:
+    add     rsi, TOKEN_SIZE
+    dec     ecx
+    jmp     .scan
+.taken:
+    mov     rax, [r12 + TOKEN_value]
+    mov     [rel ml_pending00], rax
+    mov     eax, 2
+    jmp     .ret
+.defined_here:
+    mov     eax, 1
+    jmp     .ret
+.no:
+    xor     eax, eax
+.ret:
+    add     rsp, TOKEN_SIZE + 8
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
 
 ; ---- prep_raw_peek ----------------------
 ;
@@ -6881,6 +7125,11 @@ prep_list_label:
     push    rdx
     rep movsb
     mov     word [rdi], ': '
+    cmp     byte [rel ml_nocolon], 0
+    je      .colon_put
+    mov     word [rdi], ' :'               ; "lab2 m": NASM's "lab2 :"
+    mov     byte [rel ml_nocolon], 0
+.colon_put:
     mov     byte [rdi + 2], 0
     pop     rcx                            ; the text
     extern  error_loc_file, error_loc_line, lst_label_line
@@ -8443,9 +8692,8 @@ prep_handle_line:
 ; ---- %use -------------------------------
 ;
 ; "%use altreg" names the first eight registers r0-r7 (r0d, r0w, r0b /
-; r0l, r0h-r3h), case-insensitively, as NASM's package does. Other
-; packages (smartalign, fp, ifunc, ...) are accepted: utasm has what they
-; would add or does not need it.
+; r0l, r0h-r3h), case-insensitively, as NASM's package does; smartalign,
+; fp, ifunc and masm are NASM's too (their texts above).
 ;
 prep_handle_use:
     push    rbx
@@ -8478,6 +8726,41 @@ prep_handle_use:
     call    prep_push_buffer
     jmp     .ret
 .not_fp:
+    ; %use ifunc: ilog2() & co
+    push    rax
+    mov     rdi, rax
+    lea     rsi, [rel use_ifunc]
+    call    prep_str_cmp_ci
+    test    rax, rax
+    pop     rax
+    jnz     .not_ifunc
+    mov     rdi, rbx
+    lea     rsi, [rel use_ifunc_text]
+    mov     edx, use_ifunc_text_len
+    lea     rcx, [rel use_ifunc]
+    call    prep_push_buffer
+    jmp     .ret
+.not_ifunc:
+    ; %use masm: MASM's forms (once; "flat:" and a bare "ptr x" known to
+    ; the parser from here on: masm_enabled)
+    push    rax
+    mov     rdi, rax
+    lea     rsi, [rel use_masm]
+    call    prep_str_cmp_ci
+    test    rax, rax
+    pop     rax
+    jnz     .not_masm
+    extern  masm_enabled
+    cmp     byte [rel masm_enabled], 0
+    jne     .done
+    mov     byte [rel masm_enabled], 1
+    mov     rdi, rbx
+    lea     rsi, [rel use_masm_text]
+    mov     edx, use_masm_text_len
+    lea     rcx, [rel use_masm]
+    call    prep_push_buffer
+    jmp     .ret
+.not_masm:
     ; %use smartalign: align pads code with long NOPs (optimizer/align.s),
     ; "alignmode generic" to start with
     push    rax
@@ -9303,13 +9586,54 @@ prep_parse_count:
     sub     rsp, TOKEN_SIZE
     mov     r12, rdi
     mov     byte [rel mdef_greedy], 0
+    mov     byte [rel mdef_nolist], 0
+    mov     byte [rel mdef_dot], 0
     mov     rdi, rbx
     mov     rsi, rsp
     call    prep_raw_next
     test    rax, rax
     jnz     .ret
     cmp     byte [rsp + TOKEN_kind], TOK_NUMBER
+    je      .count_number
+    ; "0.nolist": "0." lexes as a number with a point (NASM's packages
+    ; write it so); the count, then ".nolist" with its point taken
+    cmp     byte [rsp + TOKEN_kind], TOK_FLOAT
     jne     .no_count
+    mov     rsi, [rsp + TOKEN_value]
+    test    rsi, rsi
+    jz      .no_count
+    xor     ecx, ecx
+.dot_digits:
+    movzx   eax, byte [rsi + rcx]
+    cmp     al, '.'
+    je      .dot_found
+    sub     al, '0'
+    cmp     al, 9
+    ja      .no_count
+    inc     ecx
+    jmp     .dot_digits
+.dot_found:
+    test    ecx, ecx
+    jz      .no_count
+    cmp     byte [rsi + rcx + 1], 0
+    jne     .no_count
+    xor     edx, edx                       ; the digits' value
+    xor     r8d, r8d
+.dot_value:
+    cmp     r8d, ecx
+    jae     .dot_valued
+    movzx   eax, byte [rsi + r8]
+    sub     eax, '0'
+    imul    rdx, rdx, 10
+    add     rdx, rax
+    inc     r8d
+    jmp     .dot_value
+.dot_valued:
+    mov     byte [rel mdef_dot], 1
+    mov     r13, rdx
+    mov     r14, rdx
+    jmp     .range
+.count_number:
     mov     rdi, [rsp + TOKEN_value]
     call    str_to_int
     mov     r13, rdx                       ; the minimum
@@ -9363,7 +9687,18 @@ prep_parse_count:
     lea     rsi, [rel str_nolist]
     call    str_cmp
     test    rax, rax
+    jz      .nolist
+    ; after "0.": "nolist" without its point
+    cmp     byte [rel mdef_dot], 0
+    je      .counted
+    mov     byte [rel mdef_dot], 0
+    mov     rdi, [rsp + TOKEN_value]
+    lea     rsi, [rel str_nolist + 1]
+    call    str_cmp
+    test    rax, rax
     jnz     .counted
+.nolist:
+    mov     byte [rel mdef_nolist], MACRO_FLAG_NOLIST
 .tail_eat:
     mov     rdi, rbx
     mov     rsi, rsp
@@ -9553,6 +9888,7 @@ macro_handle_def:
     mov     rax, [rsp + 72]
     mov     [r15 + MACRO_max_params], ax
     movzx   eax, byte [rel mdef_greedy]
+    or      al, [rel mdef_nolist]          ; .nolist (error/codes.s: unlisted)
     or      [r15 + MACRO_flags], al
     mov     rax, [rel mdef_defaults]
     mov     [r15 + MACRO_defaults], rax
@@ -10221,6 +10557,9 @@ prep_handle_rep:
 ml_state:      resb 1              ; ML_*: where the token read stands
 ml_called_at:  resb 1              ; ml_state where a multi-line macro was called
 alignb 8
+ml_pending00:  resq 1              ; "f proc": f, for the call's %00
+ml_nocolon:    resb 1              ; that label had no colon (the listing)
+alignb 8
 relex_cap:     resq 1              ; prep_interp_relex: its array's room
 ml_label:      resq 1              ; the line's first word (a label?)
 relex_tok:     resb TOKEN_SIZE     ; ... the token just read
@@ -10260,6 +10599,8 @@ mdef_dir:       resq 1                  ; the directive's name (macro, imacro ..
 mdef_defaults:resq 1              ; %macro header: default argument tokens
 mdef_ndefaults: resd 1             ; ... and how many
 mdef_greedy:   resb 1              ; ... MACRO_FLAG_GREEDY after a "+"
+mdef_dot:       resb 1              ; prep_parse_count: the count was "N."
+mdef_nolist:    resb 1              ; ... MACRO_FLAG_NOLIST after ".nolist"
 putback_next:  resb TOKEN_SIZE     ; a token queued behind the peek slot
 has_putback_next: resb 1
 interp_cap:    resq 1              ; prep_resolve_interp: its buffer's size
