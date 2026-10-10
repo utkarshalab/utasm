@@ -1089,6 +1089,10 @@ COFF_CASES = {
     "seh": "global f\nsection .text\nf: ret\nf_end:\nsection .pdata\n"
            "dd f wrt ..imagebase, f_end wrt ..imagebase, xd wrt ..imagebase\nsection .xdata\nxd: db 1, 0, 0, 0\n",
     "label_only": "a:\n",
+    # a section line in a struc ends its layout; endstruc then puts
+    # <name>_size where it is (NASM's struc is [absolute 0] until endstruc)
+    "struc_section": "struc s\n.a resb 1\nsection .text\nnop\nendstruc\nnop\n",
+    "struc_bracket_section": "struc s\n.a resb 1\n[section .text]\nx: nop\nendstruc\nmov eax, s_size\n",
 }
 # what COFF has no relocation for (NASM writes a broken object), and the
 # symbol types it cannot say (NASM's error): (name, source, line, message)
@@ -1119,6 +1123,12 @@ ELF_PROBES.update({
     "elf_macro_numbers": "%macro m 0\n%%l: nop\n%endmacro\nm\nsection .text\nm\nsection .data\nalign 4\nm\n"
                          "global g\ng: nop\nextern y\ncommon c 4\nm\n[section .text]\nm\nbits 64\n"
                          "default rel\ncpu x64\nsectalign 4\nalignb 4\nm\nincbin '/dev/null'\nm\n",
-    "elf_context_names": "section .text\n%macro m 0\n%%l: nop\n%endmacro\nm\n%push\n%$x: nop\nm\n%pop\n%push one\n"
+    # "global x" with no x: no symbol (NASM's); an empty source: no
+    # section; a section line in a struc ends its layout, and endstruc puts
+    # <name>_size where it then is
+    "elf_global_undefined": "global x, y:function\nsection .data\ndb 1\n",
+    "elf_nothing": "",
+    "elf_label_first": "a:\nsection .data\ndb 1\n",
+"elf_context_names": "section .text\n%macro m 0\n%%l: nop\n%endmacro\nm\n%push\n%$x: nop\nm\n%pop\n%push one\n"
                          "%$y: nop\n%push two\n%$$z: nop\n%pop\n%pop\nm\n",
 })
