@@ -594,9 +594,56 @@ maximum. A macro may be defined again with another count; each definition
 is an overload, chosen by the number of arguments of a call.
 
 A multi-line macro is called as the first word of a line, or after a
-label (`lab: m` - the listing shows `lab:` as the first line of the
-expansion unless the macro takes the label with `%00`). Elsewhere its name
-is an ordinary word: `db 1, m` is the symbol `m`.
+label, with its colon or without (`lab: m`, `lab m` - even `push m`, as in
+NASM, where `push` is then the label). The label is defined where it
+stands, unless the macro's body names `%00`, which is the label (nothing
+when there is none): the macro defines it itself.
+
+```asm
+%macro proc_entry 0
+%00:    push rbp                ; f proc_entry: f is defined here
+        mov rbp, rsp
+%endmacro
+f proc_entry
+```
+
+Elsewhere its name is an ordinary word: `db 1, m` is the symbol `m`.
+
+`.nolist` after the count (`%macro m 0.nolist`, `%macro m 1+.nolist`)
+leaves the expansion out of the listing: its bytes are listed on the
+calling line, as NASM lists them. `%macro m 0+` takes no parameter and
+drops what follows the call (`%0` is 0).
+
+### Packages (`%use`)
+
+`%use` loads one of NASM's standard packages, as NASM does:
+
+| Package | What it adds |
+| --- | --- |
+| `altreg` | `r0`-`r15` (and `r0d`, `r0w`, `r0b`/`r0l`, `r0h`-`r3h`) for the registers |
+| `smartalign` | `align` pads code with long NOPs; `alignmode` |
+| `fp` | `float32(x)` & co, `Inf`, `NaN`, `QNaN`, `SNaN` |
+| `ifunc` | `ilog2(x)` / `ilog2e(x)` (x a power of two, else an error), `ilog2w(x)` / `ilog2fw(x)` (a warning, then the floor), `ilog2f(x)` (floor), `ilog2c(x)` (ceiling), `ilog2cw(x)` |
+| `masm` | MASM's forms: `name segment` / `ends`, `name proc [far\|near]` / `endp` (`ret` far or near in it), `end`, `dword ptr [x]` and `qword ptr x` (a memory operand, brackets or not), `[flat:rbx]`, `offset x`, `tbyte`; and `default rel` |
+
+The functions `ifunc` names are built in, as in NASM: `__?ilog2e?__(x)`,
+`__?ilog2w?__`, `__?ilog2f?__`, `__?ilog2c?__` (and `__ilog2e__` & co).
+They work on x as an unsigned 64-bit number (`ilog2f(-1)` is 63,
+`ilog2c(-1)` 64; 0 for 0).
+
+```asm
+%use ifunc
+shift   equ ilog2(PAGE_SIZE)    ; 12 for 4096
+%use masm
+f proc
+        mov eax, dword ptr [rbx]
+        ret
+f endp
+```
+
+Without `%use masm`, `ptr` is NASM's warning "`ptr' is not a NASM
+keyword" [-w+ptr]; utasm still reads `dword ptr [rbx]` as `dword [rbx]`,
+where NASM stops at the undefined symbol `ptr`.
 
 ### Preprocessor functions
 
