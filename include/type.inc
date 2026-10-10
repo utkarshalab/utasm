@@ -233,9 +233,11 @@ struc MACROEXP
     field pend_cnt, 4       ; tokens still to emit from that argument
     field exp_id,   4       ; id used by %%locals (shared with %rep bodies)
     field pcap,     4       ; entries of params[] and arglens[] (they grow)
-    field pad2,     4
+    field nolist,   1       ; in a .nolist macro's expansion (or this is one)
+    field pad2,     3
     field lst_first, 8      ; the innermost of those expansions (lst_depth)
     field lst_second, 8     ; ... and the one around it, or 0
+    field label00,  8       ; %00: the label written before the call, or 0
 endstruc
 
 ; ============================================================================
