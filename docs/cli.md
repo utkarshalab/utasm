@@ -19,7 +19,10 @@ NASM does not read; messages name it `-`, and with no `-o` the output is
 | `-o <file>` | Output path; defaults to a source-derived `.o`, `.obj` (`-f win64`), `.bin` or `.ubf` filename. |
 | `--ubf-add TYPE=FILE[@ADDR]` | With `-f ubf`: add a component (`initrd`, `dtb`, `config`, `module`, `firmware`) read from FILE, loaded at ADDR. Repeatable, up to 7. |
 | `-a`, `-arch`, `--arch <arch>` | Target architecture: `amd64` (default), `aarch64`, or `riscv64`. |
-| `--standalone` | Produce a standalone executable and require `_start`. |
+| `--standalone` | Produce a standalone executable and require `_start`. Its stack is not executable (`PT_GNU_STACK` read/write; `--execstack` makes it executable). |
+| `--noexecstack` | An ELF object with an empty `.note.GNU-stack`: the stack need not be executable. Without it - as NASM writes objects - `ld` makes the program's stack executable. |
+| `--execstack` | `.note.GNU-stack` marked executable: the program needs an executable stack. |
+| `--cet` | An ELF object with `.note.gnu.property` saying it supports Intel CET (IBT and SHSTK), as `gcc -fcf-protection` marks its objects: linked only with others marked so, the program runs with indirect branch tracking and the shadow stack. Its indirect branch targets must begin with `endbr64` (`endbr32`), and its returns match its calls. |
 | `--bits 16`, `--bits 32`, `--bits 64` | The mode the source starts in, as if it began with `bits N`, whatever `-f` is. `-f bin` starts in 64-bit mode (utasm's targets are 64-bit); NASM starts a flat binary in 16-bit mode, so a NASM source with no `bits` line - a boot sector - needs `--bits 16` to come out the same. |
 | `--profile`, `-P` | Print the assembler's internal performance profile. |
 | `--verbose` | Enable verbose diagnostics. |
