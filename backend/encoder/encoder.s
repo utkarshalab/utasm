@@ -50,6 +50,16 @@ amd64_encode_instruction:
     mov     byte [rel amd64_relax_kind], 0
     mov     byte [rel imm_ph_active], 0
 
+    ; lea's source is an address, whatever it was written as
+    cmp     word [r12 + INST_op_id], 1356  ; LEA
+    jne     .not_lea
+    cmp     byte [r12 + INST_nops], 2
+    jne     .not_lea
+    call    amd64_lea_address
+    test    rax, rax
+    jnz     .error
+.not_lea:
+
     ; 0a. An immediate whose value came from a label defined earlier is still
     ;     an address: encode it as a symbol reference, relocated, exactly as
     ;     for a label defined later ("mov eax, msg", "push table"). Only
@@ -3430,6 +3440,7 @@ amd64_encode_lea:
     lea     r10, [r12 + INST_op0]
     lea     r11, [r12 + INST_op1]
 
+
     ; REX.B/REX.X come from the address operand, so it has to go through
     ; emit_prefixes rather than a hand-built REX.W.
     mov     al, [r10 + OPERAND_size]
@@ -3448,6 +3459,80 @@ amd64_encode_lea:
     jmp     .done
 .done:
     epilogue
+
+;*
+; * [amd64_lea_address]
+; * Purpose: lea takes a register and an address, as NASM reads them:
+; *   "lea rax, x" is the address x ([x]; RIP-relative under default rel
+; *   when x is a label) - it was encoded as [rax+rax+x]; "lea rax, rbx" is
+; *   no combination.
+; * Input  : R12 = INST (lea, two operands)
+; * Output : RAX = OK or EXIT_ENCODE_FAIL
+; ;
+amd64_lea_address:
+    lea     r10, [r12 + INST_op0]
+    lea     r11, [r12 + INST_op1]
+    cmp     byte [r10 + OPERAND_kind], OP_REG
+    jne     .bad
+    movzx   eax, byte [r11 + OPERAND_kind]
+    cmp     eax, OP_MEM
+    je      .ok
+    cmp     eax, OP_IMM
+    je      .as_address
+    cmp     eax, OP_SYMBOL
+    jne     .bad
+.as_address:
+    mov     byte [r11 + OPERAND_kind], OP_MEM
+    mov     byte [r11 + OPERAND_base], 0xFF
+    mov     byte [r11 + OPERAND_index], 0xFF
+    mov     byte [r11 + OPERAND_scale], 1
+    extern  global_ctx
+    test    dword [rel global_ctx + ASMCTX_flags], CTX_FLAG_DEFAULT_REL
+    jz      .ok
+    mov     rax, [r11 + OPERAND_sym]
+    test    rax, rax
+    jz      .absolute                      ; a number: an absolute address
+    cmp     byte [rax], TAG_SYMBOL
+    jne     .rip                           ; a label not defined yet
+    cmp     byte [rax + SYMBOL_kind], SYM_CONSTANT
+    je      .absolute
+    cmp     byte [rax + SYMBOL_kind], SYM_STRUCT_FIELD
+    je      .absolute
+    cmp     word [rax + SYMBOL_section], SHN_ABS
+    je      .absolute
+.rip:
+    or      byte [r11 + OPERAND_flags], OP_FLAG_REL
+    mov     byte [r11 + OPERAND_base], REG_RIP
+.absolute:
+    ; under default rel: NASM's warning (not in a trial encoding)
+    extern  reloc_quiet, warn_begin, warn_text, warn_end
+    cmp     byte [rel reloc_quiet], 0
+    jne     .ok
+    ; a name defined later: not known in pass 1 (a label, which is no
+    ; number, or a constant the second pass knows - core/known.s)
+    extern  known_active
+    cmp     byte [r11 + OPERAND_fwd], 0
+    je      .warn
+    cmp     byte [rel known_active], 0
+    je      .ok
+.warn:
+    mov     edi, WC_EA_ABSOLUTE
+    call    warn_begin
+    test    eax, eax
+    jz      .ok
+    lea     rsi, [rel lea_ea_absolute]
+    call    warn_text
+    call    warn_end
+.ok:
+    xor     eax, eax
+    ret
+.bad:
+    mov     eax, EXIT_ENCODE_FAIL
+    ret
+
+[SECTION .rodata]
+lea_ea_absolute: db "absolute address can not be RIP-relative", 0
+[SECTION .text]
 
 ;*
 ; * [amd64_encode_test]
