@@ -52,9 +52,88 @@ extern global_profstate
     global_prep:  resb PREP_SIZE
     resb 1024
 
+stdin_buf:     resb 65536           ; utasm_stdin
+
+[SECTION .rodata]
+stdin_memfd:   db "utasm-stdin", 0
+
 [SECTION .text]
     global _start
     global print_str
+
+; ---- utasm_stdin -------------------------
+; The source from stdin ("-"): fd 0, at its start, mapped as a file is.
+; A pipe is copied into a memfd first, which becomes fd 0, so the second
+; pass (core/known.s), which runs utasm again, reads it too.
+; Output: rax = 0 and rdx = 0 (the fd), or an error
+utasm_stdin:
+    push    r12
+    push    r13
+    mov     eax, 8                           ; lseek(0, 0, SEEK_SET)
+    xor     edi, edi
+    xor     esi, esi
+    xor     edx, edx
+    syscall
+    test    rax, rax
+    jns     .ready                           ; a file, or pass 1's memfd
+    mov     eax, 319                         ; memfd_create
+    lea     rdi, [rel stdin_memfd]
+    xor     esi, esi
+    syscall
+    test    rax, rax
+    js      .fail
+    mov     r12, rax
+.read:
+    xor     eax, eax                         ; read(0, buf, 64K)
+    xor     edi, edi
+    lea     rsi, [rel stdin_buf]
+    mov     edx, 65536
+    syscall
+    cmp     rax, -4                          ; EINTR
+    je      .read
+    test    rax, rax
+    js      .fail
+    jz      .copied
+    mov     r13, rax                         ; bytes to write
+    lea     rsi, [rel stdin_buf]
+.write:
+    mov     eax, 1                           ; write(memfd, ...)
+    mov     rdi, r12
+    mov     rdx, r13
+    push    rsi
+    syscall
+    pop     rsi
+    test    rax, rax
+    jle     .fail
+    add     rsi, rax
+    sub     r13, rax
+    jnz     .write
+    jmp     .read
+.copied:
+    mov     eax, 33                          ; dup2(memfd, 0)
+    mov     rdi, r12
+    xor     esi, esi
+    syscall
+    test    rax, rax
+    js      .fail
+    mov     eax, 3                           ; close(memfd)
+    mov     rdi, r12
+    syscall
+    mov     eax, 8                           ; back to its start
+    xor     edi, edi
+    xor     esi, esi
+    xor     edx, edx
+    syscall
+.ready:
+    xor     eax, eax
+    xor     edx, edx
+    jmp     .ret
+.fail:
+    mov     eax, EXIT_IO_ERROR
+.ret:
+    pop     r13
+    pop     r12
+    ret
 
 _start:
     cld
@@ -149,7 +228,16 @@ _start:
     test    rax, rax
     jnz     .exit_error
 
-    ; Open and Map
+    ; Open and Map ("-": stdin, utasm_stdin)
+    mov     rax, [rbx + ASMCTX_input]
+    cmp     word [rax], '-'
+    jne     .open_file
+    call    utasm_stdin
+    test    rax, rax
+    jnz     .exit_io_error
+    mov     r14, rdx                         ; fd 0
+    jmp     .opened
+.open_file:
     mov     rdi, [rbx + ASMCTX_input]
     mov     rsi, 0
     xor     rdx, rdx
@@ -157,6 +245,7 @@ _start:
     test    rax, rax
     jnz     .exit_io_error
     mov     r14, rdx                         ; fd
+.opened:
 
     mov     rdi, r14
     call    io_file_size
