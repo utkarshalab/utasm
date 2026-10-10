@@ -153,6 +153,10 @@ error_track_token:
     ; the listing: a body line, marked with the expansions around it (<N>)
     cmp     byte [rel lst_enabled], 0
     je      .done
+    ; ... not in a .nolist macro, or inside one: its bytes are the calling
+    ; line's, as NASM lists them
+    cmp     byte [rsi + MACROEXP_nolist], 0
+    jne     .done
     cmp     byte [rdi + TOKEN_kind], TOK_NEWLINE
     je      .body_line_end
     call    .expansion_depth
@@ -591,6 +595,7 @@ code_table:
     code_msg EXIT_NO_SIZE,           m_no_size
     code_msg EXIT_COFF_RELOC,        m_coff_reloc, t_coff_reloc
     code_msg EXIT_COFF_SPECIAL,      m_coff_special
+    code_msg EXIT_ILOG2,             m_ilog2
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -686,6 +691,7 @@ m_align_large:  db "absurdly large segment alignment", 0
 m_coff_reloc:   db "COFF format has no relocation for this reference", 0
 t_coff_reloc:   db "COFF format has no ^ relocation", 0
 m_coff_special: db "COFF format does not support any special symbol types", 0
+m_ilog2:        db "ilog2 argument is not a power of two", 0
 t_align_large:  db "absurdly large segment alignment `^'", 0
 m_use:          db "unknown `%use' package", 0
 m_cond_deep:    db "conditionals nested too deeply", 0
