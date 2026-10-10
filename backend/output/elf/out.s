@@ -915,8 +915,8 @@ elf64_order_text:
     push    rbx
     push    r12
     movzx   ecx, word [rdi + ASMCTX_seccount]
-    cmp     ecx, 2
-    jb      .keep
+    cmp     ecx, 1                         ; (the only one too: an empty
+    jb      .keep                          ; source has no section)
     mov     rsi, [rdi + ASMCTX_sections]
     mov     rbx, [rsi]                     ; the default .text
     cmp     byte [rbx + SECTION_implicit], 0
@@ -1408,6 +1408,17 @@ elf64_mark_used:
     pop     rbx
     ret
 
+; ---- elf64_secsym_base (internal) --------
+; What a section's index is added to for its symbol's: 1 after the file's
+; symbol (index 1), else 0. r12 = AsmCtx; eax = it. Preserves the others
+; but rcx, rdx.
+elf64_secsym_base:
+    call    elf64_file_name
+    xor     eax, eax
+    test    rdx, rdx
+    setnz   al
+    ret
+
 ; ---- elf64_file_name (internal) ----------
 ; The source file's name, for the STT_FILE symbol: rax = it, rdx = its
 ; length with its NUL, or rdx = 0 when there is none (or -f bin, or a
@@ -1586,6 +1597,24 @@ elf64_prepare_strtab:
 ; *   RAX = 1 to emit, 0 to skip.  Clobbers RAX only.
 ; ;
 elf64_symbol_is_emitted:
+    ; "global x" with no x: not written, as NASM leaves it out (a use of
+    ; it is "symbol `x' not defined" before this)
+    cmp     word [r8 + SYMBOL_section], 0
+    jne     .not_undefined
+    movzx   eax, byte [r8 + SYMBOL_kind]
+    cmp     eax, SYM_EXTERN
+    je      .not_undefined
+    cmp     eax, SYM_COMMON
+    je      .not_undefined
+    cmp     eax, SYM_STRUCT
+    je      .not_undefined
+    cmp     eax, SYM_STRUCT_FIELD
+    je      .not_undefined
+    test    byte [r8 + SYMBOL_pflags], SYMF_STRUC
+    jnz     .not_undefined
+    cmp     byte [r8 + SYMBOL_vis], VIS_LOCAL
+    jne     .skip
+.not_undefined:
     ; an extern no relocation names: not written, as NASM does (before the
     ; exported ones: it is one)
     cmp     byte [r8 + SYMBOL_kind], SYM_EXTERN
@@ -1663,9 +1692,28 @@ elf64_write_symtab:
     call    io_write
     check_err
 
-    ; ---- 1b. A section symbol per section (local, STT_SECTION, no
-    ;      name), as NASM writes them: symbol i is section i, and the
-    ;      relocations against local labels use them ----
+    ; ---- 1b. The source file (STT_FILE, local, SHN_ABS), as NASM writes
+    ;      it, first: debuggers and the linker's messages name the file by
+    ;      it ----
+    call    elf64_file_name
+    test    rdx, rdx
+    jz      .no_file_sym
+    mov     rdi, rsp
+    mov     rsi, ELF64_SYM_SIZE
+    call    mem_zero
+    mov     dword [rsp + SYM64_NAME], 1
+    mov     byte [rsp + SYM64_INFO], 4     ; STT_FILE, STB_LOCAL
+    mov     word [rsp + SYM64_SHNDX], SHN_ABS
+    mov     edi, r13d
+    mov     rsi, rsp
+    mov     rdx, ELF64_SYM_SIZE
+    call    io_write
+    check_err
+.no_file_sym:
+
+    ; ---- 1c. A section symbol per section (local, STT_SECTION, no
+    ;      name), as NASM writes them: symbol i + elf64_secsym_base is
+    ;      section i, and the relocations against local labels use them ----
     xor     r14d, r14d
 .secsym:
     cmp     r14w, [r12 + ASMCTX_seccount]
@@ -1692,25 +1740,6 @@ elf64_write_symtab:
     inc     r14d
     jmp     .secsym
 .secsym_done:
-
-    ; ---- 1c. The source file (STT_FILE, local, SHN_ABS), as NASM writes
-    ;      it: debuggers and the linker's messages name the file by it.
-    ;      After the section symbols, whose indices are their sections' ----
-    call    elf64_file_name
-    test    rdx, rdx
-    jz      .no_file_sym
-    mov     rdi, rsp
-    mov     rsi, ELF64_SYM_SIZE
-    call    mem_zero
-    mov     dword [rsp + SYM64_NAME], 1
-    mov     byte [rsp + SYM64_INFO], 4     ; STT_FILE, STB_LOCAL
-    mov     word [rsp + SYM64_SHNDX], SHN_ABS
-    mov     edi, r13d
-    mov     rsi, rsp
-    mov     rdx, ELF64_SYM_SIZE
-    call    io_write
-    check_err
-.no_file_sym:
 
     ; ---- 2. Pass 1: Local Symbols ----
     movzx   r11d, word [r12 + ASMCTX_seccount]
@@ -2453,7 +2482,7 @@ elf64_write_rela:
     jmp     .find_sec
 .found_sec:
     mov     eax, [rdx + SECTION_index]
-    jmp     .sym_ready
+    jmp     .sec_sym_index
 .by_symbol:
     mov     rsi, [r15 + RELOC_sym]
     mov     rdi, r12               ; symbol_find takes the AsmCtx
@@ -2476,9 +2505,21 @@ elf64_write_rela:
         jae     .sym_ready
         mov     eax, r8d
         mov     r9, [rdx + SYMBOL_value]
+        jmp     .sec_sym_index
     ELSE
         xor     eax, eax
     ENDIF
+    jmp     .sym_ready
+.sec_sym_index:
+    ; a section's symbol: after the file's
+    push    rcx
+    push    rdx
+    push    rax
+    call    elf64_secsym_base
+    pop     rdx
+    add     eax, edx
+    pop     rdx
+    pop     rcx
 .sym_ready:
 
     mov     r11, rax
