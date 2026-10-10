@@ -1936,7 +1936,36 @@ lexer_next:
     sub     r10, r13               ; length
     inc     qword [rbx + LEXER_pos] ; skip }
     inc     word  [rbx + LEXER_col]
-    jmp     .dir_name               ; (not a parameter with a name glued on)
+    ; "%{1}0", "%{1}_end", "%{1}%{2}": a parameter with what follows it
+    ; pasted on, as NASM pastes it - one interpolated name, from the %
+    test    r10, r10
+    jz      .dir_name
+    xor     ecx, ecx
+.braced_digit:
+    movzx   eax, byte [r13 + rcx]
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .dir_name                      ; not a parameter's number
+    inc     ecx
+    cmp     rcx, r10
+    jb      .braced_digit
+    push    r10
+    mov     r10, [rbx + LEXER_pos]
+    cmp     r10, [rbx + LEXER_end]
+    jae     .braced_plain
+    call    .glue_follows
+    je      .braced_glued
+    movzx   edi, byte [r10]
+    call    str_is_ident_char
+    cmp     rax, TRUE
+    je      .braced_glued
+.braced_plain:
+    pop     r10
+    jmp     .dir_name
+.braced_glued:
+    pop     r10
+    sub     r13, 2                         ; the text starts at the %
+    jmp     .lex_ident_interp
 
 .lex_braced_unterminated:
     mov     rdi, [rbx + LEXER_ctx]
