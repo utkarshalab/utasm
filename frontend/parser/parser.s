@@ -5078,6 +5078,38 @@ parser_parse_struc:
         jmp     .error
         ENDIF
 
+    ; a section line ("section .text", "[section .data]"): NASM's struc
+    ; is "[absolute 0]" until endstruc, so the layout ends there and the
+    ; lines after it are assembled into that section (.struc_left)
+    cmp     al, TOK_LBRACKET
+    jne     .not_bracket
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    check_err_to .error
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .not_section_line
+    mov     rdi, [rdx + TOKEN_value]
+    call    .is_section_word
+    jnz     .not_section_line
+    ; "[section .data]": the primitive
+    mov     byte [rel stmt_bracketed], 1
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the word
+    jmp     .struc_left
+.not_bracket:
+    cmp     al, TOK_IDENT
+    jne     .not_section_line
+    mov     rdi, [r12 + TOKEN_value]
+    call    .is_section_word
+    jnz     .not_section_line
+    ; "section .data": NASM's macro, a number of its %% counter
+    mov     byte [rel stmt_bracketed], 0
+    mov     rax, [rbx + PREP_ctx]
+    inc     dword [rax + ASMCTX_mac_exp_id]
+    jmp     .struc_left
+.not_section_line:
+    mov     al, [r12 + TOKEN_kind]
+
     ; NASM's ".x:" field label (a "name:" one too)
     IF al, e, TOK_LOCAL_LABEL
         jmp     .nasm_label
@@ -5292,6 +5324,9 @@ call    str_compare
     add     [rbp - 48], rdx
     jmp     .field_loop
 .nasm_alignb:
+    ; NASM's align / alignb macros: two numbers of its %% counter
+    mov     rax, [rbx + PREP_ctx]
+    add     dword [rax + ASMCTX_mac_exp_id], 2
     mov     rdi, rbx
     call    parser_evaluate_expression
     check_err_to .error
@@ -5305,6 +5340,54 @@ call    str_compare
     mov     [rbp - 48], rax
     call    lst_field
     jmp     .field_loop
+
+.struc_left:
+    ; the section line taken as it is outside; the size the fields so far
+    ; make, and "<name>_size" left for endstruc, which NASM makes a label
+    ; where it then is (parser_endstruc_late)
+    mov     rdi, rbx
+    call    parser_handle_section_directive
+    check_err_to .error
+    call    parser_skip_to_eol
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    check_err_to .error
+    cmp     byte [rdx + TOKEN_kind], TOK_RBRACKET
+    jne     .left_line
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; "]"
+.left_line:
+    test    r13, r13
+    jz      .left
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, r13
+    call    symbol_find
+    test    rax, rax
+    jnz     .left_named
+    cmp     byte [rdx + SYMBOL_kind], SYM_STRUCT
+    jne     .left_named
+    mov     rax, [rbp - 48]
+    mov     [rdx + SYMBOL_size], rax
+.left_named:
+    mov     [rel struc_open], r13
+.left:
+    xor     eax, eax
+    jmp     .done
+
+; .is_section_word: rdi = a word -> ZF when it is section / segment (any
+; case)
+.is_section_word:
+    push    rdi
+    lea     rsi, [rel str_section]
+    call    str_cmp_kw
+    pop     rdi
+    test    rax, rax
+    jz      .is_section_ret
+    lea     rsi, [rel str_segment]
+    call    str_cmp_kw
+    test    rax, rax
+.is_section_ret:
+    ret
 
 .register_struct:
     ; NASM's endstruc goes back to the section (__SECT__), which makes
@@ -5784,6 +5867,17 @@ parser_handle_pseudo_op:
         ENDIF
 
 .not_res:
+    ; endstruc after a section line ended a struc's layout
+    cmp     qword [rel struc_open], 0
+    je      .not_late_endstruc
+    mov     rdi, r12
+    lea     rsi, [rel str_endstruc]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .not_late_endstruc
+    call    parser_endstruc_late
+    jmp     .check_handler_result
+.not_late_endstruc:
     ; NASM's structure instances: istruc NAME / at FIELD, data / iend
     mov     rdi, r12
     lea     rsi, [rel str_istruc]
@@ -7265,6 +7359,42 @@ parser_istruc:
     ret
 
 ;*
+; * [parser_endstruc_late]
+; * Purpose: endstruc for a struc whose layout a section line ended
+; *   (parser_parse_struc .struc_left): NASM's "<name>_size equ $ - <name>"
+; *   is then a label where it is, as NASM's object has it.
+; * Input  : RBX = PrepState
+; * Output : RAX = OK or an error
+; ;
+parser_endstruc_late:
+    push    r12
+    push    r13
+    mov     rax, [rbx + PREP_ctx]
+    inc     dword [rax + ASMCTX_mac_exp_id] ; (a macro in NASM)
+    mov     r12, [rel struc_open]
+    mov     qword [rel struc_open], 0
+    mov     rdi, r12
+    call    str_len
+    mov     r13, rax
+    mov     rdi, [rbx + PREP_arena]
+    lea     rsi, [r13 + 6]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     rdi, rdx
+    mov     rsi, r12
+    mov     rcx, r13
+    rep     movsb
+    mov     dword [rdi], '_siz'
+    mov     word [rdi + 4], 'e'
+    mov     rsi, rdx
+    call    parser_define_label
+.ret:
+    pop     r13
+    pop     r12
+    ret
+
+;*
 ; * [parser_at]
 ; * Purpose: "at FIELD, <data>": zero-fill up to the field; the data after
 ; *          the comma is then parsed as a statement of its own.
@@ -8664,6 +8794,7 @@ alignb 8
 attr_value:    resq 1              ; an unknown section attribute's value text
 attr_seen:     resb 2              ; parser_section_attrs: an attribute, align=
 align_hex:     resb 24             ; "0x..." for an alignment's error
+struc_open:    resq 1              ; a struc a section line left (its name)
 text_declared: resb 1              ; "section .text" was read
 attr_depth:    resq 1              ; ... the parentheses open in it
 [SECTION .rodata]
