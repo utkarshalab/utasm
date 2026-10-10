@@ -1132,3 +1132,43 @@ ELF_PROBES.update({
 "elf_context_names": "section .text\n%macro m 0\n%%l: nop\n%endmacro\nm\n%push\n%$x: nop\nm\n%pop\n%push one\n"
                          "%$y: nop\n%push two\n%$$z: nop\n%pop\n%pop\nm\n",
 })
+
+
+# %use ifunc and %use masm (NASM's packages); a label before a multi-line
+# macro ("f proc", "lab: m", %00); "%macro m 0+"; lea of a label
+BIN_PROBES.update({
+    "use_ifunc": "bits 64\n%use ifunc\ndb ilog2(8), ilog2e(64), ilog2f(9), ilog2c(9), ilog2fw(9), ilog2cw(9), ilog2w(16)\n"
+                 "db ilog2f(0), ilog2c(0), ilog2c(1), ilog2f(1)\n"
+                 "dq ilog2f(-1), ilog2c(-1), ilog2f(0x8000000000000000), ilog2c(0x8000000000000001)\n"
+                 "mov eax, ilog2(4096)\ntimes ilog2c(5) nop\n",
+    "use_ifunc_builtins": "bits 64\ndb __?ilog2f?__(10), __ilog2c__(10), __ilog2e__(32), __?ilog2w?__(3)\n",
+    "use_ifunc_defined": "bits 64\n%use ifunc\n%ifdef __?USE_IFUNC?__\ndb 2\n%endif\n%ifdef __USE_IFUNC__\ndb 3\n%endif\n",
+    "use_masm_ptr": "bits 64\n%use masm\nmov eax, dword ptr [rbx]\nmov eax, offset x\nfld tbyte ptr [rax]\n"
+                    "mov rax, qword ptr x\nmov eax, ptr [rbx]\nmov ecx, ptr x\nmov eax, dword ptr fs:[rbx]\n"
+                    "mov eax, dword ptr [rbx + 4]\nmov dword ptr [rax], 5\nadd byte ptr [rax], 1\n"
+                    "inc word ptr [rax]\nmov eax, [flat:rbx]\nlea rax, x\nx: dq 0\nend\n",
+    "use_masm_proc": "bits 64\n%use masm\nf proc near\nret\nf endp\nret\ng proc\nret 8\ng endp\nh proc far\nret\nh endp\n"
+                     "i proc foo\nret\ni endp\nj proc far uses rbx\nret\nj endp\nproc\nret\nendp\n"
+                     "dq f, g, h, i, j\n",
+    "use_masm_segment": "bits 64\n%use masm\nfoo segment\nnop\nbar ends\nnop\nsegment .data\ndb 1\nend start\n",
+    "use_masm_twice": "bits 64\n%use masm\n%use masm\nf proc\nret\nf endp\n%ifdef __?USE_MASM?__\ndb 1\n%endif\n",
+    "label_before_macro": "bits 64\n%macro m 0\nnop\n%endmacro\n%macro k 0\n%00: int3\n%endmacro\nlab: m\nlab2 m\n"
+                          "lab3: k\nlab4 k\ndq lab, lab2, lab3, lab4\n%macro m1 1\nnop\n%endmacro\nlab5 m1 1\ndq lab5\n",
+    "label_push_macro": "bits 64\n%macro m 0\nnop\n%endmacro\npush m\n",
+    "macro_00_empty": "bits 64\n%macro m 0\ndb 7, %00 1\n%endmacro\nm\n",
+    "macro_zero_plus": "bits 64\n%imacro qq 0+\ndb 1\n%endmacro\nqq start\nQQ\n%macro q 0+\ndb %0\n%endmacro\nq\nq a, b\n",
+    "macro_nolist_dot": "bits 64\n%imacro mm 0.nolist\nnop\n%endmacro\nmm\n",
+    "lea_label": "bits 64\nlea rax, x\nlea rax, 5\nlea rax, [x]\nx: dq 0\n",
+    "lea_label_rel": "bits 64\ndefault rel\nlea rax, x\nlea rax, [x]\nlea rax, y\nx: dq 0\ny: dq 0\n",
+})
+# NASM's warnings: ptr (MASM's word), an absolute address under default rel,
+# ilog2w of a number that is no power of two
+WARN_CASES.update({
+    "warn_ptr": "mov eax, [rbx + ptr]\nptr equ 4\n",
+    "warn_ea_absolute": "default rel\nmov ax, [5]\nmov ax, [abs 5]\nmov ax, [fs:5]\n",
+    "warn_ilog2w": "%use ifunc\ndb ilog2w(9), ilog2fw(16), ilog2cw(10)\n",
+})
+DIAG_CASES += [
+    ("ilog2 of no power of two", "%use ifunc\ndb 1\ndb ilog2(9)\n"),
+    ("lea of a register", "bits 64\nnop\nlea rax, rbx\n"),
+]
