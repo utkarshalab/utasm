@@ -58,13 +58,19 @@ def elf_view(path):
             out.append("R %s %s" % (m.group(1), re.sub(r"\s+", " ", m.group(2))))
         elif line.startswith("Relocation section"):
             out.append("RS " + line.split("'")[1])
+    order = []
     for line in run(["readelf", "-sW", path]).stdout.splitlines():
         f = line.split()
+        if len(f) >= 7 and f[0].rstrip(":").isdigit():
+            # the table's order: the file's symbol, the sections', then
+            # the others (struc names under -g only: utasm's choice)
+            order.append(f[3] if f[3] in ("FILE", "SECTION") else
+                         (f[7] if len(f) >= 8 else "") if f[6] != "ABS" or f[3] != "NOTYPE" else "abs")
         if len(f) >= 8 and f[0].rstrip(":").isdigit() and f[3] != "FILE":
             # (a common symbol's value is its alignment)
             out.append("Y %s %s %s %s %s %s%s" % (f[7], f[3], f[4], f[5], names.get(f[6], f[6]), f[2],
                                                  " value " + f[1] if f[6] == "COM" else ""))
-    return sorted(out)
+    return sorted(out) + ["O " + " ".join(x for x in order if x != "abs")]
 
 
 def elf_probes(utasm, verbose=False):
@@ -521,6 +527,23 @@ def command_line(utasm, verbose=False):
             open(os.path.join(d, "b.s"), "w").write("nop\n")
             ru = run([utasm] + args + ["b.s", "-o", "u.bin"], cwd=d)
         s.result("bad: " + " ".join(args), ru.returncode != 0, "exited %d" % ru.returncode)
+    # "-": the source on stdin (NASM has no such input), piped or from a
+    # file, a second pass included (a constant defined later); the same
+    # object as from the file
+    src = "mov ecx, later\ncall f\nf: ret\nlater equ 5\n"
+    with tempdir() as d:
+        open(os.path.join(d, "s.s"), "w").write(src)
+        rf = run([utasm, "-f", "elf64", "s.s", "-o", "f.o"], cwd=d)
+        rp = run(["sh", "-c", "cat s.s | %s -f elf64 -o p.o -" % utasm], cwd=d)
+        rr = run(["sh", "-c", "%s -f elf64 - < s.s" % utasm], cwd=d)
+        code = lambda o: run(["objcopy", "-O", "binary", "-j", ".text", o, o + ".bin"], cwd=d) and \
+            open(os.path.join(d, o + ".bin"), "rb").read()
+        ok = rf.returncode == rp.returncode == rr.returncode == 0 and \
+            os.path.exists(os.path.join(d, "stdin.o")) and code("f.o") == code("p.o") == code("stdin.o")
+        s.result("stdin source", ok, "%s / %s" % (first_line(rp), first_line(rr)))
+        re_ = run(["sh", "-c", "printf 'nop\\nbad bad\\n' | %s -f elf64 -o e.o -" % utasm], cwd=d)
+        s.result("stdin error names -", re_.returncode != 0 and re_.stderr.startswith("-:2: error"),
+                 first_line(re_))
     return s
 
 
