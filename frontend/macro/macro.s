@@ -1899,6 +1899,15 @@ prep_expand_next:
 .parse_sint:
     xor     eax, eax
     xor     edx, edx
+.ps_lead:
+    cmp     byte [rdi], ' '                ; "%{2: 3}": blanks around it
+    je      .ps_skip
+    cmp     byte [rdi], 9
+    jne     .ps_sign
+.ps_skip:
+    inc     rdi
+    jmp     .ps_lead
+.ps_sign:
     cmp     byte [rdi], '-'
     jne     .ps_digit
     mov     edx, 1
@@ -1913,6 +1922,14 @@ prep_expand_next:
     inc     rdi
     jmp     .ps_digit
 .ps_end:
+    cmp     byte [rdi], ' '
+    je      .ps_trail
+    cmp     byte [rdi], 9
+    jne     .ps_sign_done
+.ps_trail:
+    inc     rdi
+    jmp     .ps_end
+.ps_sign_done:
     test    edx, edx
     jz      .ps_ret
     neg     rax
@@ -3514,6 +3531,7 @@ dir_macro:  db "macro", 0
 dir_endm:   db "endmacro", 0
 dir_endm_short: db "endm", 0
 s_macro_defaults: db "too many default macro parameters in macro `", 0
+s_macro_redef:  db "redefining multi-line macro `", 0
 s_quote_end: db "'", 0
 s_unmacro:  db "unmacro", 0
 dir_struc:  db "struc", 0
@@ -6028,6 +6046,16 @@ prep_handle_exit:
     imul    rdx, rdx, TOKEN_SIZE
     add     rdx, [rax + MACRO_tokens]
     inc     rcx
+    ; %exitrep: NASM lists the rest of the body (nothing assembled)
+    test    r15d, r15d
+    jnz     .unlisted
+    extern  lst_enabled
+    cmp     byte [rel lst_enabled], 0
+    je      .unlisted
+    mov     rdi, rdx
+    mov     rsi, r12
+    call    error_track_token              ; (preserves every register)
+.unlisted:
     cmp     byte [rdx + TOKEN_kind], TOK_DIRECTIVE
     jne     .scan
     mov     rdi, [rdx + TOKEN_value]
@@ -8674,6 +8702,8 @@ prep_handle_line:
     add     ecx, r14d
 .store:
     mov     [rax + LEXER_line], ecx
+    extern  lst_line_lexer
+    mov     [rel lst_line_lexer], rax      ; (listing.s: the lines' own text)
     test    r13, r13
     jz      .ok
     mov     [rax + LEXER_file], r13
@@ -9895,6 +9925,39 @@ macro_handle_def:
     mov     eax, [rel mdef_ndefaults]
     mov     [r15 + MACRO_ndefaults], eax
 
+    ; a multi-line macro of this name and parameter range already: it is
+    ; replaced at %endmacro, with NASM's warning here, at its %macro line
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, [r15 + MACRO_name]
+    call    symbol_find
+    test    rax, rax
+    jnz     .not_redef
+    cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
+    jne     .not_redef
+    mov     rax, [rdx + SYMBOL_value]
+    test    rax, rax
+    jz      .not_redef
+    test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE
+    jnz     .not_redef
+    movzx   ecx, word [rax + MACRO_min_params]
+    cmp     cx, [r15 + MACRO_min_params]
+    jne     .not_redef
+    movzx   ecx, word [rax + MACRO_max_params]
+    cmp     cx, [r15 + MACRO_max_params]
+    jne     .not_redef
+    mov     edi, WC_PP_MACRO_REDEF_MULTI
+    call    warn_begin
+    test    eax, eax
+    jz      .not_redef
+    lea     rsi, [rel s_macro_redef]
+    call    warn_text
+    mov     rsi, [r15 + MACRO_name]
+    call    warn_text
+    lea     rsi, [rel s_quote_end]
+    call    warn_text
+    call    warn_end
+.not_redef:
+
     ; 4. Capture tokens until %endmacro: one contiguous array, read into
     ; the capture area (lexer_next allocates token value strings from the
     ; arena, so slots taken there one at a time would interleave with them)
@@ -9922,6 +9985,18 @@ macro_handle_def:
 
     cmp     byte [r12 + TOKEN_kind], TOK_EOF
     je      .error_eof
+
+    ; defined by a macro (or a %rep body): the definition's lines are
+    ; listed with the expansion, as NASM lists them
+    cmp     byte [rel lst_enabled], 0
+    je      .def_unlisted
+    mov     rax, [rbx + PREP_ctx]
+    mov     rsi, [rax + ASMCTX_mac_exp]
+    test    rsi, rsi
+    jz      .def_unlisted
+    mov     rdi, r12
+    call    error_track_token
+.def_unlisted:
 
     ; Check for % directive
     cmp     byte [r12 + TOKEN_kind], TOK_DIRECTIVE
