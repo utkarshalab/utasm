@@ -743,7 +743,7 @@ elf64_standalone_layout:
 .scanned:
     movzx   eax, byte [rel elf_sa_has_ro]
     movzx   ecx, byte [rel elf_sa_has_rw]
-    lea     eax, [rax + rcx + 1]
+    lea     eax, [rax + rcx + 2]           ; R+X, R, RW, and PT_GNU_STACK
     mov     [rel elf_sa_phnum], al
     imul    r13, rax, ELF64_PHDR_SIZE
     add     r13, ELF64_EHDR_SIZE           ; r13 = file offset after the headers
@@ -1204,12 +1204,12 @@ elf64_write_phdrs:
     mov     r13d, esi              ; r13d = fd
 
     mov     rdi, [r12 + ASMCTX_arena]
-    mov     rsi, 3 * ELF64_PHDR_SIZE
+    mov     rsi, 4 * ELF64_PHDR_SIZE
     call    arena_alloc
     check_err
     mov     r14, rdx               ; r14 = buffer
     mov     rdi, r14
-    mov     rsi, 3 * ELF64_PHDR_SIZE
+    mov     rsi, 4 * ELF64_PHDR_SIZE
     call    mem_zero
     mov     rbx, r14               ; rbx = next header
 
@@ -1262,6 +1262,18 @@ elf64_write_phdrs:
     mov     qword [rbx + PHDR_align],  0x1000
     add     rbx, ELF64_PHDR_SIZE
 .no_rw:
+
+    ; the stack: readable and writable, not executable (with no
+    ; PT_GNU_STACK the kernel makes it executable); --execstack: it is
+    mov     dword [rbx + PHDR_type],   PT_GNU_STACK
+    mov     dword [rbx + PHDR_flags],  (PF_R | PF_W)
+    extern  elf_gnu_stack
+    cmp     byte [rel elf_gnu_stack], 2
+    jne     .stack_rw
+    mov     dword [rbx + PHDR_flags],  (PF_R | PF_W | PF_X)
+.stack_rw:
+    mov     qword [rbx + PHDR_align],  16
+    add     rbx, ELF64_PHDR_SIZE
 
     mov     edi, r13d
     mov     rsi, r14
