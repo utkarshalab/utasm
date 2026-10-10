@@ -126,7 +126,8 @@
 %define WC_PP_SEL_RANGE        11  ; pp-sel-range: %sel(n) past its arguments
 %define WC_PTR                 12  ; ptr: "`ptr' is not a NASM keyword"
 %define WC_EA_ABSOLUTE         13  ; ea-absolute: "[5]" under default rel
-%define WC_COUNT               14
+%define WC_PP_MACRO_REDEF_MULTI 14 ; pp-macro-redef-multi: %macro m 0 again
+%define WC_COUNT               15
 
 ; a kept expression's record (parser_defer_record): +0 RELOC_EXPR_MARK,
 ; +8 text, +16 tokens, +24 count; and for core/known.s:
