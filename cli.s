@@ -252,9 +252,13 @@ cli_parse:
     je      .unknown_val
 .not_nasm:
 
+    ; "-" alone: the source is read from stdin (utasm.s)
+    cmp     word [r14], '-'
+    je      .an_input
     ; If it starts with '-', it's an unknown flag
     cmp     byte [r14], '-'
     je      .unknown_flag
+.an_input:
 
     ; Otherwise, it is the one permitted input file.
     cmp     qword [rbx + ASMCTX_input], 0
@@ -582,6 +586,10 @@ cli_derive_output:
 
     mov     r12, rdi
     mov     r13, [r12 + ASMCTX_input]
+    cmp     word [r13], '-'
+    jne     .named_input
+    lea     r13, [rel cli_stdin_base]      ; "-": stdin.o
+.named_input:
     mov     r14, r13                ; scan pointer
     xor     r15d, r15d              ; last extension dot
 .scan:
@@ -1286,6 +1294,7 @@ cli_parse.flag_profile_short: db "-P", 0
 cli_parse.default_output: db "a.out", 0
 cli_parse.suffix_obj: db ".o", 0
 cli_parse.suffix_coff: db ".obj", 0
+cli_stdin_base: db "stdin", 0
 cli_parse.suffix_bin: db ".bin", 0
 cli_parse.msg_unknown_flag: db "utasm: unknown option: ", 0
 cli_parse.msg_unknown_value: db "utasm: unknown option value: ", 0
