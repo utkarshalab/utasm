@@ -81,6 +81,10 @@ lst_out:        resb OUT_BUF
 lst_num:        resb 32
 lst_enabled:    resb 1
 alignb 8
+global lst_line_lexer
+lst_line_lexer: resq 1              ; the lexer a %line renumbered: its
+                                    ; lines' text is taken where they are
+alignb 8
 lst_heap:       resq 1              ; the notes (lst_alloc)
 lst_heap_used:  resq 1
 
@@ -410,6 +414,20 @@ lst_note:
     mov     [r8 + LE_HIDE], al
     test    ecx, ecx
     jnz     .body
+    ; a line %line renumbered: its own text, as its number does not find
+    ; it in the file (lst_line_text)
+    cmp     qword [rel lst_line_lexer], 0
+    je      .file_line
+    push    rcx
+    push    rdx
+    push    rsi
+    push    rdi
+    call    lst_line_text
+    pop     rdi
+    pop     rsi
+    pop     rdx
+    pop     rcx
+.file_line:
     movzx   eax, dl
     cmp     eax, LST_DEPTHS
     jae     .ret
@@ -460,6 +478,65 @@ lst_note:
 .off:
     mov     byte [rel lst_enabled], 0
     jmp     .ret
+
+; lst_line_text: the entry r8, a line of the lexer %line renumbered (when it
+; is the one being read): its text, copied from the line the lexer is on.
+; Preserves r8; clobbers rax, rcx, rdx, rdi, rsi, r9-r11.
+lst_line_text:
+    extern  global_prep
+    lea     rax, [rel global_prep]
+    mov     r9, [rax + PREP_lexer]
+    cmp     r9, [rel lst_line_lexer]
+    jne     .ret
+    mov     r10, [r9 + LEXER_pos]
+    mov     r11, [r9 + LEXER_buf]
+    ; back to the line's start (the token just read is on it)
+    cmp     r10, r11
+    jbe     .start
+    dec     r10
+.back:
+    cmp     r10, r11
+    jbe     .start
+    cmp     byte [r10 - 1], 10
+    je      .start
+    dec     r10
+    jmp     .back
+.start:
+    mov     rsi, r10                       ; the line
+    mov     rdx, [r9 + LEXER_end]
+    xor     ecx, ecx
+.len:
+    lea     rax, [rsi + rcx]
+    cmp     rax, rdx
+    jae     .copy
+    cmp     byte [rsi + rcx], 10
+    je      .copy
+    inc     rcx
+    jmp     .len
+.copy:
+    ; (a CR before the newline is not text)
+    test    rcx, rcx
+    jz      .alloc
+    cmp     byte [rsi + rcx - 1], 13
+    jne     .alloc
+    dec     rcx
+.alloc:
+    push    rcx
+    push    rsi
+    push    r8
+    lea     rdi, [rcx + 1]
+    call    lst_alloc
+    pop     r8
+    pop     rsi
+    pop     rcx
+    test    rax, rax
+    jz      .ret
+    mov     rdi, rax
+    mov     [r8 + LE_TEXT], rax
+    rep     movsb
+    mov     byte [rdi], 0
+.ret:
+    ret
 
 ; lst_close_current: the current entry's bytes end where its section is now
 lst_close_current:
@@ -1264,11 +1341,75 @@ lst_put_line_text:
     lea     rsi, [rsi + rcx]
     mov     rdx, r8
     sub     rdx, rcx
+    test    r13d, 0x80000000
+    jz      .put
+    call    lst_put_unbraced               ; a body line, as NASM shows it
+    jmp     .missing
+.put:
     call    lst_put
 .missing:
     pop     r13
     pop     r12
     pop     rbx
+    ret
+
+; lst_put_unbraced: rdx bytes at rsi, a macro body's line, with "%{x}"
+; written "%x" (NASM lists a body from its tokens: "db %{2:3}" is
+; "db %2:3", "%{1}0" "%10")
+lst_put_unbraced:
+    push    r12
+    push    r13
+    push    r14
+    mov     r12, rsi
+    lea     r13, [rsi + rdx]               ; the end
+.piece:
+    mov     r14, r12                       ; the piece's start
+.find:
+    cmp     r12, r13
+    jae     .last
+    cmp     byte [r12], '%'
+    jne     .next
+    lea     rax, [r12 + 1]
+    cmp     rax, r13
+    jae     .next
+    cmp     byte [r12 + 1], '{'
+    je      .brace
+.next:
+    inc     r12
+    jmp     .find
+.brace:
+    ; up to the '%', then what is in the braces
+    mov     rsi, r14
+    lea     rdx, [r12 + 1]
+    sub     rdx, r14
+    call    lst_put
+    add     r12, 2
+    mov     r14, r12
+.inner:
+    cmp     r12, r13
+    jae     .last
+    cmp     byte [r12], '}'
+    je      .closed
+    inc     r12
+    jmp     .inner
+.closed:
+    mov     rsi, r14
+    mov     rdx, r12
+    sub     rdx, r14
+    call    lst_put
+    inc     r12                            ; past the '}'
+    jmp     .piece
+.last:
+    mov     rsi, r14
+    mov     rdx, r13
+    sub     rdx, r14
+    test    rdx, rdx
+    jz      .ret
+    call    lst_put
+.ret:
+    pop     r14
+    pop     r13
+    pop     r12
     ret
 
 ; lst_file_slot: rax = the slot of file rdi, read in on first use (0 when
