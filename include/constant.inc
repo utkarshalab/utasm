@@ -109,6 +109,7 @@
 %define EXIT_NO_SIZE           88  ; "inc [rax]": operation size not specified
 %define EXIT_COFF_RELOC        89  ; -f win64: "dw e", "dq e - $": no COFF relocation
 %define EXIT_COFF_SPECIAL      90  ; -f win64: "global f:hidden", "common c 8:4"
+%define EXIT_ILOG2             91  ; ilog2e(x) / ilog2(x): x not a power of two
 
 ; warning classes, by NASM's names (error/warnings.s)
 %define WC_OTHER               0   ; other
@@ -123,7 +124,9 @@
 %define WC_PIE                 9   ; pie (utasm's, off): won't link as PIE
 %define WC_SLASH_COMMENT       10  ; slash-comment (utasm's): "x // 2" NASM divides
 %define WC_PP_SEL_RANGE        11  ; pp-sel-range: %sel(n) past its arguments
-%define WC_COUNT               12
+%define WC_PTR                 12  ; ptr: "`ptr' is not a NASM keyword"
+%define WC_EA_ABSOLUTE         13  ; ea-absolute: "[5]" under default rel
+%define WC_COUNT               14
 
 ; a kept expression's record (parser_defer_record): +0 RELOC_EXPR_MARK,
 ; +8 text, +16 tokens, +24 count; and for core/known.s:
@@ -1536,6 +1539,7 @@
 %define MACRO_FLAG_GREEDY      0x02        ; %macro m 1+: the last parameter takes the rest
 %define MACRO_FLAG_DEFINE      0x04        ; a single-line macro (%define family)
 %define MACRO_FLAG_TIMES       0x08        ; the repeated statement of a times
+%define MACRO_FLAG_NOLIST      0x10        ; %macro m 0.nolist: its lines not listed
 %define BIN_VSTART             0x01        ; SECTION_bin_flags: vstart= given
 %define BIN_START              0x02        ; start= given
 %define DEFINE_MAX_TOKENS      256         ; tokens in one %define body
