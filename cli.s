@@ -139,6 +139,34 @@ cli_parse:
     test    rax, rax
     jz      .handle_standalone
 
+    ; --noexecstack / --execstack / --cet: note sections in an ELF object
+    ; (backend/output/elf/notes.s)
+    extern  elf_gnu_stack, elf_cet
+    mov     rdi, r14
+    lea     rsi, [rel .flag_noexecstack]
+    call    str_cmp
+    test    rax, rax
+    jnz     .not_noexecstack
+    mov     byte [rel elf_gnu_stack], 1
+    jmp     .next_arg
+.not_noexecstack:
+    mov     rdi, r14
+    lea     rsi, [rel .flag_execstack]
+    call    str_cmp
+    test    rax, rax
+    jnz     .not_execstack
+    mov     byte [rel elf_gnu_stack], 2
+    jmp     .next_arg
+.not_execstack:
+    mov     rdi, r14
+    lea     rsi, [rel .flag_cet]
+    call    str_cmp
+    test    rax, rax
+    jnz     .not_cet
+    mov     byte [rel elf_cet], 3          ; IBT | SHSTK
+    jmp     .next_arg
+.not_cet:
+
     ; --bits 16|32|64: the mode the source starts in
     mov     rdi, r14
     lea     rsi, [rel .flag_bits]
@@ -1272,6 +1300,9 @@ cli_parse.flag_arch:    db "-a", 0
 cli_parse.flag_arch_long: db "--arch", 0
 cli_parse.flag_arch_compat: db "-arch", 0
 cli_parse.flag_standalone: db "--standalone", 0
+cli_parse.flag_noexecstack: db "--noexecstack", 0
+cli_parse.flag_execstack: db "--execstack", 0
+cli_parse.flag_cet: db "--cet", 0
 cli_parse.flag_verbose_long: db "--verbose", 0
 cli_parse.val_elf64:    db "elf64", 0
 cli_parse.val_bin:      db "bin", 0
