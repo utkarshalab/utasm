@@ -885,6 +885,42 @@ source file.
 
 ---
 
+### Call frame information
+
+GAS's `.cfi_` directives describe how each function's frame is laid out,
+for debuggers, profilers and backtraces (`gdb`'s `bt`, `perf`, a C++
+exception or a crash handler unwinding through the code). utasm writes
+them as the `.eh_frame` section of an ELF object, byte for byte as GNU `as`
+does for the same code; NASM has no such directives.
+
+```asm
+f:
+    .cfi_startproc                  ; at a call: CFA = rsp + 8
+    push    rbp
+    .cfi_def_cfa_offset 16
+    .cfi_offset rbp, -16            ; rbp saved at CFA - 16
+    mov     rbp, rsp
+    .cfi_def_cfa_register rbp
+    ...
+    leave
+    .cfi_def_cfa rsp, 8
+    ret
+    .cfi_endproc
+```
+
+The directives are `.cfi_startproc` (`simple`: no rules at the start),
+`.cfi_endproc`, `.cfi_def_cfa reg, offset`, `.cfi_def_cfa_register reg`,
+`.cfi_def_cfa_offset offset`, `.cfi_adjust_cfa_offset delta`,
+`.cfi_offset reg, offset`, `.cfi_rel_offset reg, offset` (from the CFA
+register), `.cfi_restore reg`, `.cfi_undefined reg`, `.cfi_same_value reg`,
+`.cfi_register reg, reg`, `.cfi_remember_state`, `.cfi_restore_state`,
+`.cfi_signal_frame`, `.cfi_escape byte, ...` and `.cfi_sections` (accepted).
+A register is a name (`rbx`, `r12`, `rip`, `xmm3`, `st0`, `k1`; in
+`-f elf32` `ebp`, `eip`, `xmm0`-`xmm7`) or its DWARF number. The rules move
+with the code when jumps are shortened. With `-f bin` and `-f win64` they
+are read and not written. The misuses are errors with GAS's messages
+("CFI instruction used without previous .cfi_startproc" and the like).
+
 ### Structures
 
 ```asm
