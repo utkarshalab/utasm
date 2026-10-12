@@ -10382,8 +10382,14 @@ parser_finish:
     call    prep_expand_start
     test    rax, rax
     jnz     .skip
+    ; the code between the labels is not frozen (its jumps shorten as
+    ; NASM's do): the size moves with its end when they do (optimizer/
+    ; jump.s), as "f.end - f" then measures
+    extern  relax_no_freeze
+    mov     byte [rel relax_no_freeze], 1
     mov     rdi, rbx
     call    parser_evaluate_expression
+    mov     byte [rel relax_no_freeze], 0
     push    rax
     push    rdx
     mov     rdi, rbx
