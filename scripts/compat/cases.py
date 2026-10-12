@@ -1127,6 +1127,9 @@ ELF_PROBES.update({
     # section; a section line in a struc ends its layout, and endstruc puts
     # <name>_size where it then is
     "elf_global_undefined": "global x, y:function\nsection .data\ndb 1\n",
+    # a size over a jump that is shortened: the size of the code as it is
+    "elf_size_shortened": "global f:function (f.end - f), g:function (g.end - g)\nsection .text\nf: jmp .l\n"
+                          "times 10 nop\n.l: ret\n.end:\ng: jmp f\njmp .x\ntimes 200 nop\n.x: ret\n.end:\n",
     "elf_nothing": "",
     "elf_label_first": "a:\nsection .data\ndb 1\n",
 "elf_context_names": "section .text\n%macro m 0\n%%l: nop\n%endmacro\nm\n%push\n%$x: nop\nm\n%pop\n%push one\n"
