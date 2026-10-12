@@ -603,6 +603,9 @@ code_table:
     code_msg EXIT_CFI_UNKNOWN,       m_cfi_unknown, t_cfi_unknown
     code_msg EXIT_CFI_STATE,         m_cfi_state
     code_msg EXIT_CFI_ENDPROC,       m_cfi_endproc
+    code_msg EXIT_RES_NEGATIVE,      m_res_negative
+    code_msg EXIT_SECTION_SIZE,      m_section_size, t_section_size
+    code_msg EXIT_TIMES_LARGE,       m_times_large
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -708,6 +711,10 @@ m_cfi_unknown:  db "unknown CFI directive", 0
 t_cfi_unknown:  db "unknown CFI directive `^'", 0
 m_cfi_state:    db "CFI state restore without previous remember", 0
 m_cfi_endproc:  db ".cfi_endproc without corresponding .cfi_startproc", 0
+m_res_negative: db "attempt to reserve negative space", 0
+m_section_size: db "section larger than 4 GiB", 0
+t_section_size: db "section `^' larger than 4 GiB", 0
+m_times_large:  db "TIMES value is too large (more than 4294967295)", 0
 t_align_large:  db "absurdly large segment alignment `^'", 0
 m_use:          db "unknown `%use' package", 0
 m_cond_deep:    db "conditionals nested too deeply", 0
