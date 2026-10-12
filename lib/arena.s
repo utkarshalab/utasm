@@ -13,6 +13,7 @@
 
 %define AMD64_SYS_MADVISE      28
 %define MADV_DONTDUMP          16          ; madvise: leave out of a core dump
+%define MADV_HUGEPAGE          14          ; madvise: back it with 2 MB pages
 
 DEFAULT REL
 
@@ -98,6 +99,14 @@ arena_init:
     mov     edx, MADV_DONTDUMP
     mov     eax, AMD64_SYS_MADVISE
     syscall
+    ; in 2 MB pages where the kernel has them (transparent huge pages):
+    ; a fault per 2 MB, not per 4 KB - most of a large source's time was
+    ; the kernel's, taking tens of thousands of page faults
+    mov     rdi, [rsp]
+    mov     rsi, r12
+    mov     edx, MADV_HUGEPAGE
+    mov     eax, AMD64_SYS_MADVISE
+    syscall
     pop     rax
 
     ; write TAG_ARENA at offset 0
@@ -157,6 +166,10 @@ mem_reserve:
     push    rax
     mov     rdi, rax                       ; (rsi: the size, kept by syscall)
     mov     edx, MADV_DONTDUMP
+    mov     eax, AMD64_SYS_MADVISE
+    syscall
+    mov     rdi, [rsp]                     ; 2 MB pages too (arena_init)
+    mov     edx, MADV_HUGEPAGE
     mov     eax, AMD64_SYS_MADVISE
     syscall
     pop     rdx
