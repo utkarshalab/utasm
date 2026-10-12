@@ -1226,3 +1226,33 @@ CFI_ERRORS = [
     ("endproc alone", "section .text\nnop\n.cfi_endproc\n", 3,
      ".cfi_endproc without corresponding .cfi_startproc"),
 ]
+
+# resb / alignb past a code section's buffer (fuzz seed 3: a fault in the
+# next byte's write; at the end, the output cut short)
+ROBUST_CASES += [
+    ("resb_past_buffer", "bits 32\nresb 0x80000\nnop\n", "bin", []),
+    ("resb_past_buffer_win64", "nop\nresb 0x80000\nnop\n", "win64", []),
+]
+BIN_PROBES.update({
+    "resb_large_code": "bits 64\nresb 0x80000\nnop\n",
+    "resb_large_last": "bits 64\nnop\nresb 0x80000\n",
+    "alignb_large_last": "bits 64\nnop\nalignb 0x40000\n",
+    "resb_large_then_data": "bits 64\nnop\nresb 0x80000\ndb 7\ntimes 0x30000 db 1\n",
+})
+
+# reservations and repetitions past what an output can hold (NASM panics,
+# runs for ever or wraps; utasm faulted or hung): utasm's errors, at their
+# lines
+ROBUST_CASES += [
+    ("resb_unsigned_huge", "bits 32\nsection .bss\nresb (l2 - l1) / 4\nmov ebx, 17o\nsection .text\nl4:\nl2:\n"
+     "l3: dw 7\nl1: dd 1, 2\n", "bin", []),
+    ("resb_unsigned_huge_text", "bits 32\nsection .bss\nl1: dd 1, 2\nsection .text\nresb (l2 - l1) / 4\nl2:\n"
+     "l3: dw 7\nl4:\n", "bin", ["-l", "x.lst"]),
+]
+LIMIT_ERRORS = [
+    ("negative reservation", "section .text\nnop\nresb -2\n", 3, "attempt to reserve negative space"),
+    ("reservation past 4 GiB", "section .text\nresb 0x100000000\n", 2, "section `.text' larger than 4 GiB"),
+    ("reservation that overflows", "section .text\nresq 0x4000000000000000\n", 2, "section `.text' larger than 4 GiB"),
+    ("times past 2^32", "section .text\ntimes 0x100000000 nop\n", 2,
+     "TIMES value is too large (more than 4294967295)"),
+]
