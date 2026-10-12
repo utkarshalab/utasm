@@ -596,6 +596,13 @@ code_table:
     code_msg EXIT_COFF_RELOC,        m_coff_reloc, t_coff_reloc
     code_msg EXIT_COFF_SPECIAL,      m_coff_special
     code_msg EXIT_ILOG2,             m_ilog2
+    code_msg EXIT_CFI_NO_PROC,       m_cfi_no_proc
+    code_msg EXIT_CFI_OPEN,          m_cfi_open
+    code_msg EXIT_CFI_EOF,           m_cfi_eof
+    code_msg EXIT_CFI_REG,           m_cfi_reg, t_cfi_reg
+    code_msg EXIT_CFI_UNKNOWN,       m_cfi_unknown, t_cfi_unknown
+    code_msg EXIT_CFI_STATE,         m_cfi_state
+    code_msg EXIT_CFI_ENDPROC,       m_cfi_endproc
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -692,6 +699,15 @@ m_coff_reloc:   db "COFF format has no relocation for this reference", 0
 t_coff_reloc:   db "COFF format has no ^ relocation", 0
 m_coff_special: db "COFF format does not support any special symbol types", 0
 m_ilog2:        db "ilog2 argument is not a power of two", 0
+m_cfi_no_proc:  db "CFI instruction used without previous .cfi_startproc", 0
+m_cfi_open:     db "previous CFI entry not closed (missing .cfi_endproc)", 0
+m_cfi_eof:      db "open CFI at the end of file; missing .cfi_endproc directive", 0
+m_cfi_reg:      db "bad register expression", 0
+t_cfi_reg:      db "bad register expression `^'", 0
+m_cfi_unknown:  db "unknown CFI directive", 0
+t_cfi_unknown:  db "unknown CFI directive `^'", 0
+m_cfi_state:    db "CFI state restore without previous remember", 0
+m_cfi_endproc:  db ".cfi_endproc without corresponding .cfi_startproc", 0
 t_align_large:  db "absurdly large segment alignment `^'", 0
 m_use:          db "unknown `%use' package", 0
 m_cond_deep:    db "conditionals nested too deeply", 0
