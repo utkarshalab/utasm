@@ -312,7 +312,7 @@ debugger can show the source and step through it line by line:
 | Section | Contents |
 | --- | --- |
 | `.debug_line` | The line table: the address of every line that produced code, with its file and line. A macro's or `%rep` body's code is at its body line, an included file's in that file, as in NASM's (the decoded rows are the same). |
-| `.debug_info`, `.debug_abbrev` | One compile unit: the source file, `utasm 0.1.0`, `DW_LANG_Mips_Assembler`, the line table, the first code section's range. |
+| `.debug_info`, `.debug_abbrev` | One compile unit: the source file, `utasm 0.1.0`, `DW_LANG_Mips_Assembler`, the line table, the first code section's range; in it a `DW_TAG_subprogram` for each function the source types (`global f:function`, `static g:function`), as GNU `as` writes them: its name, whether it is global, and its range - its size (`global f:function (f.end - f)`), else up to the next such function in its section or the section's end. A debugger names functions and their ranges by them. |
 | `.debug_aranges` | The address range of every code section. |
 
 ```sh
@@ -328,6 +328,13 @@ against them, and in struc-heavy code they made objects several times
 larger.
 
 Flat binaries and `--standalone` executables carry no debug information.
+How to unwind through a function (for `bt` in a debugger, a profiler, an
+exception) is the `.cfi_` directives' `.eh_frame`, with or without `-g`
+(see the [syntax](syntax.md#call-frame-information)).
+
+A function's size (`global f:function (f.end - f)`) is the size of its code
+as finally laid out: the jumps inside it are shortened as NASM shortens
+them (they were kept long so that the size held).
 
 ## Diagnostics
 
