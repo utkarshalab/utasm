@@ -634,6 +634,18 @@ def dwarf(utasm, verbose=False):
                 s.result(name, False, "utasm error: " + first_line(ru))
             else:
                 s.result(name, a == b, "nasm %s | utasm %s" % (a[:6], b[:6]))
+    # utasm's own: a DW_TAG_subprogram for each typed function (GNU as's;
+    # NASM writes one empty one), its range its size or up to the next
+    src = ("global f:function (f.end - f), _start:function\nstatic g:function\nsection .text\n"
+           "_start: call f\ncall g\nf: jmp .l\ntimes 10 nop\n.l: ret\n.end:\nh: nop\ng: ret\n")
+    with tempdir() as d:
+        open(os.path.join(d, "p.s"), "w").write(src)
+        ru = run([utasm, "-g", "-f", "elf64", "p.s", "-o", "u.o"], cwd=d)
+        info = run(["readelf", "-wi", "u.o"], cwd=d).stdout
+        subs = re.findall(r"DW_TAG_subprogram\)\s+\S+\s+DW_AT_name\s+:\s+(\S+)\s+\S+\s+DW_AT_external\s+:\s+(\d)"
+                          r"\s+\S+\s+DW_AT_low_pc\s+:\s+(\S+)\s+\S+\s+DW_AT_high_pc\s+:\s+(\S+)", info)
+        want = [("f", "1", "0xa", "0x17"), ("_start", "1", "0", "0xa"), ("g", "0", "0x18", "0x19")]
+        s.result("functions in .debug_info", ru.returncode == 0 and sorted(subs) == sorted(want), str(subs))
     return s
 
 
