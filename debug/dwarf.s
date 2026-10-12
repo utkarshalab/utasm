@@ -12,8 +12,13 @@
 ;                   file's in that file, as NASM maps them
 ;   .debug_info     one compile unit: the source's name, the producer,
 ;                   DW_LANG_Mips_Assembler (what assemblers use), the line
-;                   table's offset and the first code section's range
-;   .debug_abbrev   the one abbreviation that unit uses
+;                   table's offset and the first code section's range; in
+;                   it a DW_TAG_subprogram for each function the source
+;                   types ("global f:function"), as GNU as writes them: its
+;                   name, whether it is global, its range (its size, else
+;                   up to the next such function or the section's end) -
+;                   gdb's function names and ranges
+;   .debug_abbrev   the two abbreviations they use
 ;   .debug_aranges  the address ranges of every code section
 ;
 ;   The rows come from the per-line entries the listing is made from
@@ -482,6 +487,12 @@ dw_write_info:
     jnz     .ret
     xor     eax, eax
     call    dw_address
+    ; its functions, then the end of its children
+    call    dw_write_functions
+    test    rax, rax
+    jnz     .ret
+    xor     eax, eax
+    call    dw_u8
     mov     rax, [rel dw_info_sec]
     mov     rcx, [rax + SECTION_size]
     sub     rcx, 4
@@ -490,6 +501,121 @@ dw_write_info:
     xor     eax, eax
 .ret:
     pop     rbx
+    ret
+
+; ---- dw_write_functions: a DW_TAG_subprogram for each symbol the source
+;      typed a function, in a section of its own: name, external, low_pc,
+;      high_pc (relocated against its section) ----
+dw_write_functions:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    mov     r15, [rel dw_ctx]
+    mov     rbx, [r15 + ASMCTX_symtab]
+    mov     r12d, [r15 + ASMCTX_symcount]
+.sym:
+    test    r12d, r12d
+    jz      .done
+    cmp     byte [rbx + SYMBOL_etype], ETYPE_FUNC
+    jne     .next
+    movzx   eax, word [rbx + SYMBOL_section]
+    test    eax, eax
+    jz      .next                          ; an extern
+    cmp     eax, 0xFF00
+    jae     .next                          ; a number
+    call    dw_section_of                  ; eax = index -> rax = SECTION*
+    test    rax, rax
+    jz      .next
+    mov     r13, rax
+    ; where it ends: its size, else the next function of its section, else
+    ; the section's end
+    mov     r14, [rbx + SYMBOL_size]
+    test    r14, r14
+    jz      .find_end
+    add     r14, [rbx + SYMBOL_value]
+    jmp     .have_end
+.find_end:
+    mov     r14, [r13 + SECTION_size]
+    mov     rsi, [r15 + ASMCTX_symtab]
+    mov     ecx, [r15 + ASMCTX_symcount]
+.other:
+    test    ecx, ecx
+    jz      .have_end
+    cmp     byte [rsi + SYMBOL_etype], ETYPE_FUNC
+    jne     .other_next
+    mov     ax, [rsi + SYMBOL_section]
+    cmp     ax, [rbx + SYMBOL_section]
+    jne     .other_next
+    mov     rax, [rsi + SYMBOL_value]
+    cmp     rax, [rbx + SYMBOL_value]
+    jbe     .other_next
+    cmp     rax, r14
+    jae     .other_next
+    mov     r14, rax
+.other_next:
+    add     rsi, SYMBOL_SIZE
+    dec     ecx
+    jmp     .other
+.have_end:
+    mov     eax, 2
+    call    dw_uleb                        ; the subprogram DIE
+    mov     rsi, [rbx + SYMBOL_name]
+    call    dw_cstr                        ; DW_AT_name
+    xor     eax, eax
+    cmp     byte [rbx + SYMBOL_vis], VIS_LOCAL
+    setne   al
+    call    dw_u8                          ; DW_AT_external
+    mov     rsi, r13
+    mov     rdx, [rbx + SYMBOL_value]
+    call    dw_addr_type
+    call    dw_sec_reloc                   ; DW_AT_low_pc
+    test    rax, rax
+    jnz     .ret
+    xor     eax, eax
+    call    dw_address
+    mov     rsi, r13
+    mov     rdx, r14
+    call    dw_addr_type
+    call    dw_sec_reloc                   ; DW_AT_high_pc
+    test    rax, rax
+    jnz     .ret
+    xor     eax, eax
+    call    dw_address
+.next:
+    add     rbx, SYMBOL_SIZE
+    dec     r12d
+    jmp     .sym
+.done:
+    xor     eax, eax
+.ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+; dw_section_of: eax = a section index -> rax = its SECTION*, or 0
+dw_section_of:
+    mov     rdx, [rel dw_ctx]
+    mov     rsi, [rdx + ASMCTX_sections]
+    movzx   ecx, word [rdx + ASMCTX_seccount]
+.find:
+    test    ecx, ecx
+    jz      .none
+    mov     rdx, [rsi]
+    add     rsi, 8
+    dec     ecx
+    test    rdx, rdx
+    jz      .find
+    cmp     [rdx + SECTION_index], eax
+    jne     .find
+    mov     rax, rdx
+    ret
+.none:
+    xor     eax, eax
     ret
 
 ; ---- .debug_aranges ----
@@ -716,11 +842,17 @@ s_producer:      db "utasm 0.1.0", 0
 
 ; abbreviation 1: DW_TAG_compile_unit, no children
 abbrev_bytes:
-    db 1, 0x11, 0
+    db 1, 0x11, 1                   ; (its functions in it)
     db 0x03, 0x08                   ; DW_AT_name         DW_FORM_string
     db 0x25, 0x08                   ; DW_AT_producer     DW_FORM_string
     db 0x13, 0x05                   ; DW_AT_language     DW_FORM_data2
     db 0x10, 0x06                   ; DW_AT_stmt_list    DW_FORM_data4
+    db 0x11, 0x01                   ; DW_AT_low_pc       DW_FORM_addr
+    db 0x12, 0x01                   ; DW_AT_high_pc      DW_FORM_addr
+    db 0, 0
+    db 2, 0x2E, 0                   ; DW_TAG_subprogram, no children
+    db 0x03, 0x08                   ; DW_AT_name         DW_FORM_string
+    db 0x3F, 0x0C                   ; DW_AT_external     DW_FORM_flag
     db 0x11, 0x01                   ; DW_AT_low_pc       DW_FORM_addr
     db 0x12, 0x01                   ; DW_AT_high_pc      DW_FORM_addr
     db 0, 0
