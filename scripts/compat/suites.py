@@ -954,6 +954,16 @@ def limits(utasm, verbose=False):
 # robustness: inputs that crashed or hung utasm before - it must finish,
 # with no internal error, and accept or reject each as NASM does
 # ---------------------------------------------------------------------------
+def _limit_errors(s, utasm):
+    # utasm's own errors where NASM has none (it panics or runs for ever)
+    for name, src, line, text in cases.LIMIT_ERRORS:
+        with tempdir() as d:
+            open(os.path.join(d, "l.s"), "w").write(src)
+            ru = run([utasm, "-f", "bin", "l.s", "-o", "l.bin"], cwd=d, timeout=30)
+        s.result("limit " + name, ru.returncode != 0 and ("l.s:%d: error: %s" % (line, text)) in ru.stderr,
+                 first_line(ru))
+
+
 def robustness(utasm, verbose=False):
     s = Suite("robustness", verbose)
 
@@ -971,9 +981,12 @@ def robustness(utasm, verbose=False):
                 s.result(name, False, "utasm did not finish in 10 s")
             elif _crashed(ru) or "internal error" in (ru.stderr or ""):
                 s.result(name, False, "utasm crashed: " + first_line(ru))
+            elif rn.returncode == 3 or rn.returncode < 0 or rn.returncode >= 128:
+                s.result(name, True)               # NASM panicked: not crashing is all
             else:
                 s.result(name, (rn.returncode == 0) == (ru.returncode == 0),
                          "nasm rc %d | utasm rc %d: %s" % (rn.returncode, ru.returncode, first_line(ru)))
+    _limit_errors(s, utasm)
     return s
 
 
