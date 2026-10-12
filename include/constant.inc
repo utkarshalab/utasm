@@ -110,6 +110,31 @@
 %define EXIT_COFF_RELOC        89  ; -f win64: "dw e", "dq e - $": no COFF relocation
 %define EXIT_COFF_SPECIAL      90  ; -f win64: "global f:hidden", "common c 8:4"
 %define EXIT_ILOG2             91  ; ilog2e(x) / ilog2(x): x not a power of two
+%define EXIT_CFI_NO_PROC       92  ; a .cfi_ rule outside .cfi_startproc / endproc
+%define EXIT_CFI_OPEN          93  ; .cfi_startproc in one not closed
+%define EXIT_CFI_EOF           94  ; the end with a .cfi_startproc not closed
+%define EXIT_CFI_REG           95  ; .cfi_offset with no register DWARF knows
+%define EXIT_CFI_UNKNOWN       96  ; .cfi_ with a name utasm does not have
+%define EXIT_CFI_STATE         97  ; .cfi_restore_state with nothing remembered
+%define EXIT_CFI_ENDPROC       98  ; .cfi_endproc with no .cfi_startproc
+
+; debug/cfi.s: the records the .cfi_ directives make
+%define CFI_START              1
+%define CFI_END                2
+%define CFI_DEF_CFA            3
+%define CFI_DEF_CFA_REG        4
+%define CFI_DEF_CFA_OFF        5
+%define CFI_ADJUST             6
+%define CFI_OFFSET             7
+%define CFI_REL_OFFSET         8
+%define CFI_RESTORE            9
+%define CFI_UNDEFINED          10
+%define CFI_SAME               11
+%define CFI_REGISTER           12
+%define CFI_REMEMBER           13
+%define CFI_RESTORE_STATE      14
+%define CFI_SIGNAL             15
+%define CFI_ESCAPE             16
 
 ; warning classes, by NASM's names (error/warnings.s)
 %define WC_OTHER               0   ; other
