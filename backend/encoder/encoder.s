@@ -2025,6 +2025,8 @@ amd64_imm_fixup:
     mov     rax, [rbx + ASMCTX_curr_sec]
     mov     rcx, [rax + SECTION_size]      ; the end of the instruction
     mov     rdx, [rax + SECTION_data]
+    cmp     rcx, [rax + SECTION_cap]
+    ja      .none                          ; (not in the buffer: no bytes)
     cmp     rcx, 4
     jb      .try2
     cmp     dword [rdx + rcx - 4], IMM_PLACEHOLDER
