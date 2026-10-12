@@ -5,7 +5,8 @@ whatever the input - only assemble it or report errors.
 Takes the test sources (tests/amd64) and the compatibility cases as seeds,
 changes each at random (lines dropped, repeated, cut, swapped or spliced in
 from another seed; directives, operators, odd bytes and nesting inserted)
-and assembles the result as bin, elf64 or elf32, sometimes with -l or -g.
+and assembles the result as bin, elf64, elf32 or win64, sometimes with -l,
+-g, -E, -O0, --bits 16 / 32 or --cet --noexecstack.
 A run fails when utasm reports an internal error (a fault, caught by
 core/crash.s) or dies of a signal, takes more than 10 s, or uses more than
 2 GB. Each failing input is saved, then cut down - lines, then characters -
@@ -40,9 +41,19 @@ TOKENS = ["[", "]", "(", ")", ",", "%", "%%", "%$", "$", "$$", ":", "{", "}", "'
           "jmp", "call", "push", "rax", "eax", "ax", "al", "r15", "xmm0", "zmm31", "k1", "{k1}",
           "{z}", "cs:", "fs:", "rip", "0x", "0", "-1", "999999999999999999999999", "0x8000000000000000",
           "1e9999", "1.5", "__utf16__", "__float32__", "__?NaN?__", "..@", ".local", "\t", "\x00",
-          "\x7f", "\xff", "é", "\r", "\n%endmacro\n", "\n%endif\n", "\n%endrep\n"]
+          "\x7f", "\xff", "é", "\r", "\n%endmacro\n", "\n%endif\n", "\n%endrep\n",
+          # call frame information, the packages, MASM's words, %00
+          ".cfi_startproc", ".cfi_endproc", ".cfi_def_cfa_offset 16", ".cfi_offset rbp, -16",
+          ".cfi_adjust_cfa_offset -8", ".cfi_rel_offset rbx, 0", ".cfi_remember_state",
+          ".cfi_restore_state", ".cfi_signal_frame", ".cfi_escape 0x2e", ".cfi_startproc simple",
+          "%use masm", "%use ifunc", "%use fp", "%use smartalign", "%use altreg", "ptr", "dword ptr",
+          "flat:", "offset", "proc", "endp", "segment", "ends", "%00", "%00:", ".nolist", "0+",
+          "ilog2(", "ilog2c(", "__?ilog2w?__(", "sectalign", "sectalign off", "wrt ..imagebase",
+          "%{1}0", "%{2:3}", "global f:function (f.end - f)", "lea rax,", "%exitrep", "%line 9 x.s"]
 FORMATS = [("bin", []), ("elf64", []), ("elf64", ["-l", "x.lst"]), ("elf64", ["-g"]),
-           ("elf32", []), ("bin", ["-l", "x.lst"])]
+           ("elf32", []), ("bin", ["-l", "x.lst"]), ("win64", []), ("win64", ["-l", "x.lst"]),
+           ("elf64", ["--cet", "--noexecstack"]), ("elf64", ["-O0"]), ("bin", ["--bits", "16"]),
+           ("bin", ["--bits", "32"]), ("elf32", ["-g"]), ("elf64", ["-E"]), ("elf64", ["-g", "-l", "x.lst"])]
 
 
 def seeds():
@@ -51,6 +62,9 @@ def seeds():
     out += list(cases.ELF_PROBES.values()) + list(cases.EXPR_BIN.values()) + list(cases.EXPR_ELF.values())
     out += [s for s, files, fmt in cases.limit_cases().values() if not files and len(s) < 20000]
     out += [src for _, src, _, _ in cases.ROBUST_CASES]
+    # COFF objects, call frame information, warnings
+    out += list(cases.COFF_CASES.values()) + [src for _, src, _ in cases.CFI_CASES.values()]
+    out += list(cases.WARN_CASES.values())
     return out
 
 
