@@ -2312,6 +2312,22 @@ rx_apply:
     jae     .listing
     cmp     [r13 + SYMBOL_section], r14w
     jne     .syms_next
+    ; a sized one ("global f:function (f.end - f)"): its end moves too, so
+    ; the size is the code's as now laid out (it was the long jumps')
+    mov     rdi, [r13 + SYMBOL_size]
+    test    rdi, rdi
+    jz      .sym_start
+    add     rdi, [r13 + SYMBOL_value]
+    call    rx_new
+    push    rax                            ; the new end
+    mov     rdi, [r13 + SYMBOL_value]
+    call    rx_new
+    mov     [r13 + SYMBOL_value], rax
+    pop     rcx
+    sub     rcx, rax
+    mov     [r13 + SYMBOL_size], rcx
+    jmp     .syms_next
+.sym_start:
     mov     rdi, [r13 + SYMBOL_value]
     call    rx_new
     mov     [r13 + SYMBOL_value], rax
