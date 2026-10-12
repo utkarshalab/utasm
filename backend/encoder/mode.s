@@ -214,6 +214,8 @@ amd64_emit_osz_prefix:
     test    rcx, rcx
     jz      .plain
     mov     rdx, [rcx + SECTION_size]
+    cmp     rdx, [rcx + SECTION_cap]
+    ja      .plain                         ; (not in the buffer: no bytes)
     dec     rdx
     cmp     rdx, [rel amd64_a67_at]
     jne     .plain
@@ -634,6 +636,10 @@ amd64_rex_scan:
     test    rdx, rdx
     jz      .ok
     mov     rsi, [rcx + SECTION_size]
+    ; not in the buffer (code in uninitialised data keeps no bytes, and a
+    ; resb there took the size far past it): nothing to look at
+    cmp     rsi, [rcx + SECTION_cap]
+    ja      .ok
     mov     eax, [rbx + ASMCTX_inst_len]
     mov     rdi, rsi
     sub     rdi, rax                       ; the instruction's first byte
