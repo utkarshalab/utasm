@@ -793,6 +793,51 @@ def coff(utasm, verbose=False):
 
 
 # ---------------------------------------------------------------------------
+# .cfi_ directives: utasm's .eh_frame against GAS's for the same functions
+# (NASM has no CFI); GAS's messages for the misuses
+# ---------------------------------------------------------------------------
+def _frames(path):
+    raw = run(["objdump", "-s", "-j", ".eh_frame", path]).stdout
+    raw = [l for l in raw.splitlines() if l.startswith(" 0")]
+    rel = run(["readelf", "-rW", path]).stdout
+    rel = rel[rel.find(".eh_frame'"):] if ".eh_frame'" in rel else ""
+    rel = [" ".join(l.split()[2:3] + l.split()[4:]) for l in rel.splitlines()[2:] if l.strip()]
+    sec = [" ".join(l.split()[2:3] + l.split()[-4:]) for l in run(["readelf", "-SW", path]).stdout.splitlines()
+           if " .eh_frame " in l]
+    return raw, rel, sec
+
+
+def cfi(utasm, verbose=False):
+    s = Suite("cfi frames", verbose)
+    if not have("as"):
+        return s
+    for name, (gas, src, bits) in sorted(cases.CFI_CASES.items()):
+        with tempdir() as d:
+            open(os.path.join(d, "g.s"), "w").write(gas)
+            open(os.path.join(d, "u.s"), "w").write(src)
+            rg = run(["as"] + (["--32"] if bits == 32 else []) + ["g.s", "-o", "g.o"], cwd=d)
+            ru = run([utasm, "-f", "elf32" if bits == 32 else "elf64", "u.s", "-o", "u.o"], cwd=d)
+            if rg.returncode:
+                s.skip()
+                continue
+            if ru.returncode:
+                s.result("cfi " + name, False, "utasm error: " + first_line(ru))
+                continue
+            code = [run(["objcopy", "-O", "binary", "-j", ".text", o, o + ".bin"], cwd=d) and
+                    open(os.path.join(d, o + ".bin"), "rb").read() for o in ("g.o", "u.o")]
+            a, b = _frames(os.path.join(d, "g.o")), _frames(os.path.join(d, "u.o"))
+            s.result("cfi " + name, a == b and code[0] == code[1],
+                     "code %s, bytes %s, relocations %s" % (code[0] == code[1], a[0] == b[0], a[1] == b[1]))
+    for name, src, line, text in cases.CFI_ERRORS:
+        with tempdir() as d:
+            open(os.path.join(d, "e.s"), "w").write(src)
+            ru = run([utasm, "-f", "elf64", "e.s", "-o", "e.o"], cwd=d)
+        want = ("e.s:%d: error: " % line if line else "utasm: error: ") + text
+        s.result("cfi error " + name, ru.returncode != 0 and want in ru.stderr, first_line(ru))
+    return s
+
+
+# ---------------------------------------------------------------------------
 # expressions: labels defined later in arithmetic, and NASM's scalar rule
 # ---------------------------------------------------------------------------
 def _error_text(r):
