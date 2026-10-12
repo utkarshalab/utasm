@@ -7416,7 +7416,27 @@ parser_alignb:
     neg     rcx
     lea     r8, [rdx - 1]
     and     rcx, r8
+    ; the listing shows the space as reserved ("<res 3FFFFh>"), as NASM's
+    push    rax
+    push    rcx
+    push    rdx
+    mov     rdi, [rax + SECTION_size]
+    lea     rsi, [rdi + rcx]
+    extern  lst_uninit
+    call    lst_uninit
+    pop     rdx
+    pop     rcx
+    pop     rax
     add     [rax + SECTION_size], rcx
+    push    rax
+    push    rcx
+    push    rdx
+    mov     rdi, rax
+    extern  asm_ctx_fit
+    call    asm_ctx_fit                    ; (its bytes, past the buffer)
+    pop     rdx
+    pop     rcx
+    pop     rax
     cmp     byte [rel sectalign_off], 0
     jne     .fill                          ; "sectalign off"
     cmp     rdx, [rax + SECTION_align]
@@ -8063,6 +8083,16 @@ parser_handle_times:
     call    relax_pending_padto
     mov     [rel times_padto], al
 .count_done:
+    ; more repetitions than 2^32: an error (NASM's count wraps; it ran for
+    ; ever)
+    test    r15, r15
+    js      .count_small
+    mov     eax, 0xFFFFFFFF
+    cmp     r15, rax
+    jbe     .count_small
+    mov     rax, EXIT_TIMES_LARGE
+    jmp     .ret
+.count_small:
 
     ; 2. The statement to repeat, with the newline ending it, becomes a
     ;    %rep body: the parser then reads it N times, whether it is an
@@ -9366,12 +9396,26 @@ parser_handle_res:
     jnz     .res_unknown
     xor     edx, edx
 .count_known:
+    ; a negative count, or bytes past 4 GiB: errors (NASM panicked on the
+    ; one, ran for ever on the other; utasm faulted)
+    test    rdx, rdx
+    js      .negative
     imul    rdx, r12               ; total bytes to reserve
+    jo      .too_large
 
     mov     rax, [rbx + PREP_ctx]
     mov     rax, [rax + ASMCTX_curr_sec]
     test    rax, rax
     jz      .no_section
+    cmp     dword [rax + SECTION_elf_type], SHT_NOBITS
+    je      .size_ok                       ; (no bytes: any size)
+    mov     rcx, [rax + SECTION_size]
+    add     rcx, rdx
+    jc      .too_large
+    mov     r8d, 0xFFFFFFFF
+    cmp     rcx, r8
+    ja      .too_large
+.size_ok:
     ; outside .bss, zeros: NASM's warning, and "??" in the listing
     cmp     dword [rax + SECTION_elf_type], SHT_NOBITS
     je      .reserve
@@ -9388,7 +9432,22 @@ parser_handle_res:
     pop     rax
 .reserve:
     add     [rax + SECTION_size], rdx
-    xor     rax, rax
+    mov     rdi, rax
+    extern  asm_ctx_fit
+    call    asm_ctx_fit                    ; (its bytes, past the buffer)
+    jmp     .done
+.negative:
+    mov     rax, EXIT_RES_NEGATIVE
+    jmp     .done
+.too_large:
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_curr_sec]
+    test    rax, rax
+    jz      .too_large_code
+    mov     rdi, [rax + SECTION_name]
+    call    error_set_subject
+.too_large_code:
+    mov     rax, EXIT_SECTION_SIZE
     jmp     .done
 
 .no_section:
