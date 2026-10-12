@@ -1190,3 +1190,36 @@ BIN_PROBES.update({
 WARN_CASES.update({
     "warn_macro_redef": "%macro m 0\nnop\n%endmacro\n%macro m 0\nint3\n%endmacro\n%macro m 1\nnop\n%endmacro\nm\n",
 })
+
+# .cfi_ directives (scripts/compat/suites.py cfi): GAS's source, utasm's,
+# the mode; .eh_frame compared byte for byte
+CFI_CASES = {
+    'basic': ('\t.text\n\t.globl f\nf:\n\t.cfi_startproc\n\tpushq %rbp\n\t.cfi_def_cfa_offset 16\n\t.cfi_offset %rbp, -16\n\tmovq %rsp, %rbp\n\t.cfi_def_cfa_register %rbp\n\tnop\n\tpopq %rbp\n\t.cfi_def_cfa %rsp, 8\n\tret\n\t.cfi_endproc\n',
+          'section .text\nglobal f\nf:\n    .cfi_startproc\n    push rbp\n    .cfi_def_cfa_offset 16\n    .cfi_offset rbp, -16\n    mov rbp, rsp\n    .cfi_def_cfa_register rbp\n    nop\n    pop rbp\n    .cfi_def_cfa rsp, 8\n    ret\n    .cfi_endproc\n', 64),
+    'rules': ('\t.text\ng:\n\t.cfi_startproc\n\tsubq $24, %rsp\n\t.cfi_adjust_cfa_offset 24\n\tpushq %rbx\n\t.cfi_adjust_cfa_offset 8\n\t.cfi_rel_offset %rbx, 0\n\t.cfi_remember_state\n\tpopq %rbx\n\t.cfi_restore %rbx\n\t.cfi_adjust_cfa_offset -8\n\t.cfi_restore_state\n\t.cfi_adjust_cfa_offset 8\n\t.cfi_undefined %r12\n\t.cfi_same_value %r13\n\t.cfi_register %r14, %r15\n\t.cfi_offset %r15, 16\n\t.cfi_offset %xmm3, -24\n\t.cfi_restore %xmm3\n\t.cfi_offset %xmm20, -32\n\t.cfi_offset 70, -40\n\t.fill 300, 1, 0x90\n\t.cfi_def_cfa_offset 200\n\t.fill 70000, 1, 0x90\n\t.cfi_def_cfa_offset 8\n\t.fill 70, 1, 0x90\n\t.cfi_escape 0x2e, 0x10\n\tret\n\t.cfi_endproc\n',
+          'section .text\ng:\n    .cfi_startproc\n    sub rsp, 24\n    .cfi_adjust_cfa_offset 24\n    push rbx\n    .cfi_adjust_cfa_offset 8\n    .cfi_rel_offset rbx, 0\n    .cfi_remember_state\n    pop rbx\n    .cfi_restore rbx\n    .cfi_adjust_cfa_offset -8\n    .cfi_restore_state\n    .cfi_adjust_cfa_offset 8\n    .cfi_undefined r12\n    .cfi_same_value r13\n    .cfi_register r14, r15\n    .cfi_offset r15, 16\n    .cfi_offset xmm3, -24\n    .cfi_restore xmm3\n    .cfi_offset xmm20, -32\n    .cfi_offset 70, -40\n    times 300 nop\n    .cfi_def_cfa_offset 200\n    times 70000 nop\n    .cfi_def_cfa_offset 8\n    times 70 nop\n    .cfi_escape 0x2e, 0x10\n    ret\n    .cfi_endproc\n', 64),
+    'signal_sections': ('\t.text\nh:\n\t.cfi_startproc\n\tnop\n\t.cfi_endproc\nh2:\n\t.cfi_startproc\n\t.cfi_signal_frame\n\tnop\n\t.cfi_endproc\n\t.section .text.other,"ax",@progbits\nk:\n\t.cfi_startproc\n\tnop\n\t.cfi_endproc\n\t.text\nh3:\n\t.cfi_startproc simple\n\t.cfi_def_cfa %rsp, 8\n\tnop\n\t.cfi_endproc\n',
+          'section .text\nh:\n    .cfi_startproc\n    nop\n    .cfi_endproc\nh2:\n    .cfi_startproc\n    .cfi_signal_frame\n    nop\n    .cfi_endproc\nsection .text.other exec\nk:\n    .cfi_startproc\n    nop\n    .cfi_endproc\nsection .text\nh3:\n    .cfi_startproc simple\n    .cfi_def_cfa rsp, 8\n    nop\n    .cfi_endproc\n', 64),
+    'jumps': ('\t.text\nj:\n\t.cfi_startproc\n\tpushq %rbx\n\t.cfi_def_cfa_offset 16\n\tjmp 1f\n\t.fill 10, 1, 0x90\n1:\tpopq %rbx\n\t.cfi_def_cfa_offset 8\n\tret\n\t.cfi_endproc\n',
+          'section .text\nj:\n    .cfi_startproc\n    push rbx\n    .cfi_def_cfa_offset 16\n    jmp .l\n    times 10 nop\n.l: pop rbx\n    .cfi_def_cfa_offset 8\n    ret\n    .cfi_endproc\n', 64),
+    'i386': ('\t.text\nf:\n\t.cfi_startproc\n\tpushl %ebp\n\t.cfi_def_cfa_offset 8\n\t.cfi_offset %ebp, -8\n\tmovl %esp, %ebp\n\t.cfi_def_cfa_register %ebp\n\tleave\n\t.cfi_def_cfa %esp, 4\n\tret\n\t.cfi_endproc\n',
+          'section .text\nf:\n.cfi_startproc\npush ebp\n.cfi_def_cfa_offset 8\n.cfi_offset ebp, -8\nmov ebp, esp\n.cfi_def_cfa_register ebp\nleave\n.cfi_def_cfa esp, 4\nret\n.cfi_endproc\n', 32),
+    'leading_rules': ('\t.text\nf:\n\t.cfi_startproc\n\t.cfi_def_cfa_offset 16\n\tnop\n\t.cfi_endproc\ng:\n\t.cfi_startproc\n\t.cfi_def_cfa_offset 16\n\tret\n\t.cfi_endproc\nh:\n\t.cfi_startproc\n\tret\n\t.cfi_endproc\n',
+          'section .text\nf:\n.cfi_startproc\n.cfi_def_cfa_offset 16\nnop\n.cfi_endproc\ng:\n.cfi_startproc\n.cfi_def_cfa_offset 16\nret\n.cfi_endproc\nh:\n.cfi_startproc\nret\n.cfi_endproc\n', 64),
+}
+# misuses, with GAS's messages: (name, source, line (0: at the end), text)
+CFI_ERRORS = [
+    ("rule outside", "section .text\n.cfi_def_cfa_offset 16\n", 2,
+     "CFI instruction used without previous .cfi_startproc"),
+    ("startproc twice", "section .text\n.cfi_startproc\n.cfi_startproc\n", 3,
+     "previous CFI entry not closed (missing .cfi_endproc)"),
+    ("open at the end", "section .text\n.cfi_startproc\nnop\n", 0,
+     "open CFI at the end of file; missing .cfi_endproc directive"),
+    ("bad register", "section .text\n.cfi_startproc\n.cfi_offset foo, 8\n.cfi_endproc\n", 3,
+     "bad register expression `foo'"),
+    ("unknown directive", "section .text\n.cfi_bogus\n", 2, "unknown CFI directive `.cfi_bogus'"),
+    ("restore_state alone", "section .text\n.cfi_startproc\n.cfi_restore_state\n.cfi_endproc\n", 3,
+     "CFI state restore without previous remember"),
+    ("endproc alone", "section .text\nnop\n.cfi_endproc\n", 3,
+     ".cfi_endproc without corresponding .cfi_startproc"),
+]
