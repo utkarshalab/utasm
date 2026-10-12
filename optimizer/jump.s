@@ -2325,6 +2325,10 @@ rx_apply:
     mov     rdi, r12
     extern  lst_remap
     call    lst_remap
+    ; and the .cfi_ directives' places (debug/cfi.s)
+    mov     rdi, r12
+    extern  cfi_remap
+    call    cfi_remap
 
 .out:
     add     rsp, 8
