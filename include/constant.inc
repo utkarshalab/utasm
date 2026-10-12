@@ -117,6 +117,9 @@
 %define EXIT_CFI_UNKNOWN       96  ; .cfi_ with a name utasm does not have
 %define EXIT_CFI_STATE         97  ; .cfi_restore_state with nothing remembered
 %define EXIT_CFI_ENDPROC       98  ; .cfi_endproc with no .cfi_startproc
+%define EXIT_RES_NEGATIVE      99  ; "resb -2"
+%define EXIT_SECTION_SIZE      100 ; a section with bytes past 4 GiB
+%define EXIT_TIMES_LARGE       101 ; "times 0x100000000 ..."
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
