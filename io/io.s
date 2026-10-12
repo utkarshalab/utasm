@@ -41,15 +41,37 @@ extern error_new_from_errno
 ;
 global io_write
 io_write:
+    ; all of it: a write takes at most 2 GB - 4 KB at a time (a larger
+    ; output came out cut short), and a pipe less
+    push    rdi
+    push    rsi
+    push    r9
+    push    r10
+    mov     r9, rdx                ; r9 = still to write
+    xor     r10d, r10d             ; r10 = written
+.more:
+    test    r9, r9
+    jz      .written
+    mov     rdx, r9
     mov     rax, AMD64_SYS_WRITE
-    syscall
-
+    syscall                        ; (rdi and rsi kept)
+    cmp     rax, -4                ; EINTR: again
+    je      .more
     ; syscall returns bytes written in rax, negative on error
     test    rax, rax
     js      .error
-
-    mov     rdx, rax               ; rdx = bytes written
+    jz      .written               ; (nothing more taken)
+    add     rsi, rax
+    add     r10, rax
+    sub     r9, rax
+    jmp     .more
+.written:
+    mov     rdx, r10               ; rdx = bytes written
     xor     rax, rax               ; rax = EXIT_OK
+    pop     r10
+    pop     r9
+    pop     rsi
+    pop     rdi
     ret
 
 .error:
@@ -58,6 +80,10 @@ io_write:
     call    error_new_from_errno
     mov     rax, EXIT_FILE_WRITE
     xor     rdx, rdx
+    pop     r10
+    pop     r9
+    pop     rsi
+    pop     rdi
     ret
 
 ; ---- io_read ----------------------------------
