@@ -46,6 +46,12 @@ linker_run:
     mov     rdi, rbx
     call    relax_run
 
+    ; 0.1 .cfi_ directives: .eh_frame, from the code as it now is
+    extern  cfi_build
+    mov     rdi, rbx
+    call    cfi_build
+    check_err
+
     ; 0.2 -g: the debug sections, from the code as it now is
     extern  dwarf_generate
     mov     rdi, rbx
