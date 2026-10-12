@@ -5956,6 +5956,15 @@ parser_handle_pseudo_op:
     mov     r12, rdi
 .lc_keep:
 
+    ; GAS's call frame directives: .cfi_startproc ... (debug/cfi.s)
+    cmp     dword [r12], '.cfi'
+    jne     .not_cfi
+    cmp     byte [r12 + 4], '_'
+    jne     .not_cfi
+    call    parser_cfi
+    jmp     .check_handler_result
+.not_cfi:
+
     ; the directives NASM makes standard macros (section, global, align
     ; ...) move its %% counter as a macro call does - so many numbers each
     ; (std_macro_words) - which ..@N names show; not in [ ] (the primitive)
@@ -7680,6 +7689,195 @@ parser_istruc:
 .bad:
     mov     rax, EXIT_UNEXPECTED_TOKEN
 .ret:
+    ret
+
+;*
+; * [parser_cfi]
+; * Purpose: A .cfi_ directive (GAS's), recorded by debug/cfi.s: its
+; *   register (a name - rbp, xmm3, or GAS's %rbp - or DWARF's number) and
+; *   offset as its form wants them.
+; * Input  : RBX = PrepState, R12 = the directive's name, in lower case
+; * Output : RAX = OK or an error
+; ;
+parser_cfi:
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    lea     r13, [rel cfi_words]
+.word:
+    cmp     byte [r13], 0
+    je      .unknown
+    lea     rdi, [r12 + 5]                 ; after ".cfi_"
+    mov     rsi, r13
+    call    str_cmp
+    test    rax, rax
+    jz      .found
+    add     r13, 32
+    jmp     .word
+.unknown:
+    mov     rdi, r12
+    call    error_set_subject
+    mov     eax, EXIT_CFI_UNKNOWN
+    jmp     .ret
+.found:
+    xor     r14d, r14d                     ; the register
+    xor     r15d, r15d                     ; the second / the offset
+    movzx   eax, byte [r13 + 31]           ; its form
+    cmp     eax, 0
+    je      .record
+    cmp     eax, 1
+    je      .reg_only
+    cmp     eax, 2
+    je      .expr_only
+    cmp     eax, 3
+    je      .reg_expr
+    cmp     eax, 4
+    je      .reg_reg
+    cmp     eax, 5
+    je      .startproc
+    cmp     eax, 6
+    je      .escape
+    ; 7: accepted, nothing to record (.cfi_sections .eh_frame)
+    call    parser_skip_to_eol
+    xor     eax, eax
+    jmp     .ret
+.reg_only:
+    call    .reg
+    test    rax, rax
+    jnz     .ret
+    mov     r14d, edx
+    jmp     .record
+.expr_only:
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .ret
+    mov     r15, rdx
+    jmp     .record
+.reg_expr:
+    call    .reg
+    test    rax, rax
+    jnz     .ret
+    mov     r14d, edx
+    call    .comma
+    test    rax, rax
+    jnz     .ret
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .ret
+    mov     r15, rdx
+    jmp     .record
+.reg_reg:
+    call    .reg
+    test    rax, rax
+    jnz     .ret
+    mov     r14d, edx
+    call    .comma
+    test    rax, rax
+    jnz     .ret
+    call    .reg
+    test    rax, rax
+    jnz     .ret
+    mov     r15d, edx
+    jmp     .record
+.startproc:
+    ; ".cfi_startproc simple": no initial rules
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .record
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel str_cfi_simple]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .record
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     r15d, 1
+    jmp     .record
+.escape:
+    ; bytes, one record each
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .ret
+    mov     rcx, rdx
+    and     ecx, 0xFF
+    mov     edi, CFI_ESCAPE
+    xor     esi, esi
+    xor     edx, edx
+    extern  cfi_directive
+    call    cfi_directive
+    test    rax, rax
+    jnz     .ret
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_COMMA
+    jne     .done
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    jmp     .escape
+.record:
+    movzx   edi, byte [r13 + 30]           ; CFI_*
+    mov     esi, r14d
+    mov     edx, r15d
+    mov     rcx, r15
+    call    cfi_directive
+    jmp     .ret
+.done:
+    xor     eax, eax
+.ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    ret
+
+; .comma: the comma between two arguments
+.comma:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    xor     eax, eax
+    cmp     byte [rdx + TOKEN_kind], TOK_COMMA
+    je      .comma_ret
+    mov     eax, EXIT_UNEXPECTED_TOKEN
+.comma_ret:
+    ret
+
+; .reg: a register -> edx = its DWARF number (rax = OK or an error)
+.reg:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .reg_ret
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NUMBER
+    je      .reg_number
+    cmp     eax, TOK_IDENT
+    je      .reg_name
+    cmp     eax, TOK_DIRECTIVE              ; GAS's "%rbp"
+    je      .reg_name
+    mov     eax, EXIT_UNEXPECTED_TOKEN
+    ret
+.reg_number:
+    mov     rdi, [rdx + TOKEN_value]
+    call    str_to_int
+    ret
+.reg_name:
+    push    qword [rdx + TOKEN_value]
+    mov     rdi, [rdx + TOKEN_value]
+    extern  cfi_register
+    call    cfi_register                   ; eax = the number, or -1
+    pop     rdi
+    mov     edx, eax
+    xor     eax, eax
+    test    edx, edx
+    jns     .reg_ret
+    call    error_set_subject
+    mov     eax, EXIT_CFI_REG
+.reg_ret:
     ret
 
 ;*
@@ -10517,6 +10715,29 @@ str_times:     db "times", 0
 str_struc:     db "struc", 0
 str_endstruc:  db "endstruc", 0
 str_strucstart: db ".strucstart", 0
+str_cfi_simple: db "simple", 0
+; .cfi_ directives: name after ".cfi_" (30 bytes), CFI_*, the arguments:
+; 0 none, 1 register, 2 offset, 3 register and offset, 4 two registers,
+; 5 [simple], 6 bytes, 7 nothing recorded
+cfi_words:
+    db "startproc", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CFI_START, 5
+    db "endproc", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CFI_END, 0
+    db "def_cfa", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CFI_DEF_CFA, 3
+    db "def_cfa_register", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CFI_DEF_CFA_REG, 1
+    db "def_cfa_offset", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CFI_DEF_CFA_OFF, 2
+    db "adjust_cfa_offset", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CFI_ADJUST, 2
+    db "offset", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CFI_OFFSET, 3
+    db "rel_offset", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CFI_REL_OFFSET, 3
+    db "restore", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CFI_RESTORE, 1
+    db "undefined", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CFI_UNDEFINED, 1
+    db "same_value", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CFI_SAME, 1
+    db "register", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CFI_REGISTER, 4
+    db "remember_state", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CFI_REMEMBER, 0
+    db "restore_state", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CFI_RESTORE_STATE, 0
+    db "signal_frame", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CFI_SIGNAL, 0
+    db "escape", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CFI_ESCAPE, 6
+    db "sections", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7
+    db 0
 ; the directives NASM makes standard macros, word (11 bytes) + the numbers
 ; of its %% counter each takes (parser_handle_pseudo_op): one for the
 ; macro, one more for a context it opens (struc, istruc) or a macro it
