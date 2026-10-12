@@ -85,12 +85,24 @@ asm_ctx_emit_byte:
                                    ; take rsi (it came out as the low byte
                                    ; of a pointer at each 64KB boundary)
 
-    ; 1. Calculate new capacity (current * 2)
+    ; 1. Calculate new capacity: twice the current, and past the size -
+    ;    which "resb 0x80000" in a code section moved beyond the buffer
+    ;    without writing (the copy below read past the old one: a fault)
     mov     rax, [r12 + SECTION_cap]
     shl     rax, 1
     IF rax, e, 0
         mov rax, 65536
     ENDIF ; Default 64KB
+    mov     rcx, [r12 + SECTION_size]
+    mov     r8d, 0xFFFFFFFF
+    cmp     rcx, r8
+    ja      .grow_large                    ; bytes past 4 GiB
+    add     rcx, 65536
+    and     rcx, -65536            ; the size and a byte more, in 64KB
+    cmp     rax, rcx
+    jae     .cap_set
+    mov     rax, rcx
+.cap_set:
     mov     r13, rax               ; r13 = new cap
     
     ; 2. Map new buffer
@@ -107,10 +119,15 @@ asm_ctx_emit_byte:
     ENDIF
     mov     r14, rdx               ; r14 = new buffer ptr
     
-    ; 3. Copy old data
+    ; 3. Copy old data: what the old buffer holds (past it, reserved
+    ;    space: zero, as the new mapping is)
     mov     rdi, r14
     mov     rsi, [r12 + SECTION_data]
     mov     rcx, [r12 + SECTION_size]
+    cmp     rcx, [r12 + SECTION_cap]
+    jbe     .copy
+    mov     rcx, [r12 + SECTION_cap]
+.copy:
     rep movsb
     
     ; 4. Unmap old buffer
@@ -128,6 +145,15 @@ asm_ctx_emit_byte:
     mov     rax, [r12 + SECTION_size]   ; .write expects rax = write offset
     jmp     .write
 
+.grow_large:
+    pop     rsi
+    pop     r14
+    pop     r13
+    mov     rdi, [r12 + SECTION_name]
+    extern  error_set_subject
+    call    error_set_subject
+    mov     rax, EXIT_SECTION_SIZE
+    jmp     .done
 .grow_error:
     pop     rsi
     pop     r14
@@ -224,6 +250,62 @@ asm_ctx_create_section:
     pop     r12
     pop     rbx
     epilogue
+
+;*
+; * [asm_ctx_fit]
+; * Purpose: Section RDI's buffer holds its size: resb and alignb move the
+; *   size without writing, and the output reads the bytes up to it (a
+; *   "resb 0x80000" at the end of a code section came out cut short). Not
+; *   for uninitialised data (no bytes).
+; * Output : RAX = EXIT_OK or an error
+; ;
+global asm_ctx_fit
+asm_ctx_fit:
+    xor     eax, eax
+    cmp     dword [rdi + SECTION_elf_type], SHT_NOBITS
+    je      .ret
+    mov     rcx, [rdi + SECTION_size]
+    cmp     rcx, [rdi + SECTION_cap]
+    jb      .ret
+    mov     eax, EXIT_SECTION_SIZE         ; bytes past 4 GiB
+    mov     r8d, 0xFFFFFFFF
+    cmp     rcx, r8
+    ja      .ret
+    xor     eax, eax
+    push    r12
+    push    r13
+    push    r14
+    mov     r12, rdi
+    add     rcx, 65536
+    and     rcx, -65536                    ; the size and a byte more, in 64KB
+    mov     r13, rcx
+    xor     edi, edi
+    mov     rsi, r13
+    mov     edx, PROT_READ | PROT_WRITE
+    mov     ecx, MAP_PRIVATE | MAP_ANONYMOUS
+    mov     r8, -1
+    xor     r9d, r9d
+    call    io_mmap
+    test    rax, rax
+    jnz     .out
+    mov     r14, rdx
+    mov     rdi, r14
+    mov     rsi, [r12 + SECTION_data]
+    mov     rcx, [r12 + SECTION_cap]       ; what the old buffer holds
+    rep     movsb
+    mov     rdi, [r12 + SECTION_data]
+    mov     rsi, [r12 + SECTION_cap]
+    extern  io_munmap
+    call    io_munmap
+    mov     [r12 + SECTION_data], r14
+    mov     [r12 + SECTION_cap], r13
+    xor     eax, eax
+.out:
+    pop     r14
+    pop     r13
+    pop     r12
+.ret:
+    ret
 
 ;*
 ; * [asm_ctx_emit_dword]
