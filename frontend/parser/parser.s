@@ -5416,10 +5416,6 @@ parser_parse_struc:
     mov     [rsi + SYMBOL_name],  r13     ; struct name ptr
     call    symbol_add
     add     rsp, SYMBOL_SIZE
-    ; NASM's struc defines its name as a label: ".w" after it is "s.w"
-    ; ("istruc s / at .w, ..."), until the next label
-    mov     rax, [rbx + PREP_ctx]
-    mov     [rax + ASMCTX_last_global], r13
 
     ; "struc s, -40": the fields from that offset on, the struct's own name
     ; that offset (NASM's [absolute -40]); its size the bytes from there
@@ -8141,8 +8137,21 @@ parser_endstruc_late:
 ; * Output : RAX = OK or an error
 ; ;
 parser_at:
+    ; ".w" is the istruc's structure's field (NASM 2.16): the structure's
+    ; name the local labels' base while the field is read
+    push    r12
+    mov     rax, [rbx + PREP_ctx]
+    mov     r12, [rax + ASMCTX_last_global]
+    mov     rcx, [rel istruc_name]
+    test    rcx, rcx
+    jz      .at_base
+    mov     [rax + ASMCTX_last_global], rcx
+.at_base:
     mov     rdi, rbx
     call    parser_evaluate_expression
+    mov     rcx, [rbx + PREP_ctx]
+    mov     [rcx + ASMCTX_last_global], r12
+    pop     r12
     test    rax, rax
     jnz     .ret
     ; a struc with a base offset ("struc s, -40"): its fields count from
