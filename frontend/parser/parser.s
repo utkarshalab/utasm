@@ -910,7 +910,14 @@ parser_parse_operand:
         jmp     .sized_reg
 .sized_check:
         cmp     cx, [r12 + OPERAND_xsize]
-        jne     .sized_bad
+        je      .sized_reg
+        ; "insertps xmm0, dword xmm1": on a vector register, a smaller size
+        ; is the operand's as memory (the encoder takes the form with it)
+        cmp     word [r12 + OPERAND_xsize], 128
+        jb      .sized_bad
+        cmp     cx, [r12 + OPERAND_xsize]
+        ja      .sized_bad
+        mov     [r12 + OPERAND_dispsize], cl
 .sized_reg:
         mov     byte [r12 + OPERAND_kind], OP_REG
         jmp     .success
@@ -1041,6 +1048,33 @@ parser_parse_operand:
     mov     rax, [rbx + PREP_ctx]
     cmp     byte [rax + ASMCTX_target], TARGET_AARCH64
     je      .decorated
+    ; "zmm1+3": a block of four registers (v4fmaddps, NASM's rs4), the
+    ; first named; "+0" as well
+    cmp     byte [r12 + OPERAND_kind], OP_REG
+    jne     .decorator
+    cmp     word [r12 + OPERAND_xsize], 512
+    jne     .decorator
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_PLUS
+    jne     .decorator
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; '+'
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    check_err
+    mov     rax, EXIT_INVALID_REG
+    cmp     byte [rdx + TOKEN_kind], TOK_NUMBER
+    jne     .error
+    mov     rdi, [rdx + TOKEN_value]
+    call    str_to_int
+    test    rax, rax
+    mov     rax, EXIT_INVALID_REG
+    jnz     .error
+    test    rdx, rdx
+    jz      .decorator
+    cmp     rdx, 3
+    jne     .error
 .decorator:
     mov     rdi, rbx
     call    preprocessor_peek_token
@@ -6501,13 +6535,15 @@ parser_handle_pseudo_op:
     je      .cpu_rest
     cmp     eax, TOK_EOF
     je      .cpu_rest
+    cmp     eax, TOK_NUMBER
+    je      .cpu_level
     cmp     eax, TOK_IDENT
     jne     .cpu_skip
     mov     r13, [rdx + TOKEN_value]
     lea     r14, [rel cpu_words]
 .cpu_find:
     cmp     byte [r14], 0
-    je      .cpu_skip
+    je      .cpu_other
     mov     rdi, r13
     mov     rsi, r14
     call    str_cmp_kw
@@ -6520,6 +6556,18 @@ parser_handle_pseudo_op:
     and     al, [r14 + 10]                 ; the bits it clears
     or      al, [r14 + 11]                 ; ... and sets
     mov     [rel cpu_latevex], al
+    jmp     .cpu_skip
+.cpu_level:
+    ; "cpu 8086": pop cs is an instruction there; any other level not
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel str_8086]
+    call    str_cmp
+    test    rax, rax
+    jnz     .cpu_other
+    or      byte [rel cpu_latevex], CPUF_8086
+    jmp     .cpu_skip
+.cpu_other:
+    and     byte [rel cpu_latevex], ~CPUF_8086 & 0xFF
 .cpu_skip:
     mov     rdi, rbx
     call    preprocessor_next_token
@@ -8575,6 +8623,26 @@ parser_handle_times:
     jz      .ok                        ; "times N" alone
     test    r15, r15
     jle     .ok                        ; "times 0": the line is consumed
+    ; "times N resb K": one reservation of N times K, as NASM makes it -
+    ; one warning outside .bss, listed as a resb is ("<res 1900000h>"),
+    ; not N statements (a 100 MB listing of ?? for times 50 resb 0x80000)
+    cmp     byte [r12 + TOKEN_kind], TOK_IDENT
+    jne     .not_res_times
+    lea     r14, [rel res_words]
+.res_word:
+    cmp     byte [r14], 0
+    je      .not_res_times
+    mov     rdi, [r12 + TOKEN_value]
+    mov     rsi, r14
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .res_times
+    add     r14, 5
+    jmp     .res_word
+.res_times:
+    mov     [rel times_res_mul], r15
+    mov     r15d, 1
+.not_res_times:
     ; the newline that ends each repetition
     mov     rsi, [rel times_newline]
     imul    rdi, r13, TOKEN_SIZE
@@ -10097,6 +10165,9 @@ alignb 8
 item_start:    resq 1                  ; parser_item_begin: the item's offset
 expr_question: resb 1                  ; "?" was read (an uninitialised item)
 zero_warned:   resb 1                  ; this data line has warned (zeroing)
+alignb 8
+times_res_mul: resq 1                  ; "times N resb K": N, for the resb
+res_mul:       resq 1                  ; (taken by parser_handle_res)
 expr_in_data:  resb 1                  ; a data directive is being read
 [SECTION .text]
 
@@ -10115,6 +10186,10 @@ parser_handle_res:
     push    r12
     mov     rbx, rdi               ; rbx = PrepState
     mov     r12, rsi               ; r12 = element size
+    ; "times N" before it (parser_handle_times): N times the count
+    mov     rax, [rel times_res_mul]
+    mov     qword [rel times_res_mul], 0
+    mov     [rel res_mul], rax
 
     mov     rdi, rbx
     call    parser_evaluate_expression
@@ -10133,6 +10208,12 @@ parser_handle_res:
     js      .negative
     imul    rdx, r12               ; total bytes to reserve
     jo      .too_large
+    mov     rcx, [rel res_mul]
+    test    rcx, rcx
+    jz      .one
+    imul    rdx, rcx
+    jo      .too_large
+.one:
 
     mov     rax, [rbx + PREP_ctx]
     mov     rax, [rax + ASMCTX_curr_sec]
@@ -10157,6 +10238,11 @@ parser_handle_res:
     mov     rdi, [rax + SECTION_size]
     lea     rsi, [rdi + rdx]
     call    lst_uninit
+    cmp     qword [rel res_mul], 0
+    je      .listed
+    mov     edi, 4                         ; LK_RES: times N resb K, listed whole
+    call    lst_mark
+.listed:
     mov     rdi, [rsp + 8]
     call    parser_warn_zeroing
     pop     rdx
@@ -11367,6 +11453,7 @@ str_p2align:   db "p2align", 0
 str_section:   db "section", 0
 str_segment:   db "segment", 0
 str_cpu:       db "cpu", 0
+str_8086:      db "8086", 0
 ; "cpu" words: 10-byte name, the CPUF_* bits kept (and), set (or)
 cpu_words:
     db "default", 0, 0, 0, 0, 0
@@ -11392,6 +11479,8 @@ attr_flag_bits: dw SHF_ALLOC, SHF_ALLOC, SHF_EXECINSTR, SHF_EXECINSTR, SHF_WRITE
                dw SHF_TLS, SHF_TLS
 str_section_upper: db "SECTION", 0
 str_times:     db "times", 0
+res_words:     db "resb", 0, "resw", 0, "resd", 0, "resq", 0, "rest", 0
+               db "reso", 0, "resy", 0, "resz", 0, 0
 str_struc:     db "struc", 0
 str_endstruc:  db "endstruc", 0
 str_strucstart: db ".strucstart", 0
