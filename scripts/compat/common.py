@@ -21,6 +21,11 @@ KNOWN = {
     "listing op_cmp3": "NASM's <=> disagrees with its own manual",
     "listing op_signed_div": "// is a comment in utasm",
     # listing details not reproduced
+    "listing data_dup": "NASM lists each dup copy and a zeroing warning per ? item",
+    "listing pp_ctx_label_macro": "NASM lists %$x's source text for a label before a macro",
+    "listing pp_rep_nolist": "NASM lists a .nolist %rep's bytes on its %endrep line",
+    "listing struc_base_offset": "NASM lists at's padding as 00<rep 4h>",
+    "listing ptr_as_label": "the line after \"dword ptr\" is read early: its bytes list there",
 # -f win64: a label with no section before it is an undefined external in
     # NASM's object (its .text is made only for code or data); utasm's is a
     # label of .text
