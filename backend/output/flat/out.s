@@ -80,7 +80,23 @@ binary_layout:
     jne     .sec                           ; not this pass
     cmp     qword [rdx + SECTION_size], 0
     jne     .place
-    mov     [rdx + SECTION_addr], r14      ; empty: no space, no alignment
+    ; empty: no space, but its labels at the next address of its alignment,
+    ; as NASM ("section .bss" / "end:" after 15 bytes of .data: 0x10)
+    mov     rax, r14
+    test    r8d, r8d
+    jz      .empty_at
+    mov     r9, [rdx + SECTION_align]
+    cmp     r9, 4
+    jae     .empty_align
+    mov     r9d, 4
+.empty_align:
+    dec     r9
+    add     rax, r9
+    not     r9
+    and     rax, r9
+.empty_at:
+    mov     [rdx + SECTION_addr], rax
+    mov     r14, rax                       ; (the next one follows from there)
     test    byte [rdx + SECTION_bin_flags], BIN_VSTART
     jz      .sec
     mov     rax, [rdx + SECTION_vstart]
