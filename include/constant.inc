@@ -164,7 +164,9 @@
 %define WC_OBSOLETE_REMOVED    20  ; obsolete-removed: "pop cs"
 %define WC_OBSOLETE_NOP        21  ; obsolete-nop: "pcommit"
 %define WC_OBSOLETE_VALID      22  ; obsolete-valid: "pop cs" under cpu 8086
-%define WC_COUNT               23
+%define WC_FLOAT_OVERFLOW      23  ; float-overflow: "dd 1.0e50"
+%define WC_PP_REP_NEGATIVE     24  ; pp-rep-negative: "%rep -1"
+%define WC_COUNT               25
 
 ; a kept expression's record (parser_defer_record): +0 RELOC_EXPR_MARK,
 ; +8 text, +16 tokens, +24 count; and for core/known.s:
@@ -321,6 +323,8 @@
 %define FLT_DOUBLE             3           ; binary64, dq
 %define FLT_EXT                4           ; x87 80-bit extended, dt
 %define FLT_QUAD               5           ; binary128, do
+%define FLT_BYTE               6           ; NASM's 8-bit float (1.4.3, bias 7), db
+%define FLT_BF16               7           ; bfloat16 (__bfloat16__)
 %define FLT_HIGH               0x80        ; (float functions) the high part
 %define TOK_COMMENT            0x21
 %define TOK_FLOAT              0x22
