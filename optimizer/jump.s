@@ -60,10 +60,11 @@ DEFAULT REL
 ; CTX_FLAG_DEBUG / CTX_FLAG_DWARF. -g keeps it on: the listing (-l) and
 ; the DWARF line table follow the moved code (lst_remap).
 ;
-; Optimization levels (ASMCTX_opt, set by -O0/-O1/-O2):
-;   -O0  nothing: every jump stays as the encoder wrote it
-;   -O1  shortening only (default) - the same result NASM produces
-;   -O2  also rewrites jumps, beyond what NASM does:
+; Optimization levels (ASMCTX_opt, set by -O0/-O1/-Ox/-Os):
+;   -O0  nothing: every jump stays as the encoder wrote it (NASM -O0)
+;   -O1  the same (NASM -O1: no jump made short)
+;   -Ox  shortening only (default) - the same result NASM produces
+;   -Os  also rewrites jumps, beyond what NASM does:
 ;          jcc L1 / jmp L2 / L1:    ->  j!cc L2       (one jump fewer)
 ;          jmp/jcc A, A: jmp B      ->  jmp/jcc B     (threading)
 ;          jmp/jcc to the next instruction  ->  removed
@@ -96,9 +97,9 @@ DEFAULT REL
 %define RS_SHORT      1     ; candidate, shortened
 %define RS_FORCED     2     ; shortened once, put back for good
 %define RS_NO         3     ; not eligible
-%define RS_DELETE     4     ; -O2: removed entirely
+%define RS_DELETE     4     ; -Os: removed entirely
 
-%define RF_RETARGET   1     ; -O2: target changed; resolve it here, even
+%define RF_RETARGET   1     ; -Os: target changed; resolve it here, even
                             ; if it stays rel32 (its relocation is stale)
 %define RF_BACKWARD   2     ; a backward rel16/rel32 jump the encoder
                             ; resolved in place (RELAX_FIXED, rx_backward):
@@ -575,7 +576,9 @@ relax_run:
     cmp     byte [rbx + ASMCTX_target], TARGET_AMD64
     jne     .done
     cmp     byte [rbx + ASMCTX_opt], OPT_NONE
-    je      .done                          ; -O0: jumps as written
+    je      .done                          ; -O0, -O1: jumps as written
+    cmp     byte [rbx + ASMCTX_opt], OPT_MIN
+    je      .done
 
     xor     r12d, r12d                     ; r12 = section slot
 .sections:
@@ -719,7 +722,7 @@ rx_section:
     jmp     .prep
 .prepared:
 
-    ; ---- 2b. -O2: rewrite jumps before choosing sizes (not around
+    ; ---- 2b. -Os: rewrite jumps before choosing sizes (not around
     ;          frozen ranges: they remove and move jumps) ----
     cmp     byte [rbx + ASMCTX_opt], OPT_SIZE
     jb      .o2_done
@@ -728,7 +731,7 @@ rx_section:
     call    rx_o2
 .o2_done:
 
-    ; backward jumps resolved in place are candidates too (after -O2,
+    ; backward jumps resolved in place are candidates too (after -Os,
     ; whose rewrites are for the forward ones)
     call    rx_backward
 
@@ -897,7 +900,7 @@ rx_section:
     mov     [rdx + r15*8], rax
     jmp     .fp
 .fp_done:
-    ; -O2: the smallest sizes, not NASM's (rx_fast). NASM's passes can
+    ; -Os: the smallest sizes, not NASM's (rx_fast). NASM's passes can
     ; put a jump back to short after making it long, and in a long run of
     ; jumps they settle on more long ones than they need; a worklist that
     ; only ever grows a jump that does not reach finds the fewest, in one
@@ -1198,7 +1201,15 @@ rx_prepare_candidate:
     mov     eax, [rax + SECTION_index]
     cmp     ax, [rdx + SYMBOL_section]
     jne     .done
+    ; the label, and the offset written after it ("jmp x+2"): the
+    ; relocation's addend is that offset less the field's width
     mov     rax, [rdx + SYMBOL_value]
+    add     rax, [r13 + RELOC_addend]
+    add     rax, 4
+    test    byte [r12 + RX_cc], 0x80
+    jz      .target
+    sub     rax, 2                         ; (a rel16)
+.target:
     cmp     rax, [r12 + RX_end]
     jb      .done                          ; not a forward target
     mov     [r12 + RX_aux], rax
@@ -1211,7 +1222,7 @@ rx_prepare_candidate:
 
 ; ---- rx_o2 (internal) -------------------
 ;
-; -O2 rewrites, applied to the section's records before sizes are chosen:
+; -Os rewrites, applied to the section's records before sizes are chosen:
 ;   1. jcc L1 / jmp L2 / L1:  ->  j!cc L2      (the jmp is removed)
 ;   2. a jump to a jmp goes straight to that jmp's target (threading)
 ;   3. a jump to the very next instruction is removed
@@ -1611,7 +1622,7 @@ rx_fast:
     jae     .kinds_ok
     mov     rax, [r12 + rcx * 8]
     cmp     byte [rax + RX_state], RS_DELETE
-    je      .not_for_it                    ; (-O2: counted only after pass 1)
+    je      .not_for_it                    ; (-Os: counted only after pass 1)
     movzx   eax, byte [rax + RX_kind]
     cmp     eax, RELAX_FIXED
     je      .kind_next
@@ -2158,14 +2169,14 @@ rx_apply:
     jmp     .sweep_next
 
 .sweep_delete:
-    ; -O2: drop the jump's bytes altogether
+    ; -Os: drop the jump's bytes altogether
     mov     rdi, [rbx + RX_pos]
     call    .copy_to
     mov     r13, [rbx + RX_end]
     jmp     .drop_reloc
 
 .sweep_long:
-    ; -O2: a retargeted jump that stays rel32 - rewrite it in place
+    ; -Os: a retargeted jump that stays rel32 - rewrite it in place
     mov     rdi, [rbx + RX_pos]
     call    .copy_to
     mov     rdi, [rbx + RX_aux]
