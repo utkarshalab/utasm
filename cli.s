@@ -113,6 +113,24 @@ cli_parse:
     test    rax, rax
     jz      .handle_format
 
+    ; NASM's glued forms: "-felf64", "-ofile"
+    cmp     word [r14], '-f'
+    jne     .not_glued_format
+    cmp     byte [r14 + 2], 0
+    je      .not_glued_format
+    add     r14, 2
+    jmp     .format_value
+.not_glued_format:
+    cmp     word [r14], '-o'
+    jne     .not_glued_output
+    cmp     byte [r14 + 2], 0
+    je      .not_glued_output
+    lea     rax, [r14 + 2]
+    mov     [rbx + ASMCTX_output], rax
+    mov     byte [rel cli_output_given], 1
+    jmp     .next_arg
+.not_glued_output:
+
     ; check for -a / --arch
     mov     rdi, r14
     lea     rsi, [rel .flag_arch]
@@ -324,7 +342,7 @@ cli_parse:
     jle     .missing_val
     add     r13, 8
     mov     r14, [r13]
-    
+.format_value:
     mov     rdi, r14
     lea     rsi, [rel .val_elf64]
     call    str_cmp
