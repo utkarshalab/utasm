@@ -740,8 +740,9 @@ print_num:
                    db "  -w+error                  warnings are errors (other -w/-W accepted)", 10
                    db "  -X gnu | -X vc            message style: file:line: | file(line) :", 10
                    db "  -s, -Z file               messages on stdout / into a file", 10
-                   db "  -O0 | -O1 | -O2           jumps: as written | shortest, like NASM", 10
-                   db "                            (default) | also remove and merge jumps", 10
+                   db "  -O0 | -O1 | -Ox           NASM's levels: nothing shortened | byte", 10
+                   db "                            immediates | all (default; also -O2..-O9)", 10
+                   db "  -Os                       -Ox, and jumps removed and merged", 10
                    db "  --inspect                 inspect an ELF file instead of assembling", 10
                    db "  --inspect-only <parts>    inspect only: header,sections,segments,", 10
                    db "                            symbols,relocs,all,disasm (comma-separated)", 10
