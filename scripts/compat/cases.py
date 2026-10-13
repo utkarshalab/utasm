@@ -325,7 +325,12 @@ BIN_PROBES = {'basic_no_section': 'nop\nret\n',
                       'istruc s\nat .w, db 5\niend\ndd s_size, s\n',
  'ptr_as_label': 'mov eax, dword ptr\nptr:\n',
  # a number pasted on a name: NASM expands the name ("%define v 9": 19)
- 'pp_param_number_paste': '%define v 9\n%macro m 1\ndb %{1}v\nx%{1}v: db 0\ndb %1h\n%endmacro\nm 1\n'}
+ 'pp_param_number_paste': '%define v 9\n%macro m 1\ndb %{1}v\nx%{1}v: db 0\ndb %1h\n%endmacro\nm 1\n',
+ # a context-local %define standing alone keeps its tokens (a string)
+ 'pp_ctx_deftok': '%push c\n%define %$r "ax  "\n%substr %$q %$r 1, 2\n%deftok %$q %$q\nmov eax, %$q\n%pop\n',
+ # "at .x": the istruc's structure's field, whatever label came last (NASM 2.16)
+ 'istruc_local_fields': 'struc S1\n.d: resd 1\n.w: resw 1\nendstruc\nstruc S2\n.w: resw 1\n.d: resd 1\nendstruc\n'
+                        'istruc S1\nat .d, dd 1\nat .w, dw 2\niend\nlab:\nistruc S2\nat .w, dw 3\nat .d, dd 4\niend\n'}
 
 # ELF objects: section contents, relocations and symbols are compared
 ELF_PROBES = {
