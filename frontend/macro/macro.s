@@ -3279,7 +3279,7 @@ dir_more:     db "ifidn", 0, 0,0,0,0,0,0,0,0,0, 0
               db "stacksize", 0, 0, 0, 0, 0, 0, 27
               db "arg", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 28
               db "local", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 29
-db 0
+              db 0
 ; ---- predefined macro names ---------------
 %define DYN_LINE    1
 %define DYN_FILE    2
@@ -3350,7 +3350,7 @@ use_smartalign_text: db 10
 use_smartalign_text_len equ $ - use_smartalign_text
 use_fp_text: db 10
              db "%define __?USE_FP?__", 10
-db "%define float16(x) __float16__(x)", 10
+             db "%define float16(x) __float16__(x)", 10
              db "%define float32(x) __float32__(x)", 10
              db "%define float64(x) __float64__(x)", 10
              db "%define float80m(x) __float80m__(x)", 10
@@ -3564,7 +3564,7 @@ predef_table:
     dq pt_utc_time_num_q, time_utc + 48, TOK_NUMBER
     dq pt_posix_time, time_posix, TOK_NUMBER
     dq pt_posix_time_q, time_posix, TOK_NUMBER
-dq dn_line, 0, 0
+    dq dn_line, 0, 0
     dq dn_file, 0, 0
     dq dn_bits, 0, 0
     dq dn_pass, 0, 0
@@ -5933,7 +5933,7 @@ prep_predefine:
     mov     rbx, rdi
     extern  time_init, time_local, time_utc, time_posix
     call    time_init                      ; __DATE__, __TIME__ ...
-lea     r13, [rel predef_table]
+    lea     r13, [rel predef_table]
 .next:
     mov     r12, [r13]
     test    r12, r12
@@ -9277,7 +9277,7 @@ fn_table:
     db "isctx", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x17
     db "isnctx", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x97
     db "map", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x18
-db 0
+    db 0
 [SECTION .text]
 
 ; ---- prep_quoted_text ---------------------
