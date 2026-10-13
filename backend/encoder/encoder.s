@@ -322,6 +322,29 @@ amd64_encode_instruction:
     call    amd64_emit_byte
 .addr32_done:
 
+    ; "pop cs": the 8086's 0F, which NASM still writes, in any mode, with
+    ; its warning (0F is the two-byte opcodes' escape since the 286)
+    cmp     word [r12 + INST_op_id], 1534  ; POP
+    jne     .not_pop_cs
+    cmp     byte [r12 + INST_nops], 1
+    jne     .not_pop_cs
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_REG
+    jne     .not_pop_cs
+    cmp     byte [r12 + INST_op0 + OPERAND_reg], 24
+    jne     .not_pop_cs
+    mov     al, 0x0F
+    call    amd64_emit_byte
+    mov     edi, WC_OBSOLETE_REMOVED
+    lea     rsi, [rel s_obs_removed]
+    extern  cpu_latevex
+    test    byte [rel cpu_latevex], CPUF_8086
+    jz      .pop_cs_warn
+    mov     edi, WC_OBSOLETE_VALID
+    lea     rsi, [rel s_obs_valid]
+.pop_cs_warn:
+    call    amd64_warn_class
+    jmp     .mode_encoded
+.not_pop_cs:
     ; 2a. bits 16 / bits 32: the forms that differ there (mode.s); they are
     ; this mode's own encodings, with no REX to look for afterwards
     extern  amd64_mode_special
@@ -350,6 +373,23 @@ amd64_encode_instruction:
     test    rax, rax
     jnz     .done
 .table_done:
+    ; a vector register with a size written ("movss xmm0, dword xmm1") is
+    ; only a table form's operand: none fitted, and the encoders below do
+    ; not know it
+    xor     ecx, ecx
+.vec_sized:
+    movzx   eax, byte [r12 + INST_nops]
+    cmp     ecx, eax
+    jae     .vec_sized_ok
+    imul    rdx, rcx, OPERAND_SIZE
+    inc     ecx
+    cmp     byte [r12 + INST_op0 + rdx + OPERAND_kind], OP_REG
+    jne     .vec_sized
+    cmp     byte [r12 + INST_op0 + rdx + OPERAND_dispsize], 0
+    je      .vec_sized
+    mov     rax, EXIT_ENCODE_FAIL
+    jmp     .done
+.vec_sized_ok:
 
 
     ; 2c. Most encoders below take no label as an immediate (only MOV to a
@@ -1988,6 +2028,13 @@ amd64_encode_instruction:
     cmp     rax, EXIT_BITS_MODE            ; (amd64_count_size)
     je      .done
 .encoded:
+    ; pcommit: Intel withdrew it before any CPU had it (NASM's warning)
+    cmp     word [r12 + INST_op_id], 7123  ; PCOMMIT
+    jne     .not_pcommit
+    mov     edi, WC_OBSOLETE_NOP
+    lea     rsi, [rel s_obs_nop]
+    call    amd64_warn_class
+.not_pcommit:
     cmp     byte [rel imm_ph_active], 0
     je      .no_placeholder
     call    amd64_imm_fixup
@@ -6007,7 +6054,7 @@ amd64_emit_modrm_sib:
     cmp     byte [r13 + OPERAND_dispsize], 32
     je      .mod32
     cmp     byte [r13 + OPERAND_dispsize], 8
-    je      .disp8_check
+    je      .disp8_forced
 
     ; Determine Mod based on Displacement
     test    rdi, rdi
@@ -6034,6 +6081,36 @@ amd64_emit_modrm_sib:
     jmp     .emit_start
 .mod32:
     mov     dl, 2               ; Mod 10 (32-bit disp)
+    jmp     .emit_start
+.disp8_forced:
+    ; [byte rsp+0xFF]: the byte all the same, cut - NASM's "byte data
+    ; exceeds bounds" for a value that is not a signed byte
+    cmp     rdi, -128
+    jl      .disp8_warn
+    cmp     rdi, 127
+    jle     .disp8_put
+.disp8_warn:
+    push    rax
+    push    rcx
+    push    rsi
+    push    rdi
+    push    r8
+    push    r9
+    push    r10
+    push    r11
+    extern  warn_number
+    lea     rsi, [rel s_disp8_bounds]
+    call    warn_number
+    pop     r11
+    pop     r10
+    pop     r9
+    pop     r8
+    pop     rdi
+    pop     rsi
+    pop     rcx
+    pop     rax
+.disp8_put:
+    mov     dl, 1
     jmp     .emit_start
 .mod00:
     xor     dl, dl              ; Mod 00 (no disp)
@@ -6344,6 +6421,35 @@ amd64_encode_jmp:
     call    amd64_emit_modrm_sib
 .done:
     epilogue
+
+; amd64_warn_class: warning class edi with the text at rsi (the
+; registers the encoder keeps are saved)
+amd64_warn_class:
+    push    rax
+    push    rcx
+    push    rdx
+    push    rsi
+    push    rdi
+    push    r8
+    push    r9
+    push    r10
+    push    r11
+    push    rsi
+    extern  warn_begin, warn_text, warn_end
+    call    warn_begin
+    pop     rsi
+    call    warn_text
+    call    warn_end
+    pop     r11
+    pop     r10
+    pop     r9
+    pop     r8
+    pop     rdi
+    pop     rsi
+    pop     rdx
+    pop     rcx
+    pop     rax
+    ret
 
 ; amd64_far_width: al = the width of "jmp / call far [m]" (r10): m16:64
 ; (REX.W) as NASM writes it, m16:32 for "far dword", m16:16 for "far word"
@@ -7028,3 +7134,10 @@ amd64_encode_vex_unary:
 msg_reloc_cap_err:   db "Reloc error: MAX_RELOC capacity exceeded", 10, 0
 msg_reloc_table_err: db "Reloc error: ASMCTX_relocs is NULL", 10, 0
 msg_reloc_sec_err:   db "Reloc error: No active section or sections array is NULL", 10, 0
+
+[SECTION .rodata]
+s_disp8_bounds: db "byte data exceeds bounds", 0
+s_obs_removed:  db "instruction obsolete and removed from the target CPU", 0
+s_obs_valid:    db "instruction obsolete but valid on the target CPU", 0
+s_obs_nop:      db "instruction never implemented and is a noop on the target CPU", 0
+[SECTION .text]
