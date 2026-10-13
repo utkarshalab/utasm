@@ -955,10 +955,13 @@ lst_entry:
     stosb
     inc     r8d
 .row_end:
-    ; pad the bytes to 20 columns on the first row (19 after)
+    ; pad the bytes to 20 columns on the first row (19 after - 20 when a
+    ; macro's "<1>" follows, as NASM marks every row of a body line)
     mov     r9d, 20
     test    ecx, ecx
     jz      .pad
+    cmp     byte [rbx + LE_DEPTH], 0
+    jne     .pad
     mov     r9d, 19
 .pad:
     cmp     r8d, r9d
@@ -975,12 +978,22 @@ lst_entry:
     call    lst_put
     pop     rcx
     test    ecx, ecx
-    jnz     .continued
+    jnz     .continued_mark
     movzx   edi, byte [rbx + LE_DEPTH]
     call    lst_put_marker
     mov     rdi, rbx
     mov     rsi, r15
     call    lst_put_source
+    jmp     .continued
+.continued_mark:
+    movzx   edi, byte [rbx + LE_DEPTH]     ; a body line's "<1>", every row
+    test    edi, edi
+    jz      .continued_nl
+    push    rcx
+    call    lst_put_marker
+    call    lst_trim_blank                 ; (no blank after it here)
+    pop     rcx
+.continued_nl:
 .continued:
     call    lst_put_newline
     cmp     r13, r14
@@ -1797,6 +1810,14 @@ lst_put_marker:
 .out:
     mov     edx, 4
     jmp     lst_put
+
+; lst_trim_blank: the last character written (a blank) taken back
+lst_trim_blank:
+    cmp     qword [rel lst_outlen], 0
+    je      .ret
+    dec     qword [rel lst_outlen]
+.ret:
+    ret
 
 ; lst_put_lineno: edi right-aligned in 6 columns, then a blank
 lst_put_lineno:
