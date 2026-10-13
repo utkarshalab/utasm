@@ -120,6 +120,7 @@
 %define EXIT_RES_NEGATIVE      99  ; "resb -2"
 %define EXIT_SECTION_SIZE      100 ; a section with bytes past 4 GiB
 %define EXIT_TIMES_LARGE       101 ; "times 0x100000000 ..."
+%define EXIT_SIZE_MISMATCH     102 ; "mov eax, word 5": a sized immediate the form does not take
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
@@ -158,7 +159,9 @@
 %define WC_PP_TRAILING         15  ; pp-trailing: "%else x", "%endif x"
 %define WC_PP_ELSE_ELSE        16  ; pp-else-else: a second %else
 %define WC_PP_ELSE_ELIF        17  ; pp-else-elif: %elif after %else
-%define WC_COUNT               18
+%define WC_PREFIX_OPSIZE       18  ; prefix-opsize: "o32 inc ax"
+%define WC_PREFIX_HLE          19  ; prefix-hle: "xacquire mov [rax], ecx"
+%define WC_COUNT               20
 
 ; a kept expression's record (parser_defer_record): +0 RELOC_EXPR_MARK,
 ; +8 text, +16 tokens, +24 count; and for core/known.s:
@@ -504,6 +507,8 @@
 %define INSTF_EVEX             0x08        ; {evex}: the EVEX form
 %define INSTF_DISP8            0x10        ; {disp8}: a one-byte displacement
 %define INSTF_DISP32           0x20        ; {disp32}: a four-byte one
+%define INSTF_XACQUIRE         0x40        ; xacquire written (its F2 is in INST_prefixes)
+%define INSTF_XRELEASE         0x80        ; xrelease written (F3)
 
 ; RELOC_flags
 %define RELOC_FLAG_SYM         0x01        ; "wrt ..sym": against the symbol itself,
@@ -802,14 +807,13 @@
 ; ============================================================================
 ; OPTIMIZATION LEVELS
 ; ============================================================================
-; Controls the aggressiveness of assembler and linker optimizations.
+; ASMCTX_opt. -O0 / -O1 / -Ox are NASM's levels, with NASM's results;
+; -Os is utasm's own, beyond them.
 
-%define OPT_NONE               0           ; no optimizations applied
-%define OPT_BASIC              1           ; basic peephole and dead code removal
-%define OPT_SIZE               2           ; optimize strictly for binary size (prefer short forms)
-%define OPT_SPEED              3           ; optimize strictly for execution speed
-%define OPT_FULL               4           ; execute all optimization sweeps
-%define OPT_AGGRESSIVE         5           ; maximum aggressive cross-section optimization
+%define OPT_NONE               0           ; -O0: no immediate or jump made shorter
+%define OPT_BASIC              1           ; -Ox / -O2 (default): NASM's full optimization
+%define OPT_SIZE               2           ; -Os: -Ox, and jumps rewritten (optimizer/jump.s)
+%define OPT_MIN                3           ; -O1: byte immediates, every jump long
 
 ; ============================================================================
 ; COMMAND-LINE MODES (cli.s: NASM's -E, -M, -MD, -MP, -D/-U/-p)
