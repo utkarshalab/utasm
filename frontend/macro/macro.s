@@ -22,6 +22,9 @@
 %define IFT_CTX     7                      ; %ifctx: the innermost context's name
 %define IFT_ENV     8                      ; %ifenv: an environment variable
 %define IFT_TOKEN   9                      ; %iftoken: exactly one token
+%define IFT_ALIAS   10                     ; %ifdefalias: a name %defalias made
+%define ALIAS_MAX   256
+%define NEST_BUF    1024                   ; prep_resolve_interp's spliced text
 ; ml_state: where the token being read stands in its line - a multi-line
 ; macro is called at ML_START or ML_COLON only
 %define ML_START    0                      ; the first word
@@ -415,6 +418,24 @@ prep_internal_next:
     call    prep_resolve_interp
     test    rax, rax
     jnz     .done
+    ; pasted text NASM's scanner reads as more than one token: "%1e+%2"
+    ; with 1, 36 is the float 1e+36, "%1%2" with xyzzy, 1e+10 is xyzzy1e
+    ; + 10 - read again, as %[...] is
+    mov     rsi, [r12 + TOKEN_value]
+    call    prep_text_splits
+    test    eax, eax
+    jz      .no_interp
+    mov     rsi, [r12 + TOKEN_value]
+    call    prep_bracket_text
+    test    rax, rax
+    jnz     .done
+    mov     [r12 + TOKEN_value], rdx
+    mov     rsi, r12
+    call    prep_interp_standalone
+    test    rax, rax
+    jnz     .done
+    test    edx, edx
+    jnz     .next
 .no_interp:
 
     ; check if skipping
@@ -458,13 +479,35 @@ prep_internal_next:
     ; look up in symtab
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, [r12 + TOKEN_value]
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .try_icase             ; not found or error
 
     cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
+    je      .macro_found
+    ; an %assign (%strlen, %substr's numbers ...) is a macro of its value,
+    ; as in NASM: the number in its place, so %defstr, %ifidn and -E see
+    ; it ("%assign b1 1" / "%defstr s b1" is '1')
+    cmp     byte [rdx + SYMBOL_kind], SYM_CONSTANT
     jne     .not_macro_call
-    jmp     .macro_found
+    test    byte [rdx + SYMBOL_pflags], SYMF_ASSIGN
+    jz      .not_macro_call
+    mov     rsi, [rdx + SYMBOL_value]
+    lea     rdi, [rel assign_num]
+    call    str_int_to_str
+    lea     rdi, [rel assign_num]
+    call    str_len
+    mov     rdx, rax
+    mov     word [r12 + TOKEN_len], ax
+    mov     rdi, [rbx + PREP_arena]
+    lea     rsi, [rel assign_num]
+    call    arena_alloc_string
+    test    rax, rax
+    jnz     .done
+    mov     [r12 + TOKEN_value], rdx
+    mov     byte [r12 + TOKEN_kind], TOK_NUMBER
+    xor     eax, eax
+    jmp     .not_macro_call
 
     ; a %idefine matches in any case (only looked for once one exists)
 .try_icase:
@@ -476,7 +519,7 @@ prep_internal_next:
     jnz     .not_macro_call
     mov     rdi, [rbx + PREP_ctx]
     lea     rsi, [rel icase_buf]
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .not_macro_call
     cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
@@ -653,6 +696,58 @@ prep_internal_next:
     xor     eax, eax
     jmp     .done
 .not_gas_reg:
+    ; "%?" / "%??" outside a macro body - "label(%??, _1)": an argument of
+    ; a single-line macro, whose name they become in its body (CASE 0)
+    mov     rax, [r12 + TOKEN_value]
+    test    rax, rax
+    jz      .not_qq
+    cmp     byte [rax], '?'
+    jne     .not_qq
+    cmp     byte [rax + 1], 0
+    je      .qq_token
+    cmp     byte [rax + 1], '?'
+    jne     .not_qq
+    cmp     byte [rax + 2], 0
+    jne     .not_qq
+.qq_token:
+    xor     eax, eax
+    jmp     .done
+.not_qq:
+    ; a %define's body being read: its directives are its text, not run
+    ; now ("%define IFNDEF %ifndef" ran %ifndef there)
+    cmp     byte [rel def_capturing], 0
+    je      .not_capturing
+    xor     eax, eax
+    jmp     .done
+.not_capturing:
+    ; a %define's body gives no directive: "%define IFNDEF %ifndef" /
+    ; "IFNDEF foo" is NASM's "label or instruction expected", the line
+    ; dropped (br3200749)
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_mac_exp]
+    test    rax, rax
+    jz      .directive
+    mov     rax, [rax + MACROEXP_macro]
+    test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE
+    jz      .directive
+    lea     rsi, [rel s_not_instruction]
+    call    prep_error_line
+    lea     rsi, [rel s_empty_text]
+    call    prep_error_more
+.drop_line:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .done
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .next
+    cmp     eax, TOK_EOF
+    je      .next
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    jmp     .drop_line
+.directive:
     ; it's a directive. handle it.
     mov     rdi, rbx
     mov     rsi, r12
@@ -689,9 +784,11 @@ prep_internal_next:
     mov     r10, [r9 + INCLUDECTX_lexer]
     mov     [rbx + PREP_lexer], r10
     
-    ; 3. Pop include context
+    ; 3. Pop include context, and go on with the body it came from
     mov     r11, [r9 + INCLUDECTX_parent]
     mov     [r8 + ASMCTX_inc_ctx], r11
+    mov     r11, [r9 + INCLUDECTX_mac_exp]
+    mov     [r8 + ASMCTX_mac_exp], r11
     
     ; 4. Try getting next token from parent
     jmp     .next
@@ -790,7 +887,7 @@ prep_dump:
     ; writes it ("%assign v 5" / "db v" is "db 5")
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, [r14 + TOKEN_value]
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .as_text
     cmp     byte [rdx + SYMBOL_kind], SYM_CONSTANT
@@ -1041,6 +1138,9 @@ prep_push_buffer:
     mov     r11, [r10 + ASMCTX_inc_ctx]
     mov     [rdx + INCLUDECTX_parent], r11
     mov     [r10 + ASMCTX_inc_ctx], rdx
+    mov     r11, [r10 + ASMCTX_mac_exp]    ; (as for %include)
+    mov     [rdx + INCLUDECTX_mac_exp], r11
+    mov     qword [r10 + ASMCTX_mac_exp], 0
     mov     [rdx + INCLUDECTX_buf], r15
     mov     [rdx + INCLUDECTX_size], r14
     mov     rax, [rbx + PREP_lexer]
@@ -1291,6 +1391,29 @@ prep_expand_start:
     movzx   eax, byte [rsi + TOKEN_kind]
     test    byte [r12 + MACRO_flags], MACRO_FLAG_FUNC
     jz      .arg_line_kinds
+    ; "label(%??, _1)": %? / %?? in a single-line macro's arguments are its
+    ; name (NASM's br3392711: label_1)
+    cmp     al, TOK_DIRECTIVE
+    jne     .fn_not_qq
+    mov     rcx, [rsi + TOKEN_value]
+    test    rcx, rcx
+    jz      .fn_not_qq
+    cmp     byte [rcx], '?'
+    jne     .fn_not_qq
+    cmp     byte [rcx + 1], 0
+    je      .fn_qq
+    cmp     byte [rcx + 1], '?'
+    jne     .fn_not_qq
+    cmp     byte [rcx + 2], 0
+    jne     .fn_not_qq
+.fn_qq:
+    mov     rcx, [r12 + MACRO_name]
+    test    rcx, rcx
+    jz      .fn_not_qq
+    mov     byte [rsi + TOKEN_kind], TOK_IDENT
+    mov     [rsi + TOKEN_value], rcx
+    mov     al, TOK_IDENT
+.fn_not_qq:
     ; inside parentheses: nested ( ) belong to the argument, the closing )
     ; ends the call, a comma at depth 0 separates arguments
     cmp     al, TOK_LPAREN
@@ -1408,14 +1531,37 @@ prep_expand_start:
 .arity_ok:
 
     ; Optional parameters not given take their defaults: default d is the
-    ; d-th comma-separated piece of the list, for parameter min + d
+    ; d-th comma-separated piece of the list, for parameter min + d - as
+    ; many as the list has, as NASM counts them: "%macro m 1 a" called with
+    ; one sees %0 = 2, "0-* a,b" with none sees a and b; with "+" the
+    ; last parameter takes the rest of the list ("1-2+ a,b": %2 is a,b)
     cmp     dword [r12 + MACRO_ndefaults], 0
     je      .dflt_done
-    cmp     word [r12 + MACRO_max_params], MACRO_VARIADIC
-    je      .dflt_done
-.dflt_next:
+    mov     rax, [r12 + MACRO_defaults]
+    mov     ecx, [r12 + MACRO_ndefaults]
+    mov     edx, 1                         ; the pieces
+.dflt_count:
+    cmp     byte [rax + TOKEN_kind], TOK_COMMA
+    jne     .dflt_count_next
+    inc     edx
+.dflt_count_next:
+    add     rax, TOKEN_SIZE
+    dec     ecx
+    jnz     .dflt_count
+    movzx   eax, word [r12 + MACRO_min_params]
+    add     edx, eax                       ; the parameters they make up
+    test    byte [r12 + MACRO_flags], MACRO_FLAG_GREEDY
+    jz      .dflt_target
     movzx   eax, word [r12 + MACRO_max_params]
-    cmp     r15d, eax
+    cmp     eax, MACRO_VARIADIC
+    je      .dflt_target
+    cmp     edx, eax
+    jbe     .dflt_target
+    mov     edx, eax                       ; "+": no more than its count
+.dflt_target:
+    mov     [rel dflt_target], edx
+.dflt_next:
+    cmp     r15d, [rel dflt_target]
     jae     .dflt_done
     cmp     r15d, [r13 + MACROEXP_pcap]
     jb      .dflt_slot
@@ -1443,6 +1589,16 @@ prep_expand_start:
     jmp     .dflt_seek
 .dflt_piece:
     mov     [r14 + r15 * 8], r8
+    ; the greedy last parameter: the rest of the list, commas and all
+    test    byte [r12 + MACRO_flags], MACRO_FLAG_GREEDY
+    jz      .dflt_one
+    movzx   eax, word [r12 + MACRO_max_params]
+    dec     eax
+    cmp     r15d, eax
+    jne     .dflt_one
+    mov     ecx, r9d
+    jmp     .dflt_len_done
+.dflt_one:
     xor     ecx, ecx
 .dflt_len:
     cmp     ecx, r9d
@@ -1769,10 +1925,18 @@ prep_expand_next:
     jne     .not_case0
 .case0:
         mov     r11, r13
+        xor     r10d, r10d                 ; the nearest single-line macro's name
 .name_owner:
         mov     rax, [r11 + MACROEXP_macro]
-        test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE | MACRO_FLAG_TIMES
+        test    byte [rax + MACRO_flags], MACRO_FLAG_TIMES
         jnz     .name_up
+        test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE
+        jz      .name_multi
+        test    r10, r10
+        jnz     .name_up
+        mov     r10, [rax + MACRO_name]
+        jmp     .name_up
+.name_multi:
         mov     rax, [rax + MACRO_name]
         test    rax, rax
         jnz     .name_found
@@ -1780,6 +1944,11 @@ prep_expand_next:
         mov     r11, [r11 + MACROEXP_parent]
         test    r11, r11
         jnz     .name_owner
+        ; no multi-line macro around it: a single-line one's, as NASM's
+        ; "%define label(p, s) p %+ s" / "label(%??, _1)" is label_1
+        mov     rax, r10
+        test    rax, rax
+        jnz     .name_found
         jmp     .retry_body
 .name_found:
         mov     byte [r12 + TOKEN_kind], TOK_IDENT
@@ -2259,13 +2428,18 @@ prep_expand_next:
         mov     r14, rdx               ; r14 = concat buffer
         mov     byte [r14], 0          ; null-terminate before str_concat
         
+        ; the pieces' text - an operator's too ("1e %+ + %+ 5" is 1e+5)
+        mov     rdx, r12
+        call    prep_idn_text
         mov     rdi, r14
-        mov     rsi, [r12 + TOKEN_value]
+        mov     rsi, rax
         extern  str_concat
         call    str_concat
-        
+
+        mov     rdx, rsp
+        call    prep_idn_text
         mov     rdi, r14
-        mov     rsi, [rsp + TOKEN_value]
+        mov     rsi, rax
         call    str_concat
         
         ; 4. Update r12 to be the merged token. When the right-hand piece
@@ -2284,7 +2458,15 @@ prep_expand_next:
         mov     byte [r12 + TOKEN_kind], TOK_LOCAL_LABEL
 .concat_kind_set:
         mov     [r12 + TOKEN_value], r14
-        
+        ; a join that is more than one token (1e+5): read again, as NASM's
+        ; scanner reads the pasted line (preprocessor_next_token)
+        mov     rsi, r14
+        call    prep_text_splits
+        test    eax, eax
+        jz      .concat_one
+        or      byte [r12 + TOKEN_flags], TOK_FLAG_INTERP
+.concat_one:
+
         add     rsp, TOKEN_SIZE
         jmp     .check_concat          ; Chain: allow A ## B ## C
         ENDIF
@@ -2543,6 +2725,7 @@ prep_handle_directive:
     dq      .m_pragma, .m_clear, .m_iassign, .m_defalias, .m_idefstr
     dq      .m_ifn, .m_elifn, .m_ixdefine, .m_rmacro, .m_irmacro
     dq      .m_depend, .m_pathsearch, .m_stacksize, .m_arg, .m_local
+    dq      .m_undefalias, .m_idefalias, .m_aliases
 .m_stacksize:
     mov     rdi, rbx
     call    prep_handle_stacksize
@@ -2642,8 +2825,24 @@ prep_handle_directive:
     call    prep_handle_iassign
     jmp     .done_cleanup
 .m_defalias:
-    mov     rdi, rbx                       ; an alias reads as its target
-    call    prep_handle_def
+    mov     rdi, rbx
+    xor     esi, esi
+    call    prep_handle_defalias
+    jmp     .done_cleanup
+.m_idefalias:
+    mov     rdi, rbx
+    mov     esi, 1
+    call    prep_handle_defalias
+    jmp     .done_cleanup
+.m_undefalias:
+    mov     rdi, rbx
+    mov     esi, 2
+    call    prep_handle_defalias
+    jmp     .done_cleanup
+.m_aliases:
+    mov     rdi, rbx
+    mov     esi, 3
+    call    prep_handle_defalias
     jmp     .done_cleanup
 .m_ifidn:
     mov     rdi, rbx
@@ -3023,13 +3222,14 @@ prep_handle_inc:
     ; [rsp + 40] : saved depth (8 bytes)
     sub     rsp, 64                ; 32 (token) + 8 (IncludeCtx) + 8 (new_lexer) + 8 (depth) + 8 (padding) = 64
     
-    ; 1. Get filename token
-    mov     rdi, [rbx + PREP_lexer]
-    lea     r12, [rsp]             ; r12 = temporary token buffer
-    mov     rsi, r12
-    call    lexer_next
+    ; 1. Get filename token - through the preprocessor: the %include of a
+    ;    %rep or macro body comes from that body ("%rep 5 / %include
+    ;    'x.inc' / %endrep", NASM's br890790), and a %define names a file
+    mov     rdi, rbx
+    call    preprocessor_next_token
     test    rax, rax
     jnz     .error
+    mov     r12, rdx
 
     cmp     byte [r12 + TOKEN_kind], TOK_STRING
     je      .name_string
@@ -3124,6 +3324,10 @@ prep_handle_inc:
     mov     r11, [r10 + ASMCTX_inc_ctx]
     mov     [r9 + INCLUDECTX_parent], r11 ; link to previous
     mov     [r10 + ASMCTX_inc_ctx], r9    ; update current in AsmCtx
+    ; the body it is read from waits until the file has been read
+    mov     r11, [r10 + ASMCTX_mac_exp]
+    mov     [r9 + INCLUDECTX_mac_exp], r11
+    mov     qword [r10 + ASMCTX_mac_exp], 0
     
     mov     [r9 + INCLUDECTX_buf], r15
     mov     [r9 + INCLUDECTX_size], r14
@@ -3262,6 +3466,13 @@ dir_more:     db "ifidn", 0, 0,0,0,0,0,0,0,0,0, 0
               db "clear", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16
               db "iassign", 0, 0, 0, 0, 0, 0, 0, 0, 17
               db "defalias", 0, 0, 0, 0, 0, 0, 0, 18
+              db "undefalias", 0, 0, 0, 0, 0, 30
+              db "idefalias", 0, 0, 0, 0, 0, 0, 31
+              db "aliases", 0, 0, 0, 0, 0, 0, 0, 0, 32
+              db "ifdefalias", 0, 0, 0, 0, 0, 104
+              db "ifndefalias", 0, 0, 0, 0, 105
+              db "elifdefalias", 0, 0, 0, 106
+              db "elifndefalias", 0, 0, 107
               db "idefstr", 0, 0, 0, 0, 0, 0, 0, 0, 19
               db "ifnum", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 68
               db "ifnnum", 0, 0, 0, 0, 0, 0, 0, 0, 0, 69
@@ -3769,7 +3980,7 @@ prep_subst_const_text:
 
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, [r12 + TOKEN_value]
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .done
     cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
@@ -4590,7 +4801,7 @@ prep_label_macro:
     test    rsi, rsi
     jz      .no
     mov     rdi, [rbx + PREP_ctx]
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jz      .found
     cmp     dword [rel idefine_count], 0   ; %imacro: any case
@@ -4601,7 +4812,7 @@ prep_label_macro:
     jnz     .no
     mov     rdi, [rbx + PREP_ctx]
     lea     rsi, [rel icase_buf]
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .no
 .found:
@@ -4736,7 +4947,7 @@ prep_handle_unmacro:
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, r12
     extern  symbol_find
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .drain
     cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
@@ -4835,7 +5046,7 @@ prep_define_const:
 
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, r12
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .create
     mov     [rdx + SYMBOL_value], r13
@@ -4858,7 +5069,7 @@ prep_define_const:
 
     mov     rsi, rdi
     mov     rdi, [rbx + PREP_ctx]
-    call    symbol_add
+    call    prep_symbol_add
 
 .done:
     add     rsp, SYMBOL_SIZE
@@ -5253,6 +5464,109 @@ prep_resolve_interp:
     mov     rbx, rdi               ; rbx = PrepState
     mov     r12, rsi               ; r12 = Token
 
+    ; "foo%[foo%[n]]": a %[...] inside another is worked out first, the
+    ; innermost one at a time (NASM's ppindirect), its text put in place
+.nest:
+    mov     r13, [r12 + TOKEN_value]
+    test    r13, r13
+    jz      .nest_done
+    xor     ecx, ecx                       ; brackets open
+    mov     r14, -1                        ; a "%[" inside another
+    xor     edx, edx
+.nest_scan:
+    movzx   eax, byte [r13 + rdx]
+    test    eax, eax
+    jz      .nest_done
+    cmp     eax, '%'
+    jne     .nest_close
+    cmp     byte [r13 + rdx + 1], '['
+    jne     .nest_step
+    test    ecx, ecx
+    jz      .nest_open
+    mov     r14, rdx
+.nest_open:
+    inc     ecx
+    add     rdx, 2
+    jmp     .nest_scan
+.nest_close:
+    cmp     eax, ']'
+    jne     .nest_step
+    test    ecx, ecx
+    jz      .nest_step
+    cmp     r14, -1
+    jne     .nest_found
+    dec     ecx
+.nest_step:
+    inc     rdx
+    jmp     .nest_scan
+.nest_found:
+    ; r14 .. rdx: the innermost "%[x]"; its value, by a token of its own
+    lea     r15, [rdx + 1]                 ; past its ']'
+    sub     rsp, TOKEN_SIZE
+    mov     rdi, rsp
+    mov     rsi, r12
+    mov     ecx, TOKEN_SIZE / 8
+    rep movsq
+    mov     rdi, [rbx + PREP_arena]
+    lea     rsi, [r13 + r14]
+    mov     rdx, r15
+    sub     rdx, r14
+    call    arena_alloc_string
+    test    rax, rax
+    jnz     .nest_fail
+    mov     [rsp + TOKEN_value], rdx
+    mov     rdi, rbx
+    mov     rsi, rsp
+    call    prep_resolve_interp
+    test    rax, rax
+    jnz     .nest_fail
+    ; before it, its value, after it: the new text
+    lea     rdi, [rel nest_buf]
+    xor     ecx, ecx
+.nest_pre:
+    cmp     rcx, r14
+    jae     .nest_mid
+    mov     al, [r13 + rcx]
+    mov     [rdi + rcx], al
+    inc     rcx
+    jmp     .nest_pre
+.nest_mid:
+    mov     rsi, [rsp + TOKEN_value]
+.nest_mid_ch:
+    mov     al, [rsi]
+    test    al, al
+    jz      .nest_post
+    cmp     rcx, NEST_BUF - 1
+    jae     .nest_post
+    mov     [rdi + rcx], al
+    inc     rcx
+    inc     rsi
+    jmp     .nest_mid_ch
+.nest_post:
+    mov     al, [r13 + r15]
+    test    al, al
+    jz      .nest_built
+    cmp     rcx, NEST_BUF - 1
+    jae     .nest_built
+    mov     [rdi + rcx], al
+    inc     rcx
+    inc     r15
+    jmp     .nest_post
+.nest_built:
+    mov     rdx, rcx
+    mov     rsi, rdi
+    mov     rdi, [rbx + PREP_arena]
+    call    arena_alloc_string
+    test    rax, rax
+    jnz     .nest_fail
+    mov     [r12 + TOKEN_value], rdx
+    add     rsp, TOKEN_SIZE
+    jmp     .nest
+.nest_fail:
+    add     rsp, TOKEN_SIZE
+    jmp     .done
+.nest_done:
+
     mov     rdi, [rbx + PREP_arena]
     mov     rsi, LEX_INTERP_BUF
     call    arena_alloc
@@ -5331,7 +5645,7 @@ prep_resolve_interp:
 
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, r9
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .scan                  ; undefined: contributes nothing
 
@@ -5448,7 +5762,7 @@ prep_resolve_interp:
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, [rsp]
     add     rsi, r14
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .ctx_kept
     cmp     byte [rdx + SYMBOL_kind], SYM_CONSTANT
@@ -5574,7 +5888,7 @@ prep_resolve_interp:
     jne     .arg_raw
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, [r12 + TOKEN_value]
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .arg_raw
     cmp     byte [rdx + SYMBOL_kind], SYM_CONSTANT
@@ -5662,7 +5976,7 @@ prep_resolve_interp:
     mov     byte [r14 + r15], 0
     add     rsi, r14
     mov     rdi, [rbx + PREP_ctx]
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .lead_kept
     cmp     byte [rdx + SYMBOL_kind], SYM_CONSTANT
@@ -5860,7 +6174,7 @@ prep_handle_assign:
     ;    a %define: it is a number now)
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, r13
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .create
     mov     byte [rdx + SYMBOL_kind], SYM_CONSTANT
@@ -5885,7 +6199,7 @@ prep_handle_assign:
 
     mov     rsi, rdi
     mov     rdi, [rbx + PREP_ctx]
-    call    symbol_add
+    call    prep_symbol_add
     test    rax, rax
     jnz     .error
     xor     rax, rax
@@ -5930,7 +6244,7 @@ prep_handle_undef:
     jne     .bad
     mov     rsi, [rdx + TOKEN_value]
     mov     rdi, [rbx + PREP_ctx]
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .ok                            ; not defined: nothing to remove
     cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
@@ -6303,33 +6617,45 @@ prep_handle_message:
     je      .end
     mov     rdi, rbx
     call    preprocessor_next_token
+    ; every token as written ("a,b" too), a blank where the source had
+    ; one, as NASM gives the line
+    mov     ecx, [rdx + TOKEN_line]
+    movzx   r8d, word [rdx + TOKEN_col]
+    movzx   r9d, word [rdx + TOKEN_len]
+    test    r12d, r12d
+    jz      .placed
+    cmp     ecx, [rel msg_prev_line]
+    jne     .blank
+    cmp     r8d, [rel msg_prev_end]
+    je      .placed                        ; right after it in the source
+.blank:
+    push    rdx
+    push    rcx
+    push    r8
+    push    r9
+    lea     rsi, [rel msg_space]
+    call    .out
+    pop     r9
+    pop     r8
+    pop     rcx
+    pop     rdx
+.placed:
+    mov     [rel msg_prev_line], ecx
+    add     r8d, r9d
+    mov     [rel msg_prev_end], r8d
     movzx   eax, byte [rdx + TOKEN_kind]
-    cmp     eax, TOK_IDENT
-    je      .text
     cmp     eax, TOK_STRING
     je      .text
     cmp     eax, TOK_CHAR
     je      .text
-    cmp     eax, TOK_NUMBER
-    jne     .word
-    mov     rsi, [rdx + TOKEN_value]       ; a number: as written
-    push    rsi
-    call    .space
-    pop     rsi
-    call    .out
-    inc     r12d
-    jmp     .word
+    call    prep_idn_text                  ; names, numbers, punctuation
+    jmp     .put
 .text:
     call    prep_token_text
     test    rax, rax
     jz      .word
-    push    rax
-    test    r12d, r12d
-    jz      .no_space
-    lea     rsi, [rel msg_space]
-    call    .out
-.no_space:
-    pop     rsi
+.put:
+    mov     rsi, rax
     call    .out
     inc     r12d
     jmp     .word
@@ -6527,6 +6853,8 @@ prep_handle_iftest:
     call    prep_drop_stale_newline
     cmp     r12d, IFT_MACRO
     jb      .peek
+    cmp     r12d, IFT_TOKEN                    ; (%iftoken: the expansion, as NASM -
+    je      .peek                              ;  an empty %define is no token)
     mov     byte [rel prep_noexpand], 1        ; a name, not its expansion
 .peek:
     mov     rdi, rbx
@@ -6584,6 +6912,8 @@ prep_handle_iftest:
     je      .true
     jmp     .decided
 .t_macro:
+    cmp     r12d, IFT_ALIAS
+    je      .t_alias
     cmp     r12d, IFT_DEF
     je      .t_def
     cmp     r12d, IFT_CTX
@@ -6594,7 +6924,7 @@ prep_handle_iftest:
     jne     .decided
     mov     rsi, [rdx + TOKEN_value]
     mov     rdi, [rbx + PREP_ctx]
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .decided
     cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
@@ -6627,6 +6957,8 @@ prep_handle_iftest:
     call    preprocessor_peek_token
     test    rax, rax
     jnz     .tm_check
+    cmp     byte [rdx + TOKEN_kind], TOK_PLUS
+    je      .tm_plus                       ; "m 1+": 1 or more, as NASM
     cmp     byte [rdx + TOKEN_kind], TOK_MINUS
     jne     .tm_check
     mov     rdi, rbx
@@ -6645,6 +6977,7 @@ prep_handle_iftest:
     jnz     .tm_check
     mov     [rsp], rdx
     jmp     .tm_take
+.tm_plus:
 .tm_any:
     mov     qword [rsp], MACRO_VARIADIC
 .tm_take:
@@ -6675,7 +7008,7 @@ prep_handle_iftest:
     push    rdx
     mov     rsi, [rdx + TOKEN_value]
     mov     rdi, [rbx + PREP_ctx]
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .t_dynamic
     pop     rax
@@ -6686,6 +7019,14 @@ prep_handle_iftest:
     mov     rax, [rdx + SYMBOL_value]
     test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE
     jnz     .true
+    jmp     .decided
+.t_alias:
+    cmp     eax, TOK_IDENT
+    jne     .decided
+    mov     rsi, [rdx + TOKEN_value]
+    call    alias_slot
+    cmp     eax, -1
+    jne     .true
     jmp     .decided
 .t_env:
     ; "%ifenv NAME" / "%ifenv 'NAME'": set in the environment
@@ -7448,9 +7789,19 @@ prep_interp_standalone:
     mov     [rbp + TOKEN_file], rax
     cmp     byte [rbp + TOKEN_kind], TOK_IDENT
     jne     .put_it
+    ; "%[foo%[foo3]bar]": the name inside is pasted first (foo33bar)
+    test    byte [rbp + TOKEN_flags], TOK_FLAG_INTERP
+    jz      .name_plain
+    and     byte [rbp + TOKEN_flags], ~TOK_FLAG_INTERP
+    mov     rdi, rbx
+    mov     rsi, rbp
+    call    prep_resolve_interp
+    test    rax, rax
+    jnz     .ret
+.name_plain:
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, [rbp + TOKEN_value]
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .put_it
     cmp     byte [rdx + SYMBOL_kind], SYM_CONSTANT
@@ -8187,7 +8538,7 @@ prep_function:
     jz      .isdef_done
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, rdx
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .isdef_done
     test    byte [rdx + SYMBOL_pflags], SYMF_ASSIGN
@@ -8215,7 +8566,7 @@ prep_function:
     jz      .ismacro_done
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, rdx
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .ismacro_done
     cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
@@ -9875,6 +10226,9 @@ prep_handle_def:
     push    r14
     push    r15
     mov     rbx, rdi
+    ; its body's directives are text, from the first token peeked on (the
+    ; "(" of a function-like name is looked for before the body)
+    mov     byte [rel def_capturing], 1
 
     ; An expression-evaluating directive can leave the terminating NEWLINE
     ; in the peek slot; it does not belong to this definition.
@@ -10060,6 +10414,7 @@ prep_handle_def:
     movzx   eax, byte [rel def_eager]
     xor     eax, 1
     mov     [rel prep_noexpand], al        ; %xdefine expands now
+    mov     byte [rel def_capturing], 1    ; (its directives kept as text)
     xor     r15d, r15d                     ; tokens captured
     lea     rax, [rel def_scratch]
     mov     [rel def_toks], rax
@@ -10134,6 +10489,7 @@ prep_handle_def:
     ; 4. A MACRO with the captured tokens, under NAME
 .store:
     mov     byte [rel prep_noexpand], 0
+    mov     byte [rel def_capturing], 0
     call    prep_def_marks
     test    rax, rax
     jnz     .fail
@@ -10144,7 +10500,9 @@ prep_handle_def:
     mov     rax, EXIT_DEFINE
 .fail:
     mov     byte [rel prep_noexpand], 0
+    mov     byte [rel def_capturing], 0
 .ret:
+    mov     byte [rel def_capturing], 0
     lea     rcx, [rel def_scratch]
     mov     [rel def_toks], rcx            ; for the one-token definitions
     mov     byte [rel def_eager], 0
@@ -10368,7 +10726,7 @@ prep_define_store:
 
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, r12
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .create
     ; "X equ 2" then "%define X 2": a macro and a symbol are apart in NASM;
@@ -10434,7 +10792,7 @@ prep_define_store:
     mov     [rsp + SYMBOL_value], r13
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, rsp
-    call    symbol_add
+    call    prep_symbol_add
     add     rsp, SYMBOL_SIZE
 .fail:
 .ret:
@@ -11037,9 +11395,11 @@ macro_handle_def:
     mov     [rel mdef_defaults], rdx
 .defaults_taken:
     ; more defaults than optional parameters (they are counted by their
-    ; commas): NASM's warning
+    ; commas): NASM's warning - not with "+", whose last takes the rest
     cmp     r15, MACRO_VARIADIC
     je      .defaults_fit
+    cmp     byte [rel mdef_greedy], 0
+    jne     .defaults_fit
     mov     ecx, [rel mdef_ndefaults]
     test    ecx, ecx
     jz      .defaults_fit
@@ -11104,7 +11464,7 @@ macro_handle_def:
     ; replaced at %endmacro, with NASM's warning here, at its %macro line
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, [r15 + MACRO_name]
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .not_redef
     cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
@@ -11225,7 +11585,7 @@ macro_handle_def:
     ; replaces it. A %define of the name is replaced.
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, [r15 + MACRO_name]
-    call    symbol_find
+    call    prep_symbol_find
     test    rax, rax
     jnz     .register
     cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
@@ -11270,7 +11630,7 @@ macro_handle_def:
 
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, rsp
-    call    symbol_add
+    call    prep_symbol_add
     test    rax, rax
     jnz     .error_add_sym
     
@@ -11800,7 +12160,7 @@ prep_handle_rep:
     ; "%rep 0": the body not at all (it was once); a negative count the
     ; same, with NASM's warning
     test    r14, r14
-    jg      .rep_start
+    jg      .rep_limit
     jz      .rep_none
     mov     edi, WC_PP_REP_NEGATIVE
     call    warn_begin
@@ -11818,6 +12178,41 @@ prep_handle_rep:
     call    warn_text
     call    warn_end
 .rep_none:
+    xor     eax, eax
+    jmp     .done
+.rep_limit:
+    ; more than --limit-rep (1000000): NASM's error, the body not repeated
+    cmp     r14, [rel rep_limit]
+    jbe     .rep_start
+    lea     rdi, [rel rep_num]
+    mov     rsi, r14
+    mov     edx, 10
+    call    int_to_str
+    lea     rdi, [rel rep_num]
+    call    str_len
+    lea     rdi, [rel rep_num]
+    add     rdi, rax
+    lea     rsi, [rel s_rep_limit]
+.rep_limit_text:
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    test    al, al
+    jnz     .rep_limit_text
+    dec     rdi
+    mov     rsi, [rel rep_limit]
+    mov     edx, 10
+    call    int_to_str
+    lea     rdi, [rel rep_num]
+    call    str_len
+    lea     rdi, [rel rep_num]
+    add     rdi, rax
+    mov     word [rdi], ')'
+    lea     rsi, [rel s_rep_count]
+    call    prep_error_line
+    lea     rsi, [rel rep_num]
+    call    prep_error_more
     xor     eax, eax
     jmp     .done
 .rep_start:
@@ -11963,9 +12358,359 @@ dump_prev_kind: resb 1                  ; ... and its kind
 [SECTION .rodata]
 s_rep_negative: db "negative `%rep' count: ", 0
 [SECTION .bss]
-rep_num:       resb 24
+rep_num:       resb 96             ; a %rep count's text (its warning, error)
 [SECTION .text]
 
 [SECTION .bss]
 dump_num:      resb 24             ; -E: an %assign's value as text
+[SECTION .text]
+
+; ---- aliases: %defalias, %idefalias, %undefalias, %aliases ------
+;
+; "%defalias foo bar": foo stands for bar - defining, removing, expanding
+; or testing foo is doing it to bar - until "%undefalias foo" (NASM 2.15).
+; %idefalias matches the alias in any letter case; "%aliases off" stops
+; them standing for anything (on: again). Every name macro.s looks up or
+; defines goes through prep_alias_of (prep_symbol_find / prep_symbol_add);
+; %ifdefalias asks the table itself.
+
+; prep_symbol_find / prep_symbol_add: symbol_find / symbol_add of the
+; name an alias stands for (rsi: the name / the SYMBOL)
+prep_symbol_find:
+    call    prep_alias_of
+    jmp     symbol_find
+prep_symbol_add:
+    cmp     dword [rel alias_count], 0
+    je      symbol_add
+    push    rsi
+    mov     rsi, [rsi + SYMBOL_name]
+    call    prep_alias_of
+    mov     rax, rsi
+    pop     rsi
+    mov     [rsi + SYMBOL_name], rax
+    jmp     symbol_add
+
+; prep_alias_of: rsi = the name an alias stands for, following a chain of
+; them (32 links at most), or the name itself. Only rsi changes.
+prep_alias_of:
+    cmp     dword [rel alias_count], 0
+    je      .ret
+    cmp     byte [rel aliases_off], 0
+    jne     .ret
+    push    rax
+    push    rcx
+    mov     ecx, 32
+.again:
+    call    alias_slot
+    cmp     eax, -1
+    je      .out
+    push    rdx
+    lea     rdx, [rel alias_targets]
+    mov     rsi, [rdx + rax*8]
+    pop     rdx
+    dec     ecx
+    jnz     .again
+.out:
+    pop     rcx
+    pop     rax
+.ret:
+    ret
+
+; alias_slot: eax = the table slot of alias rsi, or -1. Only rax changes.
+alias_slot:
+    push    rcx
+    push    rdx
+    push    rdi
+    push    r8
+    xor     ecx, ecx
+.slot:
+    cmp     ecx, [rel alias_count]
+    jae     .none
+    lea     rdx, [rel alias_names]
+    mov     rdi, [rdx + rcx*8]
+    test    rdi, rdi
+    jz      .next
+    lea     rdx, [rel alias_icase]
+    movzx   r8d, byte [rdx + rcx]
+    xor     edx, edx
+.ch:
+    movzx   eax, byte [rdi + rdx]
+    cmp     al, [rsi + rdx]
+    je      .same
+    test    r8d, r8d
+    jz      .next
+    ; %idefalias: letters in either case
+    or      eax, 0x20
+    cmp     eax, 'a'
+    jb      .next
+    cmp     eax, 'z'
+    ja      .next
+    push    rax
+    movzx   eax, byte [rsi + rdx]
+    or      eax, 0x20
+    cmp     eax, [rsp]
+    pop     rax
+    jne     .next
+    inc     edx
+    jmp     .ch
+.same:
+    test    al, al
+    jz      .hit
+    inc     edx
+    jmp     .ch
+.next:
+    inc     ecx
+    jmp     .slot
+.hit:
+    mov     eax, ecx
+    jmp     .out
+.none:
+    mov     eax, -1
+.out:
+    pop     r8
+    pop     rdi
+    pop     rdx
+    pop     rcx
+    ret
+
+; prep_handle_defalias
+; Input : rdi = PrepState, esi = 0 %defalias, 1 %idefalias, 2 %undefalias,
+;         3 %aliases on/off
+prep_handle_defalias:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    mov     rbx, rdi
+    mov     r13d, esi
+    mov     byte [rel prep_noexpand], 1    ; the names, not their bodies
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret_expand
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .bad
+    mov     r12, [rdx + TOKEN_value]
+    cmp     r13d, 3
+    je      .on_off
+    cmp     r13d, 2
+    je      .undef
+    ; the target
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret_expand
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .bad
+    mov     r14, [rdx + TOKEN_value]
+    mov     byte [rel prep_noexpand], 0
+    ; both names kept (the tokens' text does not last)
+    mov     rdi, r12
+    call    str_len
+    mov     rdx, rax
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, r12
+    call    arena_alloc_string
+    test    rax, rax
+    jnz     .ret
+    mov     r12, rdx
+    mov     rdi, r14
+    call    str_len
+    mov     rdx, rax
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, r14
+    call    arena_alloc_string
+    test    rax, rax
+    jnz     .ret
+    mov     r14, rdx
+    ; its slot: the alias's own, a free one, or a new one
+    mov     rsi, r12
+    call    alias_slot
+    cmp     eax, -1
+    jne     .store
+    xor     eax, eax
+    lea     rdx, [rel alias_names]
+.free:
+    cmp     eax, [rel alias_count]
+    jae     .append
+    cmp     qword [rdx + rax*8], 0
+    je      .store
+    inc     eax
+    jmp     .free
+.append:
+    cmp     eax, ALIAS_MAX
+    jae     .full
+    inc     dword [rel alias_count]
+.store:
+    lea     rdx, [rel alias_names]
+    mov     [rdx + rax*8], r12
+    lea     rdx, [rel alias_targets]
+    mov     [rdx + rax*8], r14
+    lea     rdx, [rel alias_icase]
+    mov     [rdx + rax], r13b
+    jmp     .ok
+.undef:
+    mov     byte [rel prep_noexpand], 0
+    mov     rsi, r12
+    call    alias_slot
+    cmp     eax, -1
+    je      .ok
+    lea     rdx, [rel alias_names]
+    mov     qword [rdx + rax*8], 0
+    jmp     .ok
+.on_off:
+    mov     byte [rel prep_noexpand], 0
+    mov     rdi, r12
+    lea     rsi, [rel s_aliases_off]
+    call    str_cmp_kw
+    xor     ecx, ecx
+    test    rax, rax
+    jnz     .set_on_off
+    mov     ecx, 1
+.set_on_off:
+    mov     [rel aliases_off], cl
+.ok:
+    xor     eax, eax
+    jmp     .ret
+.full:
+.bad:
+    mov     eax, EXIT_DEFINE
+.ret_expand:
+    mov     byte [rel prep_noexpand], 0
+.ret:
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+[SECTION .rodata]
+s_aliases_off: db "off", 0
+[SECTION .bss]
+alignb 8
+alias_names:   resq ALIAS_MAX          ; an alias's name (0: a free slot)
+alias_targets: resq ALIAS_MAX          ; ... the name it stands for
+alias_icase:   resb ALIAS_MAX          ; ... %idefalias: any letter case
+alias_count:   resd 1                  ; slots in use (free ones among them)
+aliases_off:   resb 1                  ; "%aliases off"
+[SECTION .text]
+
+[SECTION .bss]
+nest_buf:      resb NEST_BUF       ; a nested %[...] worked out (prep_resolve_interp)
+[SECTION .text]
+
+[SECTION .bss]
+assign_num:    resb 24             ; an %assign's value as a number token's text
+[SECTION .text]
+
+; prep_text_splits: eax = 1 when the text at rsi holds a character no name
+; or number has (an operator, a blank): NASM's scanner, reading the pasted
+; line again, makes more than one token of it. Only rax changes.
+prep_text_splits:
+    push    rcx
+    push    rsi
+    push    rdi
+.ch:
+    movzx   eax, byte [rsi]
+    test    eax, eax
+    jz      .no
+    inc     rsi
+    lea     rdi, [rel split_chars]
+.find:
+    movzx   ecx, byte [rdi]
+    test    ecx, ecx
+    jz      .ch
+    inc     rdi
+    cmp     eax, ecx
+    jne     .find
+    mov     eax, 1
+    jmp     .out
+.no:
+    xor     eax, eax
+.out:
+    pop     rdi
+    pop     rsi
+    pop     rcx
+    ret
+
+; prep_bracket_text: rdx = "%[" text "]" in the arena (rsi = the text);
+; rax = EXIT_OK or an error
+prep_bracket_text:
+    push    r12
+    push    r13
+    mov     r12, rsi
+    mov     rdi, rsi
+    call    str_len
+    mov     r13, rax
+    lea     rsi, [rax + 4]
+    mov     rdi, [rbx + PREP_arena]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     word [rdx], '%['
+    xor     ecx, ecx
+.copy:
+    cmp     rcx, r13
+    jae     .copied
+    mov     al, [r12 + rcx]
+    mov     [rdx + rcx + 2], al
+    inc     rcx
+    jmp     .copy
+.copied:
+    mov     byte [rdx + rcx + 2], ']'
+    mov     byte [rdx + rcx + 3], 0
+    xor     eax, eax
+.ret:
+    pop     r13
+    pop     r12
+    ret
+
+[SECTION .rodata]
+split_chars:   db "+-*/()<>=!&|^,:[]{} ", 9, 0
+[SECTION .text]
+
+[SECTION .bss]
+dflt_target:   resd 1              ; a call's parameters with its defaults
+[SECTION .text]
+
+[SECTION .bss]
+msg_prev_line: resd 1               ; %warning's text: the last token's line
+msg_prev_end:  resd 1               ; ... and the column after it
+[SECTION .text]
+
+[SECTION .data]
+global rep_limit
+rep_limit:     dq 1000000          ; --limit-rep (NASM's default)
+[SECTION .rodata]
+s_rep_limit:   db " exceeds limit (currently ", 0
+[SECTION .text]
+
+; prep_error_line / prep_error_more: an error at this line, as %error gives
+; one - "file:line: error: " and the text at rsi, then (prep_error_more)
+; the text at rsi and the line's end; counted, the assembly goes on and
+; fails at its end
+prep_error_line:
+    push    rsi
+    mov     edi, 1                         ; error
+    extern  error_report_text
+    call    error_report_text
+    pop     rsi
+    mov     rdi, 2
+    jmp     print_str
+prep_error_more:
+    mov     rdi, 2
+    call    print_str
+    extern  error_report_end, error_deferred
+    call    error_report_end
+    inc     dword [rel error_deferred]
+    ret
+
+[SECTION .rodata]
+s_rep_count:   db "`%rep' count ", 0
+s_not_instruction: db "label or instruction expected at start of line", 0
+s_empty_text:  db 0
+[SECTION .text]
+
+[SECTION .bss]
+def_capturing: resb 1               ; a %define's body is being read (prep_handle_def)
 [SECTION .text]
