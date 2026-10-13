@@ -784,6 +784,33 @@ prep_dump:
     je      .string
     cmp     eax, TOK_CHAR
     je      .char
+    cmp     eax, TOK_IDENT
+    jne     .as_text
+    ; a name %assign (or %strlen ...) gave a value: that value, as NASM
+    ; writes it ("%assign v 5" / "db v" is "db 5")
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, [r14 + TOKEN_value]
+    call    symbol_find
+    test    rax, rax
+    jnz     .as_text
+    cmp     byte [rdx + SYMBOL_kind], SYM_CONSTANT
+    jne     .as_text
+    test    byte [rdx + SYMBOL_pflags], SYMF_ASSIGN
+    jz      .as_text
+    mov     rsi, [rdx + SYMBOL_value]
+    lea     rdi, [rel dump_num]
+    test    rsi, rsi
+    jns     .num_digits
+    mov     byte [rdi], '-'
+    inc     rdi
+    neg     rsi
+.num_digits:
+    mov     edx, 10
+    call    int_to_str
+    lea     rsi, [rel dump_num]
+    call    .write_str
+    jmp     .token
+.as_text:
     mov     rdx, r14
     call    prep_idn_text
     mov     rsi, rax
@@ -3350,7 +3377,9 @@ use_smartalign_text: db 10
 use_smartalign_text_len equ $ - use_smartalign_text
 use_fp_text: db 10
              db "%define __?USE_FP?__", 10
+             db "%define float8(x) __float8__(x)", 10
              db "%define float16(x) __float16__(x)", 10
+             db "%define bfloat16(x) __bfloat16__(x)", 10
              db "%define float32(x) __float32__(x)", 10
              db "%define float64(x) __float64__(x)", 10
              db "%define float80m(x) __float80m__(x)", 10
@@ -3361,6 +3390,12 @@ use_fp_text: db 10
              db "%define NaN __QNaN__", 10
              db "%define QNaN __QNaN__", 10
              db "%define SNaN __SNaN__", 10
+             db "%imacro bf16 1-*.nolist", 10       ; bf16 1.0, NaN: bfloat16 words
+             db "  %rep %0", 10
+             db "    dw __?bfloat16?__(%1)", 10
+             db "    %rotate 1", 10
+             db "  %endrep", 10
+             db "%endmacro", 10
 use_fp_text_len equ $ - use_fp_text
 ; NASM's ifunc package: integer log2 (parser_evaluate_factor has the
 ; __?ilog2?__ functions)
@@ -11761,7 +11796,31 @@ prep_handle_rep:
     test    rax, rax
     jnz     .error
     mov     [r15 + MACRO_tokens], rdx
-    
+
+    ; "%rep 0": the body not at all (it was once); a negative count the
+    ; same, with NASM's warning
+    test    r14, r14
+    jg      .rep_start
+    jz      .rep_none
+    mov     edi, WC_PP_REP_NEGATIVE
+    call    warn_begin
+    lea     rsi, [rel s_rep_negative]
+    call    warn_text
+    lea     rdi, [rel rep_num]
+    mov     byte [rdi], '-'
+    inc     rdi
+    mov     rsi, r14
+    neg     rsi
+    mov     edx, 10
+    extern  int_to_str
+    call    int_to_str
+    lea     rsi, [rel rep_num]
+    call    warn_text
+    call    warn_end
+.rep_none:
+    xor     eax, eax
+    jmp     .done
+.rep_start:
     ; 4. Start expansion
     mov     rdi, rbx
     mov     rsi, r15
@@ -11900,3 +11959,13 @@ alignb 4
 dump_prev_line: resd 1                  ; line and end column of the token
 dump_prev_end:  resd 1                  ; written last (-E spacing)
 dump_prev_kind: resb 1                  ; ... and its kind
+
+[SECTION .rodata]
+s_rep_negative: db "negative `%rep' count: ", 0
+[SECTION .bss]
+rep_num:       resb 24
+[SECTION .text]
+
+[SECTION .bss]
+dump_num:      resb 24             ; -E: an %assign's value as text
+[SECTION .text]
