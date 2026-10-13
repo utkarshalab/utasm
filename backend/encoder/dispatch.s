@@ -61,6 +61,7 @@ extern  asm_bits
 %define SP_IMM      3
 %define SP_VSIB     4               ; memory with a vector index (fixreg = 1/2/3)
 %define SP_TO       5               ; "to st1" (te_high 2): x87's st(i) destination
+%define SP_NOHI     6               ; r/m8 encoded as r32: no REX for sil, no ah (pinsrb)
 %define NOMEM       0xFFFF
 
 ; immediate kinds
@@ -537,16 +538,37 @@ te_match:
     jmp     .next
 .not_k:
     cmp     r8d, C_GPR
-    jne     .next                          ; vector/st classes carry their size
+    jne     .vector                        ; vector/st classes carry their size
     movzx   eax, word [rbx + TY_RSIZE]
     test    eax, eax
     jz      .reg_v
     cmp     eax, r9d
     jne     .fail
+    ; "pinsrb xmm0, ah, 1": NASM's "cannot use high registers"
+    cmp     byte [rbx + TY_SPECIAL], SP_NOHI
+    jne     .reg_v
+    lea     rdx, [rel te_high]
+    cmp     byte [rdx + rcx], 0
+    jne     .fail
 .reg_v:
     call    .vsize
     test    eax, eax
     jz      .fail
+    jmp     .next
+.vector:
+    ; "insertps xmm0, dword xmm1": a size written on a vector register is
+    ; the operand's as memory - only a form with that memory size
+    cmp     r8d, C_XMM
+    jb      .next
+    cmp     r8d, C_ZMM
+    ja      .next
+    call    te_operand
+    movzx   eax, byte [rdi + OPERAND_dispsize]
+    test    eax, eax
+    jz      .next
+    movzx   edx, word [rbx + TY_MSIZE]
+    cmp     edx, eax
+    jne     .fail
     jmp     .next
 
 .mem:
@@ -729,6 +751,8 @@ te_match:
     movzx   eax, byte [rbx + TY_SPECIAL]
     test    eax, eax
     jz      .vs_ok
+    cmp     eax, SP_NOHI                   ; (a byte register, as written)
+    je      .vs_ok
     cmp     r9d, 64
     je      .vs_width
     cmp     r9d, 32
@@ -966,6 +990,10 @@ te_emit:
     movzx   eax, byte [rdx + rcx]
     cmp     eax, 4
     jb      .rex_8_next
+    movzx   edx, byte [r13 + FM_TYPES + rcx]   ; (r/m8 as r32: none)
+    lea     r9, [rel x86_enc_types]
+    cmp     byte [r9 + rdx*8 + TY_SPECIAL], SP_NOHI
+    je      .rex_8_next
     cmp     eax, 7
     ja      .rex_8_next
     or      r15d, 0x40
