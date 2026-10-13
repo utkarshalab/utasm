@@ -5402,8 +5402,8 @@ prep_resolve_interp:
     ; "x_%$name" with "%define %$name abc": x_abc, as NASM pastes ("%$x%$n"
     ; with "%assign %$n 3": ..@N.x3) - but a directive's name that is only
     ; "%$n" stays the name ("%assign %$n %$n+1")
-    cmp     byte [rel prep_noexpand], 0
-    je      .ctx_lookup
+    ; A token that is only "%$n" stays the name: its %define is expanded
+    ; as one is, its tokens as they are (a string stays a string)
     cmp     qword [rsp], 0
     jne     .ctx_lookup                    ; pasted onto what comes before
     cmp     byte [r13], 0
