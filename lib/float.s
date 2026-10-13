@@ -18,7 +18,9 @@ DEFAULT REL
 ; ============================================================================
 ; float_encode turns the text of a floating-point constant ("1.5", "1.0e3",
 ; "0x1.8p3") into IEEE 754 bits: binary16 (dw), binary32 (dd), binary64 (dq),
-; binary128 (do) or the x87 80-bit extended format (dt). The result is correctly rounded
+; binary128 (do) or the x87 80-bit extended format (dt) - and NASM's 8-bit
+; float (db: sign, 4 exponent bits, 3 fraction bits) and bfloat16
+; (__bfloat16__). The result is correctly rounded
 ; (round half to even), exactly as NASM produces it.
 ;
 ; Method: the constant is exactly M * 10^E (or H * 2^K for a hex float), M an
@@ -47,7 +49,7 @@ DEFAULT REL
 ; Input    : rdi = text of the constant (NUL-terminated)
 ;            esi = 1 for a negative constant
 ;            edx = format: FLT_HALF 1, FLT_SINGLE 2, FLT_DOUBLE 3, FLT_EXT 4,
-;                  FLT_QUAD 5
+;                  FLT_QUAD 5, FLT_BYTE 6, FLT_BF16 7
 ; Output   : rax = EXIT_OK or EXIT_INVALID_OPERAND
 ;            rdx = the bits (for the 80-bit format: the 64-bit significand;
 ;                  binary128: the low 64 bits)
@@ -63,10 +65,11 @@ float_encode:
     push    r15
     mov     r12, rdi
     mov     [rel f_sign], sil
+    mov     byte [rel float_overflow], 0
 
     ; the format's precision, exponent bias and width
     dec     edx
-    cmp     edx, 4
+    cmp     edx, 6
     ja      .bad
     lea     rax, [rel f_formats]
     imul    ecx, edx, 12
@@ -96,7 +99,14 @@ float_encode:
     xor     r15d, r15d                     ; 1 once past the point
     mov     rbx, r12
     ; NASM's radix prefixes: 0x 0h hex, 0o 0q octal, 0b 0y binary (the
-    ; digits a power of two, the exponent after p), 0d 0t decimal
+    ; digits a power of two, the exponent after p), 0d 0t decimal; and $
+    ; hex ("dw $1.0p-1"), one character where .pow2 skips two
+    cmp     byte [rbx], '$'
+    jne     .not_dollar
+    dec     rbx
+    mov     ecx, 4
+    jmp     .pow2
+.not_dollar:
     cmp     byte [rbx], '0'
     jne     .dec_loop
     movzx   eax, byte [rbx + 1]
@@ -497,6 +507,7 @@ float_encode:
     cmp     rdx, r8
     jl      .encode
 .inf:
+    mov     byte [rel float_overflow], 1   ; (NASM's float-overflow warning)
     cmp     qword [rel f_prec], 64
     ja      .q_inf
     mov     rdx, [rel f_bias]
@@ -633,6 +644,7 @@ float_encode:
     or      r11, rdx
     jmp     .q_sign
 .q_inf:
+    mov     byte [rel float_overflow], 1
     mov     r11, 0x7FFF000000000000
     xor     r12d, r12d
     jmp     .q_sign
@@ -1069,8 +1081,13 @@ f_formats:
     dd      53, 1023, 64                   ; binary64  (dq)
     dd      64, 16383, 80                  ; x87 extended (dt)
     dd      113, 16383, 128                ; binary128 (do)
+    dd      4, 7, 8                        ; NASM's 8-bit float (db): 1.4.3
+    dd      8, 127, 16                     ; bfloat16 (__bfloat16__)
 
 [SECTION .bss]
+global float_overflow
+float_overflow: resb 1                     ; the last constant was too big: infinity
+alignb 8
 f_a:        resq FBN_LIMBS + 4             ; M, M * 10^E, or the hex digits
 f_d:        resq FBN_LIMBS + 4             ; 10^-E
 f_r:        resq FBN_LIMBS + 4             ; the division's remainder
