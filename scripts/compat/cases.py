@@ -323,7 +323,9 @@ BIN_PROBES = {'basic_no_section': 'nop\nret\n',
  'enc_x87_forms': 'fadd\nfld\nfstp\nffreep\nfadd to st1\nfsubr to st2\n',
  'struc_base_offset': 'struc s, -40\n.l: resd 1\n.w: resw 1\nendstruc\nmov [rbp + s.w], ax\n'
                       'istruc s\nat .w, db 5\niend\ndd s_size, s\n',
- 'ptr_as_label': 'mov eax, dword ptr\nptr:\n'}
+ 'ptr_as_label': 'mov eax, dword ptr\nptr:\n',
+ # a number pasted on a name: NASM expands the name ("%define v 9": 19)
+ 'pp_param_number_paste': '%define v 9\n%macro m 1\ndb %{1}v\nx%{1}v: db 0\ndb %1h\n%endmacro\nm 1\n'}
 
 # ELF objects: section contents, relocations and symbols are compared
 ELF_PROBES = {
@@ -1253,6 +1255,9 @@ CFI_CASES = {
           'section .text\nf:\n.cfi_startproc\npush ebp\n.cfi_def_cfa_offset 8\n.cfi_offset ebp, -8\nmov ebp, esp\n.cfi_def_cfa_register ebp\nleave\n.cfi_def_cfa esp, 4\nret\n.cfi_endproc\n', 32),
     'leading_rules': ('\t.text\nf:\n\t.cfi_startproc\n\t.cfi_def_cfa_offset 16\n\tnop\n\t.cfi_endproc\ng:\n\t.cfi_startproc\n\t.cfi_def_cfa_offset 16\n\tret\n\t.cfi_endproc\nh:\n\t.cfi_startproc\n\tret\n\t.cfi_endproc\n',
           'section .text\nf:\n.cfi_startproc\n.cfi_def_cfa_offset 16\nnop\n.cfi_endproc\ng:\n.cfi_startproc\n.cfi_def_cfa_offset 16\nret\n.cfi_endproc\nh:\n.cfi_startproc\nret\n.cfi_endproc\n', 64),
+    # GAS's register spelling in the directives (".cfi_offset %rbp")
+    'gas_registers': ('\t.text\nf:\n\t.cfi_startproc\n\tpushq %rbp\n\t.cfi_def_cfa_offset 16\n\t.cfi_offset %rbp, -16\n\tmovq %rsp, %rbp\n\t.cfi_def_cfa_register %rbp\n\tpopq %rbp\n\t.cfi_def_cfa %rsp, 8\n\tret\n\t.cfi_endproc\n',
+          'section .text\nf:\n.cfi_startproc\npush rbp\n.cfi_def_cfa_offset 16\n.cfi_offset %rbp, -16\nmov rbp, rsp\n.cfi_def_cfa_register %rbp\npop rbp\n.cfi_def_cfa %rsp, 8\nret\n.cfi_endproc\n', 64),
 }
 # misuses, with GAS's messages: (name, source, line (0: at the end), text)
 CFI_ERRORS = [
