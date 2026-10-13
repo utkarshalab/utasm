@@ -41,6 +41,7 @@ extern  amd64_emit_dword
 extern  amd64_emit_modrm_sib
 extern  amd64_emit_reloc
 extern  error_set_subject
+extern  warn_data_bounds, warn_number, warn_begin, warn_text, warn_end
 
 %define ID_INC      1278
 %define ID_DEC      1118
@@ -529,70 +530,188 @@ amd64_mode_check:
     ret
 
 ;*
-; * [amd64_imm_canon]
-; * Purpose: An immediate of a 16- or 32-bit operation written as the
-; *   unsigned value of its bits (0xFFFF, 0xFFFFFF80) is that negative
-; *   number to the operation (-1, -128): stored so, the encoders choose
-; *   the sign-extended imm8 forms (83 /n ib, 6B, 6A) as NASM does. The
-; *   width is the first general register's or memory operand's, else the
-; *   immediate's own (push word 0xFFFF).
+; * [amd64_imm_size_check]
+; * Purpose: A sized immediate the form does not take, NASM's "mismatch in
+; *   operand sizes": its size is the destination's, but for "byte" in the
+; *   ALU group (the sign-extended imm8 form, "add eax, byte 5") and
+; *   "mov r64, dword x" (C7 /0 id). For mov, test and the ALU group.
 ; * Input  : R12 = INST
+; * Output : RAX = 0 or EXIT_SIZE_MISMATCH (only RAX, RCX, RDX, RSI, RDI)
+; ;
+global amd64_imm_size_check
+amd64_imm_size_check:
+    xor     eax, eax
+    cmp     byte [r12 + INST_nops], 2
+    jne     .ret
+    cmp     byte [r12 + INST_op1 + OPERAND_kind], OP_IMM
+    je      .imm
+    cmp     byte [r12 + INST_op1 + OPERAND_kind], OP_SYMBOL
+    jne     .ret
+.imm:
+    movzx   ecx, byte [r12 + INST_op1 + OPERAND_size]
+    test    ecx, ecx
+    jz      .ret
+    movzx   edx, byte [r12 + INST_op0 + OPERAND_size]
+    test    edx, edx
+    jz      .ret
+    cmp     ecx, edx
+    je      .ret
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_MEM
+    je      .dest
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_REG
+    jne     .ret
+    cmp     byte [r12 + INST_op0 + OPERAND_reg], 16
+    jae     .ret                           ; a general register only
+.dest:
+    movzx   esi, word [r12 + INST_op_id]
+    cmp     esi, 1391                      ; MOV
+    jne     .alu
+    cmp     edx, 64
+    jne     .mismatch
+    cmp     ecx, 32
+    je      .ret
+    jmp     .mismatch
+.alu:
+    cmp     esi, 1691                      ; TEST
+    je      .mismatch
+    lea     rdi, [rel imm_sb_ids]
+.alu_id:
+    movzx   eax, word [rdi]
+    test    eax, eax
+    jz      .ret                           ; others: their encoders decide
+    add     rdi, 2
+    cmp     eax, esi
+    jne     .alu_id
+    xor     eax, eax
+    cmp     esi, 1276                      ; (imul, push: not two operands
+    je      .ret                           ;  of this kind)
+    cmp     esi, 1583
+    je      .ret
+    cmp     ecx, 8
+    je      .ret
+.mismatch:
+    mov     eax, EXIT_SIZE_MISMATCH
+.ret:
+    ret
+
+;*
+; * [amd64_imm_canon]
+; * Purpose: Immediates as the operation sees them, NASM's way.
+; *   - In a 16- or 32-bit operation a value written as the unsigned value
+; *     of its bits (0xFFFF, 0xFFFFFF80) is that negative number (-1, -128),
+; *     so the sign-extended imm8 forms (83 /n ib, 6B, 6A) apply.
+; *   - The instructions with such a form (the ALU group, imul, push) have
+; *     it chosen here, in amd64_imm_sb: "byte" written is the imm8 form;
+; *     "strict" or -O0 the full one; else the imm8 form when the value,
+; *     cut to the operation's width (at most 32 bits), is a signed byte:
+; *     "add ax, 0xFFFFFFFF" is add ax, -1, with NASM's warning.
+; *   - In a 64-bit one of those, test, and a mov to memory or "mov r64,
+; *     dword x", the field is a sign-extended imm32: a value that is not
+; *     one is cut to it, with NASM's warning ("cmp rax, 0x80000000").
+; *   The width is the first general register's or memory operand's, else
+; *   the immediate's own (push word 0xFFFF), else, for push, the mode's.
+; * Input  : R12 = INST, RBX = AsmCtx
 ; ;
 global amd64_imm_canon
 amd64_imm_canon:
-    push    rbx
-    xor     ebx, ebx                       ; the operation's width
-    xor     ecx, ecx
+    push    r13
+    push    r14
+    push    r15
+    mov     byte [rel amd64_imm_sb], 0
+    ; r13d: 1 an instruction with the imm8 form, 2 one with an imm32 field
+    ; cut, 0 neither
+    xor     r13d, r13d
+    movzx   eax, word [r12 + INST_op_id]
+    lea     rsi, [rel imm_sb_ids]
+.class:
+    movzx   edx, word [rsi]
+    test    edx, edx
+    jz      .class_cut
+    add     rsi, 2
+    cmp     edx, eax
+    jne     .class
+    mov     r13d, 1
+    jmp     .width
+.class_cut:
+    cmp     eax, 1691                      ; TEST
+    je      .cut
+    cmp     eax, 1391                      ; MOV: to memory, or "mov r64, dword x"
+    jne     .width
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_MEM
+    je      .cut
+    cmp     byte [r12 + INST_op1 + OPERAND_size], 32
+    jne     .width
+.cut:
+    mov     r13d, 2
 .width:
+    xor     r14d, r14d                     ; the operation's width
+    xor     r15d, r15d
+.width_op:
     movzx   eax, byte [r12 + INST_nops]
-    cmp     ecx, eax
+    cmp     r15d, eax
     jae     .imms
-    imul    rdi, rcx, OPERAND_SIZE
+    imul    rdi, r15, OPERAND_SIZE
     lea     rdi, [r12 + INST_op0 + rdi]
-    inc     ecx
+    inc     r15d
     movzx   eax, byte [rdi + OPERAND_kind]
     cmp     eax, OP_MEM
     je      .found
     cmp     eax, OP_REG
-    jne     .width
+    jne     .width_op
     cmp     byte [rdi + OPERAND_reg], 16
     jae     .imms                          ; xmm, segment ...: leave it
 .found:
-    movzx   ebx, byte [rdi + OPERAND_size]
+    movzx   r14d, byte [rdi + OPERAND_size]
 .imms:
-    xor     ecx, ecx
+    xor     r15d, r15d
 .imm:
     movzx   eax, byte [r12 + INST_nops]
-    cmp     ecx, eax
+    cmp     r15d, eax
     jae     .done
-    imul    rdi, rcx, OPERAND_SIZE
+    imul    rdi, r15, OPERAND_SIZE
     lea     rdi, [r12 + INST_op0 + rdi]
-    inc     ecx
+    inc     r15d
     cmp     byte [rdi + OPERAND_kind], OP_IMM
     jne     .imm
-    mov     edx, ebx
+    mov     edx, r14d
     test    edx, edx
     jnz     .sized
     movzx   edx, byte [rdi + OPERAND_size]
+    cmp     r13d, 1
+    jne     .sized
+    cmp     edx, 16
+    jae     .sized
+    ; "push 5", "push byte 5": the mode's width
+    mov     edx, 64
+    cmp     byte [rel asm_bits], 64
+    je      .sized
+    call    amd64_mode_default
+    mov     edx, eax
 .sized:
     mov     rax, [rdi + OPERAND_imm]
+    test    r13d, r13d
+    jz      .plain
+    cmp     edx, 16
+    je      .narrow
+    cmp     edx, 32
+    je      .narrow
+    cmp     edx, 64
+    je      .wide
+.plain:
     ; "mov ecx, -16 >> 2": the value does not fit the operation's width -
     ; NASM's "dword data exceeds bounds"
-    test    ebx, ebx
+    test    r14d, r14d
     jz      .bounded
     cmp     edx, 32
     ja      .bounded
-    push    rcx
     push    rdx
     push    rdi
     mov     esi, edx
     shr     esi, 3
     mov     rdi, rax
-    extern  warn_data_bounds
     call    warn_data_bounds
     pop     rdi
     pop     rdx
-    pop     rcx
     mov     rax, [rdi + OPERAND_imm]
 .bounded:
     cmp     edx, 16
@@ -614,9 +733,136 @@ amd64_imm_canon:
     movsx   rax, ax
     mov     [rdi + OPERAND_imm], rax
     jmp     .imm
+
+.narrow:
+    ; r8 = the value as written, r9d = 1 when it fits the width (-2^w to
+    ; 2^w - 1); the operand keeps its bits as a signed number of the width
+    mov     r8, rax
+    mov     ecx, edx
+    mov     esi, 1
+    shl     rsi, cl
+    xor     r9d, r9d
+    cmp     r8, rsi
+    jge     .narrow_cut
+    neg     rsi
+    cmp     r8, rsi
+    jl      .narrow_cut
+    mov     r9d, 1
+.narrow_cut:
+    cmp     edx, 16
+    jne     .narrow32
+    movsx   rax, ax
+    jmp     .decide
+.narrow32:
+    movsxd  rax, eax
+    jmp     .decide
+.wide:
+    mov     r8, rax
+    movsxd  rax, eax
+    xor     r9d, r9d
+    cmp     rax, r8
+    sete    r9b                            ; a sign-extended imm32 already
+.decide:
+    mov     [rdi + OPERAND_imm], rax
+    cmp     r13d, 1
+    je      .choose
+    test    r9d, r9d
+    jnz     .imm
+    jmp     .warn_full
+.choose:
+    cmp     byte [rdi + OPERAND_size], 8
+    je      .form_byte
+    test    byte [rdi + OPERAND_flags], OP_FLAG_STRICT
+    jnz     .form_full
+    cmp     byte [rbx + ASMCTX_opt], OPT_NONE
+    je      .form_full
+    cmp     rax, -128
+    jl      .form_full
+    cmp     rax, 127
+    jg      .form_full
+    mov     byte [rel amd64_imm_sb], 1
+    test    r9d, r9d
+    jnz     .imm
+    ; the imm8 form of a value past the width: "word value exceeds bounds"
+    lea     rsi, [rel s_imm_wvalue]
+    cmp     edx, 16
+    je      .warn
+    lea     rsi, [rel s_imm_dvalue]
+    cmp     edx, 32
+    je      .warn
+    lea     rsi, [rel s_imm_sdvalue]
+    jmp     .warn
+.form_full:
+    mov     byte [rel amd64_imm_sb], 2
+    test    r9d, r9d
+    jnz     .imm
+.warn_full:
+    cmp     edx, 64
+    je      .warn64
+    push    rdi                            ; "word data exceeds bounds"
+    mov     esi, edx
+    shr     esi, 3
+    mov     rdi, r8
+    call    warn_data_bounds
+    pop     rdi
+    jmp     .imm
+.form_byte:
+    ; "byte" written: the imm8 form, for a value that is a signed byte -
+    ; or one of the width's top 128 ("add ax, byte 0xFFFF")
+    mov     byte [rel amd64_imm_sb], 1
+    cmp     r8, -128
+    jl      .byte_top
+    cmp     r8, 127
+    jle     .imm
+.byte_top:
+    lea     rsi, [rel s_imm_sbvalue]
+    cmp     edx, 64
+    je      .warn
+    mov     ecx, edx
+    mov     eax, 1
+    shl     rax, cl
+    cmp     r8, rax
+    jge     .warn
+    sub     rax, 128
+    cmp     r8, rax
+    jge     .imm
+.warn:
+    push    rdi
+    call    warn_number
+    pop     rdi
+    jmp     .imm
+.warn64:
+    ; the full imm32 field of a 64-bit operation: NASM gives both
+    push    rdi
+    lea     rsi, [rel s_imm_sdimm]
+    call    warn_number
+    lea     rsi, [rel s_imm_ddata]
+    call    warn_number
+    pop     rdi
+    jmp     .imm
 .done:
-    pop     rbx
+    pop     r15
+    pop     r14
+    pop     r13
     ret
+
+[SECTION .rodata]
+; the instructions with a sign-extended imm8 form: adc, add, and, cmp, imul,
+; or, push, sbb, sub, xor
+imm_sb_ids:     dw 1004, 1006, 1028, 1075, 1276, 1442, 1583, 1628, 1676, 2157, 0
+s_imm_wvalue:   db "word value exceeds bounds", 0
+s_imm_dvalue:   db "dword value exceeds bounds", 0
+s_imm_sdvalue:  db "signed dword value exceeds bounds", 0
+s_imm_sdimm:    db "signed dword immediate exceeds bounds", 0
+s_imm_ddata:    db "dword data exceeds bounds", 0
+s_imm_sbvalue:  db "signed byte value exceeds bounds", 0
+[SECTION .bss]
+; the form amd64_imm_canon chose for this instruction's immediate: 1 the
+; sign-extended imm8 one, 2 the full one, 0 not chosen (the encoders look
+; at the value)
+global amd64_imm_sb
+amd64_imm_sb:   resb 1
+[SECTION .text]
 
 ;*
 ; * [amd64_force_rex]
@@ -708,6 +954,401 @@ amd64_force_rex:
 
 [SECTION .rodata]
 rex_legacy_prefixes: db 0x66, 0x67, 0xF0, 0xF2, 0xF3, 0x26, 0x2E, 0x36, 0x3E, 0x64, 0x65, 0
+[SECTION .text]
+
+;*
+; * [amd64_force_osize]
+; * Purpose: o16 / o32 / o64 (INST_osize) are the operation's size, as in
+; *   NASM. The instruction just encoded gets the operand-size prefix that
+; *   size needs in this mode - 66 for 16 outside bits 16, for 32 in it -
+; *   in place of the one it had, and REX.W for 64 ("o64 iret" is iretq,
+; *   48 CF). It wins over the operands', with NASM's warning ("o32 inc
+; *   ax": invalid operand size prefix, must be o16 - and inc eax).
+; *   Branches and far pointers (whose fields go with the size), VEX/EVEX
+; *   and a form whose 66 is part of its opcode keep their bytes.
+; * Input  : R12 = INST, RBX = AsmCtx (ASMCTX_inst_len = the instruction's
+; *          length)
+; * Output : RAX = 0 or EXIT_NON64_OPERANDS ("o64" outside 64-bit code)
+; ;
+global amd64_force_osize
+amd64_force_osize:
+    movzx   eax, byte [r12 + INST_osize]
+    cmp     eax, 64
+    jne     .mode_ok
+    cmp     byte [rel asm_bits], 64
+    je      .mode_ok
+    mov     eax, EXIT_NON64_OPERANDS
+    ret
+.mode_ok:
+    cmp     byte [rel amd64_mand66], 0
+    jne     .ok
+    call    osz_scan
+    test    eax, eax
+    jz      .ok                            ; nothing to change
+    ; the size the encoding has: REX.W 64, else by its 66
+    mov     eax, 64
+    mov     rcx, [rel osz_rex]
+    cmp     rcx, -1
+    je      .by_66
+    mov     rdx, [rbx + ASMCTX_curr_sec]
+    mov     rdx, [rdx + SECTION_data]
+    test    byte [rdx + rcx], 8
+    jnz     .has
+.by_66:
+    mov     eax, 32
+    cmp     byte [rel asm_bits], 16
+    jne     .default
+    mov     eax, 16
+.default:
+    cmp     qword [rel osz_n66], 0
+    je      .has
+    xor     eax, 48                        ; 16 <-> 32
+.has:
+    movzx   ecx, byte [r12 + INST_osize]
+    cmp     eax, ecx
+    je      .bytes
+    mov     [rel osz_had], eax
+    call    osz_sized
+    test    eax, eax
+    jz      .bytes
+    mov     edi, WC_PREFIX_OPSIZE
+    call    warn_begin
+    lea     rsi, [rel s_osz_bad]
+    call    warn_text
+    lea     rsi, [rel s_osz_16]
+    cmp     dword [rel osz_had], 16
+    je      .warn_size
+    lea     rsi, [rel s_osz_32]
+    cmp     dword [rel osz_had], 32
+    je      .warn_size
+    lea     rsi, [rel s_osz_64]
+.warn_size:
+    call    warn_text
+    call    warn_end
+.bytes:
+    ; REX.W as the size asks, in place - but for "jmp / call far [m]",
+    ; which NASM keeps as its m16:64 form
+    mov     rcx, [rel osz_rex]
+    cmp     rcx, -1
+    je      .no_rex
+    cmp     byte [r12 + INST_nops], 1
+    jne     .rex_w
+    test    byte [r12 + INST_op0 + OPERAND_flags], OP_FLAG_FAR
+    jnz     .no_rex
+.rex_w:
+    mov     rdx, [rbx + ASMCTX_curr_sec]
+    mov     rdx, [rdx + SECTION_data]
+    and     byte [rdx + rcx], 0xF7
+    cmp     byte [r12 + INST_osize], 64
+    jne     .no_rex
+    or      byte [rdx + rcx], 8
+.no_rex:
+    ; no 66 left, then the one the size needs (before a 67)
+.drop_66:
+    call    osz_scan
+    mov     rdi, [rel osz_first66]
+    cmp     rdi, -1
+    je      .want_66
+    call    osz_remove
+    jmp     .drop_66
+.want_66:
+    movzx   eax, byte [r12 + INST_osize]
+    cmp     eax, 64
+    je      .want_rex
+    movzx   ecx, byte [rel asm_bits]
+    cmp     eax, 16
+    je      .want16
+    cmp     ecx, 16                        ; 32: a 66 in bits 16 only
+    jne     .ok
+    jmp     .put_66
+.want16:
+    cmp     ecx, 16                        ; 16: a 66 outside bits 16
+    je      .ok
+.put_66:
+    mov     rdi, [rel osz_at]
+    mov     al, 0x66
+    call    osz_insert
+    jmp     .ok
+.want_rex:
+    cmp     qword [rel osz_rex], -1
+    jne     .ok
+    mov     rdi, [rel osz_op]
+    mov     al, 0x48
+    call    osz_insert
+.ok:
+    xor     eax, eax
+    ret
+
+; osz_scan: the instruction's prefixes. osz_n66 = its 66s, osz_first66 the
+; first one's place (-1), osz_at where a 66 goes (the first 67, else after
+; the prefixes), osz_rex the REX byte's place (-1), osz_op the opcode's.
+; eax = 0 for an instruction whose bytes stay (a branch, VEX ...), else 1.
+; Clobbers rax, rcx, rdx, rsi, rdi, r8.
+osz_scan:
+    xor     eax, eax
+    mov     qword [rel osz_n66], 0
+    mov     qword [rel osz_first66], -1
+    mov     qword [rel osz_at], -1
+    mov     qword [rel osz_rex], -1
+    mov     rcx, [rbx + ASMCTX_curr_sec]
+    test    rcx, rcx
+    jz      .ret
+    mov     rsi, [rcx + SECTION_size]
+    cmp     rsi, [rcx + SECTION_cap]
+    ja      .ret
+    mov     rdx, [rcx + SECTION_data]
+    mov     eax, [rbx + ASMCTX_inst_len]
+    mov     rdi, rsi
+    sub     rdi, rax
+.prefix:
+    xor     eax, eax
+    cmp     rdi, rsi
+    jae     .ret
+    movzx   eax, byte [rdx + rdi]
+    cmp     eax, 0x66
+    jne     .not_66
+    inc     qword [rel osz_n66]
+    cmp     qword [rel osz_first66], -1
+    jne     .next
+    mov     [rel osz_first66], rdi
+    jmp     .next
+.not_66:
+    cmp     eax, 0x67
+    jne     .not_67
+    cmp     qword [rel osz_at], -1
+    jne     .next
+    mov     [rel osz_at], rdi
+    jmp     .next
+.not_67:
+    lea     r8, [rel rex_legacy_prefixes]
+.is_prefix:
+    cmp     byte [r8], 0
+    je      .opcode
+    cmp     [r8], al
+    je      .next
+    inc     r8
+    jmp     .is_prefix
+.next:
+    inc     rdi
+    jmp     .prefix
+.opcode:
+    cmp     qword [rel osz_at], -1
+    jne     .at_set
+    mov     [rel osz_at], rdi
+.at_set:
+    mov     [rel osz_op], rdi
+    cmp     byte [rel asm_bits], 64
+    jne     .op
+    cmp     eax, 0xC4                      ; VEX, EVEX
+    je      .keep
+    cmp     eax, 0xC5
+    je      .keep
+    cmp     eax, 0x62
+    je      .keep
+    mov     ecx, eax
+    and     ecx, 0xF0
+    cmp     ecx, 0x40
+    jne     .op
+    mov     [rel osz_rex], rdi
+    inc     rdi
+    cmp     rdi, rsi
+    jae     .keep
+    movzx   eax, byte [rdx + rdi]
+.op:
+    ; branches and far pointers: their fields' sizes go with the size
+    cmp     eax, 0xE8
+    je      .keep
+    cmp     eax, 0xE9
+    je      .keep
+    cmp     eax, 0xEB
+    je      .keep
+    cmp     eax, 0xEA
+    je      .keep
+    cmp     eax, 0x9A
+    je      .keep
+    mov     ecx, eax
+    and     ecx, 0xF0
+    cmp     ecx, 0x70                      ; jcc rel8
+    je      .keep
+    mov     ecx, eax
+    and     ecx, 0xFC
+    cmp     ecx, 0xE0                      ; loop, jcxz
+    je      .keep
+    cmp     eax, 0x0F
+    jne     .change
+    inc     rdi
+    cmp     rdi, rsi
+    jae     .change
+    movzx   ecx, byte [rdx + rdi]
+    and     ecx, 0xF0
+    cmp     ecx, 0x80                      ; jcc rel32
+    je      .keep
+.change:
+    mov     eax, 1
+    ret
+.keep:
+    xor     eax, eax
+.ret:
+    ret
+
+; osz_sized: eax = 1 when the instruction has a size of its own - a general
+; register or a sized memory operand of 16 to 64 bits, or a mnemonic that
+; is one (movsw, cdq, iretd ...); NASM's warning is for those only
+osz_sized:
+    movzx   ecx, byte [r12 + INST_nops]
+    test    ecx, ecx
+    jz      .by_name
+    cmp     word [r12 + INST_op_id], 1583  ; push 5: the mode's size
+    jne     .not_push
+    cmp     byte [rel asm_bits], 64        ; (in 64-bit code, any: NASM)
+    je      .no
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_IMM
+    je      .yes
+.not_push:
+    xor     edx, edx
+.control:
+    ; "o16 mov eax, cr0": a control or debug register's mov has no size
+    cmp     edx, ecx
+    jae     .general
+    imul    rdi, rdx, OPERAND_SIZE
+    inc     edx
+    cmp     byte [r12 + INST_op0 + rdi + OPERAND_kind], OP_REG
+    jne     .control
+    movzx   eax, byte [r12 + INST_op0 + rdi + OPERAND_reg]
+    cmp     eax, 32
+    jb      .control
+    cmp     eax, 63
+    jbe     .no
+    jmp     .control
+.general:
+    xor     edx, edx
+.operand:
+    cmp     edx, ecx
+    jae     .no
+    imul    rdi, rdx, OPERAND_SIZE
+    lea     rdi, [r12 + INST_op0 + rdi]
+    inc     edx
+    movzx   eax, byte [rdi + OPERAND_size]
+    cmp     eax, 16
+    jb      .operand
+    cmp     eax, 64
+    ja      .operand
+    cmp     byte [rdi + OPERAND_kind], OP_MEM
+    je      .yes
+    cmp     byte [rdi + OPERAND_kind], OP_REG
+    jne     .operand
+    cmp     byte [rdi + OPERAND_reg], 16
+    jb      .yes
+    jmp     .operand
+.by_name:
+    movzx   eax, word [r12 + INST_op_id]
+    lea     rsi, [rel osz_sized_ids]
+.id:
+    movzx   ecx, word [rsi]
+    test    ecx, ecx
+    jz      .no
+    add     rsi, 2
+    cmp     ecx, eax
+    jne     .id
+.yes:
+    mov     eax, 1
+    ret
+.no:
+    xor     eax, eax
+    ret
+
+; osz_insert: byte al at rdi of the instruction, the bytes from there (and
+; their relocations) one on
+osz_insert:
+    cmp     dword [rbx + ASMCTX_inst_len], 15
+    jae     .ret                           ; (no room: as it was)
+    push    rax
+    push    rdi
+    mov     al, 0
+    call    amd64_emit_byte
+    pop     rdi
+    pop     rax
+    mov     rcx, [rbx + ASMCTX_curr_sec]
+    mov     rsi, [rcx + SECTION_size]
+    mov     rdx, [rcx + SECTION_data]
+    lea     r8, [rsi - 1]
+.move:
+    cmp     r8, rdi
+    jbe     .put
+    mov     r9b, [rdx + r8 - 1]
+    mov     [rdx + r8], r9b
+    dec     r8
+    jmp     .move
+.put:
+    mov     [rdx + rdi], al
+    mov     esi, 1
+    jmp     osz_relocs
+.ret:
+    ret
+
+; osz_remove: the byte at rdi of the instruction out, the bytes after it
+; (and their relocations) one back
+osz_remove:
+    mov     rcx, [rbx + ASMCTX_curr_sec]
+    mov     rsi, [rcx + SECTION_size]
+    mov     rdx, [rcx + SECTION_data]
+    mov     r8, rdi
+.move:
+    lea     r9, [r8 + 1]
+    cmp     r9, rsi
+    jae     .moved
+    mov     al, [rdx + r9]
+    mov     [rdx + r8], al
+    inc     r8
+    jmp     .move
+.moved:
+    dec     qword [rcx + SECTION_size]
+    dec     dword [rbx + ASMCTX_inst_len]
+    mov     rsi, -1
+    inc     rdi                            ; (the relocations after it)
+    ; fall through
+
+; osz_relocs: the relocations of this section at rdi or after move by rsi
+osz_relocs:
+    mov     r9, [rbx + ASMCTX_relocs]
+    mov     r10d, [rbx + ASMCTX_nrelocs]
+.reloc:
+    test    r10d, r10d
+    jz      .ret
+    dec     r10d
+    imul    r11, r10, RELOC_SIZE
+    add     r11, r9
+    cmp     [r11 + RELOC_section], rcx
+    jne     .reloc
+    cmp     [r11 + RELOC_offset], rdi
+    jb      .reloc
+    add     [r11 + RELOC_offset], rsi
+    jmp     .reloc
+.ret:
+    ret
+
+[SECTION .rodata]
+s_osz_bad:      db "invalid operand size prefix, must be o", 0
+s_osz_16:       db "16", 0
+s_osz_32:       db "32", 0
+s_osz_64:       db "64", 0
+; the mnemonics that are a size: movsw ... (string), cwd ..., iretd, pushfd,
+; pushad and their kin
+osz_sized_ids:
+    dw 1425, 1420, 1423, 1372, 1370, 1371, 1672, 1670, 1671, 1632, 1631
+    dw 1083, 1080, 1081, 1285, 1283, 1449, 1448, 1114, 1061, 1090, 1060
+    dw 1115, 1062, 7094, 1296, 1297, 6063, 1587, 1588, 6058, 1539, 1540
+    dw 7156, 1585, 7150, 1536, 0
+[SECTION .bss]
+global amd64_mand66
+amd64_mand66:   resb 1                  ; the table form's 66 was its own (dispatch.s)
+alignb 8
+osz_n66:        resq 1
+osz_first66:    resq 1
+osz_at:         resq 1
+osz_rex:        resq 1
+osz_op:         resq 1
+osz_had:        resd 1
 [SECTION .text]
 
 ;*
@@ -915,8 +1556,6 @@ amd64_mode_special:
     je      .indirect_go
     cmp     eax, OP_MEM
     jne     .none
-    test    byte [r14 + OPERAND_flags], OP_FLAG_FAR
-    jnz     .none
 .indirect_go:
     mov     al, [r14 + OPERAND_size]
     test    al, al
@@ -928,13 +1567,18 @@ amd64_mode_special:
     cmp     al, 32
     jne     .fail
 .indirect_ok:
+    ; (far [m16:16] / [m16:32]: the offset's width)
     call    .osz
     mov     al, 0xFF
     call    amd64_emit_byte
     mov     eax, 4
     cmp     r13d, ID_JMP
-    je      .indirect_rm
+    je      .indirect_far
     mov     eax, 2
+.indirect_far:
+    test    byte [r14 + OPERAND_flags], OP_FLAG_FAR
+    jz      .indirect_rm
+    inc     eax                            ; jmp far FF /5, call far FF /3
 .indirect_rm:
     mov     rdi, r14
     call    amd64_emit_modrm_sib
@@ -1096,10 +1740,15 @@ amd64_mode_special:
     test    byte [r14 + OPERAND_flags], OP_FLAG_STRICT
     jnz     .push_imm_full
 .push_imm_try8:
+    cmp     byte [rel amd64_imm_sb], 2     ; as amd64_imm_canon chose
+    je      .push_imm_full
+    cmp     byte [rel amd64_imm_sb], 1
+    je      .push_imm_byte
     mov     rax, [r14 + OPERAND_imm]
     movsx   rdx, al
     cmp     rdx, rax
     jne     .push_imm_full
+.push_imm_byte:
     mov     eax, r15d
     call    .osz
     mov     al, 0x6A
@@ -1207,6 +1856,18 @@ amd64_mode_special:
     jne     .none
     cmp     byte [rsi + OPERAND_reg], 0
     jne     .none
+    ; xacquire / xrelease (F2 / F3) go with the ModRM form, as NASM's
+    ; "xrelease mov [x], eax" (F3 89 05): HLE has no moffs form
+    xor     eax, eax
+.mov_hle:
+    movzx   edx, byte [r12 + INST_prefixes + rax]
+    cmp     edx, 0xF2
+    je      .none
+    cmp     edx, 0xF3
+    je      .none
+    inc     eax
+    cmp     eax, 4
+    jb      .mov_hle
     cmp     byte [rsi + OPERAND_is_high], 0
     jne     .none
     cmp     byte [rdi + OPERAND_kind], OP_MEM
@@ -1459,6 +2120,9 @@ amd64_mode_special:
     cmp     eax, OP_SYMBOL
     jne     .mov_sreg_bad
 .far_offset:
+    mov     al, [r12 + INST_osize]         ; "o32 jmp 8:x"
+    test    al, al
+    jnz     .far_sized
     mov     al, [r14 + OPERAND_size]
     test    al, al
     jnz     .far_sized
