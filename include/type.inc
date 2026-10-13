@@ -238,6 +238,8 @@ struc MACROEXP
     field lst_first, 8      ; the innermost of those expansions (lst_depth)
     field lst_second, 8     ; ... and the one around it, or 0
     field label00,  8       ; %00: the label written before the call, or 0
+    field greedy_at, 4      ; arguments from which a comma no longer ends one
+    field pad3,     4
 endstruc
 
 ; ============================================================================
