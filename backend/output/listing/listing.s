@@ -813,9 +813,13 @@ lst_entry:
     cmp     dword [r12 + SECTION_elf_type], SHT_NOBITS
     je      .reserved
     ; all of it uninitialised ("dt ?", "resb 16" outside .bss): shown as
-    ; .bss space is; a times line keeps its "????<rep 2h>"
+    ; .bss space is; a times line keeps its "????<rep 2h>" - but "times N
+    ; resb K", which is one reservation (LK_RES)
+    cmp     byte [rbx + LE_KIND], LK_RES
+    je      .all_uninit
     cmp     dword [rbx + LE_REPS], 0
     jne     .not_all_uninit
+.all_uninit:
     mov     rax, [rbx + LE_UNINIT]
     test    rax, rax
     jz      .not_all_uninit
@@ -974,6 +978,7 @@ lst_entry:
     jmp     .done
 
 .repeated:
+    mov     [rel lst_rep_at], r13          ; (the count's own row, if it wraps)
     mov     edi, [rbx + LE_LINE]
     call    lst_put_lineno
     mov     rdi, r13
@@ -1024,6 +1029,66 @@ lst_entry:
     call    .byte_hex
     jmp     .rep_byte
 .rep_count:
+    ; the bytes and "<rep Nh>" past NASM's 18 columns: the bytes end in
+    ; "-" and the count takes a row of its own (010203040506- / <rep 2h>)
+    lea     rsi, [rel lst_row]
+    mov     rdx, rdi
+    sub     rdx, rsi
+    mov     eax, [rbx + LE_REPS]
+    mov     ecx, 7                         ; "<rep " and "h>"
+.rep_digits:
+    inc     ecx
+    shr     eax, 4
+    jnz     .rep_digits
+    add     rdx, rcx
+    cmp     rdx, 18
+    jbe     .rep_text
+    mov     byte [rdi], '-'
+    inc     rdi
+    lea     rsi, [rel lst_row]
+    mov     rdx, rdi
+    sub     rdx, rsi
+.rep_pad:
+    cmp     rdx, 20
+    jae     .rep_row
+    mov     byte [rdi], ' '
+    inc     rdi
+    inc     rdx
+    jmp     .rep_pad
+.rep_row:
+    call    lst_put
+    movzx   edi, byte [rbx + LE_DEPTH]
+    call    lst_put_marker
+    mov     rdi, rbx
+    mov     rsi, r15
+    call    lst_put_source
+    call    lst_put_newline
+    mov     edi, [rbx + LE_LINE]
+    call    lst_put_lineno
+    mov     rdi, [rel lst_rep_at]
+    call    lst_put_offset
+    lea     rdi, [rel lst_row]
+    call    .rep_put
+    lea     rsi, [rel lst_row]
+    mov     rdx, rdi
+    sub     rdx, rsi
+.rep_pad2:
+    cmp     rdx, 19
+    jae     .rep_row2
+    mov     byte [rdi], ' '
+    inc     rdi
+    inc     rdx
+    jmp     .rep_pad2
+.rep_row2:
+    call    lst_put
+    call    lst_put_newline
+    jmp     .done
+.rep_text:
+    call    .rep_put
+    jmp     .field_out
+
+; .rep_put: "<rep Nh>" at rdi (rdi after it)
+.rep_put:
     mov     dword [rdi], '<rep'
     mov     byte [rdi + 4], ' '
     add     rdi, 5
@@ -1032,7 +1097,7 @@ lst_entry:
     mov     byte [rdi], 'h'
     mov     byte [rdi + 1], '>'
     add     rdi, 2
-    jmp     .field_out
+    ret
 
 .binary:
     mov     edi, [rbx + LE_LINE]
@@ -1769,5 +1834,6 @@ lst_blank:      times 40 db ' '
 
 [SECTION .bss]
 lst_row:        resb 64
+lst_rep_at:     resq 1              ; a times line's offset (its count's row)
 lst_value:      resq 1
 lst_symval:     resq 1
