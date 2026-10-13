@@ -60,6 +60,31 @@ amd64_encode_instruction:
     jnz     .error
 .not_lea:
 
+    ; {disp8} / {disp32}: the displacement's size, for each memory operand
+    ; with none written
+    test    byte [r12 + INST_flags], INSTF_DISP8 | INSTF_DISP32
+    jz      .no_disp_pfx
+    mov     al, 8
+    test    byte [r12 + INST_flags], INSTF_DISP8
+    jnz     .disp_pfx_size
+    mov     al, 32
+.disp_pfx_size:
+    xor     ecx, ecx
+.disp_pfx_op:
+    movzx   edx, byte [r12 + INST_nops]
+    cmp     ecx, edx
+    jae     .no_disp_pfx
+    imul    rdx, rcx, OPERAND_SIZE
+    lea     rdx, [r12 + INST_op0 + rdx]
+    inc     ecx
+    cmp     byte [rdx + OPERAND_kind], OP_MEM
+    jne     .disp_pfx_op
+    cmp     byte [rdx + OPERAND_dispsize], 0
+    jne     .disp_pfx_op
+    mov     [rdx + OPERAND_dispsize], al
+    jmp     .disp_pfx_op
+.no_disp_pfx:
+
     ; 0a. An immediate whose value came from a label defined earlier is still
     ;     an address: encode it as a symbol reference, relocated, exactly as
     ;     for a label defined later ("mov eax, msg", "push table"). Only
@@ -819,36 +844,20 @@ amd64_encode_instruction:
         mov     r13, 0x28
         mov r14, 1
         call amd64_encode_vex
+    ; AMX (ldtilecfg ... tdpbssd): every form is the table's (NASM's list);
+    ; operands it has none for are wrong ones
     ELSEIF ax, e, 1355             ; LDTILECFG
-        mov     r13, 0x49
-        mov r14, 2
-        mov r15, 0
-        call amd64_encode_vex
+        mov     rax, EXIT_ENCODE_FAIL
     ELSEIF ax, e, 1674             ; STTILECFG
-        mov     r13, 0x49
-        mov r14, 2
-        mov r15, 0
-        call amd64_encode_vex
+        mov     rax, EXIT_ENCODE_FAIL
     ELSEIF ax, e, 1693             ; TILELOADD
-        mov     r13, 0x4B
-        mov r14, 2
-        mov r15, 0x66
-        call amd64_encode_vex
+        mov     rax, EXIT_ENCODE_FAIL
     ELSEIF ax, e, 1696             ; TILESTORED
-        mov     r13, 0x4B
-        mov r14, 2
-        mov r15, 0xF3
-        call amd64_encode_vex
+        mov     rax, EXIT_ENCODE_FAIL
     ELSEIF ax, e, 1697             ; TILEZERO
-        mov     r13, 0x49
-        mov r14, 2
-        mov r15, 0
-        call amd64_encode_vex
+        mov     rax, EXIT_ENCODE_FAIL
     ELSEIF ax, e, 1687             ; TDPBSSD
-        mov     r13, 0x5E
-        mov r14, 2
-        mov r15, 0xF2
-        call amd64_encode_vex
+        mov     rax, EXIT_ENCODE_FAIL
     ELSEIF ax, e, 1590             ; RDRAND
         mov     r14, 6
         call amd64_encode_sec_r
@@ -1983,6 +1992,13 @@ amd64_encode_instruction:
     ; exist (mode.s)
     extern  amd64_rex_scan
     call    amd64_rex_scan
+    test    rax, rax
+    jnz     .done
+    ; {rex} on an encoding with none (the table's put one itself)
+    test    byte [r12 + INST_flags], INSTF_REX
+    jz      .done
+    extern  amd64_force_rex
+    call    amd64_force_rex
     jmp     .done
 .mode_encoded:
     xor     eax, eax
@@ -2181,6 +2197,8 @@ amd64_relax_kind:  resb 1          ; RELAX_JMP/JCC: this branch may be shortened
 amd64_relax_cc:    resb 1          ; its condition code (jcc)
 global amd64_disp8n
 amd64_disp8n:      resb 1          ; EVEX disp8*N scale (0/1 = none), set by dispatch.s
+global amd64_force_sib
+amd64_force_sib:   resb 1          ; 1: a SIB byte even with no index (dispatch.s)
 amd64_disp_emit:   resq 1          ; the disp8 value to emit (scaled for EVEX)
 amd64_branch_off:  resq 1          ; offset after a branch target label (jz $+2)
 [SECTION .text]
@@ -5947,7 +5965,9 @@ amd64_emit_modrm_sib:
     and     al, 0x07
     cmp     al, 4               ; RSP/R12
     je      .use_sib
-    
+    cmp     byte [rel amd64_force_sib], 0
+    jne     .use_sib            ; tileloadd, bndldx: always a SIB (dispatch.s)
+
     ; No SIB
     mov     al, dl              ; Mod
     shl     al, 6
