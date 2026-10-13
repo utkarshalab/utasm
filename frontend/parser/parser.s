@@ -58,7 +58,6 @@ extern str_cmp_kw
 extern known_lookup
 extern known_note_forward
 extern known_fwd_uses
-extern parser_is_register
 extern parser_lookup_mnemonic
 extern parser_check_prefix
 extern parser_define_label
@@ -90,11 +89,20 @@ parser_parse_instruction:
     extern  reloc_wrt
     mov     byte [rel reloc_wrt], 0    ; no "wrt ..name" pending
 
-    mov     rdi, [rbx + PREP_arena]
-
-    mov     rsi, INST_SIZE
-    call    arena_alloc
-    check_err
+    ; the statement's INST: one of INST_RING, used in turn and cleared (it
+    ; is encoded before the next is parsed; an arena one each was most of
+    ; the memory a long source took)
+    mov     eax, [rel inst_ring_next]
+    lea     ecx, [eax + 1]
+    and     ecx, INST_RING - 1
+    mov     [rel inst_ring_next], ecx
+    imul    eax, eax, INST_SIZE
+    lea     rdx, [rel inst_ring]
+    add     rdx, rax
+    mov     rdi, rdx
+    mov     ecx, INST_SIZE / 8
+    xor     eax, eax
+    rep stosq
     mov     r15, rdx
     mov     byte [r15 + INST_tag], TAG_INSTRUCTION
     
@@ -658,10 +666,18 @@ parser_parse_operand:
     push    r12
     push    r13
     
-    mov     rdi, [rbx + PREP_arena]
-    mov     rsi, OPERAND_SIZE
-    call    arena_alloc
-    check_err
+    ; one of OPERAND_RING, cleared: the caller copies it into its INST
+    mov     eax, [rel opnd_ring_next]
+    lea     ecx, [eax + 1]
+    and     ecx, OPERAND_RING - 1
+    mov     [rel opnd_ring_next], ecx
+    imul    eax, eax, OPERAND_SIZE
+    lea     rdx, [rel opnd_ring]
+    add     rdx, rax
+    mov     rdi, rdx
+    mov     ecx, OPERAND_SIZE / 8
+    xor     eax, eax
+    rep stosq
     mov     r12, rdx
     mov     byte [r12 + OPERAND_tag], TAG_OPERAND
     mov     byte [rel opnd_to], 0
@@ -4959,6 +4975,7 @@ str_abs: db "abs", 0
 ; * [parser_is_register]
 ; * Input: RSI = String, RDI = Table Pointer
 ; ;
+global parser_is_register
 parser_is_register:
     prologue
     hash_fnv1a_64_ci rsi, r8
@@ -7334,6 +7351,11 @@ float_fn_val:  resq 1
 ds_utf:        resb DS_UTF_SIZE    ; __utf16__ / __utf32__ text
 far_colon:     resb 1              ; a far pointer's colon came with its segment
 opnd_to:       resb 1              ; "to" before this operand's st register
+alignb 8
+inst_ring:     resb INST_RING * INST_SIZE   ; parser_parse_instruction's INSTs
+opnd_ring:     resb OPERAND_RING * OPERAND_SIZE ; parser_parse_operand's
+inst_ring_next: resd 1
+opnd_ring_next: resd 1
 global expr_coeff
 expr_coeff:    resq 1              ; how the last value moves with $ (1: $ itself)
 times_newline: resq 1; the token that ends a times line
