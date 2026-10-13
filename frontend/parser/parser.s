@@ -144,6 +144,44 @@ parser_parse_instruction:
         jmp     .get_mnemonic           ; Skip empty lines
         ENDIF
 
+    ; NASM's encoding prefixes: "{rex} add eax, edx", "{vex3} vcomisd ..."
+    cmp     al, TOK_LBRACE
+    jne     .no_enc_prefix
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .no_enc_prefix_brace
+    mov     r13, [rdx + TOKEN_value]
+    lea     r14, [rel enc_prefix_words]
+.enc_prefix_find:
+    cmp     byte [r14], 0
+    je      .no_enc_prefix_brace
+    mov     rdi, r13
+    mov     rsi, r14
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .enc_prefix_found
+    add     r14, 8
+    jmp     .enc_prefix_find
+.enc_prefix_found:
+    mov     al, [r14 + 7]
+    or      [r15 + INST_flags], al
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the word
+    check_err
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; "}"
+    check_err
+    cmp     byte [rdx + TOKEN_kind], TOK_RBRACE
+    jne     .enc_prefix_bad
+    jmp     .get_mnemonic
+.enc_prefix_bad:
+    mov     rax, EXIT_UNEXPECTED_TOKEN
+    jmp     .error
+.no_enc_prefix_brace:
+    mov     al, [r12 + TOKEN_kind]
+.no_enc_prefix:
+
     IF al, e, TOK_LABEL
         ; Global Label: rsi = name
         mov     rsi, [r12 + TOKEN_value]
@@ -626,6 +664,7 @@ parser_parse_operand:
     check_err
     mov     r12, rdx
     mov     byte [r12 + OPERAND_tag], TAG_OPERAND
+    mov     byte [rel opnd_to], 0
 
 .fetch_operand_token:
     mov     rdi, rbx
@@ -664,6 +703,25 @@ parser_parse_operand:
             or      byte [r12 + OPERAND_flags], OP_FLAG_FAR
             jmp .fetch_operand_token
             ENDIF
+        ; "fadd to st1": the x87 forms that write st(i) (NASM's "to"), when
+        ; an st register follows - else "to" is a name
+        mov     rdi, [r13 + TOKEN_value]
+        lea     rsi, [rel str_to]
+        call    str_cmp_kw
+        test    rax, rax
+        jnz     .not_to
+        mov     rdi, rbx
+        call    preprocessor_peek_token
+        cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+        jne     .not_to
+        mov     rax, [rdx + TOKEN_value]
+        movzx   ecx, word [rax]
+        or      ecx, 0x2020
+        cmp     ecx, 't' << 8 | 's'
+        jne     .not_to
+        mov     byte [rel opnd_to], 1
+        jmp     .fetch_operand_token
+.not_to:
         ENDIF
 
     ; "jmp SEL:offset": a name right before the colon lexes as a label;
@@ -754,11 +812,28 @@ parser_parse_operand:
 .take_ptr:
             mov     rdi, rbx
             call    preprocessor_next_token ; consume "ptr"
+            ; "dword ptr" with nothing after it: the label ptr, sized
+            push    rdx
+            mov     rdi, rbx
+            call    preprocessor_peek_token
+            pop     rsi
+            movzx   eax, byte [rdx + TOKEN_kind]
+            cmp     eax, TOK_NEWLINE
+            je      .ptr_symbol
+            cmp     eax, TOK_EOF
+            je      .ptr_symbol
+            cmp     eax, TOK_COMMA
+            jne     .no_ptr
+.ptr_symbol:
+            mov     byte [rel masm_mem], 0
+            mov     rdx, rsi               ; the sized operand is ptr itself
+            jmp     .sized_token
 .no_ptr:
             ENDIF
 
         mov     rdi, rbx
         call    preprocessor_next_token
+.sized_token:
         mov     r13, rdx
         cmp     byte [r13 + TOKEN_kind], TOK_LBRACKET
         je      .sized_mem
@@ -783,6 +858,16 @@ parser_parse_operand:
         sub     eax, 24
         cmp     eax, 5
         jbe     .sized_reg
+        ; a mask register takes any size: NASM's "kmov byte k1, k2" picks
+        ; kmovb by it
+        cmp     eax, 72 - 24
+        jb      .sized_check
+        cmp     eax, 79 - 24
+        ja      .sized_check
+        mov     [r12 + OPERAND_size], cl
+        mov     [r12 + OPERAND_xsize], cx
+        jmp     .sized_reg
+.sized_check:
         cmp     cx, [r12 + OPERAND_xsize]
         jne     .sized_bad
 .sized_reg:
@@ -926,6 +1011,18 @@ parser_parse_operand:
     check_err
     jmp     .decorator
 .decorated:
+    ; "to st1": marked on the register (te_classify: C_ST, te_high 2)
+    cmp     byte [rel opnd_to], 0
+    je      .no_to
+    mov     byte [rel opnd_to], 0
+    cmp     byte [r12 + OPERAND_kind], OP_REG
+    jne     .no_to
+    movzx   eax, byte [r12 + OPERAND_reg]
+    sub     eax, 112
+    cmp     eax, 7
+    ja      .no_to
+    mov     byte [r12 + OPERAND_is_high], 2
+.no_to:
     mov     rdx, r12
     mov     rax, OK
     pop     r13
@@ -3440,6 +3537,13 @@ parser_parse_mem_operand:
         jmp     .loop
         ENDIF
 
+    ; NASM's split form "[eax+8, ecx*4]" (the index after the comma; the
+    ; MIB operand of tileloadd and bndldx): as "+"
+    IF al, e, TOK_COMMA
+        mov     byte [rel mem_expect_term], 1
+        jmp     .loop
+        ENDIF
+
     ; [byte x], [word x], [dword x], [qword x]: the displacement's size
     ; (and, for an address with no register, the address size)
     IF al, e, TOK_IDENT
@@ -5211,7 +5315,9 @@ prefix_words:
     db "o16", 0, 0,0,0,0,0, 0x66
     db "o32", 0, 0,0,0,0,0, 1
     db "o64", 0, 0,0,0,0,0, 1
-    db "a16", 0, 0,0,0,0,0, 2              ; the address sizes: by the mode
+    db "osp", 0, 0,0,0,0,0, 0x66           ; the size prefixes as they are
+    db "asp", 0, 0,0,0,0,0, 0x67
+db "a16", 0, 0,0,0,0,0, 2              ; the address sizes: by the mode
     db "a32", 0, 0,0,0,0,0, 3
     db "a64", 0, 0,0,0,0,0, 4
     db "cs", 0, 0,0,0,0,0,0, 0x2E
@@ -5263,12 +5369,14 @@ parser_parse_struc:
     ;   [rbp - 80] length of the struct name
     ;   [rbp - 88] length of the field name
     ;   [rbp - 96] 1 once a field is written in NASM's form
+    ;   [rbp - 104] the base offset ("struc s, -40"; 0)
     sub     rsp, 64
 
     mov     rbx, rdi               ; rbx = PrepState
     mov     r15, rsi               ; r15 = struct name Token
     mov     qword [rbp - 48], 0    ; running byte offset
     mov     qword [rbp - 96], 0
+    mov     qword [rbp - 104], 0
 
     ; Build struct-name string ("StructName", null-terminated from token)
     mov     r13, [r15 + TOKEN_value]  ; r13 = struct name ptr
@@ -5291,6 +5399,32 @@ parser_parse_struc:
     mov     [rsi + SYMBOL_name],  r13     ; struct name ptr
     call    symbol_add
     add     rsp, SYMBOL_SIZE
+    ; NASM's struc defines its name as a label: ".w" after it is "s.w"
+    ; ("istruc s / at .w, ..."), until the next label
+    mov     rax, [rbx + PREP_ctx]
+    mov     [rax + ASMCTX_last_global], r13
+
+    ; "struc s, -40": the fields from that offset on, the struct's own name
+    ; that offset (NASM's [absolute -40]); its size the bytes from there
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    check_err_to .error
+    cmp     byte [rdx + TOKEN_kind], TOK_COMMA
+    jne     .field_loop
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    check_err_to .error
+    mov     [rbp - 48], rdx
+    mov     [rbp - 104], rdx
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, r13
+    call    symbol_find
+    test    rax, rax
+    jnz     .field_loop
+    mov     rax, [rbp - 104]
+    mov     [rdx + SYMBOL_value], rax
 
 .field_loop:
     ; Read next meaningful token (skip newlines)
@@ -5599,6 +5733,7 @@ call    str_compare
     cmp     byte [rdx + SYMBOL_kind], SYM_STRUCT
     jne     .left_named
     mov     rax, [rbp - 48]
+    sub     rax, [rbp - 104]
     mov     [rdx + SYMBOL_size], rax
 .left_named:
     mov     [rel struc_open], r13
@@ -5647,6 +5782,7 @@ call    str_compare
     cmp     byte [rdx + SYMBOL_kind], SYM_STRUCT
     jne     .struct_sized
     mov     rax, [rbp - 48]
+    sub     rax, [rbp - 104]               ; (from the base offset)
     mov     [rdx + SYMBOL_size], rax
 .struct_sized:
 
@@ -5692,6 +5828,7 @@ call    str_compare
     mov     byte [rsi + SYMBOL_vis],  VIS_LOCAL
     mov     [rsi + SYMBOL_name],  r15     ; "[StructName]_SIZE"
     mov     rax, [rbp - 48]
+    sub     rax, [rbp - 104]
     mov     [rsi + SYMBOL_value], rax     ; total byte size as value!
     mov     qword [rsi + SYMBOL_size], 8  ; size of QWORD constant
     call    symbol_add
@@ -5711,6 +5848,7 @@ call    str_compare
     mov     dword [rdx + r12 + 1], 'size'
     mov     rsi, rdx
     mov     rdx, [rbp - 48]
+    sub     rdx, [rbp - 104]               ; (from the base offset)
     call    parser_struc_const
     check_err_to .error
 .no_nasm_size:
@@ -6180,12 +6318,48 @@ parser_handle_pseudo_op:
     call    parser_handle_section_directive
     jmp     .check_handler_result
 .not_segment:
-    ; "cpu <level>": utasm encodes whatever it is given
+    ; "cpu <level>": utasm encodes whatever it is given - but NASM's
+    ; encoding choices are kept: "cpu latevex" lets the VEX forms of
+    ; AVX-IFMA / AVX-VNNI ... be chosen over their EVEX ones, "novex" /
+    ; "noevex" leave those out, "default" undoes them (dispatch.s, CPUF_*)
     mov     rdi, r12
     lea     rsi, [rel str_cpu]
     call    str_cmp_kw
     test    rax, rax
     jnz     .not_cpu
+    extern  cpu_latevex
+.cpu_word:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .cpu_rest
+    cmp     eax, TOK_EOF
+    je      .cpu_rest
+    cmp     eax, TOK_IDENT
+    jne     .cpu_skip
+    mov     r13, [rdx + TOKEN_value]
+    lea     r14, [rel cpu_words]
+.cpu_find:
+    cmp     byte [r14], 0
+    je      .cpu_skip
+    mov     rdi, r13
+    mov     rsi, r14
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .cpu_found
+    add     r14, 12
+    jmp     .cpu_find
+.cpu_found:
+    mov     al, [rel cpu_latevex]
+    and     al, [r14 + 10]                 ; the bits it clears
+    or      al, [r14 + 11]                 ; ... and sets
+    mov     [rel cpu_latevex], al
+.cpu_skip:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    jmp     .cpu_word
+.cpu_rest:
     call    parser_skip_to_eol
     mov     rax, 1
     jmp     .check_handler_result
@@ -7159,6 +7333,7 @@ float_part:    resb 1              ; a float function's FLT_HIGH
 float_fn_val:  resq 1
 ds_utf:        resb DS_UTF_SIZE    ; __utf16__ / __utf32__ text
 far_colon:     resb 1              ; a far pointer's colon came with its segment
+opnd_to:       resb 1              ; "to" before this operand's st register
 global expr_coeff
 expr_coeff:    resq 1              ; how the last value moves with $ (1: $ itself)
 times_newline: resq 1; the token that ends a times line
@@ -7643,8 +7818,8 @@ parser_pad_to:
     mov     rdi, [rbx + PREP_ctx]
     mov     rax, [rdi + ASMCTX_curr_sec]
     cmp     [rax + SECTION_size], r12
-    jae     .done
-    xor     esi, esi
+    jge     .done                          ; (signed: "at" before the start,
+    xor     esi, esi                       ; a negative struc offset, is nothing)
     call    asm_ctx_emit_byte
     test    rax, rax
     jnz     .ret
@@ -7948,8 +8123,23 @@ parser_at:
     call    parser_evaluate_expression
     test    rax, rax
     jnz     .ret
-    mov     rdi, [rel istruc_base]
-    add     rdi, rdx
+    ; a struc with a base offset ("struc s, -40"): its fields count from
+    ; that offset, the instance from 0
+    mov     rdi, rdx
+    mov     rsi, [rel istruc_name]
+    test    rsi, rsi
+    jz      .at_offset                     ; "at" with no istruc
+    push    rdx
+    mov     rdi, [rbx + PREP_ctx]
+    call    symbol_find
+    pop     rdi
+    test    rax, rax
+    jnz     .at_offset
+    cmp     byte [rdx + SYMBOL_kind], SYM_STRUCT
+    jne     .at_offset
+    sub     rdi, [rdx + SYMBOL_value]
+.at_offset:
+    add     rdi, [rel istruc_base]
     call    parser_pad_to
     test    rax, rax
     jnz     .ret
@@ -8895,6 +9085,11 @@ parser_emit_data_8:
 .loop:
     call    parser_item_begin
     mov     esi, 1
+    call    parser_data_ext
+    check_err
+    test    edx, edx
+    jnz     .next_item
+    mov     esi, 1
     call    parser_data_string
     check_err
     test    edx, edx
@@ -8912,6 +9107,8 @@ parser_emit_data_8:
         movzx   eax, byte [rdx + TOKEN_kind]
         cmp     eax, TOK_COMMA
         je      .char_bytes
+        cmp     eax, TOK_RPAREN
+        je      .char_bytes                ; the last of a list: %('a')
         cmp     eax, TOK_NEWLINE
         je      .char_bytes
         cmp     eax, TOK_EOF
@@ -8944,6 +9141,11 @@ parser_emit_data_8:
         mov     rdi, rbx
         call    parser_evaluate_expression
         check_err
+        mov     esi, 1
+        call    parser_data_dup
+        check_err
+        test    r8d, r8d
+        jnz     .next_item
         ; a label in it is relocated, as dw / dd do it: "db later - $$",
         ; "db end - start" with labels not defined yet were written as 0
         mov     r10, rdx
@@ -8999,6 +9201,11 @@ parser_emit_data_16:
 .loop:
     call    parser_item_begin
     mov     esi, 2
+    call    parser_data_ext
+    check_err
+    test    edx, edx
+    jnz     .next
+    mov     esi, 2
     call    parser_data_string
     check_err
     test    edx, edx
@@ -9010,6 +9217,11 @@ parser_emit_data_16:
     mov     byte [rel expr_pcrel_ok], 0
     mov     byte [rel float_fmt], 0
     check_err
+    mov     esi, 2
+    call    parser_data_dup
+    check_err
+    test    r8d, r8d
+    jnz     .next
     mov     r10, rdx
     mov     r8, r11
     mov     r9, rcx
@@ -9057,6 +9269,330 @@ parser_emit_data_16:
 
 .error:
     epilogue
+
+;*
+; * [parser_data_ext]
+; * Purpose: NASM 2.15's data items besides a value (its MASM-like ones):
+; *   "%(a, b)" (a list), and a size word
+; *   before a list, a "?" or a value ("byte ('PQR')", "word ?", "dword 5"),
+; *   which are of that size. "N dup (...)" is parser_data_dup's, once the
+; *   count is read.
+; * Input  : RBX = PrepState, ESI = the unit in bytes
+; * Output : RAX = OK or an error, EDX = 1 when an item was taken
+; ;
+parser_data_ext:
+    push    rsi                            ; [rsp] = the unit
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_PERCENT               ; (a plain "?" is the expression's)
+    je      .percent
+    cmp     eax, TOK_IDENT
+    jne     .not
+    mov     rdi, [rdx + TOKEN_value]
+    call    parser_data_size_word
+    test    eax, eax
+    jz      .not
+    mov     [rsp], rax                     ; that size, for what follows
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the size word
+    test    rax, rax
+    jnz     .ret
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_QUESTION
+    je      .uninit
+    cmp     eax, TOK_PERCENT
+    je      .percent
+    cmp     eax, TOK_LPAREN
+    je      .list
+    ; "dword 5": one value of that size
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .ret
+    mov     rsi, rdx
+    mov     ecx, [rsp]
+    call    parser_data_bytes
+    jmp     .took
+.uninit:
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the "?"
+    test    rax, rax
+    jnz     .ret
+    xor     esi, esi
+    mov     ecx, [rsp]
+    call    parser_data_bytes
+    mov     byte [rel expr_question], 1    ; listed and warned as "?" is
+    jmp     .took
+.percent:
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the "%" of "%(...)"
+    test    rax, rax
+    jnz     .ret
+.list:
+    mov     esi, [rsp]
+    call    parser_data_list
+    test    rax, rax
+    jnz     .ret
+.took:
+    xor     eax, eax
+    mov     edx, 1
+    jmp     .ret
+.not:
+    xor     eax, eax
+    xor     edx, edx
+.ret:
+    pop     rsi
+    ret
+
+;*
+; * [parser_data_list]
+; * Purpose: "(a, b, ...)": the items, of ESI bytes each, up to the ")"
+; * Input  : RBX = PrepState, ESI = the unit
+; * Output : RAX = OK or an error
+; ;
+parser_data_list:
+    push    rsi
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_LPAREN
+    jne     .bad
+    ; that size's own reader takes the items, up to the token after the
+    ; last one (no comma)
+    mov     esi, [rsp]
+    call    parser_emit_data_size
+    test    rax, rax
+    jnz     .ret
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_RPAREN
+    je      .ret
+.bad:
+    mov     eax, EXIT_INVALID_EXPR
+.ret:
+    pop     rsi
+    ret
+
+;*
+; * [parser_data_dup]
+; * Purpose: "N dup [size] [%](...)" after a data item's value N: the list
+; *   written N times (once, its bytes then copied).
+; * Input  : RBX = PrepState, RDX = N (the value just read), ESI = the unit
+; * Output : RAX = OK or an error, R8D = 1 when it was a dup (else RDX,
+; *          RCX and R11 are as they were)
+; ;
+parser_data_dup:
+    push    rdx
+    push    rcx
+    push    r11
+    push    rdx                            ; [rsp+8] = N
+    push    rsi                            ; [rsp] = the unit
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .not
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel str_dup]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .not
+    cmp     qword [rsp + 8], 0
+    jl      .bad                           ; a negative count
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; "dup"
+    test    rax, rax
+    jnz     .ret
+    ; a size word, and "%", may come before the list
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .no_size
+    mov     rdi, [rdx + TOKEN_value]
+    call    parser_data_size_word
+    test    eax, eax
+    jz      .no_size
+    mov     [rsp], rax
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+.no_size:
+    cmp     byte [rdx + TOKEN_kind], TOK_PERCENT
+    jne     .list
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret
+.list:
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_curr_sec]
+    push    qword [rax + SECTION_size]     ; [rsp] = where it starts
+    mov     esi, [rsp + 8]
+    call    parser_data_list
+    pop     rcx
+    test    rax, rax
+    jnz     .ret
+    ; the copies after the first: its bytes again (the section's buffer
+    ; may move as it grows, so each is read from where it is now)
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_curr_sec]
+    mov     r9, [rax + SECTION_size]
+    sub     r9, rcx                        ; r9 = the list's bytes
+    mov     r10, [rsp + 8]                 ; N
+    test    r10, r10
+    jnz     .copies
+    mov     [rax + SECTION_size], rcx      ; "0 dup (...)": nothing
+    jmp     .done
+.copies:
+    dec     r10
+    imul    r10, r9                        ; the bytes still to write
+    xor     r8d, r8d                       ; how many of them so far
+.copy:
+    cmp     r8, r10
+    jae     .done
+    mov     rax, r8
+    xor     edx, edx
+    div     r9                             ; rdx = the byte of the list
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_curr_sec]
+    mov     rax, [rax + SECTION_data]
+    add     rax, rcx
+    movzx   esi, byte [rax + rdx]
+    push    rcx
+    push    r8
+    push    r9
+    push    r10
+    mov     rdi, [rbx + PREP_ctx]
+    call    asmctx_emit_byte
+    pop     r10
+    pop     r9
+    pop     r8
+    pop     rcx
+    test    rax, rax
+    jnz     .ret
+    inc     r8
+    jmp     .copy
+.done:
+    xor     eax, eax
+    mov     r8d, 1
+    add     rsp, 16
+    pop     r11
+    pop     rcx
+    add     rsp, 8                         ; (rdx: not kept)
+    ret
+.bad:
+    mov     eax, EXIT_INVALID_EXPR
+    jmp     .ret
+.not:
+    xor     eax, eax
+.ret:
+    xor     r8d, r8d
+    add     rsp, 16
+    pop     r11
+    pop     rcx
+    pop     rdx
+    ret
+
+;*
+; * [parser_emit_data_size]
+; * Purpose: the data items of ESI bytes each (db .. dz's own readers)
+; ;
+parser_emit_data_size:
+    mov     rdi, rbx
+    cmp     esi, 1
+    je      parser_emit_data_8
+    cmp     esi, 2
+    je      parser_emit_data_16
+    cmp     esi, 4
+    je      parser_emit_data_32
+    cmp     esi, 8
+    je      parser_emit_data_64
+    jmp     parser_emit_data_wide
+
+;*
+; * [parser_data_bytes]
+; * Purpose: ECX bytes of the value RSI, little-endian (zeros past 8)
+; ;
+parser_data_bytes:
+    test    ecx, ecx
+    jz      .ret
+    push    rsi
+    push    rcx
+    mov     rdi, [rbx + PREP_ctx]
+    movzx   esi, sil
+    call    asmctx_emit_byte
+    pop     rcx
+    pop     rsi
+    test    rax, rax
+    jnz     .ret
+    shr     rsi, 8
+    dec     ecx
+    jmp     parser_data_bytes
+.ret:
+    ret
+
+;*
+; * [parser_data_size_word]
+; * Purpose: the bytes of a size word (byte 1 ... zword 64), or 0
+; * Input  : RDI = the word
+; ;
+parser_data_size_word:
+    push    r12
+    push    r13
+    mov     r12, rdi
+    lea     r13, [rel data_size_words]
+.next:
+    cmp     byte [r13], 0
+    je      .none
+    mov     rdi, r12
+    mov     rsi, r13
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .found
+    add     r13, 8
+    jmp     .next
+.found:
+    movzx   eax, byte [r13 + 7]
+    jmp     .ret
+.none:
+    xor     eax, eax
+.ret:
+    pop     r13
+    pop     r12
+    ret
+
+[SECTION .rodata]
+str_dup:    db "dup", 0
+; 7-byte name, its size in bytes
+data_size_words:
+    db "byte", 0, 0, 0, 1
+    db "word", 0, 0, 0, 2
+    db "dword", 0, 0, 4
+    db "qword", 0, 0, 8
+    db "tword", 0, 0, 10
+    db "oword", 0, 0, 16
+    db "yword", 0, 0, 32
+    db "zword", 0, 0, 64
+    db 0
+[SECTION .text]
 
 ;*
 ; * [parser_data_symbol]
@@ -9110,6 +9646,11 @@ parser_emit_data_32:
 .loop:
     call    parser_item_begin
     mov     esi, 4
+    call    parser_data_ext
+    check_err
+    test    edx, edx
+    jnz     .next
+    mov     esi, 4
     call    parser_data_string
     check_err
     test    edx, edx
@@ -9121,6 +9662,11 @@ parser_emit_data_32:
     mov     byte [rel expr_pcrel_ok], 0
     mov     byte [rel float_fmt], 0
     check_err
+    mov     esi, 4
+    call    parser_data_dup
+    check_err
+    test    r8d, r8d
+    jnz     .next
 
     mov     r10, rdx
     mov     r8, r11
@@ -9181,6 +9727,11 @@ parser_emit_data_64:
 .loop:
     call    parser_item_begin
     mov     esi, 8
+    call    parser_data_ext
+    check_err
+    test    edx, edx
+    jnz     .next
+    mov     esi, 8
     call    parser_data_string
     check_err
     test    edx, edx
@@ -9192,6 +9743,11 @@ parser_emit_data_64:
     mov     byte [rel expr_pcrel_ok], 0
     mov     byte [rel float_fmt], 0
     check_err
+    mov     esi, 8
+    call    parser_data_dup
+    check_err
+    test    r8d, r8d
+    jnz     .next
 
     mov     r10, rdx
     mov     r8, r11
@@ -10762,6 +11318,16 @@ str_p2align:   db "p2align", 0
 str_section:   db "section", 0
 str_segment:   db "segment", 0
 str_cpu:       db "cpu", 0
+; "cpu" words: 10-byte name, the CPUF_* bits kept (and), set (or)
+cpu_words:
+    db "default", 0, 0, 0, 0, 0
+    db "latevex", 0, 0, 0, ~CPUF_LATEVEX & 0xFF, CPUF_LATEVEX
+    db "nolatevex", 0, ~CPUF_LATEVEX & 0xFF, 0
+    db "vex", 0, 0, 0, 0, 0, 0, 0, ~CPUF_NOVEX & 0xFF, 0
+    db "novex", 0, 0, 0, 0, 0, 0xFF, CPUF_NOVEX
+    db "evex", 0, 0, 0, 0, 0, 0, ~CPUF_NOEVEX & 0xFF, 0
+    db "noevex", 0, 0, 0, 0, 0xFF, CPUF_NOEVEX
+    db 0
 ; words that make the name before them a label without its colon
 stmt_words:    db "db", 0, "dw", 0, "dd", 0, "dq", 0, "dt", 0, "resb", 0, "resw", 0
                db "resd", 0, "resq", 0, "rest", 0, "times", 0, "incbin", 0
@@ -10905,6 +11471,17 @@ str_nosplit: db "nosplit", 0
 str_near:   db "near", 0
 str_short:  db "short", 0
 str_far:    db "far", 0
+; NASM's encoding prefixes: 7-byte word, its INSTF_* bit
+enc_prefix_words:
+    db "rex", 0, 0, 0, 0, INSTF_REX
+    db "vex", 0, 0, 0, 0, INSTF_VEX
+    db "vex2", 0, 0, 0, INSTF_VEX
+    db "vex3", 0, 0, 0, INSTF_VEX | INSTF_VEX3
+    db "evex", 0, 0, 0, INSTF_EVEX
+    db "disp8", 0, 0, INSTF_DISP8
+    db "disp32", 0, INSTF_DISP32
+    db 0
+str_to:     db "to", 0
 msg_debug_token_kind: db "Debug token kind: ", 0
 msg_size_spec_bracket: db "Size specifier expected '[' but got kind: ", 0
 
