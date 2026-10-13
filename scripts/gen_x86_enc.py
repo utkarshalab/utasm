@@ -25,7 +25,11 @@ Form layout:
   +12 db  flags (F_*)
   +13 db  VEX/EVEX vector length L (0 xmm, 1 ymm, 2 zmm)
   +14 db  EVEX disp8*N scale in bytes (1 for other encodings)
-  +15 db  immediate byte appended after the operands (with F_FIXIMM)
+  +15 db  immediate byte appended after the operands (with F_FIXIMM); else
+          a legacy form's mode needs (NASM's list): bits 0-1 operand size
+          (1 o16, 2 o32: 66 in the other modes), 2-3 address size (1 a16,
+          2 a32, 3 a64: 67 in the other modes), 4 not in 64-bit mode, 5 only
+          there, 6 a REP prefix of its own (F3, unless one is written)
 
     python3 scripts/gen_x86_enc.py           regenerate
     python3 scripts/gen_x86_enc.py --check   fail if out of date
@@ -46,7 +50,7 @@ ISA = os.path.join(ROOT, "backend", "isa", "amd64.s")
 # operand size, 2 size 32/64 does, 3 immediate; rsize/msize in bits
 # (msize 0xFFFF = no memory, 0 = any size); fixreg: required register number;
 # imm: immediate kind.
-C_GPR, C_XMM, C_YMM, C_ZMM, C_K, C_ST, C_MM, C_CR, C_DR, C_SEG, C_RC, C_SAE = range(1, 13)
+C_GPR, C_XMM, C_YMM, C_ZMM, C_K, C_ST, C_MM, C_CR, C_DR, C_SEG, C_RC, C_SAE, C_TMM, C_BND = range(1, 15)
 NOMEM = 0xFFFF
 I8, I8S, I16, I32, IZ, I64, ONE = range(1, 8)
 TYPES = [   # name, rclass, special, rsize, msize, fixreg, imm
@@ -70,9 +74,10 @@ TYPES = [   # name, rclass, special, rsize, msize, fixreg, imm
     ("XM128", C_XMM, 0, 128, 128, 0xFF, 0), ("YM256", C_YMM, 0, 256, 256, 0xFF, 0),
     ("ZM512", C_ZMM, 0, 512, 512, 0xFF, 0),
     ("MM", C_MM, 0, 64, NOMEM, 0xFF, 0), ("MMM64", C_MM, 0, 64, 64, 0xFF, 0),
-    ("K", C_K, 0, 0, NOMEM, 0xFF, 0), ("KM8", C_K, 0, 0, 8, 0xFF, 0), ("KM16", C_K, 0, 0, 16, 0xFF, 0),
-    ("KM32", C_K, 0, 0, 32, 0xFF, 0), ("KM64", C_K, 0, 0, 64, 0xFF, 0),
+    ("K", C_K, 0, 0, NOMEM, 0xFF, 0), ("KM8", C_K, 0, 8, 8, 0xFF, 0), ("KM16", C_K, 0, 16, 16, 0xFF, 0),
+    ("KM32", C_K, 0, 32, 32, 0xFF, 0), ("KM64", C_K, 0, 64, 64, 0xFF, 0),
     ("ST", C_ST, 0, 0, NOMEM, 0xFF, 0), ("ST0", C_ST, 0, 0, NOMEM, 0, 0),
+    ("STTO", C_ST, 5, 0, NOMEM, 0xFF, 0),     # "fadd to st1" (NASM's fpureg|to)
     ("CR", C_CR, 0, 0, NOMEM, 0xFF, 0), ("DR", C_DR, 0, 0, NOMEM, 0xFF, 0),
     ("SREG", C_SEG, 0, 0, NOMEM, 0xFF, 0),
     ("AL", C_GPR, 0, 8, NOMEM, 0, 0), ("AX", C_GPR, 0, 16, NOMEM, 0, 0),
@@ -91,6 +96,30 @@ TYPES = [   # name, rclass, special, rsize, msize, fixreg, imm
     ("RC", C_RC, 0, 0, NOMEM, 0xFF, 0), ("SAE", C_SAE, 0, 0, NOMEM, 0xFF, 0),
     # gather/scatter addresses: [base + xmm/ymm/zmm index * scale]
     ("VMX", 0, 4, 0, 0, 1, 0), ("VMY", 0, 4, 0, 0, 2, 0), ("VMZ", 0, 4, 0, 0, 3, 0),
+    # NASM's instruction list (nasm_forms below): an xmm register or memory
+    # of any size, AMX tiles, MPX bounds, and fixed-width operands that set
+    # the operand size (o16 / o32 / o64 in its encodings)
+    ("XM", C_XMM, 0, 128, 0, 0xFF, 0),
+    # a register of one width or memory of another (insns.dat's ymmrm128 ...)
+    ("YM16", C_YMM, 0, 256, 16, 0xFF, 0), ("YM128", C_YMM, 0, 256, 128, 0xFF, 0),
+    ("ZM16", C_ZMM, 0, 512, 16, 0xFF, 0), ("ZM128", C_ZMM, 0, 512, 128, 0xFF, 0),
+    ("XM256", C_XMM, 0, 128, 256, 0xFF, 0),
+    ("TMM", C_TMM, 0, 0, NOMEM, 0xFF, 0), ("BND", C_BND, 0, 0, NOMEM, 0xFF, 0),
+    ("BNDM64", C_BND, 0, 0, 64, 0xFF, 0), ("BNDM128", C_BND, 0, 0, 128, 0xFF, 0),
+    ("R16V", C_GPR, 1, 16, NOMEM, 0xFF, 0), ("R32V", C_GPR, 1, 32, NOMEM, 0xFF, 0),
+    ("R64V", C_GPR, 1, 64, NOMEM, 0xFF, 0), ("RM32V", C_GPR, 1, 32, 32, 0xFF, 0),
+    ("RM64V", C_GPR, 1, 64, 64, 0xFF, 0),
+    ("M16V", 0, 1, 16, 16, 0xFF, 0), ("M32V", 0, 1, 32, 32, 0xFF, 0), ("M64V", 0, 1, 64, 64, 0xFF, 0),
+    ("ECX", C_GPR, 0, 32, NOMEM, 1, 0), ("RCX", C_GPR, 0, 64, NOMEM, 1, 0),
+    ("EDX", C_GPR, 0, 32, NOMEM, 2, 0), ("CX", C_GPR, 0, 16, NOMEM, 1, 0),
+    ("ES", C_SEG, 0, 0, NOMEM, 0, 0), ("CS", C_SEG, 0, 0, NOMEM, 1, 0),
+    # a mask register of a written size: NASM's kmov / kand ... with no
+    # suffix pick the instruction by it ("kmov byte k1, k2" is kmovb)
+    ("K8", C_K, 0, 8, NOMEM, 0xFF, 0), ("K16", C_K, 0, 16, NOMEM, 0xFF, 0),
+    ("K32", C_K, 0, 32, NOMEM, 0xFF, 0), ("K64", C_K, 0, 64, NOMEM, 0xFF, 0),
+    # one tile register each (tilezero: ModRM 11 tmm 000)
+    *[("TMM%d" % n, C_TMM, 0, 0, NOMEM, n, 0) for n in range(8)],
+    ("SS", C_SEG, 0, 0, NOMEM, 2, 0), ("DS", C_SEG, 0, 0, NOMEM, 3, 0),
 ]
 TY = {t[0]: i for i, t in enumerate(TYPES)}
 
@@ -98,19 +127,22 @@ TY = {t[0]: i for i, t in enumerate(TYPES)}
 R_NONE, R_REG, R_RM, R_VVVV, R_PLUS, R_IMM, R_IS4 = range(7)
 # flags
 F_W, F_OSZ, F_D64, F_WAIT, F_FIXIMM, F_BCST = 1, 2, 4, 8, 16, 32
+F_V0 = 64      # VEX/EVEX: vvvv is operand 0's register (NASM's "vaddps xmm1, xmm2")
+F_B16 = 128    # EVEX: a broadcast's elements are 16-bit (else 32, or 64 with W)
 PFXN = {"": 0, "np": 0, "66": 1, "F3": 2, "F2": 3}
-MAPN = {"": 1, "0f": 2, "38": 3, "3a": 4}
+# maps: VEX/EVEX mmm + 1 (0F 38 = 3, EVEX map 5 = 6), XOP mmmmm + 1
+MAPN = {"": 1, "0f": 2, "38": 3, "3a": 4, "map5": 6, "map6": 7, "xop8": 9, "xop9": 10, "xopa": 11}
 M_DIGIT = lambda d: d
 M_R, M_NONE = 8, 9
 
 forms = []     # (name, types, pfx, map, opcode, modrm, roles, flags, fiximm, prio, enc, L)
-ENC_LEGACY, ENC_VEX, ENC_EVEX = 0, 1, 2
+ENC_LEGACY, ENC_VEX, ENC_EVEX, ENC_XOP = 0, 1, 2, 3
 
 # objdump's names for undocumented x87 aliases: no assembler accepts them
 SKIP = {"fcom2", "fcomp3", "fcomp5", "ffreep", "fstp1", "fstp8", "fstp9", "fxch4", "fxch7"}
 
 def form(name, types, pfx, mp, opcode, modrm, roles, flags=0, fiximm=0, prio=0, enc=ENC_LEGACY, L=0):
-    if name in SKIP:
+    if name in SKIP and prio != 50:              # (NASM's list, NASM_PRIO, has ffreep)
         return
     types = types.split() if isinstance(types, str) else list(types)
     roles = roles.split() if isinstance(roles, str) else list(roles)
@@ -766,13 +798,399 @@ def x87_forms():
 x87_forms()
 
 # ============================================================================
+# NASM's instruction list: the forms the opcode map above does not give
+# ============================================================================
+# scripts/nasm/insns.dat is NASM's own instruction table (x86/insns.dat of
+# NASM 2.16.03, under NASM's 2-clause BSD licence, its notice kept at the
+# top). Its 64-bit forms are read here and placed after the forms above
+# (prio NASM_PRIO), so they only take operands none of those fit: the
+# instructions the opcode map does not have (AMX, AVX-512 FP16, XOP, FMA4,
+# the VCMP predicate aliases ...) and the spellings it does not (NASM's
+# "vaddps xmm1, xmm2" for "vaddps xmm1, xmm1, xmm2"). Mnemonics new to
+# backend/isa/amd64.s go in its generated block (isa_block below).
+INSNS = os.path.join(ROOT, "scripts", "nasm", "insns.dat")
+NASM_PRIO = 50
+
+NASM_TYPES = {
+    "reg8": "R8", "reg16": "R16", "reg32": "R32", "reg64": "R64", "reg32na": "R32",
+    "rm8": "RM8", "rm16": "RM16", "rm32": "RM32", "rm64": "RM64",
+    "mem": "M", "mem8": "M8", "mem16": "M16", "mem32": "M32", "mem64": "M64", "mem80": "M80",
+    "mem128": "M128", "mem256": "M256", "mem512": "M512",
+    "xmmreg": "X", "ymmreg": "Y", "zmmreg": "Z", "xmmrm": "XM", "xmmrm8": "XM8",
+    "xmmrm16": "XM16", "xmmrm32": "XM32", "xmmrm64": "XM64", "xmmrm128": "XM128",
+    "ymmrm256": "YM256", "zmmrm512": "ZM512", "ymmrm16": "YM16", "ymmrm128": "YM128",
+    "zmmrm16": "ZM16", "zmmrm128": "ZM128", "xmmrm256": "XM256",
+    "mmxreg": "MM", "mmxrm": "MMM64", "mmxrm64": "MMM64",
+    "kreg": "K", "kreg8": "K8", "kreg16": "K16", "kreg32": "K32", "kreg64": "K64",
+    "krm8": "KM8", "krm16": "KM16", "krm32": "KM32", "krm64": "KM64",
+    "tmmreg": "TMM", "bndreg": "BND",
+    "xmem32": "VMX", "xmem64": "VMX", "ymem32": "VMY", "ymem64": "VMY",
+    "zmem32": "VMZ", "zmem64": "VMZ",
+    "reg_al": "AL", "reg_ax": "AX", "reg_eax": "EAX", "reg_rax": "RAX", "reg_cl": "CL",
+    "reg_cx": "CX", "reg_ecx": "ECX", "reg_rcx": "RCX", "reg_dx": "DX", "reg_edx": "EDX",
+    "reg_es": "ES", "reg_cs": "CS", "reg_ss": "SS", "reg_ds": "DS", "reg_fs": "FS", "reg_gs": "GS",
+    "xmm0": "XMM0", "fpureg": "ST", "fpu0": "ST0", "reg_creg": "CR", "reg_dreg": "DR",
+    "reg_sreg": "SREG", "unity": "ONE",
+}
+IMM_OPS = {"imm", "imm8", "imm16", "imm32", "imm64", "sbyteword", "sbytedword", "sbyteword16",
+           "sbytedword32", "sbytedword64", "udword", "sdword"}
+IMM_ENC = {"ib": "I8", "ib,u": "I8", "ib,s": "I8S", "iw": "I16", "id": "I32", "id,s": "IZ",
+           "iwd": "IZ", "iq": "I64"}
+# o16 / o32 / o64: an operand of that width sets the operand size (66, REX.W)
+OSZ_WIDTH = {"o16": 16, "o32": 32, "o64": 64, "o64nw": 64}
+OSZ_TYPES = {"R16": "R16V", "RM16": "RM16V", "R32": "R32V", "RM32": "RM32V", "R64": "R64V",
+             "RM64": "RM64V", "M16": "M16V", "M32": "M32V", "M64": "M64V"}
+# {rn-sae} / {sae}: the r/m operand is then a register
+REG_ONLY = {"XM": "X", "XM8": "X", "XM16": "X", "XM32": "X", "XM64": "X", "XM128": "X",
+            "XM256": "X", "YM16": "Y", "YM128": "Y", "YM256": "Y", "ZM16": "Z", "ZM128": "Z",
+            "ZM512": "Z", "RM32": "R32", "RM64": "R64"}
+VEX_FIELDS = {"128": ("L", 0), "l0": ("L", 0), "lz": ("L", 0), "lig": ("L", 0),
+              "256": ("L", 1), "l1": ("L", 1), "512": ("L", 2),
+              "66": ("pfx", "66"), "f2": ("pfx", "F2"), "f3": ("pfx", "F3"), "np": ("pfx", "np"),
+              "p0": ("pfx", "np"), "p1": ("pfx", "66"),
+              "0f": ("map", "0f"), "0f38": ("map", "38"), "0f3a": ("map", "3a"),
+              "m1": ("map", "0f"), "m2": ("map", "38"), "m3": ("map", "3a"),
+              "map5": ("map", "map5"), "map6": ("map", "map6"),
+              "m8": ("map", "xop8"), "m9": ("map", "xop9"), "m10": ("map", "xopa"),
+              "w0": ("w", 0), "wig": ("w", 0), "w1": ("w", 1),
+              "nds": None, "ndd": None, "dds": None}
+VSIB_NOTES = {"vm32x", "vm32y", "vm32z", "vm64x", "vm64y", "vm64z", "vsibx", "vsiby", "vsibz"}
+
+def type_bytes(t):
+    """the memory size of a type in bytes (0 = any or none)"""
+    m = re.search(r"(\d+)V?$", t)
+    return int(m.group(1)) // 8 if m and t not in ("ST0", "XMM0") else 0
+
+def tuple_n8(tup, L, wide, b16, msz):
+    vl = 16 << L
+    elem = 2 if b16 else (8 if wide else 4)
+    return {"fv": vl, "fvm": vl, "hv": vl // 2, "hvm": vl // 2, "qvm": vl // 4, "ovm": vl // 8,
+            "m128": 16, "dup": 8 if L == 0 else vl, "t1s": msz or elem, "t1s8": 1, "t1s16": 2,
+            "t1f32": 4, "t1f64": 8, "t2": 2 * elem, "t4": 4 * elem, "t8": 8 * elem}.get(tup)
+
+def nasm_form(name, ops, enc, flags=()):
+    """The forms (form() argument tuples) of one insns.dat line; [] when
+    this encoder cannot express it."""
+    parts = [p.strip() for p in enc.split(":")]
+    if len(parts) == 3:
+        order, tup, body = parts
+    elif len(parts) == 2:
+        (order, body), tup = parts, ""
+    else:
+        order, tup, body = "", "", parts[0]
+    opl = [] if ops == "void" else ops.split(",")
+    # "rvmi" for three operands: the i is a fixed immediate (VCMPEQ_OSPS),
+    # or nothing (VPSHLDVW): NASM reads as many letters as there are operands
+    if len(order) > len(opl):
+        order = order[:len(opl)]
+    if len(order) != len(opl) or "+" in order or "x" in order:
+        return []
+    encn, pfx, mp, L, wide = ENC_LEGACY, "", "", 0, 0
+    fl, modrm, fiximm, osz, plus, is4 = 0, M_NONE, None, None, False, False
+    asz, mustrep = 0, False
+    codes, imms, after_modrm = [], [], False
+    for t in body.split():
+        if t.split(".")[0] in ("vex", "evex", "xop"):
+            encn = {"vex": ENC_VEX, "evex": ENC_EVEX, "xop": ENC_XOP}[t.split(".")[0]]
+            pfx = "np"
+            for x in t.split(".")[1:]:
+                if x not in VEX_FIELDS:
+                    return []
+                if VEX_FIELDS[x]:
+                    k, v = VEX_FIELDS[x]
+                    if k == "L":
+                        L = v
+                    elif k == "pfx":
+                        pfx = v
+                    elif k == "map":
+                        mp = v
+                    else:
+                        wide = v
+        elif t in OSZ_WIDTH:
+            osz = t
+        elif t == "np" or t in VSIB_NOTES or t in ("nohi", "norexw"):
+            pass                                 # (nohi: no ah..bh, which VEX has not)
+        elif t in ("a16", "a32", "a64"):
+            asz = {"a16": 1, "a32": 2, "a64": 3}[t]
+        elif t == "mustrep":
+            mustrep = True
+        elif t in ("66", "f2", "f3") and not codes and encn == ENC_LEGACY:
+            if pfx:
+                return []
+            pfx = t.upper() if t != "66" else "66"
+        elif re.fullmatch(r"[0-9a-fA-F]{2}", t):
+            if after_modrm:
+                if fiximm is not None:
+                    return []
+                fiximm = int(t, 16)
+            else:
+                codes.append(int(t, 16))
+        elif re.fullmatch(r"[0-9a-f]{2}\+r", t):
+            codes.append(int(t[:2], 16))
+            plus = len(codes)                    # which byte: the opcode's or a ModRM's
+        elif t == "/r":
+            modrm, after_modrm = M_R, True
+        elif t == "/3r0":
+            modrm, after_modrm = "3r0", True     # ModRM 11 reg 000
+        elif re.fullmatch(r"/[0-7]", t):
+            modrm, after_modrm = int(t[1]), True
+        elif t == "/is4":
+            is4 = True
+        elif t in IMM_ENC:
+            imms.append(IMM_ENC[t])
+            after_modrm = True
+        elif t == "wait":
+            fl |= F_WAIT
+        else:
+            return []                    # rel, hle, a32, seg, jcc8, ...
+    if not codes:
+        return []
+    if encn == ENC_LEGACY:
+        if codes[0] == 0x0F and len(codes) > 1 and codes[1] in (0x38, 0x3A):
+            mp, rest = {0x38: "38", 0x3A: "3a"}[codes[1]], codes[2:]
+        elif codes[0] == 0x0F:
+            mp, rest = "0f", codes[1:]
+        else:
+            mp, rest = "", codes
+        if not rest:
+            return []
+        plus_on_modrm = plus and plus == len(codes) and len(rest) == 2
+        opcode, rest = rest[0], rest[1:]
+        if rest:
+            if len(rest) > 1 or modrm != M_NONE or rest[0] < 0xC0:
+                return []
+            modrm = rest[0]                      # 0f 01 c8: a fixed ModRM byte
+    else:
+        if not mp or not 1 <= len(codes) <= 2:
+            return []
+        if len(codes) == 2:                      # tilerelease: a fixed ModRM byte
+            if modrm != M_NONE or codes[1] < 0xC0:
+                return []
+            modrm = codes[1]
+        opcode = codes[0]
+    if wide:
+        fl |= F_W
+
+    types, roles, bc, er_at, stars = [], [], 0, None, []
+    for i, (o, letter) in enumerate(zip(opl, order.replace("j", "i"))):
+        base, *deco = o.split("|")
+        if base.endswith("*"):
+            base = base[:-1]
+            stars.append(i)
+        to = False
+        for d in deco:
+            if d in ("mask", "z"):
+                continue
+            if d == "to" and base == "fpureg":
+                to = True
+                continue
+            if d in ("b16", "b32", "b64"):
+                bc = int(d[1:])
+            elif d in ("er", "sae"):
+                er_at = (i, "RC" if d == "er" else "SAE")
+            else:
+                return []                        # near, far, rs4 ...
+        if base in IMM_OPS:
+            if not imms:
+                return []
+            t = imms.pop(0)
+        elif base in NASM_TYPES:
+            t = "STTO" if to else NASM_TYPES[base]
+        else:
+            return []
+        role = {"r": "+" if plus else "reg", "m": "rm", "v": "v", "i": "i", "s": "is4",
+                "-": "-"}.get(letter)
+        if role is None:
+            return []
+        types.append(t)
+        roles.append(role)
+    if plus and not (encn == ENC_LEGACY and plus_on_modrm):
+        modrm = M_NONE                           # (fadd: dc c0+r, the ModRM's)
+    if is4 != ("is4" in roles):
+        return []
+    # SM / SM2: the operands (the first two) are of one size, which a size
+    # written on any of them sets ("kadd k1, dword k2, k3" is kaddd)
+    span = len(types) if "SM" in flags else 2 if "SM2" in flags else 0
+    ksized = next((t for t in types[:span] if t in ("K8", "K16", "K32", "K64")), None)
+    if ksized:
+        types = [ksized if t == "K" and i < span else t for i, t in enumerate(types)]
+    # o16 / o32 / o64
+    if osz:
+        width = OSZ_WIDTH[osz]
+        conv = [OSZ_TYPES[t] if t in OSZ_TYPES and type_bytes(t) * 8 == width else t for t in types]
+        if conv != types:
+            types = conv
+            fl |= F_OSZ | (F_D64 if osz == "o64nw" else 0)
+        elif osz == "o64":
+            fl |= F_W
+    elif encn == ENC_LEGACY and any(t in ("R64", "RM64") for t in types):
+        fl |= F_W                                # NASM: a 64-bit register sets REX.W
+                                                 # (pextrw rax, xmm0, 0)
+    xo = 0                                       # the mode needs (FM_FIXIMM)
+    if osz in ("o16", "o32") and not fl & F_OSZ:
+        xo = 1 if osz == "o16" else 2            # 66 by the mode, not always
+    if encn != ENC_LEGACY and (asz or mustrep or "NOLONG" in flags):
+        return []
+    xo |= asz << 2 | ("NOLONG" in flags) << 4 | ("LONG" in flags) << 5 | mustrep << 6
+    if xo and fiximm is not None:
+        return []                                # (the byte holds one of them)
+    # EVEX: broadcast element size and the disp8*N scale
+    n8 = 1
+    if encn == ENC_EVEX:
+        if bc:
+            if bc == 16:
+                fl |= F_B16
+            elif (bc == 64) != bool(wide):
+                return []
+            fl |= F_BCST
+        if any(r == "rm" and TYPES[TY[t]][4] != NOMEM for t, r in zip(types, roles)):
+            msz = next((type_bytes(t) for t, r in zip(types, roles) if r == "rm"), 0)
+            n8 = tuple_n8(tup, L, wide, bc == 16, msz)
+            if n8 is None:
+                return []
+    elif bc or er_at:
+        return []
+    out = []
+    # NASM's SIB forms (tileloadd): a SIB byte even with no index (FM_VL bit 7)
+    vl = L | (0x80 if "SIB" in flags else 0)
+    if encn == ENC_VEX and "LATEVEX" in flags:
+        vl |= 0x40                               # (dispatch.s: {vex} / cpu latevex)
+    def add(ts, rs, f, ix=None):
+        if len(ts) > 4:
+            return
+        args = (name, ts, pfx, mp, opcode, modrm, rs, f, xo if fiximm is None else fiximm,
+                NASM_PRIO, encn, vl)
+        out.append((args, n8 if ix is None else ix))
+    if modrm == "3r0":
+        if types != ["TMM"]:
+            return []
+        for n in range(8):
+            modrm = 0xC0 | n << 3
+            add(["TMM%d" % n], ["-"], fl)
+        return out
+    fx = F_FIXIMM if fiximm is not None else 0
+    add(types, roles, fl | fx)
+    # "vaddps xmm1, xmm2": the omitted vvvv source is the destination
+    for i in stars:
+        if roles[i] == "v":
+            add(types[:i] + types[i + 1:], roles[:i] + roles[i + 1:], fl | fx | F_V0)
+    # {rn-sae} / {sae} after the operand that takes it, registers only
+    if er_at:
+        i, extra = er_at
+        rt = [REG_ONLY.get(t, t) if r == "rm" else t for t, r in zip(types, roles)]
+        add(rt[:i + 1] + [extra] + rt[i + 1:], roles[:i + 1] + ["-"] + roles[i + 1:],
+            (fl | fx) & ~(F_BCST | F_B16))
+        for s in stars:
+            if roles[s] == "v" and s != i:
+                j = s if s < i else s + 1
+                rt2 = rt[:i + 1] + [extra] + rt[i + 1:]
+                rr2 = roles[:i + 1] + ["-"] + roles[i + 1:]
+                add(rt2[:j] + rt2[j + 1:], rr2[:j] + rr2[j + 1:], (fl | fx | F_V0) & ~(F_BCST | F_B16))
+    return out
+
+# backend/isa/amd64.s: the mnemonics only NASM's list has are kept in a
+# block of their own, IDs from NASM_ID0, rewritten with the table
+ISA_BEGIN = "    ; ---- NASM's instruction list: GENERATED by scripts/gen_x86_enc.py ----"
+ISA_END = "    ; ---- end of NASM's instruction list ----"
+NASM_ID0 = 7000
+
+def isa_base():
+    """backend/isa/amd64.s without the generated block"""
+    text = open(ISA, encoding="utf-8").read().replace("\r\n", "\n")
+    if ISA_BEGIN in text:
+        a = text.index(ISA_BEGIN)
+        b = text.index(ISA_END) + len(ISA_END) + 1
+        text = text[:a] + text[b:]
+    return text
+
+ISA_NAMES = set(re.findall(r'mnc_ent\s+"([^"]+)"', isa_base()))
+ISA_IDS = {m.group(1): int(m.group(2)) for m in
+           re.finditer(r'mnc_ent\s+"([^"]+)",\s*\d+,\s*(\d+)', isa_base())}
+TABLE_NAMES = {f[0] for f in forms}
+# legacy forms of mnemonics the table has: only these take NASM's (the
+# others are the opcode map's own)
+# (movd r64, mm; "fadd", "fld" alone: st1)
+LEGACY_OK = {"movd", "fadd", "fsub", "fsubr", "fmul", "fdiv", "fdivr", "fld", "fst", "fstp",
+             "fxch", "fcom", "fcomp", "fucom", "fucomp", "ffree"}
+
+def hand_ids():
+    """the mnemonic IDs the hand-written encoders (encoder.s) dispatch on:
+    the table must not take those over"""
+    src = open(os.path.join(ROOT, "backend", "encoder", "encoder.s"), encoding="utf-8").read()
+    ids = {int(n) for n in re.findall(r"\b(?:ELSE)?IF\s+ax,\s*e,\s*(\d+)", src)}
+    for a, b in re.findall(r"ELSEIF_RANGE\s+ax,\s*(\d+),\s*(\d+)", src):
+        ids.update(range(int(a), int(b) + 1))
+    ids.update(range(3000, 3100))            # Jcc
+    ids.update(range(6524, 6537))            # LOOPcc, JECXZ, JRCXZ, JCXZ
+    return ids
+
+HAND_IDS = hand_ids()
+# hand-encoded, but NASM's forms are taken instead (the hand encoders give
+# wrong bytes or none)
+NASM_OVER = {"ldtilecfg", "sttilecfg", "tileloadd", "tileloaddt1", "tilestored", "tilezero",
+             "tilerelease", "tdpbssd", "tdpbsud", "tdpbusd", "tdpbuud", "tdpbf16ps", "tdpfp16ps",
+             # MPX (REX.B lost), the address-size ones (clzero eax: 67)
+             "bndcl", "bndcu", "bndcn", "bndmk", "bndmov", "invlpga", "clzero", "umonitor"}
+
+def nasm_allowed(name, encn):
+    """Whether NASM's form of this mnemonic goes in the table. They come
+    after the opcode map's own, so they only take operands those do not: what
+    NASM accepts there it encodes this way. Only the mnemonics encoded by
+    hand (encoder.s) are left to their encoders - the table is tried first,
+    so a form there would take their operands over."""
+    if name not in ISA_NAMES or name in NASM_OVER:
+        return True                              # new to backend/isa/amd64.s
+    if encn != ENC_LEGACY:
+        return True                              # (the hand-written VEX / EVEX ones
+                                                 # are stubs: vfmaddcph gave 0f 38 98)
+    if ISA_IDS.get(name) in HAND_IDS:
+        return name in LEGACY_OK
+    return True
+
+# the mnemonics whose forms the table has all of: NASM's are VEX / EVEX /
+# XOP only (or NASM_OVER's): operands none fits are an error, not the
+# hand-written encoders' (stubs for these) - bit 15 of x86_enc_index
+NASM_LEGACY_SEEN = set()
+NASM_SEEN = set()
+
+def nasm_forms():
+    for line in open(INSNS, encoding="utf-8"):
+        if line.startswith(";") or not line.strip():
+            continue
+        m = re.match(r"(\S+)\s+(\S+)\s+\[(.*?)\]\s+(\S+)", line)
+        if not m:
+            continue
+        name, ops, enc, flags = m.group(1).lower(), m.group(2), m.group(3), m.group(4).split(",")
+        NASM_SEEN.add(name)
+        if not re.search(r"\b(vex|evex|xop)\.", enc):
+            NASM_LEGACY_SEEN.add(name)
+        for args, n8 in nasm_form(name, ops, enc, flags):
+            if not nasm_allowed(name, args[10]):
+                continue
+            form(*args)
+            if args[10] == ENC_EVEX:
+                forms[-1] = forms[-1] + (n8,)
+
+nasm_forms()
+
+def isa_text():
+    text = isa_base()
+    new = sorted({f[0] for f in forms} - ISA_NAMES)
+    lines = text.split("\n")
+    last = max(i for i, l in enumerate(lines) if re.match(r'\s*mnc_ent\s+"', l))
+    block = [ISA_BEGIN] + ['    mnc_ent "%s", 0, %d' % (n, NASM_ID0 + i) for i, n in enumerate(new)] + [ISA_END]
+    return "\n".join(lines[:last + 1] + block + lines[last + 1:])
+
+# ============================================================================
 # output
 # ============================================================================
 def mnemonic_ids():
     ids = {}
-    for m in re.finditer(r'mnc_ent\s+"([^"]+)",\s*\d+,\s*(\d+)', open(ISA, encoding="utf-8").read()):
+    for m in re.finditer(r'mnc_ent\s+"([^"]+)",\s*\d+,\s*(\d+)', isa_text()):
         ids.setdefault(m.group(1), int(m.group(2)))
     return ids
+
+FINAL_NAMES = (NASM_SEEN - NASM_LEGACY_SEEN) | NASM_OVER
 
 def render():
     ids = mnemonic_ids()
@@ -780,9 +1198,10 @@ def render():
     if missing:
         sys.exit("mnemonics missing from backend/isa/amd64.s: " + " ".join(missing))
     # group by mnemonic ID in first-seen order, then by priority (stable)
-    order, by_id = [], {}
+    order, by_id, name_of = [], {}, {}
     for i, f in enumerate(forms):
         mid = ids[f[0]]
+        name_of.setdefault(mid, set()).add(f[0])
         if mid not in by_id:
             by_id[mid] = []
             order.append(mid)
@@ -811,10 +1230,13 @@ def render():
     table, index = [], {}
     for mid in sorted(order):
         index[mid] = len(table) + 1
+        if name_of[mid] <= FINAL_NAMES:
+            index[mid] |= 0x8000                 # the table's word is final
         for _, _, _, f in sorted(by_id[mid], key=lambda x: (x[0], x[1], x[2])):
             table.append((mid, f))
     maxid = max(index)
-    out += ["", "; mnemonic ID -> first form + 1 (0 = none)", "x86_enc_index:"]
+    out += ["", "; mnemonic ID -> first form + 1 (0 = none); bit 15: the table's forms are",
+            "; all there are (dispatch.s: none fitting is an error)", "x86_enc_index:"]
     for i in range(0, maxid + 1, 16):
         out.append("    dw " + ", ".join(str(index.get(j, 0)) for j in range(i, min(i + 16, maxid + 1))))
     out += ["", "global x86_enc_maxid", "x86_enc_maxid: dd %d        ; highest mnemonic ID in the index" % maxid, "",
@@ -835,13 +1257,18 @@ def render():
 
 def main():
     text, n = render()
+    isa = isa_text()
     if "--check" in sys.argv:
         cur = open(DST, encoding="utf-8").read().replace("\r\n", "\n") if os.path.exists(DST) else ""
         if cur != text:
             sys.exit("backend/encoder/tables/opcode.s is out of date; run scripts/gen_x86_enc.py")
+        if open(ISA, encoding="utf-8").read().replace("\r\n", "\n") != isa:
+            sys.exit("backend/isa/amd64.s's NASM block is out of date; run scripts/gen_x86_enc.py")
         return
     with open(DST, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
+    with open(ISA, "w", encoding="utf-8", newline="\n") as f:
+        f.write(isa)
     print("%d forms" % n)
 
 if __name__ == "__main__":
