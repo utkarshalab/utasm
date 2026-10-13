@@ -128,12 +128,23 @@ lst_warning:
     push    r12
     mov     r12, rdi
     call    str_len
-    lea     rdi, [rax + 9]                 ; next, the text, its NUL
+    lea     rdi, [rax + 17]                ; next, offset, the text, its NUL
     call    lst_alloc
     test    rax, rax
     jz      .out
     mov     qword [rax], 0
-    lea     rdi, [rax + 8]
+    ; where in the line's bytes it came: NASM lists it after that row
+    ; ("db 300, 2, ... 20": after the first)
+    xor     ecx, ecx
+    mov     rdx, [rel lst_cur]
+    mov     rbx, [rdx + LE_SEC]
+    test    rbx, rbx
+    jz      .at
+    mov     rcx, [rbx + SECTION_size]
+    sub     rcx, [rdx + LE_START]
+.at:
+    mov     [rax + 8], rcx
+    lea     rdi, [rax + 16]
     mov     rsi, r12
 .copy:
     mov     cl, [rsi]
@@ -972,10 +983,13 @@ lst_entry:
     call    lst_put_source
 .continued:
     call    lst_put_newline
-    mov     ecx, 1
     cmp     r13, r14
-    jb      .row
-    jmp     .done
+    jae     .done
+    mov     rdi, r13                       ; the warnings of this row's bytes
+    sub     rdi, [rbx + LE_START]
+    call    .warn_upto
+    mov     ecx, 1
+    jmp     .row
 
 .repeated:
     mov     [rel lst_rep_at], r13          ; (the count's own row, if it wraps)
@@ -1063,6 +1077,9 @@ lst_entry:
     mov     rsi, r15
     call    lst_put_source
     call    lst_put_newline
+    mov     rdi, r13                       ; the first repetition's warnings
+    sub     rdi, [rbx + LE_START]
+    call    .warn_upto
     mov     edi, [rbx + LE_LINE]
     call    lst_put_lineno
     mov     rdi, [rel lst_rep_at]
@@ -1193,12 +1210,27 @@ lst_entry:
     mov     rdx, r15
     call    lst_text_row_entry
 .done:
-    ; its warnings, after its rows:
+    ; its warnings, after its rows (those of an earlier row came after it):
     ;      3          ******************       warning: ... [-w+zeroing]
+    mov     rdi, -1
+    call    .warn_upto
+    jmp     .warned
+
+; .warn_upto: the line's warnings not shown yet that came before offset rdi
+; of its bytes (-1: all)
+.warn_upto:
+    push    r12
+    push    r13
+    mov     r13, rdi
     mov     r12, [rbx + LE_WARN]
 .warning:
     test    r12, r12
-    jz      .warned
+    jz      .warn_rest
+    cmp     r13, -1
+    je      .warn_one
+    cmp     [r12 + 8], r13
+    jae     .warn_rest
+.warn_one:
     mov     edi, [rbx + LE_LINE]
     call    lst_put_lineno
     lea     rsi, [rel lst_warn_mark]
@@ -1209,14 +1241,19 @@ lst_entry:
     lea     rsi, [rel lst_blank]
     mov     edx, 1
     call    lst_put
-    lea     rdi, [r12 + 8]
+    lea     rdi, [r12 + 16]
     call    str_len
     mov     edx, eax
-    lea     rsi, [r12 + 8]
+    lea     rsi, [r12 + 16]
     call    lst_put
     call    lst_put_newline
     mov     r12, [r12]
+    mov     [rbx + LE_WARN], r12           ; (shown: the rest wait)
     jmp     .warning
+.warn_rest:
+    pop     r13
+    pop     r12
+    ret
 .warned:
     ; the other repetitions' relocations are behind us
     mov     rdi, [rbx + LE_SEC]
