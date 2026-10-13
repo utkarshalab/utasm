@@ -391,8 +391,8 @@ amd64_mode_check:
     je      .seg_stack
     cmp     edx, ID_POP
     jne     .combination
-    cmp     eax, 0
-    je      .fail                          ; pop cs
+    test    eax, eax
+    jz      .seg_op                        ; pop cs: 0F, any mode (encoder.s)
 .seg_stack:
     cmp     byte [rel asm_bits], 64
     jne     .seg_op
@@ -439,6 +439,10 @@ amd64_mode_check:
     jne     .op
     cmp     eax, 4
     jb      .op
+    ; pinsrb's r/m8 is encoded as its 32-bit register: "pinsrb xmm1, sil"
+    ; is esi's code, no REX - so there in any mode (NASM's nohi form)
+    cmp     word [r12 + INST_op_id], 1501  ; PINSRB
+    je      .op
     jmp     .fail_operands                 ; spl bpl sil dil
 .not_gpr:
     cmp     eax, 40
