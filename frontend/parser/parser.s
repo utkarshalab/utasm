@@ -369,9 +369,33 @@ parser_parse_instruction:
     test    rax, rax
     jz      .lookup_mnemonic
     cmp     eax, 1
-    je      .get_mnemonic              ; o32 / o64 in 64-bit code: no byte
-    cmp     eax, 4
+    je      .get_mnemonic
+    ; xacquire / xrelease (8 / 9): F2 / F3, and which it was for the HLE
+    ; warnings (parser_check_hle) - repne / rep are the same bytes
+    cmp     eax, 8
+    je      .hle_acquire
+    cmp     eax, 9
+    jne     .not_hle
+    or      byte [r15 + INST_flags], INSTF_XRELEASE
+    mov     eax, 0xF3
+    jmp     .prefix_byte
+.hle_acquire:
+    or      byte [r15 + INST_flags], INSTF_XACQUIRE
+    mov     eax, 0xF2
+    jmp     .prefix_byte
+.not_hle:
+    cmp     eax, 7
     ja      .prefix_byte
+    cmp     eax, 5
+    jb      .asize
+    ; o16 / o32 / o64 (5, 6, 7): the operation size asked for - the encoder
+    ; gives the instruction its prefix (amd64_force_osize)
+    lea     ecx, [eax - 4]
+    mov     eax, 8
+    shl     eax, cl                        ; 16, 32, 64
+    mov     [r15 + INST_osize], al
+    jmp     .get_mnemonic
+.asize:
     ; a16 / a32 / a64 (2, 3, 4): the address size asked for. Its byte, 67,
     ; only when it is not the mode's own; 16 in 64-bit code, or 64 outside
     ; it, is NASM's error
@@ -540,6 +564,7 @@ parser_parse_instruction:
     
 .instruction_ok:
     call    parser_check_lock
+    call    parser_check_hle
     call    parser_check_size              ; "inc [rax]": how big?
     test    rax, rax
     jnz     .error
@@ -5150,9 +5175,9 @@ parser_check_size:
     movzx   edx, byte [r15 + INST_op0 + OPERAND_SIZE + OPERAND_kind]
     lea     rsi, [rel nosize_mi]
     cmp     edx, OP_IMM
-    je      .listed
+    je      .mem_imm
     cmp     edx, OP_SYMBOL
-    je      .listed
+    je      .mem_imm
     cmp     edx, OP_REG
     jne     .ret
     cmp     byte [r15 + INST_op0 + OPERAND_SIZE + OPERAND_reg], REG_RCX ; cl
@@ -5185,6 +5210,44 @@ parser_check_size:
     pop     r12
 .ret:
     ret
+.mem_imm:
+    ; "mov [rax], dword 5": the immediate's size is the operation's, in the
+    ; forms NASM sizes so (mov, test and the ALU group)
+    movzx   ecx, byte [r15 + INST_op0 + OPERAND_SIZE + OPERAND_size]
+    cmp     ecx, 8
+    je      .imm_sized
+    cmp     ecx, 16
+    je      .imm_sized
+    cmp     ecx, 32
+    jne     .listed
+.imm_sized:
+    push    r12
+    push    rcx
+    lea     r12, [rel size_from_imm]
+.adopt:
+    cmp     byte [r12], 0
+    je      .adopt_none
+    mov     rdi, [rel inst_mnem_text]
+    mov     rsi, r12
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .adopt_it
+.adopt_skip:
+    inc     r12
+    cmp     byte [r12 - 1], 0
+    jne     .adopt_skip
+    jmp     .adopt
+.adopt_it:
+    pop     rcx
+    pop     r12
+    mov     [r15 + INST_op0 + OPERAND_size], cl
+    xor     eax, eax
+    ret
+.adopt_none:
+    pop     rcx
+    pop     r12
+    lea     rsi, [rel nosize_mi]
+    jmp     .listed
 
 [SECTION .rodata]
 ; the instructions NASM asks a size for (found by asking NASM: every
@@ -5193,6 +5256,9 @@ nosize_m:
     db "dec", 0, "div", 0, "fadd", 0, "fcom", 0, "fdiv", 0, "fld", 0, "fmul", 0
     db "fst", 0, "fstp", 0, "fsub", 0, "idiv", 0, "imul", 0, "inc", 0, "mul", 0
     db "neg", 0, "nop", 0, "not", 0, "pop", 0, "push", 0, 0
+size_from_imm:
+    db "adc", 0, "add", 0, "and", 0, "cmp", 0, "mov", 0, "or", 0, "sbb", 0
+    db "sub", 0, "test", 0, "xor", 0, 0
 nosize_mi:
     db "adc", 0, "add", 0, "and", 0, "bt", 0, "btc", 0, "btr", 0, "bts", 0
     db "cmp", 0, "mov", 0, "or", 0, "rcl", 0, "rcr", 0, "rol", 0, "ror", 0
@@ -5251,10 +5317,15 @@ parser_check_lock:
     lea     rsi, [rel str_xchg]
     call    str_cmp_kw
     test    rax, rax
-    jnz     .out
+    jnz     .memory_first
     mov     edi, WC_PREFIX_LOCK_XCHG
     lea     r12, [rel s_lock_xchg]
     jmp     .warn
+.memory_first:
+    ; "lock add ecx, [rax]": the memory is not what changes - NASM's
+    ; error too (xchg's may be either)
+    cmp     byte [r15 + INST_op0 + OPERAND_kind], OP_MEM
+    je      .out
 .not_lockable:
     mov     edi, WC_PREFIX_LOCK_ERROR
     lea     r12, [rel s_not_lockable]
@@ -5268,6 +5339,81 @@ parser_check_lock:
     pop     r12
     ret
 
+; parser_check_hle: NASM's warnings for xacquire / xrelease (r15 = INST):
+; with an instruction LOCK can go before, its memory operand first,
+; "xacquire with this instruction requires lock" when it has no LOCK (xchg
+; locks anyway); xrelease with a mov to memory is right, xacquire there is
+; not; on anything else "xrelease invalid with this instruction".
+; Preserves rbx, r12-r15.
+parser_check_hle:
+    movzx   eax, byte [r15 + INST_flags]
+    and     eax, INSTF_XACQUIRE | INSTF_XRELEASE
+    jz      .ret
+    push    r12
+    push    r13
+    lea     r13, [rel s_xacquire]
+    test    eax, INSTF_XACQUIRE
+    jnz     .which
+    lea     r13, [rel s_xrelease]
+.which:
+    mov     rdi, [rel inst_mnem_text]
+    lea     rsi, [rel str_mov_hle]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .not_mov
+    cmp     byte [r15 + INST_op0 + OPERAND_kind], OP_MEM
+    jne     .invalid
+    test    byte [r15 + INST_flags], INSTF_XRELEASE
+    jnz     .out
+    jmp     .invalid
+.not_mov:
+    lea     r12, [rel lockable_names]
+.name:
+    cmp     byte [r12], 0
+    je      .invalid
+    mov     rdi, [rel inst_mnem_text]
+    mov     rsi, r12
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .lockable
+.skip:
+    inc     r12
+    cmp     byte [r12 - 1], 0
+    jne     .skip
+    jmp     .name
+.lockable:
+    cmp     byte [r15 + INST_op0 + OPERAND_kind], OP_MEM
+    jne     .invalid
+    mov     rdi, [rel inst_mnem_text]
+    lea     rsi, [rel str_xchg]
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .out                           ; xchg: locked anyway
+    xor     ecx, ecx
+.lock:
+    cmp     byte [r15 + INST_prefixes + rcx], 0xF0
+    je      .out
+    inc     ecx
+    cmp     ecx, 4
+    jb      .lock
+    lea     r12, [rel s_hle_lock]
+    jmp     .warn
+.invalid:
+    lea     r12, [rel s_hle_invalid]
+.warn:
+    mov     edi, WC_PREFIX_HLE
+    call    warn_begin
+    mov     rsi, r13
+    call    warn_text
+    mov     rsi, r12
+    call    warn_text
+    call    warn_end
+.out:
+    pop     r13
+    pop     r12
+.ret:
+    ret
+
 [SECTION .rodata]
 ; the instructions LOCK may come before (with a memory operand)
 lockable_names:
@@ -5278,6 +5424,11 @@ lockable_names:
 str_xchg:       db "xchg", 0
 s_lock_xchg:    db "superfluous LOCK prefix on XCHG instruction", 0
 s_not_lockable: db "instruction is not lockable", 0
+str_mov_hle:    db "mov", 0
+s_xacquire:     db "xacquire", 0
+s_xrelease:     db "xrelease", 0
+s_hle_lock:     db " with this instruction requires lock", 0
+s_hle_invalid:  db " invalid with this instruction", 0
 [SECTION .bss]
 alignb 8
 inst_mnem_text: resq 1                  ; the mnemonic of the instruction read
@@ -5289,8 +5440,9 @@ inst_mnem_text: resq 1                  ; the mnemonic of the instruction read
 ; *   lock, xacquire/xrelease, bnd, o16/o32/o64, a16/a32/a64 and the
 ; *   segment prefixes cs ds es ss fs gs, as NASM writes them.
 ; * Input: RSI = String pointer
-; * Output: EAX = Prefix byte, 1 (accepted, nothing to emit), 2 / 3 / 4
-; *         (a16 / a32 / a64: the caller decides) or 0
+; * Output: EAX = Prefix byte, 2 / 3 / 4 (a16 / a32 / a64: the caller
+; *         decides), 5 / 6 / 7 (o16 / o32 / o64: the operation size),
+; *         8 / 9 (xacquire / xrelease) or 0
 ; ;
 parser_check_prefix:
     push    r12
@@ -5318,7 +5470,7 @@ parser_check_prefix:
     ret
 
 [SECTION .rodata]
-; name (9 bytes) + the prefix byte; 1 = accepted, no byte in 64-bit code
+; name (9 bytes) + the prefix byte or the code above
 prefix_words:
     db "rep", 0, 0,0,0,0,0, 0xF3
     db "repe", 0, 0,0,0,0, 0xF3
@@ -5326,15 +5478,15 @@ prefix_words:
     db "repne", 0, 0,0,0, 0xF2
     db "repnz", 0, 0,0,0, 0xF2
     db "lock", 0, 0,0,0,0, 0xF0
-    db "xacquire", 0, 0xF2
-    db "xrelease", 0, 0xF3
+    db "xacquire", 0, 8
+    db "xrelease", 0, 9
     db "bnd", 0, 0,0,0,0,0, 0xF2
-    db "o16", 0, 0,0,0,0,0, 0x66
-    db "o32", 0, 0,0,0,0,0, 1
-    db "o64", 0, 0,0,0,0,0, 1
+    db "o16", 0, 0,0,0,0,0, 5              ; the operation sizes
+    db "o32", 0, 0,0,0,0,0, 6
+    db "o64", 0, 0,0,0,0,0, 7
     db "osp", 0, 0,0,0,0,0, 0x66           ; the size prefixes as they are
     db "asp", 0, 0,0,0,0,0, 0x67
-db "a16", 0, 0,0,0,0,0, 2              ; the address sizes: by the mode
+    db "a16", 0, 0,0,0,0,0, 2              ; the address sizes: by the mode
     db "a32", 0, 0,0,0,0,0, 3
     db "a64", 0, 0,0,0,0,0, 4
     db "cs", 0, 0,0,0,0,0,0, 0x2E
@@ -5513,7 +5665,7 @@ parser_parse_struc:
         ; Check for 'field' keyword; any other word is NASM's form
         mov     rdi, [r12 + TOKEN_value]
         lea     rsi, [str_field]
-call    str_compare
+        call    str_compare
         IF rax, ne, 0
             jmp     .nasm_word
             ENDIF
@@ -6464,16 +6616,6 @@ parser_handle_pseudo_op:
             call    parser_handle_section_directive
             jmp     .check_handler_result
             ENDIF
-        ENDIF
-
-    ; 2.5 Comm Directive
-    mov     rdi, r12
-    lea     rsi, [rel str_comm]
-    call    str_cmp_kw
-    IF rax, e, 0
-        mov     rdi, rbx
-        call    parser_handle_comm
-        jmp     .check_handler_result
         ENDIF
 
     ; alignmode MODE [, threshold | nojmp]: once %use smartalign defined it
@@ -7478,7 +7620,7 @@ ignored_words:db "warning", 0, 0, 0
                 db "map", 0, 0, 0, 0, 0, 0, 0
                 db "list", 0, 0, 0, 0, 0, 0
                 db "float", 0, 0, 0, 0, 0
-db "debug", 0, 0, 0, 0, 0
+                db "debug", 0, 0, 0, 0, 0
                 db "required", 0, 0
                 db 0
 [SECTION .bss]
@@ -8753,7 +8895,9 @@ parser_handle_equ:
     jne     .commit
     mov     rax, [rbx + PREP_ctx]
     cmp     byte [rax + ASMCTX_opt], OPT_NONE
-    je      .commit                        ; (-O0: nothing changes size)
+    je      .commit                        ; (-O0, -O1: nothing changes size)
+    cmp     byte [rax + ASMCTX_opt], OPT_MIN
+    je      .commit
     mov     rsi, [rel known_diff + 8]
     mov     rdx, [rel known_diff + 16]
     extern  relax_range_fixed
@@ -11214,132 +11358,6 @@ wrt_words:
     db 0
 [SECTION .text]
 
-;*
-; * [parser_handle_comm]
-; * Purpose: Parses .comm name, size, [align]
-; ;
-parser_handle_comm:
-    prologue
-    push    rbx
-    push    r12
-    push    r13
-    push    r14
-    mov     rbx, rdi               ; AsmCtx
-    
-    ; 1. Get Name
-    call    preprocessor_next_token
-    check_err
-    mov     r11, rdx
-    IF byte [r11 + TOKEN_kind], ne, TOK_IDENT
-        mov     rax, EXIT_UNEXPECTED_TOKEN
-        jmp .done
-        ENDIF
-    mov     r12, [r11 + TOKEN_value]
-    
-    ; 2. Expect Comma
-    call    preprocessor_next_token
-    check_err
-    mov     r11, rdx
-    IF byte [r11 + TOKEN_kind], ne, TOK_COMMA
-        mov     rax, EXIT_UNEXPECTED_TOKEN
-        jmp .done
-        ENDIF
-    
-    ; 3. Get Size
-    call    preprocessor_next_token
-    check_err
-    mov     r11, rdx
-    IF byte [r11 + TOKEN_kind], ne, TOK_NUMBER
-        mov     rax, EXIT_UNEXPECTED_TOKEN
-        jmp     .done
-        ENDIF
-    mov     r13, [r11 + TOKEN_value]
-    
-    ; A95: Strong validation for .comm size
-    test    r13, r13
-    jz      .error_size
-    
-    ; 4. Expect Comma (optional align)
-    mov     r14, 1                 ; Default align = 1
-    call    preprocessor_next_token
-    check_err
-    mov     r11, rdx
-    IF byte [r11 + TOKEN_kind], e, TOK_COMMA
-        call    preprocessor_next_token
-        check_err
-        mov     r11, rdx
-        IF byte [r11 + TOKEN_kind], ne, TOK_NUMBER
-            mov     rax, EXIT_UNEXPECTED_TOKEN
-            jmp .done
-            ENDIF
-        mov     r14, [r11 + TOKEN_value]
-        
-        ; VALIDATION: Alignment must be power of 2
-        mov     rax, r14
-        test    rax, rax
-        jz      .error_align
-        mov     rcx, rax
-        dec     rcx
-        test    rax, rcx
-        jnz     .error_align
-        ENDIF
-    
-    ; 5. Create / Update Symbol
-    mov     rdi, [rbx + PREP_ctx]
-    mov     rsi, r12
-    extern  symbol_find
-    call    symbol_find
-    
-    IF rax, e, OK
-        mov     r11, rdx
-        ELSE
-        sub     rsp, SYMBOL_SIZE
-        mov     rdi, rsp
-        xor     rax, rax
-        mov     rcx, SYMBOL_SIZE / 8           ; the whole record (was 48 bytes)
-        rep stosq
-        mov     rdi, [rbx + PREP_ctx]
-        mov     rsi, rsp
-        mov     byte [rsi + SYMBOL_tag], TAG_SYMBOL
-        mov     [rsi + SYMBOL_name], r12
-        mov     byte [rsi + SYMBOL_vis], VIS_GLOBAL
-        call    symbol_add
-        mov     r11, rdx
-        add     rsp, SYMBOL_SIZE
-        ENDIF
-    
-    ; Hardening for SHN_COMMON
-    mov     word [r11 + SYMBOL_section], 0xFFF2 ; SHN_COMMON
-    mov     [r11 + SYMBOL_value], r14           ; st_value = align
-    mov     [r11 + SYMBOL_size], r13            ; st_size = size
-    
-    mov     rax, OK
-    jmp     .done
-
-.error_size:
-    mov     rax, EXIT_INVALID_IMM
-    jmp     .done
-
-.error_align:
-    mov     rax, EXIT_ALIGN_ERROR
-    jmp     .done
-
-.done:
-    pop     r15
-    pop     r14
-    pop     r13
-    pop     r12
-    pop     rbx
-    epilogue
-
-.error:
-    pop     r15
-    pop     r14
-    pop     r13
-    pop     r12
-    pop     rbx
-    epilogue
-
 [SECTION .rodata]
 str_global:    db "global", 0
 str_weak:      db "weak", 0
@@ -11431,7 +11449,6 @@ std_macro_words:
     db 0
 str_field:     db "field", 0
     ; str_rel (Defined at line 759)
-str_comm:      db "comm", 0
 str_lsl:       db "lsl", 0
 str_lsr:       db "lsr", 0
 str_asr:       db "asr", 0
