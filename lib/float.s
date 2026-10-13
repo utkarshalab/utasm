@@ -95,12 +95,33 @@ float_encode:
     xor     r14d, r14d                     ; significant digits taken
     xor     r15d, r15d                     ; 1 once past the point
     mov     rbx, r12
+    ; NASM's radix prefixes: 0x 0h hex, 0o 0q octal, 0b 0y binary (the
+    ; digits a power of two, the exponent after p), 0d 0t decimal
     cmp     byte [rbx], '0'
     jne     .dec_loop
     movzx   eax, byte [rbx + 1]
     or      eax, 0x20
+    mov     ecx, 4                         ; bits a digit
     cmp     eax, 'x'
-    je      .hex
+    je      .pow2
+    cmp     eax, 'h'
+    je      .pow2
+    mov     ecx, 3
+    cmp     eax, 'o'
+    je      .pow2
+    cmp     eax, 'q'
+    je      .pow2
+    mov     ecx, 1
+    cmp     eax, 'b'
+    je      .pow2
+    cmp     eax, 'y'
+    je      .pow2
+    cmp     eax, 'd'
+    je      .dec_prefix
+    cmp     eax, 't'
+    jne     .dec_loop
+.dec_prefix:
+    add     rbx, 2
 
     ; ---- decimal: digits [. digits] [e [+-] digits] ----
 .dec_loop:
@@ -185,7 +206,15 @@ float_encode:
     jmp     .times_ten
 
     ; ---- hex: 0x digits [. digits] [p [+-] digits] ----
-.hex:
+.pow2:
+    mov     [rel f_rbits], rcx
+    mov     eax, 1
+    shl     eax, cl
+    mov     [rel f_rbase], rax             ; 16, 8 or 2
+    mov     eax, FLT_MAX_HEX * 4
+    xor     edx, edx
+    div     ecx
+    mov     [rel f_rmax], rax              ; the digits kept: as many bits
     add     rbx, 2
 .hex_loop:
     movzx   eax, byte [rbx]
@@ -208,25 +237,27 @@ float_encode:
     ja      .hex_end
     lea     ecx, [rax + 10]
 .hex_value:
+    cmp     rcx, [rel f_rbase]
+    jae     .hex_end                       ; not a digit of the radix
     test    r14d, r14d
     jnz     .hex_take
     test    ecx, ecx
     jnz     .hex_take
     test    r15d, r15d
     jz      .hex_next
-    sub     r13, 4
+    sub     r13, [rel f_rbits]
     jmp     .hex_next
 .hex_take:
-    cmp     r14d, FLT_MAX_HEX
+    cmp     r14, [rel f_rmax]
     jae     .hex_drop
     inc     r14d
     lea     rdi, [rel f_a]
     lea     rsi, [rel f_alen]
-    mov     edx, 16
+    mov     rdx, [rel f_rbase]
     call    bn_mul_add
     test    r15d, r15d
     jz      .hex_next
-    sub     r13, 4
+    sub     r13, [rel f_rbits]
     jmp     .hex_next
 .hex_drop:
     test    ecx, ecx
@@ -235,7 +266,7 @@ float_encode:
 .hex_drop_zero:
     test    r15d, r15d
     jnz     .hex_next
-    add     r13, 4
+    add     r13, [rel f_rbits]
 .hex_next:
     inc     rbx
     jmp     .hex_loop
@@ -1044,6 +1075,9 @@ f_a:        resq FBN_LIMBS + 4             ; M, M * 10^E, or the hex digits
 f_d:        resq FBN_LIMBS + 4             ; 10^-E
 f_r:        resq FBN_LIMBS + 4             ; the division's remainder
 f_alen:     resq 1
+f_rbits:    resq 1                         ; a 0x / 0o / 0b float: bits a digit,
+f_rbase:    resq 1                         ; ... its radix,
+f_rmax:     resq 1                         ; ... the digits kept
 f_dlen:     resq 1
 f_rlen:     resq 1
 t_lo:       resq 1                         ; the value's top bits, T
