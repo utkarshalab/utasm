@@ -1592,6 +1592,10 @@
 %define BIN_VSTART             0x01        ; SECTION_bin_flags: vstart= given
 %define BIN_START              0x02        ; start= given
 %define DEFINE_MAX_TOKENS      256         ; tokens in one %define body
+%define TOKEN_RING             4096        ; tokens the preprocessor hands out
+                                           ; that stay valid (prep_token_slot)
+%define INST_RING              16          ; the parser's INSTs, used in turn
+%define OPERAND_RING           64          ; ... and its operands
 %define LEX_INTERP_BUF         256         ; work buffer for %[...] identifier interpolation
 %define PREP_CTX_MAX           4096        ; nesting of %push contexts
 %define PREP_COND_MAX          65535       ; nesting of %if blocks (a recursive macro
