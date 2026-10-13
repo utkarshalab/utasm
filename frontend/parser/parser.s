@@ -3073,6 +3073,74 @@ parser_evaluate_factor:
     xor     eax, eax
     jmp     .done
 .not_special:
+    ; "mov ax, __utf16__(`a`)": a string function in an expression is its
+    ; first bytes as a number, the first the lowest (as 'ab' is)
+    mov     rdi, [r12 + TOKEN_value]
+    call    parser_utf_kind
+    test    eax, eax
+    jz      .not_utf_value
+    mov     r13d, eax
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    check_err
+    cmp     byte [rdx + TOKEN_kind], TOK_LPAREN
+    jne     .utf_value_bad
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    check_err
+    mov     r12, rdx
+    movzx   r14d, word [r12 + TOKEN_len]
+    lea     r15, [rel utf_value_chars]
+    mov     rax, [r12 + TOKEN_value]
+    mov     [r15], rax
+    cmp     byte [r12 + TOKEN_kind], TOK_CHAR
+    je      .utf_value_close
+    cmp     byte [r12 + TOKEN_kind], TOK_STRING
+    jne     .utf_value_bad
+    mov     r15, [r12 + TOKEN_value]
+    test    byte [r12 + TOKEN_flags], TOK_FLAG_COUNTED
+    jnz     .utf_value_close
+    mov     rdi, r15
+    call    str_len
+    mov     r14, rax
+.utf_value_close:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    check_err
+    cmp     byte [rdx + TOKEN_kind], TOK_RPAREN
+    jne     .utf_value_bad
+    mov     rdi, r15
+    mov     rsi, r14
+    mov     edx, r13d
+    call    parser_utf_encode
+    check_err
+    ; the first eight bytes at most, little-endian
+    mov     rcx, rdx
+    cmp     rcx, 8
+    jbe     .utf_value_len
+    mov     ecx, 8
+.utf_value_len:
+    mov     rsi, [rel ds_utf_buf]
+    xor     edx, edx
+.utf_value_byte:
+    test    ecx, ecx
+    jz      .utf_value_done
+    dec     ecx
+    shl     rdx, 8
+    movzx   eax, byte [rsi + rcx]
+    or      rdx, rax
+    jmp     .utf_value_byte
+.utf_value_done:
+    xor     r14d, r14d                     ; (no symbol in it)
+    xor     r15d, r15d
+    xor     eax, eax
+    jmp     .done
+.utf_value_bad:
+    xor     r14d, r14d
+    xor     r15d, r15d
+    mov     eax, EXIT_INVALID_EXPR
+    jmp     .done
+.not_utf_value:
     ; __?ilog2e?__(x) & co (NASM's, which %use ifunc names ilog2e(x) ...):
     ; log2 of x as an unsigned number, exact, warned, floor or ceiling
     mov     rdi, [r12 + TOKEN_value]
@@ -3214,6 +3282,18 @@ parser_evaluate_factor:
         xor     eax, eax
         jmp     .done
 .not_bcd:
+        ; "1e" "+" "36" (a macro's "%1e+%2"): NASM reads the pasted line
+        ; again, and "1e+36" is a float - where one is taken
+        cmp     byte [rel float_fmt], 0
+        je      .not_split_float
+        mov     rdi, [r12 + TOKEN_value]
+        call    parser_split_float
+        test    eax, eax
+        jnz     .not_split_float
+        mov     [r12 + TOKEN_value], rdx
+        xor     esi, esi
+        jmp     .float
+.not_split_float:
         mov     rdi, [r12 + TOKEN_value]
         call    str_to_int
         check_err
@@ -7377,6 +7457,110 @@ parser_ptr_warn:
     pop     rsi
     pop     rdi
     ret
+
+;*
+; * [parser_split_float]
+; * Purpose: A number written "1e" or "1.2e" - no integer - with "+" or "-"
+; *   and digits after it, the tokens of a pasted "%1e+%2": the float text
+; *   "1e+36", the three tokens taken.
+; * Input  : RBX = PrepState, RDI = the number's text
+; * Output : EAX = 0 and RDX = the text; EAX = 1 (nothing taken) otherwise
+; ;
+parser_split_float:
+    push    r12
+    push    r13
+    mov     r12, rdi
+    ; digits, at most one point, then the e
+    xor     ecx, ecx
+    xor     r8d, r8d                       ; digits seen
+.digit:
+    movzx   eax, byte [r12 + rcx]
+    cmp     eax, '.'
+    je      .next
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .e
+    inc     r8d
+.next:
+    inc     ecx
+    jmp     .digit
+.e:
+    test    r8d, r8d
+    jz      .no
+    movzx   eax, byte [r12 + rcx]
+    or      eax, 0x20
+    cmp     eax, 'e'
+    jne     .no
+    cmp     byte [r12 + rcx + 1], 0
+    jne     .no
+    mov     r13d, ecx                      ; the text's length less the e
+    ; then + or -, then digits
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .no
+    movzx   eax, byte [rdx + TOKEN_kind]
+    mov     r8b, '+'
+    cmp     eax, TOK_PLUS
+    je      .sign
+    mov     r8b, '-'
+    cmp     eax, TOK_MINUS
+    jne     .no
+.sign:
+    mov     [rel split_sign], r8b
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .no_back
+    cmp     byte [rdx + TOKEN_kind], TOK_NUMBER
+    jne     .no_back
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rsi, [rdx + TOKEN_value]
+    ; the text: the number, e, the sign, the digits
+    lea     rdi, [rel split_buf]
+    xor     ecx, ecx
+.copy_num:
+    cmp     ecx, r13d
+    ja      .copied_num
+    mov     al, [r12 + rcx]
+    mov     [rdi + rcx], al
+    inc     ecx
+    jmp     .copy_num
+.copied_num:
+    mov     al, [rel split_sign]
+    mov     [rdi + rcx], al
+    inc     ecx
+.copy_exp:
+    mov     al, [rsi]
+    mov     [rdi + rcx], al
+    test    al, al
+    jz      .copied
+    inc     rsi
+    inc     ecx
+    cmp     ecx, 62
+    jb      .copy_exp
+    mov     byte [rdi + rcx], 0
+.copied:
+    lea     rdx, [rel split_buf]
+    xor     eax, eax
+    pop     r13
+    pop     r12
+    ret
+.no_back:
+    ; (the sign taken and no digits after it: "1e" is no number either way)
+.no:
+    mov     eax, 1
+    pop     r13
+    pop     r12
+    ret
+
+[SECTION .bss]
+split_buf:     resb 64
+split_sign:    resb 1
+[SECTION .text]
 
 ;*
 ; * [parser_bcd]
@@ -11936,3 +12120,7 @@ parser_parse_size_specifier_string:
 .done:
     pop     rbx
     epilogue
+
+[SECTION .bss]
+utf_value_chars: resq 1            ; a character constant's bytes (__utf16__('a'))
+[SECTION .text]
