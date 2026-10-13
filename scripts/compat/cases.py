@@ -1310,3 +1310,69 @@ LIMIT_ERRORS = [
     ("times past 2^32", "section .text\ntimes 0x100000000 nop\n", 2,
      "TIMES value is too large (more than 4294967295)"),
 ]
+
+# immediates, NASM's way: an unsized memory operand takes a sized
+# immediate's size; "mov r64, dword x" is C7; strict keeps the full field
+# (no sign-extended imm8, mov r64 its imm64); "byte" forces the imm8 form;
+# a value is cut to the operation's width before the imm8 form is chosen
+BIN_PROBES.update({
+    "imm_size_from_imm": "bits 64\nmov [rax], dword 5\nmov [rax], byte 1\nmov [rax], word 1\n"
+                         "add [rax], dword 5\nadd [rax], strict dword 5\ntest [rax], byte 5\ncmp [rax], word 9\n",
+    "imm_mov_r64": "bits 64\nmov rax, dword 5\nmov rax, dword -1\nmov rax, strict 5\nmov rax, strict dword 5\n"
+                   "mov rax, strict 0xffffffff80000000\nmov rax, qword 5\nmov rax, 0x80000000\n",
+    "imm_strict": "bits 64\nadd ecx, strict dword 4\nxor ecx, strict dword -1\nadd rax, strict 5\n"
+                  "push strict dword 5\nimul eax, ecx, strict 5\npshufd xmm0, xmm1, strict 5\nshl eax, strict 1\n",
+    "imm_width_cut": "bits 16\nadd ax, 0FFFFh\npush 0ffffh\npush byte 0FFFFh\nadd cx, byte 0FFFFh\n"
+                     "bits 32\npush 0ffffffffh\nadd eax, 0FFFFFFFFh\nbits 64\nadd rcx, 0FFFFFFFFh\n"
+                     "and rax, 0xffffffff\nimul rax, rcx, 0xffffffff\n",
+    # xacquire / xrelease: the ModRM form of mov, not A0-A3
+    "hle_mov_modrm": "bits 32\nmov [sym], eax\nxrelease mov [sym], eax\nxacquire mov [sym], al\nsym: dd 0\n",
+    # a forward jump to a label and an offset is shortened as one to the label
+    "jmp_label_offset": "bits 64\njmp x+2\njz x+1\nx: nop\nnop\nnop\n",
+    # far indirect in 64-bit code: m16:64 by default, "dword" m16:32
+    "jmp_far_64": "bits 64\njmp far [rax]\njmp far dword [rax]\ncall far dword [rax]\ncall far qword [rax]\n",
+})
+WARN_CASES.update({
+    "warn_imm_bounds": "bits 64\nadd rcx, 0xFFFFFFFF\ncmp rax, 0x80000000\nmov qword [rax], 0x180000000\n"
+                       "mov rax, dword 0x80000000\npush 0xffffffff\nadd eax, 0x1ffffffff\npush byte 0x1ff\n"
+                       "imul eax, ecx, byte 0x1ff\nbits 16\nadd ax, 0FFFFFFFFh\nadd ax, byte 0FFFFFFFFh\n"
+                       "push 0ffffffffh\n",
+    # o16 / o32 / o64 against the operands' size: the prefix wins
+    "warn_prefix_opsize": "bits 16\no32 inc ax\no16 movsd\no32 cwd\no32 push 5\nbits 64\no64 add eax, 1\n"
+                          "o32 in ax, dx\no16 nop\n",
+})
+DIAG_CASES += [
+    ("sized immediate of another size", "nop\nmov eax, word 5\n"),
+    ("dword immediate to a qword add", "nop\nadd qword [rax], dword 5\n"),
+]
+# o16 / o32 / o64 are the operation's size, as NASM; far jumps through memory
+MODE_LINES += [
+    "o16 nop", "o32 nop", "o64 nop", "o16 iret", "o32 iret", "o64 iret", "o16 retf", "o32 retf",
+    "o16 pushf", "o32 pushf", "o16 movsd", "o32 movsw", "o32 cwd", "o16 cbw", "o32 inc ax", "o16 inc eax",
+    "o16 add eax, 1", "o32 add ax, 1", "o64 add eax, 1", "o32 lodsb", "o16 lgdt [0x10]", "o32 lgdt [0x10]",
+    "jmp far [0x10]", "call far [0x10]", "jmp far dword [0x10]", "call far word [0x10]",
+    "o16 push 5", "o32 push 5", "o16 mov [0x10], ax", "o32 mov word [0x10], 5",
+]
+# -O0 / -O1 / -Ox: NASM's levels
+CLI_FILES["opt.s"] = ("bits 64\na: nop\njmp a\njz a\njmp b\njz b\nadd eax, 5\nadd rax, 5\nmov rax, 5\n"
+                      "mov rax, -5\npush 5\nimul eax, ecx, 5\nb: nop\n")
+CLI_CASES += [
+    ("-O0", ["-f", "bin", "-O0", "opt.s"], "bin"),
+    ("-O1", ["-f", "bin", "-O1", "opt.s"], "bin"),
+    ("-Ox", ["-f", "bin", "-Ox", "opt.s"], "bin"),
+    ("-O2", ["-f", "bin", "-O2", "opt.s"], "bin"),
+]
+# xacquire / xrelease: NASM's prefix-hle warnings; LOCK needs the memory
+# operand first (xchg's either)
+WARN_CASES.update({
+    "warn_hle": "bits 64\nxacquire lock add [rsi], eax\nxacquire add [rsi], eax\nxrelease add [rsi], eax\n"
+                "xacquire add ecx, [rax]\nxrelease lock add ecx, [rax]\nxacquire xchg [rax], ebx\n"
+                "xacquire xchg ebx, [rax]\nxrelease mov [rax], ecx\nxacquire mov [rax], ecx\n"
+                "xrelease mov ecx, [rax]\nxacquire nop\nxrelease lock xadd [rax], ecx\n"
+                "xrelease lock mov [rax], ecx\nlock add ecx, [rax]\n",
+})
+# "comm" is no directive (NASM's is common): a label of that name (the old
+# GAS-style handler faulted on any line starting with it)
+BIN_PROBES.update({
+    "comm_is_a_label": "bits 64\ncomm db 1\ncomm2: dd comm\n",
+})
