@@ -65,14 +65,17 @@ warn_state:
     db 1                                ; WC_PTR
     db 1                                ; WC_EA_ABSOLUTE
     db 1                                ; WC_PP_MACRO_REDEF_MULTI
+    db 1                                ; WC_PP_TRAILING
+    db 1                                ; WC_PP_ELSE_ELSE
+    db 1                                ; WC_PP_ELSE_ELIF
 
 [SECTION .rodata]
 warn_names:
     dq wn_other, wn_user, wn_zeroing, wn_lock_xchg, wn_overflow
     dq wn_lock_error, wn_db_empty, wn_macro_defaults, wn_label_orphan, wn_pie
     dq wn_slash_comment, wn_pp_sel_range, wn_ptr, wn_ea_absolute
-    dq wn_macro_redef
-wn_other:       db "other", 0
+    dq wn_macro_redef, wn_pp_trailing, wn_pp_else_else, wn_pp_else_elif
+wn_other:db "other", 0
 wn_user:        db "user", 0
 wn_zeroing:     db "zeroing", 0
 wn_lock_xchg:   db "prefix-lock-xchg", 0
@@ -87,6 +90,9 @@ wn_pp_sel_range: db "pp-sel-range", 0
 wn_ptr:         db "ptr", 0
 wn_ea_absolute: db "ea-absolute", 0
 wn_macro_redef: db "pp-macro-redef-multi", 0
+wn_pp_trailing: db "pp-trailing", 0
+wn_pp_else_else: db "pp-else-else", 0
+wn_pp_else_elif: db "pp-else-elif", 0
 wn_all:         db "all", 0
 wn_error:       db "error", 0
 s_warning:      db "warning: ", 0
