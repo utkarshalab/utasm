@@ -619,6 +619,98 @@ amd64_imm_canon:
     ret
 
 ;*
+; * [amd64_force_rex]
+; * Purpose: "{rex} add eax, edx": a REX byte (40) on an instruction encoded
+; *          with none - after its legacy prefixes, the bytes after it (and
+; *          the relocations in them) one byte on. Not for a VEX or EVEX
+; *          encoding, which has no REX (NASM's error).
+; * Input  : RBX = AsmCtx (ASMCTX_inst_len = the instruction's length)
+; * Output : RAX = 0 or EXIT_ENCODE_FAIL
+; ;
+global amd64_force_rex
+amd64_force_rex:
+    mov     rcx, [rbx + ASMCTX_curr_sec]
+    test    rcx, rcx
+    jz      .ok
+    mov     rsi, [rcx + SECTION_size]
+    cmp     rsi, [rcx + SECTION_cap]
+    ja      .ok
+    mov     rdx, [rcx + SECTION_data]
+    mov     eax, [rbx + ASMCTX_inst_len]
+    mov     rdi, rsi
+    sub     rdi, rax                       ; the instruction's first byte
+.prefix:
+    cmp     rdi, rsi
+    jae     .ok
+    movzx   eax, byte [rdx + rdi]
+    lea     r8, [rel rex_legacy_prefixes]
+.is_prefix:
+    cmp     byte [r8], 0
+    je      .opcode
+    cmp     [r8], al
+    je      .next_byte
+    inc     r8
+    jmp     .is_prefix
+.next_byte:
+    inc     rdi
+    jmp     .prefix
+.opcode:
+    mov     ecx, eax
+    and     ecx, 0xF0
+    cmp     ecx, 0x40
+    je      .ok                            ; it has one
+    cmp     eax, 0xC4
+    je      .fail
+    cmp     eax, 0xC5
+    je      .fail
+    cmp     eax, 0x62
+    je      .fail
+    ; one byte more, then everything from rdi on moves up one
+    push    rdi
+    mov     al, 0
+    extern  amd64_emit_byte
+    call    amd64_emit_byte
+    pop     rdi
+    mov     rcx, [rbx + ASMCTX_curr_sec]
+    mov     rsi, [rcx + SECTION_size]
+    mov     rdx, [rcx + SECTION_data]
+    lea     r8, [rsi - 1]
+.move:
+    cmp     r8, rdi
+    jbe     .put
+    mov     al, [rdx + r8 - 1]
+    mov     [rdx + r8], al
+    dec     r8
+    jmp     .move
+.put:
+    mov     byte [rdx + rdi], 0x40
+    ; the relocations in the bytes that moved
+    mov     r9, [rbx + ASMCTX_relocs]
+    mov     r10d, [rbx + ASMCTX_nrelocs]
+.reloc:
+    test    r10d, r10d
+    jz      .ok
+    dec     r10d
+    imul    r11, r10, RELOC_SIZE
+    add     r11, r9
+    cmp     [r11 + RELOC_section], rcx
+    jne     .reloc
+    cmp     [r11 + RELOC_offset], rdi
+    jb      .reloc
+    inc     qword [r11 + RELOC_offset]
+    jmp     .reloc
+.ok:
+    xor     eax, eax
+    ret
+.fail:
+    mov     eax, EXIT_ENCODE_FAIL
+    ret
+
+[SECTION .rodata]
+rex_legacy_prefixes: db 0x66, 0x67, 0xF0, 0xF2, 0xF3, 0x26, 0x2E, 0x36, 0x3E, 0x64, 0x65, 0
+[SECTION .text]
+
+;*
 ; * [amd64_rex_scan]
 ; * Purpose: Outside 64-bit mode, the instruction just encoded must not
 ; *          carry a REX prefix (it would be inc/dec there).
