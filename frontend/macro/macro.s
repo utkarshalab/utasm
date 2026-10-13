@@ -112,14 +112,10 @@ preprocessor_next_token:
     cmp     byte [rbx + PREP_has_peek], TRUE
     jne     .no_peek
     
-    ; Stable allocation for the peeked token
-    mov     rdi, [rbx + PREP_arena]
-    mov     rsi, TOKEN_SIZE
-    call    arena_alloc
-    test    rax, rax
-    jnz     .error
+    ; A slot for the peeked token (prep_token_slot)
+    call    prep_token_slot
     mov     r12, rdx
-    
+
     mov     byte [rbx + PREP_has_peek], FALSE
 
     mov     rdi, r12
@@ -141,12 +137,8 @@ preprocessor_next_token:
     jmp     .done
     
  .no_peek:
-    ; 2. Allocate token in arena for the result
-    mov     rdi, [rbx + PREP_arena]
-    mov     rsi, TOKEN_SIZE
-    call    arena_alloc
-    test    rax, rax
-    jnz     .error
+    ; 2. A slot for the result (prep_token_slot)
+    call    prep_token_slot
     mov     r12, rdx               ; r12 = pointer to new token
 
     mov     rdi, rbx
@@ -221,6 +213,28 @@ prep_error_take:
     ret
 
 
+; ---- prep_token_slot ----------
+;
+; The token preprocessor_next_token / _peek_token hand out lives in one of
+; TOKEN_RING slots, used in turn: the last TOKEN_RING tokens stay as they
+; were (a caller keeps one while it reads a few more), the rest are reused
+; - a fresh arena token for each was 32 bytes a token for the whole run.
+; What has to last longer is copied (copy_token), as macro bodies and
+; arguments are.
+; Output   : rdx = the slot. Preserves everything else.
+;
+prep_token_slot:
+    push    rax
+    mov     eax, [rel token_ring_next]
+    lea     edx, [eax + 1]
+    and     edx, TOKEN_RING - 1
+    mov     [rel token_ring_next], edx
+    shl     eax, 5                         ; * TOKEN_SIZE
+    lea     rdx, [rel token_ring]
+    add     rdx, rax
+    pop     rax
+    ret
+
 ; ---- preprocessor_unread_token ----------
 ;
 ; Like preprocessor_putback_token, for a token read *before* the one now
@@ -279,13 +293,9 @@ preprocessor_peek_token:
     
     cmp     byte [rbx + PREP_has_peek], TRUE
     je      .done
-    
-    ; Allocate token in arena
-    mov     rdi, [rbx + PREP_arena]
-    mov     rsi, TOKEN_SIZE
-    call    arena_alloc
-    test    rax, rax
-    jnz     .error
+
+    ; a slot to read it into (it is copied to PREP_peek)
+    call    prep_token_slot
     mov     r12, rdx
     
     mov     rdi, rbx
@@ -626,6 +636,23 @@ prep_internal_next:
     je      .next                          ; it gave nothing
     cmp     edx, 3
     je      .done                          ; a call kept as written
+    ; "%rbp": GAS's spelling of a register (".cfi_offset %rbp, -16"), no
+    ; directive - the register
+    mov     rax, [rbx + PREP_ctx]
+    cmp     byte [rax + ASMCTX_target], TARGET_AMD64
+    jne     .not_gas_reg
+    mov     rsi, [r12 + TOKEN_value]
+    test    rsi, rsi
+    jz      .not_gas_reg
+    extern  parser_is_register, amd64_register_table
+    lea     rdi, [rel amd64_register_table]
+    call    parser_is_register
+    cmp     rax, ERR
+    je      .not_gas_reg
+    mov     byte [r12 + TOKEN_kind], TOK_IDENT
+    xor     eax, eax
+    jmp     .done
+.not_gas_reg:
     ; it's a directive. handle it.
     mov     rdi, rbx
     mov     rsi, r12
@@ -5436,6 +5463,8 @@ prep_resolve_interp:
     jmp     .ctx_local
 .param_brace_n:
     ; "%{N}": as %N
+    test    r15, r15
+    setz    byte [rel interp_lead]
     add     r13, 2
     xor     eax, eax
 .brace_digit:
@@ -5454,6 +5483,8 @@ prep_resolve_interp:
 .param:
     ; "%N": the text of argument N of the macro being expanded (%0: how
     ; many there are)
+    test    r15, r15
+    setz    byte [rel interp_lead]         ; it starts the token
     inc     r13
     xor     eax, eax
 .param_digit:
@@ -5561,6 +5592,75 @@ prep_resolve_interp:
 .arg_done:
     pop     r12
     pop     r13
+    ; "%{1}v" with %1 a number: NASM pastes no number with a name after
+    ; it - the name is expanded on its own, its text after the number
+    ; ("%define v 9": 19); "x%{1}v" stays x1v
+    cmp     byte [rel interp_lead], 0
+    je      .lead_done
+    mov     byte [rel interp_lead], 0
+    test    r15, r15
+    jz      .lead_done
+    movzx   eax, byte [r14]
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .lead_done
+    push    r15                            ; where the name starts
+.lead_name:
+    call    .ensure
+    jc      .lead_named
+    movzx   edi, byte [r13]
+    test    edi, edi
+    jz      .lead_named
+    push    rdi
+    call    str_is_ident_char
+    pop     rdi
+    cmp     rax, TRUE
+    jne     .lead_named
+    mov     [r14 + r15], dil
+    inc     r15
+    inc     r13
+    jmp     .lead_name
+.lead_named:
+    mov     rsi, [rsp]
+    cmp     rsi, r15
+    je      .lead_kept                     ; no name after it
+    mov     byte [r14 + r15], 0
+    add     rsi, r14
+    mov     rdi, [rbx + PREP_ctx]
+    call    symbol_find
+    test    rax, rax
+    jnz     .lead_kept
+    cmp     byte [rdx + SYMBOL_kind], SYM_CONSTANT
+    jne     .lead_define
+    test    byte [rdx + SYMBOL_pflags], SYMF_ASSIGN
+    jz      .lead_kept
+    pop     r15
+    mov     rsi, [rdx + SYMBOL_value]
+    lea     rdi, [r14 + r15]
+    call    str_int_to_str
+    lea     rdi, [r14 + r15]
+    call    str_len
+    add     r15, rax
+    jmp     .lead_done
+.lead_define:
+    cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
+    jne     .lead_kept
+    mov     rax, [rdx + SYMBOL_value]
+    test    rax, rax
+    jz      .lead_kept
+    test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE
+    jz      .lead_kept
+    test    byte [rax + MACRO_flags], MACRO_FLAG_FUNC
+    jnz     .lead_kept
+    pop     r15
+    push    r13
+    push    r12
+    mov     r12, [rax + MACRO_tokens]
+    mov     r13d, [rax + MACRO_ntokens]
+    jmp     .interp_tok
+.lead_kept:
+    add     rsp, 8
+.lead_done:
     ; "%-1": the condition code just written, the other way
     cmp     byte [rel interp_ccneg], 0
     je      .scan
@@ -11710,6 +11810,10 @@ fn_radix:      resw 1              ; %=(x): the radix letter | 0x100 unsigned
 cond_is_else:  resb 1              ; prep_cond_branch: called for a %else
 interp_ccneg:  resb 1              ; prep_resolve_interp: a "%-1" being written
 interp_brace_ctx: resb 1           ; ... a "%{$name}" being read
+interp_lead:   resb 1              ; ... a "%N" starting the token (%{1}v)
+alignb 32
+token_ring:    resb TOKEN_RING * TOKEN_SIZE ; prep_token_slot's tokens
+token_ring_next: resd 1
 alignb 8
 interp_ccstart: resq 1             ; ... where its text starts in the output
 alignb 4
