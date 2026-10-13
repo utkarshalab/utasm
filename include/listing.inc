@@ -22,6 +22,7 @@
 %define LK_BIN      1               ;   incbin: <bin Nh>
 %define LK_FILL     2               ;   align padding: 90<rep Nh>
 %define LK_FIELD    3               ;   a struc field: ???? at its offset
+%define LK_RES      4               ;   times N resb K: one reservation, as resb
 %define LE_FILLTO   40              ; d body line: the file's lines before
                                     ;   this one are listed first ...
 %define LE_FILLFILE 48              ; q ... from this file (the lexer's)
