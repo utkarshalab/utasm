@@ -2901,6 +2901,9 @@ parser_evaluate_factor:
         mov     esi, 1
         jmp     .float
 .negate:
+        ; whether the operand is a float: its own (a float item before, "dd 1.5",
+        ; left the mark, and "%substr s s 2,-1" negated -1 as one)
+        mov     byte [rel float_seen], 0
         mov     rdi, rbx
         call    parser_evaluate_factor
         check_err
@@ -2915,8 +2918,16 @@ parser_evaluate_factor:
         jmp     .done
 .negate_float:
         movzx   eax, byte [rel float_fmt]
+        cmp     eax, FLT_BYTE
+        jne     .neg_half
+        xor     edx, 0x80
+        jmp     .negated
+.neg_half:
+        cmp     eax, FLT_BF16
+        je      .neg_16
         cmp     eax, FLT_HALF
         jne     .neg_single
+.neg_16:
         xor     edx, 0x8000
         jmp     .negated
 .neg_single:
@@ -2998,11 +3009,45 @@ parser_evaluate_factor:
     movzx   edx, byte [rel float_fmt]
     test    edx, edx
     jz      .float_bad
+    ; "dt 123p" lexes as a float (p is a hex float's exponent): packed BCD
+    cmp     edx, FLT_EXT
+    jne     .float_encode
+    push    rsi                            ; ("-456p": the sign)
+    mov     rdi, [r12 + TOKEN_value]
+    call    parser_bcd
+    pop     rsi
+    test    eax, eax
+    jnz     .float_ext
+    test    esi, esi
+    jz      .bcd_sign
+    or      ecx, 0x8000
+.bcd_sign:
+    mov     [rel float_hi], rcx
+    mov     byte [rel float_seen], 1
+    xor     eax, eax
+    jmp     .done
+.float_ext:
+    movzx   edx, byte [rel float_fmt]
+.float_encode:
     mov     rdi, [r12 + TOKEN_value]
     call    float_encode
     check_err
     mov     [rel float_hi], rcx
     mov     byte [rel float_seen], 1
+    ; "dd 1.0e50": infinity, with NASM's warning
+    extern  float_overflow
+    cmp     byte [rel float_overflow], 0
+    je      .float_ok
+    push    rdx
+    push    rcx
+    mov     edi, WC_FLOAT_OVERFLOW
+    call    warn_begin
+    lea     rsi, [rel s_float_overflow]
+    call    warn_text
+    call    warn_end
+    pop     rcx
+    pop     rdx
+.float_ok:
     xor     eax, eax
     jmp     .done
 .float_bad:
@@ -3157,6 +3202,18 @@ parser_evaluate_factor:
         call    parser_numlabel_ref
         test    rsi, rsi
         jnz     .do_sym_lookup
+        ; "dt 123p", "dt 0p123": packed BCD, the 80-bit item a float is
+        cmp     byte [rel float_fmt], FLT_EXT
+        jne     .not_bcd
+        mov     rdi, [r12 + TOKEN_value]
+        call    parser_bcd
+        test    eax, eax
+        jnz     .not_bcd
+        mov     [rel float_hi], rcx
+        mov     byte [rel float_seen], 1
+        xor     eax, eax
+        jmp     .done
+.not_bcd:
         mov     rdi, [r12 + TOKEN_value]
         call    str_to_int
         check_err
@@ -7322,6 +7379,130 @@ parser_ptr_warn:
     ret
 
 ;*
+; * [parser_bcd]
+; * Purpose: NASM's packed BCD constant, "765432109876543210p" or
+; *   "0p765432109876543210" (underscores between digits): 18 decimal
+; *   digits, two a byte from the lowest, the sign in the tenth byte. A
+; *   longer one keeps its last 18, with NASM's "packed BCD truncated to 18
+; *   digits".
+; * Input  : RDI = the number's text
+; * Output : EAX = 0 and RDX = bytes 0-7, RCX = byte 8 (the sign word's
+; *          high byte 0); EAX = 1 when it is not one
+; ;
+parser_bcd:
+    push    rbx
+    push    r12
+    push    r13
+    mov     rbx, rdi
+    ; the digits: after "0p", or before a last "p"
+    cmp     byte [rbx], '0'
+    jne     .suffix
+    movzx   eax, byte [rbx + 1]
+    or      eax, 0x20
+    cmp     eax, 'p'
+    jne     .suffix
+    add     rbx, 2
+    mov     r12, rbx
+.prefix_end:
+    cmp     byte [r12], 0
+    je      .digits
+    inc     r12
+    jmp     .prefix_end
+.suffix:
+    mov     r12, rbx
+.suffix_end:
+    cmp     byte [r12], 0
+    je      .suffix_p
+    inc     r12
+    jmp     .suffix_end
+.suffix_p:
+    cmp     r12, rbx
+    je      .no
+    movzx   eax, byte [r12 - 1]
+    or      eax, 0x20
+    cmp     eax, 'p'
+    jne     .no
+    dec     r12                            ; (the p)
+.digits:
+    ; rbx .. r12: digits and underscores, at least one digit
+    cmp     r12, rbx
+    je      .no
+    xor     edx, edx                       ; the packed digits, bytes 0-7
+    xor     ecx, ecx                       ; byte 8
+    xor     r13d, r13d                     ; digits taken
+    mov     rsi, r12
+.digit:
+    cmp     rsi, rbx
+    je      .packed
+    dec     rsi
+    movzx   eax, byte [rsi]
+    cmp     eax, '_'
+    je      .digit
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .no
+    cmp     r13d, 18
+    jae     .more
+    mov     r8d, r13d
+    shl     r8d, 2                         ; the nibble's bit
+    cmp     r8d, 64
+    jae     .high
+    mov     r9, rax
+    mov     ecx, r8d
+    shl     r9, cl
+    or      rdx, r9
+    mov     ecx, [rel bcd_high]
+    jmp     .taken
+.high:
+    lea     ecx, [r8 - 64]
+    mov     r9d, eax
+    shl     r9d, cl
+    or      [rel bcd_high], r9d
+    mov     ecx, [rel bcd_high]
+.taken:
+    inc     r13d
+    jmp     .digit
+.more:
+    mov     byte [rel bcd_cut], 1          ; a digit past the 18th
+    jmp     .digit
+.packed:
+    test    r13d, r13d
+    jz      .no
+    cmp     byte [rel bcd_cut], 0
+    je      .out
+    push    rdx
+    mov     edi, WC_OTHER
+    call    warn_begin
+    lea     rsi, [rel s_bcd_cut]
+    call    warn_text
+    call    warn_end
+    pop     rdx
+.out:
+    mov     ecx, [rel bcd_high]
+    mov     dword [rel bcd_high], 0
+    mov     byte [rel bcd_cut], 0
+    xor     eax, eax
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+.no:
+    mov     dword [rel bcd_high], 0
+    mov     byte [rel bcd_cut], 0
+    mov     eax, 1
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+[SECTION .bss]
+bcd_high:      resd 1                  ; byte 8 (digits 17 and 18)
+bcd_cut:       resb 1
+[SECTION .rodata]
+s_bcd_cut:     db "packed BCD truncated to 18 digits", 0
+[SECTION .text]
+
+;*
 ; * [parser_float_func]
 ; * Purpose: Is this name __float16__, __float32__ or __float64__?
 ; * Input  : RDI = name
@@ -7507,7 +7688,11 @@ str_ea_absolute: db "absolute address can not be RIP-relative", 0
 str_masm_ptr:  db "__?masm_ptr?__", 0
 str_masm_flat: db "__?masm_flat?__", 0
 str_flat:      db "flat", 0
-float_fn_names: db "__float16__", 0, 0,0,0, FLT_HALF
+float_fn_names: db "__float8__", 0, 0,0,0,0, FLT_BYTE
+               db "__float16__", 0, 0,0,0, FLT_HALF
+               db "__bfloat16__", 0, 0,0, FLT_BF16
+               db "__?float8?__", 0, 0,0, FLT_BYTE
+               db "__?bfloat16?__", 0, FLT_BF16
                db "__float32__", 0, 0,0,0, FLT_SINGLE
                db "__float64__", 0, 0,0,0, FLT_DOUBLE
                db "__float80m__", 0, 0,0, FLT_EXT
@@ -7526,7 +7711,10 @@ float_special_names:
                db "__?Infinity?__", 0, 1
                db "__?QNaN?__", 0, 0, 0, 0, 0, 2
                db "__?SNaN?__", 0, 0, 0, 0, 0, 3
+               db "__NaN__", 0, 0, 0, 0, 0, 0, 0, 0, 2
+               db "__?NaN?__", 0, 0, 0, 0, 0, 0, 2
                db 0
+s_float_overflow: db "overflow in floating-point constant", 0
 [SECTION .bss]
 float_fmt:     resb 1              ; FLT_* for a float constant here, 0: none
 float_seen:    resb 1              ; the last value was a float constant
@@ -9381,8 +9569,10 @@ parser_emit_data_8:
         mov     rdi, rbx
         mov     rsi, r12
         call    preprocessor_unread_token  ; 'a'+1: the '+' is peeked
+        mov     byte [rel float_fmt], FLT_BYTE ; "db 1.5": NASM's 8-bit float
         mov     rdi, rbx
         call    parser_evaluate_expression
+        mov     byte [rel float_fmt], 0
         check_err
         mov     esi, 1
         call    parser_data_dup
@@ -10117,16 +10307,33 @@ parser_warn_zeroing:
     cmp     dword [rdi + SECTION_elf_type], SHT_NOBITS
     je      .ret
     push    r12
+    push    r13
     mov     r12, rdi
+    ; NASM's words are its output format's: "in .text section" (bin),
+    ; "in non-BSS section `.text'" (elf), "uninitialised ..." (win64)
+    extern  global_ctx
+    lea     r13, [rel zeroing_elf]
+    lea     rax, [rel global_ctx]
+    movzx   eax, byte [rax + ASMCTX_fmt]
+    cmp     eax, FMT_BIN
+    jne     .not_bin
+    lea     r13, [rel zeroing_bin]
+.not_bin:
+    extern  coff_enabled
+    cmp     byte [rel coff_enabled], 0
+    je      .words
+    lea     r13, [rel zeroing_coff]
+.words:
     mov     edi, WC_ZEROING
     call    warn_begin
-    lea     rsi, [rel s_zeroing_a]
+    mov     rsi, [r13]
     call    warn_text
     mov     rsi, [r12 + SECTION_name]
     call    warn_text
-    lea     rsi, [rel s_zeroing_b]
+    mov     rsi, [r13 + 8]
     call    warn_text
     call    warn_end
+    pop     r13
     pop     r12
 .ret:
     ret
@@ -10134,6 +10341,13 @@ parser_warn_zeroing:
 [SECTION .rodata]
 s_zeroing_a:   db "uninitialized space declared in non-BSS section `", 0
 s_zeroing_b:   db "': zeroing", 0
+s_zeroing_coff: db "uninitialised space declared in non-BSS section `", 0
+s_zeroing_bin_a: db "uninitialized space declared in ", 0
+s_zeroing_bin_b: db " section: zeroing", 0
+alignb 8
+zeroing_elf:   dq s_zeroing_a, s_zeroing_b
+zeroing_bin:   dq s_zeroing_bin_a, s_zeroing_bin_b
+zeroing_coff:  dq s_zeroing_coff, s_zeroing_b
 s_attr_a:      db "unknown section attribute '", 0
 s_attr_b:      db "' ignored on declaration of section `", 0
 s_attr_c:      db "'", 0
