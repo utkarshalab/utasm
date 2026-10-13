@@ -219,6 +219,28 @@ cli_parse:
     test    rax, rax
     jz      .handle_no_color
 
+    ; NASM's --limit-X N: --limit-rep is the %rep count's (macro.s); the
+    ; others are accepted
+    mov     rax, '--limit-'
+    cmp     [r14], rax
+    jne     .not_limit
+    dec     r12
+    jle     .missing_val
+    add     r13, 8
+    lea     rdi, [r14 + 8]
+    lea     rsi, [rel .limit_rep]
+    call    str_cmp
+    test    rax, rax
+    jnz     .next_arg
+    mov     rdi, [r13]
+    extern  str_to_int
+    call    str_to_int
+    test    rax, rax
+    jnz     .unknown_val
+    extern  rep_limit
+    mov     [rel rep_limit], rdx
+    jmp     .next_arg
+.not_limit:
     ; check for -Werror
     mov     rdi, r14
     lea     rsi, [rel .flag_werror]
@@ -1348,6 +1370,7 @@ cli_parse.flag_color:   db "--color", 0
 cli_parse.flag_no_color: db "--no-color", 0
 cli_parse.flag_werror:  db "-Werror", 0
 cli_parse.flag_profile: db "--profile", 0
+cli_parse.limit_rep: db "rep", 0
 cli_parse.flag_profile_short: db "-P", 0
 cli_parse.default_output: db "a.out", 0
 cli_parse.suffix_obj: db ".o", 0
