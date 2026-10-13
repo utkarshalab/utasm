@@ -49,7 +49,7 @@ cli_parse:
     ;     utasm -f elf64 -a amd64 source.s
     mov     byte [rbx + ASMCTX_fmt], FMT_ELF64
     mov     byte [rbx + ASMCTX_target], TARGET_AMD64
-    mov     byte [rbx + ASMCTX_opt], OPT_BASIC      ; -O1: NASM-equivalent
+    mov     byte [rbx + ASMCTX_opt], OPT_BASIC      ; -Ox, NASM's default
     and     dword [rbx + ASMCTX_flags], ~(CTX_FLAG_FORMAT_BIN | CTX_FLAG_FORMAT_ELF)
     or      dword [rbx + ASMCTX_flags], CTX_FLAG_FORMAT_ELF
     lea     rax, [rel .default_output]
@@ -240,7 +240,7 @@ cli_parse:
     test    rax, rax
     jz      .handle_profile
 
-    ; check for -O0 / -O1 / -O2 / -Ox
+    ; -O0 / -O1 / -O2 ... -O9 / -Ox / -Ov (NASM's), -Os (utasm's)
     cmp     byte [r14], '-'
     jne     .not_opt
     cmp     byte [r14 + 1], 'O'
@@ -251,11 +251,17 @@ cli_parse:
     cmp     al, '0'
     je      .opt_none
     cmp     al, '1'
-    je      .opt_basic
-    cmp     al, '2'
+    je      .opt_min
+    cmp     al, 's'
     je      .opt_size
     cmp     al, 'x'
-    je      .opt_size
+    je      .opt_basic
+    cmp     al, 'v'
+    je      .opt_basic
+    cmp     al, '2'
+    jb      .not_opt
+    cmp     al, '9'
+    jbe     .opt_basic
 .not_opt:
 
     ; check for --inspect / --inspect-only <parts>
@@ -531,6 +537,9 @@ cli_parse:
 
 .opt_none:
     mov     byte [rbx + ASMCTX_opt], OPT_NONE
+    jmp     .next_arg
+.opt_min:
+    mov     byte [rbx + ASMCTX_opt], OPT_MIN
     jmp     .next_arg
 .opt_basic:
     mov     byte [rbx + ASMCTX_opt], OPT_BASIC
