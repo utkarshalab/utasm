@@ -191,6 +191,8 @@ struc INCLUDECTX
     field line,     4       ; current line number
     field pad1,     4       ; alignment padding
     field lexer,    8       ; saved LexerState
+    field mac_exp,  8       ; the expansion it was included from (%rep / macro body),
+                            ; paused until the file ends
 endstruc
 
 ; ============================================================================
