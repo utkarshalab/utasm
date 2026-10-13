@@ -30,6 +30,7 @@
 %define ML_NONE     3                      ; anywhere else
 %define STK_TEXT    4096                   ; %arg / %local text for one line
 extern asm_bits
+extern warn_begin, warn_text, warn_end
 extern user_sect_name
 
 DEFAULT REL
@@ -48,6 +49,8 @@ extern io_file_size
 extern io_mmap
 extern io_close
 extern str_cmp
+extern str_cmp_kw
+extern str_is_ident_char
 extern str_to_int
 extern symbol_find
 extern print_str
@@ -292,7 +295,15 @@ preprocessor_peek_token:
     jnz     .error
 
     
-    ; Success - token in r12
+    ; Success - token in r12. Making it peeked a token after it (the "%,"
+    ; of prep_function looks past itself): that one queues behind it.
+    cmp     byte [rbx + PREP_has_peek], TRUE
+    jne     .peek_put
+    lea     rdi, [rel putback_next]
+    lea     rsi, [rbx + PREP_peek]
+    copy_token
+    mov     byte [rel has_putback_next], TRUE
+.peek_put:
     mov     byte [rbx + PREP_has_peek], TRUE
     lea     rdi, [rbx + PREP_peek]
     mov     rsi, r12
@@ -469,7 +480,25 @@ prep_internal_next:
     ; A %define expands anywhere.
     mov     rax, [rdx + SYMBOL_value]
     test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE
-    jnz     .call_macro
+    jz      .ml_word
+    ; "%define f(x)": f with no "(" after it is the name f, as in NASM
+    ; ("bar equ 8" after "%define bar(x)")
+    test    byte [rax + MACRO_flags], MACRO_FLAG_FUNC
+    jz      .call_macro
+    push    rdx
+    sub     rsp, TOKEN_SIZE
+    mov     rdi, rbx
+    mov     rsi, rsp
+    call    prep_raw_peek
+    movzx   ecx, byte [rsp + TOKEN_kind]
+    add     rsp, TOKEN_SIZE
+    pop     rdx
+    test    rax, rax
+    jnz     .not_macro_call
+    cmp     ecx, TOK_LPAREN
+    je      .call_macro
+    jmp     .not_macro_call
+.ml_word:
     cmp     byte [rel ml_state], ML_START
     je      .ml_call
     cmp     byte [rel ml_state], ML_COLON
@@ -520,7 +549,9 @@ prep_internal_next:
     test    rax, rax
     jz      .ml_plain
     cmp     byte [rax], '.'
-    je      .ml_plain
+    jne     .ml_first
+    cmp     word [rax + 1], '.@'           ; "%$x m": its ..@N.x, a label too
+    jne     .ml_plain
 .ml_first:
     mov     rdi, rbx
     mov     rsi, r12
@@ -593,6 +624,8 @@ prep_internal_next:
     je      .check_token                   ; r12: the result's first token
     cmp     edx, 2
     je      .next                          ; it gave nothing
+    cmp     edx, 3
+    je      .done                          ; a call kept as written
     ; it's a directive. handle it.
     mov     rdi, rbx
     mov     rsi, r12
@@ -1122,6 +1155,27 @@ prep_expand_start:
     mov     dword [rel brace_depth], 0
     mov     byte [rel brace_dropped], 0
 
+    ; the argument from which a top-level comma no longer ends one: the
+    ; greedy parameter's - for a %define, of any of its overloads, the
+    ; one called chosen by the count after
+    mov     dword [r13 + MACROEXP_greedy_at], -1
+    mov     rax, r12
+.greedy_walk:
+    test    byte [rax + MACRO_flags], MACRO_FLAG_GREEDY
+    jz      .greedy_next
+    movzx   ecx, word [rax + MACRO_max_params]
+    dec     ecx
+    cmp     ecx, [r13 + MACROEXP_greedy_at]
+    jae     .greedy_next
+    mov     [r13 + MACROEXP_greedy_at], ecx
+.greedy_next:
+    test    byte [r12 + MACRO_flags], MACRO_FLAG_DEFINE
+    jz      .greedy_done                   ; a %macro: its own
+    mov     rax, [rax + MACRO_next]
+    test    rax, rax
+    jnz     .greedy_walk
+.greedy_done:
+
     ; A function-like %define takes its arguments in parentheses: NAME(a, b)
     test    byte [r12 + MACRO_flags], MACRO_FLAG_FUNC
     jz      .line_args
@@ -1193,9 +1247,12 @@ prep_expand_start:
     cmp     al, TOK_RPAREN
     jne     .fn_not_close
     cmp     dword [rel fn_depth], 0
-    je      .arg_end_all
+    je      .fn_end
     dec     dword [rel fn_depth]
     jmp     .arg_keep
+.fn_end:
+    inc     r15                            ; the last, empty or not: "f()" passes one
+    jmp     .args_done
 .fn_not_close:
     cmp     al, TOK_NEWLINE
     je      .error_too_few_args            ; no closing parenthesis
@@ -1204,7 +1261,7 @@ prep_expand_start:
     cmp     al, TOK_COMMA
     jne     .arg_keep
     cmp     dword [rel fn_depth], 0
-    je      .arg_end_one
+    je      .arg_comma
     jmp     .arg_keep
 .arg_line_kinds:
     cmp     al, TOK_NEWLINE
@@ -1249,11 +1306,7 @@ prep_expand_start:
 
 .arg_comma:
     ; the last parameter of a "+" macro keeps its commas
-    test    byte [r12 + MACRO_flags], MACRO_FLAG_GREEDY
-    jz      .arg_end_one
-    movzx   ecx, word [r12 + MACRO_max_params]
-    dec     ecx
-    cmp     r15d, ecx
+    cmp     r15d, [r13 + MACROEXP_greedy_at]
     jae     .arg_keep
 .arg_end_one:
     ; A top-level comma ends this argument; the comma slot gets reused
@@ -1556,6 +1609,42 @@ prep_expand_next:
 
     ; increment body pos
     inc     qword [r13 + MACROEXP_body]
+
+    ; 2.4 "%,": NASM's conditional comma - a comma unless the body ends
+    ; after it, or what follows is a parameter given empty
+    cmp     byte [r12 + TOKEN_kind], TOK_DIRECTIVE
+    jne     .not_cond_comma
+    mov     rax, [r12 + TOKEN_value]
+    cmp     word [rax], ','
+    jne     .not_cond_comma
+    mov     rax, [r13 + MACROEXP_body]
+    mov     r9, [r13 + MACROEXP_macro]
+    cmp     eax, [r9 + MACRO_ntokens]
+    jge     .retry_body                    ; the end: nothing
+    mov     r10, [r9 + MACRO_tokens]
+    imul    rax, TOKEN_SIZE
+    add     r10, rax                       ; the token after it
+    cmp     byte [r10 + TOKEN_kind], TOK_DIRECTIVE
+    jne     .cond_comma_put
+    mov     rdi, [r10 + TOKEN_value]
+    movzx   eax, byte [rdi]
+    sub     eax, '1'
+    cmp     eax, 8
+    ja      .cond_comma_put
+    cmp     byte [rdi + 1], 0
+    jne     .cond_comma_put                ; not %1 .. %9
+    movzx   ecx, word [r13 + MACROEXP_nparams]
+    cmp     eax, ecx
+    jae     .retry_body                    ; a parameter not given: empty
+    mov     rcx, [r13 + MACROEXP_arglens]
+    cmp     dword [rcx + rax * 4], 0
+    je      .retry_body                    ; given empty
+.cond_comma_put:
+    mov     byte [r12 + TOKEN_kind], TOK_COMMA
+    mov     qword [r12 + TOKEN_value], 0
+    mov     word [r12 + TOKEN_len], 1
+    jmp     .produced
+.not_cond_comma:
 
     ; 2.5 Handle Stringification (#) (A67)
     cmp     byte [r12 + TOKEN_kind], TOK_HASH
@@ -2222,6 +2311,8 @@ prep_handle_directive:
     mov     r14, 0                 ; initialize flag early
     mov     rbx, rdi               ; rbx = PrepState
     mov     r13, rsi               ; r13 = the token triggering the directive (% or %name)
+    mov     eax, [r13 + TOKEN_line]
+    mov     [rel dir_line], eax    ; its line: what is left of it (prep_trailing)
     
     ; check if we already have the identifier
     cmp     byte [r13 + TOKEN_kind], TOK_DIRECTIVE
@@ -3547,7 +3638,25 @@ dbg_msg2:     db " value=", 0
 dbg_msg3:     db " (not directive)", 0
 dbg_msg_null: db "<null>", 0
 dbg_newline:  db 10, 0
+; a %define's marked parameters (prep_handle_def, prep_def_marks)
+def_radix_letters: db "bydtoqhx", 0
+s_fn_str:     db "str", 0
+s_fn_condstr: db "&&", 0             ; %&&(x): no name a source can spell
+s_fn_eval:    db "eval", 0
+s_dir_else:   db "%else", 0
+s_rep_nolist: db ".nolist", 0
+s_dir_endif:  db "%endif", 0
+s_trailing_after:   db "trailing garbage after `", 0
+s_trailing_ignored: db "' ignored", 0
+s_else_after_else:  db "`%else' after `%else', ignoring content", 0
+s_elif_after_else:  db "`%elif' after `%else', ignoring content", 0
+s_fn_empty:   db 0                 ; fn_string: an empty argument
+s_fn_mapi:    db "mapi", 0
+s_fn_mapn:    db "mapn", 0
+s_tok_mapi:   db "%mapi", 0         ; ... as the tokens NASM leaves
+s_tok_mapn:   db "%mapn", 0
 [SECTION .data]
+s_fn_radix:   db "=", 0, 0, 0       ; %=(x): its radix letter and s / u filled in
 
 ; ---- prep_handle_struc ------------------
 ;
@@ -3626,6 +3735,13 @@ prep_subst_const_text:
     jz      .done
     cmp     word [rax + MACRO_max_params], 0
     jne     .done
+    cmp     dword [rax + MACRO_ntokens], 0
+    jne     .one_token
+    ; "%define gpr_q" (empty): "r0 %+ gpr_q" is r0
+    lea     rax, [rel s_fn_empty]
+    mov     [r12 + TOKEN_value], rax
+    jmp     .done
+.one_token:
     cmp     dword [rax + MACRO_ntokens], 1
     jne     .done
     mov     rax, [rax + MACRO_tokens]
@@ -3840,13 +3956,39 @@ prep_cond_enter:
 ;
 prep_cond_branch:
     movzx   eax, word [rdi + PREP_depth]
-    test    al, al
+    test    eax, eax
     jz      .no_if
     dec     eax
 
     movzx   ecx, word [rdi + PREP_skip_depth]
-    cmp     cl, 1
-    jg      .unchanged             ; an outer level is skipping
+    cmp     ecx, 1
+    ja      .unchanged             ; an outer level is skipping
+
+    ; after this level's %else (bit 1): NASM's warning, the content skipped,
+    ; the level dead from then on (bit 2: NASM's COND_NEVER, which keeps
+    ; the next such warnings quiet)
+    test    byte [rdi + PREP_cond_taken + rax], 2
+    jz      .no_else_yet
+    test    byte [rdi + PREP_cond_taken + rax], 4
+    jnz     .no_else_yet
+    or      byte [rdi + PREP_cond_taken + rax], 4
+    push    rdi
+    push    rax
+    mov     edi, WC_PP_ELSE_ELIF
+    lea     rsi, [rel s_elif_after_else]
+    cmp     byte [rel cond_is_else], 0
+    je      .after_else_warn
+    mov     edi, WC_PP_ELSE_ELSE
+    lea     rsi, [rel s_else_after_else]
+.after_else_warn:
+    push    rsi
+    call    warn_begin
+    pop     rsi
+    call    warn_text
+    call    warn_end
+    pop     rax
+    pop     rdi
+.no_else_yet:
 
     cmp     byte [rdi + PREP_cond_taken + rax], 0
     jne     .force_skip
@@ -4243,12 +4385,12 @@ prep_handle_elif:
 
     ; Only evaluate when this level could still take a branch
     movzx   eax, word [rbx + PREP_depth]
-    test    al, al
+    test    eax, eax
     jz      .no_if
     dec     eax
     movzx   ecx, word [rbx + PREP_skip_depth]
-    cmp     cl, 1
-    jg      .no_eval
+    cmp     ecx, 1
+    ja      .no_eval
     cmp     byte [rbx + PREP_cond_taken + rax], 0
     jne     .no_eval
 
@@ -5079,6 +5221,24 @@ prep_resolve_interp:
     sub     eax, '0'
     cmp     eax, 9
     jbe     .param
+    ; "%+1": the parameter as a condition code, "%-1" its inverse ("jnz"
+    ; for z), as NASM
+    movzx   eax, byte [r13 + 1]
+    cmp     eax, '+'
+    je      .param_cc
+    cmp     eax, '-'
+    jne     .not_cc
+.param_cc:
+    movzx   ecx, byte [r13 + 2]
+    sub     ecx, '0'
+    cmp     ecx, 9
+    ja      .not_cc
+    cmp     eax, '-'
+    sete    byte [rel interp_ccneg]
+    mov     [rel interp_ccstart], r15
+    inc     r13                            ; at the sign: .param steps over it
+    jmp     .param
+.not_cc:
     cmp     byte [r13 + 1], '['
     jne     .copy_char
 
@@ -5175,6 +5335,7 @@ prep_resolve_interp:
 .ctx_id_zero:
     xor     eax, eax
 .ctx_id_ready:
+    push    r15                            ; where "..@N.name" starts
     mov     byte [r14 + r15], '.'
     mov     byte [r14 + r15 + 1], '.'
     mov     byte [r14 + r15 + 2], '@'
@@ -5187,6 +5348,77 @@ prep_resolve_interp:
     add     r15, rax
     mov     byte [r14 + r15], '.'
     inc     r15
+    ; the name itself, here, so a %define of it can stand for it
+.ctx_name:
+    call    .ensure
+    jc      .ctx_named
+    movzx   edi, byte [r13]
+    test    edi, edi
+    jz      .ctx_named
+    push    rdi
+    call    str_is_ident_char
+    pop     rdi
+    cmp     rax, TRUE
+    jne     .ctx_named
+    mov     [r14 + r15], dil
+    inc     r15
+    inc     r13
+    jmp     .ctx_name
+.ctx_named:
+    cmp     byte [rel interp_brace_ctx], 0
+    je      .ctx_unbraced
+    mov     byte [rel interp_brace_ctx], 0
+    cmp     byte [r13], '}'
+    jne     .ctx_unbraced
+    inc     r13
+.ctx_unbraced:
+    ; "x_%$name" with "%define %$name abc": x_abc, as NASM pastes ("%$x%$n"
+    ; with "%assign %$n 3": ..@N.x3) - but a directive's name that is only
+    ; "%$n" stays the name ("%assign %$n %$n+1")
+    cmp     byte [rel prep_noexpand], 0
+    je      .ctx_lookup
+    cmp     qword [rsp], 0
+    jne     .ctx_lookup                    ; pasted onto what comes before
+    cmp     byte [r13], 0
+    je      .ctx_kept                      ; the whole token
+.ctx_lookup:
+    mov     byte [r14 + r15], 0
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, [rsp]
+    add     rsi, r14
+    call    symbol_find
+    test    rax, rax
+    jnz     .ctx_kept
+    cmp     byte [rdx + SYMBOL_kind], SYM_CONSTANT
+    jne     .ctx_define
+    test    byte [rdx + SYMBOL_pflags], SYMF_ASSIGN
+    jz      .ctx_kept
+    pop     r15                            ; the name goes: the value instead
+    mov     rsi, [rdx + SYMBOL_value]
+    lea     rdi, [r14 + r15]
+    call    str_int_to_str
+    lea     rdi, [r14 + r15]
+    call    str_len
+    add     r15, rax
+    jmp     .scan
+.ctx_define:
+    cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
+    jne     .ctx_kept
+    mov     rax, [rdx + SYMBOL_value]
+    test    rax, rax
+    jz      .ctx_kept
+    test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE
+    jz      .ctx_kept
+    test    byte [rax + MACRO_flags], MACRO_FLAG_FUNC
+    jnz     .ctx_kept
+    pop     r15                            ; the name goes: its text instead
+    push    r13
+    push    r12
+    mov     r12, [rax + MACRO_tokens]
+    mov     r13d, [rax + MACRO_ntokens]
+    jmp     .interp_tok
+.ctx_kept:
+    add     rsp, 8
     jmp     .scan
 
 .copy_char:
@@ -5196,6 +5428,13 @@ prep_resolve_interp:
     jmp     .scan
 
 .param_brace:
+    ; "%{$name}": as %$name (its %define's text, if it has one)
+    cmp     byte [r13 + 2], '$'
+    jne     .param_brace_n
+    mov     byte [rel interp_brace_ctx], 1
+    inc     r13                            ; (.ctx_local steps over "{$")
+    jmp     .ctx_local
+.param_brace_n:
     ; "%{N}": as %N
     add     r13, 2
     xor     eax, eax
@@ -5250,7 +5489,7 @@ prep_resolve_interp:
     jmp     .scan
 .param_arg:
     cmp     eax, ecx
-    ja      .scan                          ; not given: nothing
+    ja      .param_none                    ; not given: nothing
     dec     eax
     mov     rcx, [rdx + MACROEXP_arglens]
     mov     ecx, [rcx + rax * 4]
@@ -5300,7 +5539,9 @@ prep_resolve_interp:
     ; an %assign: its value in decimal
     test    byte [rdx + SYMBOL_pflags], SYMF_ASSIGN
     jz      .arg_raw
+    push    rdx                            ; (.ensure takes it)
     call    .ensure
+    pop     rdx
     jc      .arg_next
     mov     rsi, [rdx + SYMBOL_value]
     lea     rdi, [r14 + r15]
@@ -5320,6 +5561,21 @@ prep_resolve_interp:
 .arg_done:
     pop     r12
     pop     r13
+    ; "%-1": the condition code just written, the other way
+    cmp     byte [rel interp_ccneg], 0
+    je      .scan
+    mov     byte [rel interp_ccneg], 0
+    mov     byte [r14 + r15], 0
+    mov     rdi, [rel interp_ccstart]
+    add     rdi, r14
+    call    prep_cc_inverse
+    test    rax, rax
+    jz      .scan                          ; not a condition code: as it is
+    mov     r15, [rel interp_ccstart]
+    call    .append
+    jmp     .scan
+.param_none:
+    mov     byte [rel interp_ccneg], 0
     jmp     .scan
 
 ; .append: the text at rax onto the output (r14 + r15)
@@ -6904,6 +7160,77 @@ prep_define_string:
     pop     rbx
     ret
 
+; ---- prep_cc_inverse ----------------------
+; The condition code that is the other way of the one at rdi (NASM's
+; %-1: z gives nz, a gives be), or rax = 0 when it is none.
+prep_cc_inverse:
+    push    r12
+    push    r13
+    mov     r12, rdi
+    lea     r13, [rel cc_inverses]
+.next:
+    cmp     byte [r13], 0
+    je      .none
+    mov     rdi, r12
+    mov     rsi, r13
+    call    str_cmp_kw
+    mov     rdi, r13
+    push    rax
+    call    str_len
+    lea     r13, [r13 + rax + 1]           ; its inverse
+    pop     rax
+    test    rax, rax
+    jz      .found
+    mov     rdi, r13
+    call    str_len
+    lea     r13, [r13 + rax + 1]
+    jmp     .next
+.found:
+    mov     rax, r13
+    jmp     .ret
+.none:
+    xor     eax, eax
+.ret:
+    pop     r13
+    pop     r12
+    ret
+
+[SECTION .rodata]
+; condition codes and the other way of each (name, 0, inverse, 0)
+cc_inverses:
+    db "a", 0, "be", 0
+    db "ae", 0, "b", 0
+    db "b", 0, "ae", 0
+    db "be", 0, "a", 0
+    db "c", 0, "nc", 0
+    db "e", 0, "ne", 0
+    db "g", 0, "le", 0
+    db "ge", 0, "l", 0
+    db "l", 0, "ge", 0
+    db "le", 0, "g", 0
+    db "na", 0, "a", 0
+    db "nae", 0, "ae", 0
+    db "nb", 0, "b", 0
+    db "nbe", 0, "be", 0
+    db "nc", 0, "c", 0
+    db "ne", 0, "e", 0
+    db "ng", 0, "g", 0
+    db "nge", 0, "ge", 0
+    db "nl", 0, "l", 0
+    db "nle", 0, "le", 0
+    db "no", 0, "o", 0
+    db "np", 0, "p", 0
+    db "ns", 0, "s", 0
+    db "nz", 0, "z", 0
+    db "o", 0, "no", 0
+    db "p", 0, "np", 0
+    db "pe", 0, "po", 0
+    db "po", 0, "pe", 0
+    db "s", 0, "ns", 0
+    db "z", 0, "nz", 0
+    db 0
+[SECTION .text]
+
 ; ---- prep_interp_standalone ----------------
 ;
 ; prep_interp_standalone
@@ -7047,13 +7374,14 @@ prep_interp_standalone:
     mov     edx, 1                         ; nothing: the token goes
     jmp     .out
 .some:
-    ; the first in its place
+    ; the first in its place, when it is the only one
     mov     rdi, r12
     mov     rsi, r13
     copy_token
     cmp     r15, 1
     je      .one
-    ; the others after it
+    ; else all of them as an expansion of their own, so "%[r %+ %2]" is
+    ; pasted as a body's "%+" is (.check_concat), the token dropped
     mov     rdi, [rbx + PREP_arena]
     mov     rsi, MACRO_SIZE
     call    arena_alloc
@@ -7062,15 +7390,15 @@ prep_interp_standalone:
     mov     byte [rdx + MACRO_tag], TAG_MACRO
     mov     byte [rdx + MACRO_flags], MACRO_FLAG_DEFINE
     mov     qword [rdx + MACRO_name], 0
-    lea     rax, [r13 + TOKEN_SIZE]
-    mov     [rdx + MACRO_tokens], rax
-    lea     eax, [r15d - 1]
-    mov     [rdx + MACRO_ntokens], eax
+    mov     [rdx + MACRO_tokens], r13
+    mov     [rdx + MACRO_ntokens], r15d
     mov     rdi, rbx
     mov     rsi, rdx
     call    prep_expand_start
     test    rax, rax
     jnz     .ret
+    mov     edx, 1                         ; (they follow; this token goes)
+    jmp     .out
 .one:
     xor     eax, eax
 .ret:
@@ -7174,6 +7502,9 @@ prep_list_label:
 .ret:
     ret
 
+%define FN_RADIX 0x19                      ; %=(x) (fn_table has the others)
+%define FN_CONDSTR 0x1A                    ; %&&(x)
+
 ; ---- prep_function -------------------------
 ;
 ; prep_function
@@ -7187,7 +7518,8 @@ prep_list_label:
 ; Input    : rbx = PrepState, rsi = the directive token
 ; Output   : rax = EXIT_OK or an error; edx = 0 not a function call, 1 the
 ;            token is the result's first one (the others follow it), 2 the
-;            result is nothing (the token goes)
+;            result is nothing (the token goes), 3 a call left as written
+;            (names not expanded: prep_noexpand)
 ;
 prep_function:
     push    r12
@@ -7196,6 +7528,77 @@ prep_function:
     push    r15
     push    rbp
     mov     r12, rsi
+    ; %=(x): a %define's =x/x parameter (prep_def_marks), its radix and
+    ; sign in the name - no name a source can spell
+    mov     rax, [r12 + TOKEN_value]
+    cmp     word [rax], ','
+    je      .cond_comma
+    mov     r14d, FN_CONDSTR               ; %&&(x): a &&x parameter
+    cmp     word [rax], '&&'
+    jne     .not_condstr
+    cmp     byte [rax + 2], 0
+    je      .found_id
+.not_condstr:
+    cmp     byte [rax], '='
+    jne     .names
+    movzx   ecx, byte [rax + 1]
+    cmp     ecx, '-'
+    jne     .radix_named
+    xor     ecx, ecx                       ; decimal
+.radix_named:
+    cmp     byte [rax + 2], 'u'
+    jne     .radix_signed
+    or      ecx, 0x100
+.radix_signed:
+    mov     [rel fn_radix], cx
+    mov     r14d, FN_RADIX
+    jmp     .found_id
+.cond_comma:
+    ; "%,": a comma, unless nothing follows it ("a %, b" with b empty) -
+    ; the end of the line, a ")" or another comma next. In a %define's
+    ; body being read it stays, for when the body is expanded.
+    cmp     byte [rel prep_noexpand], 0
+    je      .cond_now
+    xor     eax, eax
+    mov     edx, 3
+    jmp     .out
+.cond_now:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .nothing
+    cmp     eax, TOK_EOF
+    je      .nothing
+    cmp     eax, TOK_RPAREN
+    je      .nothing
+    cmp     eax, TOK_COMMA
+    je      .nothing
+    mov     byte [r12 + TOKEN_kind], TOK_COMMA
+    mov     qword [r12 + TOKEN_value], 0
+    jmp     .one
+.names:
+    ; %mapi / %mapn: NASM 2.16 leaves them as they are (its tests pass them
+    ; to %map): an identifier spelled "%mapi"
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [rel s_fn_mapi]
+    call    str_cmp
+    lea     rcx, [rel s_tok_mapi]
+    test    rax, rax
+    jz      .map_marker
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [rel s_fn_mapn]
+    call    str_cmp
+    lea     rcx, [rel s_tok_mapn]
+    test    rax, rax
+    jnz     .not_map_marker
+.map_marker:
+    mov     byte [r12 + TOKEN_kind], TOK_IDENT
+    mov     [r12 + TOKEN_value], rcx
+    jmp     .one
+.not_map_marker:
     ; one of the names?
     lea     r13, [rel fn_table]
 .find:
@@ -7210,15 +7613,25 @@ prep_function:
     jmp     .find
 .found:
     movzx   r14d, byte [r13 + 15]          ; FN_*, bit 7: the other way
+.found_id:
     ; "(" next (its name not expanded meanwhile, should it be a directive)
+    movzx   r15d, byte [rel prep_noexpand]
     mov     byte [rel prep_noexpand], 1
     mov     rdi, rbx
     call    preprocessor_peek_token
-    mov     byte [rel prep_noexpand], 0
+    mov     [rel prep_noexpand], r15b
     test    rax, rax
     jnz     .ret
     cmp     byte [rdx + TOKEN_kind], TOK_LPAREN
     jne     .not_fn
+    ; while names are not expanded (a %define's body being read) a call
+    ; stays as written, run when the body is: its tokens as they are
+    test    r15d, r15d
+    jz      .call_now
+    xor     eax, eax
+    mov     edx, 3
+    jmp     .out
+.call_now:
     mov     rdi, rbx
     call    preprocessor_next_token        ; the "("
     test    rax, rax
@@ -7294,10 +7707,45 @@ prep_function:
     dq      .f_abs, .f_cond, .f_count, .f_eval, .f_hex, .f_num, .f_sel
     dq      .f_str, .f_strcat, .f_strlen, .f_substr, .f_tok, .f_is, .f_isdef
     dq      .f_isnum, .f_isstr, .f_isid, .f_isempty, .f_istoken, .f_ismacro
-    dq      .f_isidn, .f_isidni, .f_isenv, .f_isctx, .f_map
+    dq      .f_isidn, .f_isidni, .f_isenv, .f_isctx, .f_map, .f_radix, .f_condstr
 
 ; ---- the functions: each reads its arguments up to ")" and puts its
 ; ---- result (fn_put_*); rax = 0 or an error. r14 bit 7: %isn...
+.f_radix:
+    ; %=(x): x evaluated, written in the radix fn_radix says
+    movzx   ebp, word [rel fn_radix]
+    call    fn_expr
+    test    rax, rax
+    jnz     .f_ret
+    test    ecx, ecx
+    jnz     .f_too_many
+    mov     rax, rdx
+    mov     ecx, ebp
+    jmp     fn_put_radix
+.f_condstr:
+    ; %&&(x): a quoted string stays as it is, anything else as %str makes it
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .f_ret
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_STRING
+    je      .condstr_quoted
+    cmp     eax, TOK_CHAR
+    jne     .f_str
+.condstr_quoted:
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; its own copy
+    test    rax, rax
+    jnz     .f_ret
+    push    rdx
+    call    fn_sep
+    pop     rsi
+    test    rax, rax
+    jnz     .f_ret
+    test    ecx, ecx
+    jnz     .f_too_many                    ; "x" then more: not one string
+    jmp     fn_put_token
 .f_abs:
     call    fn_expr
     test    rax, rax
@@ -7783,15 +8231,19 @@ prep_function:
 .truth_put:
     jmp     fn_put_signed
 .f_map:
-    ; %map(F, a, b): F(a),F(b) - %map(F:(x), a): F(x,a)
+    ; %map(F, a, b): F(a),F(b) - %map(F:(x), a): F(x,a) - %map(F::2, a, b,
+    ; c, d): F(a,b),F(c,d), the arguments in groups. Locals:[rsp] the arguments read, [rsp+8] their tokens, [rsp+16] the
+    ; calls, [rsp+24] this call, [rsp+32] the next argument token
+    sub     rsp, 40
     xor     r13d, r13d                     ; the fixed arguments: none
     xor     r15d, r15d
+    mov     r14d, 1                        ; the group: one each
     mov     byte [rel prep_noexpand], 1
     mov     rdi, rbx
     call    preprocessor_peek_token
     mov     byte [rel prep_noexpand], 0
     test    rax, rax
-    jnz     .f_ret
+    jnz     .map_out
     cmp     byte [rdx + TOKEN_kind], TOK_LABEL
     jne     .map_name
     ; "F:" lexes as a label: the name, its colon read
@@ -7799,40 +8251,45 @@ prep_function:
     mov     rdi, rbx
     call    preprocessor_next_token
     test    rax, rax
-    jnz     .f_ret
+    jnz     .map_out
     jmp     .map_colon
 .map_name:
     call    fn_name
     test    rax, rax
-    jnz     .f_ret
+    jnz     .map_out
     test    rdx, rdx
-    jz      .f_bad
+    jz      .map_bad
     mov     rbp, rdx                       ; the macro's name
     mov     rdi, rbx
     call    preprocessor_next_token
     test    rax, rax
-    jnz     .f_ret
+    jnz     .map_out
+    cmp     byte [rdx + TOKEN_kind], TOK_COLONCOLON
+    je      .map_group
     cmp     byte [rdx + TOKEN_kind], TOK_COLON
     jne     .map_sep
 .map_colon:
-    ; ":(...)": the arguments before each one, set aside
+    ; ":(...)": the arguments before each one, set aside; ":N" after the
+    ; name's colon or after them: the group size
     mov     rdi, rbx
     call    preprocessor_next_token
     test    rax, rax
-    jnz     .f_ret
+    jnz     .map_out
+    cmp     byte [rdx + TOKEN_kind], TOK_COLON
+    je      .map_group
     cmp     byte [rdx + TOKEN_kind], TOK_LPAREN
-    jne     .f_bad
+    jne     .map_bad
 .map_fixed:
     call    fn_copy_arg
     test    rax, rax
-    jnz     .f_ret
+    jnz     .map_out
     test    ecx, ecx
     jz      .map_fixed_done
     mov     eax, TOK_COMMA
     mov     ecx, 1
     call    fn_put_punct
     test    rax, rax
-    jnz     .f_ret
+    jnz     .map_out
     jmp     .map_fixed
 .map_fixed_done:
     mov     r13, [rel fn_out]
@@ -7842,14 +8299,71 @@ prep_function:
     mov     rdi, rbx
     call    preprocessor_next_token
     test    rax, rax
-    jnz     .f_ret
+    jnz     .map_out
+    cmp     byte [rdx + TOKEN_kind], TOK_COLON
+    jne     .map_sep
+.map_group:
+    call    fn_expr                        ; N, then "," or ")"
+    test    rax, rax
+    jnz     .map_out
+    mov     r14, rdx
+    test    r14, r14
+    jle     .map_bad
+    test    ecx, ecx
+    jz      .map_ok                        ; no arguments: nothing
+    jmp     .map_collect
 .map_sep:
     cmp     byte [rdx + TOKEN_kind], TOK_RPAREN
-    je      .f_ok                          ; no arguments: nothing
+    je      .map_ok                        ; no arguments: nothing
     cmp     byte [rdx + TOKEN_kind], TOK_COMMA
-    jne     .f_bad
-.map_arg:
-    ; NAME ( fixed , arg )
+    jne     .map_bad
+.map_collect:
+    ; every argument read first (the calls counted), a TOK_UNKNOWN after each
+    mov     qword [rel fn_out], 0
+    mov     qword [rel fn_n], 0
+    mov     qword [rsp + 16], 0            ; (counted here)
+.map_read:
+    call    fn_copy_arg
+    test    rax, rax
+    jnz     .map_out
+    inc     qword [rsp + 16]
+    push    rcx
+    mov     eax, TOK_UNKNOWN
+    mov     ecx, 1
+    call    fn_put_punct
+    pop     rcx
+    test    rax, rax
+    jnz     .map_out
+    test    ecx, ecx
+    jnz     .map_read
+    mov     rax, [rel fn_out]
+    mov     [rsp], rax
+    mov     rax, [rel fn_n]
+    mov     [rsp + 8], rax
+    mov     qword [rel fn_out], 0
+    mov     qword [rel fn_n], 0
+    ; calls: the arguments over the group size, rounded up
+    mov     rax, [rsp + 16]
+    add     rax, r14
+    dec     rax
+    xor     edx, edx
+    div     r14
+    mov     [rsp + 16], rax
+    mov     qword [rsp + 24], 0
+    mov     qword [rsp + 32], 0
+.map_call:
+    mov     rax, [rsp + 24]
+    cmp     rax, [rsp + 16]
+    jae     .map_ok
+    test    rax, rax
+    jz      .map_head
+    mov     eax, TOK_COMMA
+    mov     ecx, 1
+    call    fn_put_punct
+    test    rax, rax
+    jnz     .map_out
+.map_head:
+    ; NAME ( fixed , group )
     lea     rdi, [rel fn_tok]
     xor     eax, eax
     mov     ecx, TOKEN_SIZE / 8
@@ -7863,23 +8377,23 @@ prep_function:
     lea     rsi, [rel fn_tok]
     call    fn_put_token
     test    rax, rax
-    jnz     .f_ret
+    jnz     .map_out
     mov     eax, TOK_LPAREN
     mov     ecx, 1
     call    fn_put_punct
     test    rax, rax
-    jnz     .f_ret
+    jnz     .map_out
     xor     ecx, ecx
 .map_put_fixed:
     cmp     rcx, r15
     jae     .map_fixed_put
-    push    rcx
     imul    rsi, rcx, TOKEN_SIZE
     add     rsi, r13
+    push    rcx
     call    fn_put_token
     pop     rcx
     test    rax, rax
-    jnz     .f_ret
+    jnz     .map_out
     inc     rcx
     jmp     .map_put_fixed
 .map_fixed_put:
@@ -7889,26 +8403,56 @@ prep_function:
     mov     ecx, 1
     call    fn_put_punct
     test    rax, rax
-    jnz     .f_ret
+    jnz     .map_out
 .map_own:
-    call    fn_copy_arg
-    test    rax, rax
-    jnz     .f_ret
+    xor     ecx, ecx                       ; the group's arguments so far
+.map_own_arg:
+    cmp     rcx, r14
+    jae     .map_close
+    mov     rax, [rsp + 32]
+    cmp     rax, [rsp + 8]
+    jae     .map_close                     ; no more: a short last group
+    test    rcx, rcx
+    jz      .map_arg_tokens
     push    rcx
-    mov     eax, TOK_RPAREN
+    mov     eax, TOK_COMMA
     mov     ecx, 1
     call    fn_put_punct
     pop     rcx
     test    rax, rax
-    jnz     .f_ret
-    test    ecx, ecx
-    jz      .f_ok
-    mov     eax, TOK_COMMA
+    jnz     .map_out
+.map_arg_tokens:
+    mov     rax, [rsp + 32]
+    inc     qword [rsp + 32]
+    imul    rsi, rax, TOKEN_SIZE
+    add     rsi, [rsp]
+    cmp     byte [rsi + TOKEN_kind], TOK_UNKNOWN
+    je      .map_arg_end
+    push    rcx
+    call    fn_put_token
+    pop     rcx
+    test    rax, rax
+    jnz     .map_out
+    jmp     .map_arg_tokens
+.map_arg_end:
+    inc     rcx
+    jmp     .map_own_arg
+.map_close:
+    mov     eax, TOK_RPAREN
     mov     ecx, 1
     call    fn_put_punct
     test    rax, rax
-    jnz     .f_ret
-    jmp     .map_arg
+    jnz     .map_out
+    inc     qword [rsp + 24]
+    jmp     .map_call
+.map_bad:
+    mov     eax, EXIT_INVALID_EXPR
+    jmp     .map_out
+.map_ok:
+    xor     eax, eax
+.map_out:
+    add     rsp, 40
+    ret
 .f_too_many:
 .f_bad:
     mov     eax, EXIT_INVALID_EXPR
@@ -7987,6 +8531,15 @@ fn_expr_or_empty:
 
 ; fn_string: a quoted argument: rdx = its text; then fn_sep (ecx)
 fn_string:
+    ; an empty one is "" ("%strcat('a', )": a %map giving nothing)
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_RPAREN
+    je      .empty
+    cmp     byte [rdx + TOKEN_kind], TOK_COMMA
+    je      .empty
     mov     rdi, rbx
     call    preprocessor_next_token
     test    rax, rax
@@ -7998,6 +8551,10 @@ fn_string:
     call    fn_sep
     pop     rdx
 .ret:
+    ret
+.empty:
+    call    fn_sep
+    lea     rdx, [rel s_fn_empty]
     ret
 .bad:
     mov     eax, EXIT_INVALID_EXPR
@@ -8353,6 +8910,86 @@ fn_put_hex:
     jnz     .ret
     jmp     fn_put_number_text
 .ret:
+    ret
+
+; fn_put_radix: the number rax as NASM writes a =x/r parameter: ecx = the
+; radix letter (0: decimal, no prefix; upper case: upper-case digits) |
+; 0x100 unsigned. Signed and negative: a minus, then the magnitude.
+fn_put_radix:
+    push    r14
+    push    r15
+    mov     r14, rax
+    mov     r15d, ecx
+    test    r15d, 0x100
+    jnz     .magnitude
+    test    r14, r14
+    jns     .magnitude
+    mov     eax, TOK_MINUS
+    mov     ecx, 1
+    call    fn_put_punct
+    test    rax, rax
+    jnz     .ret
+    neg     r14
+.magnitude:
+    movzx   eax, r15b
+    or      eax, 0x20
+    mov     ecx, 2
+    cmp     eax, 'b'
+    je      .base
+    cmp     eax, 'y'
+    je      .base
+    mov     ecx, 8
+    cmp     eax, 'o'
+    je      .base
+    cmp     eax, 'q'
+    je      .base
+    mov     ecx, 16
+    cmp     eax, 'h'
+    je      .base
+    cmp     eax, 'x'
+    je      .base
+    mov     ecx, 10
+.base:
+    mov     rax, r14
+    mov     rdx, -1
+    call    fn_utoa                        ; rdx = the digits, rcx = how many
+    test    rax, rax
+    jnz     .ret
+    test    r15b, r15b
+    jz      .put                           ; no radix: plain decimal
+    ; "0x" + digits, the letter as written; upper-case digits for "X"
+    push    rdx
+    push    rcx
+    mov     rdi, [rbx + PREP_arena]
+    lea     rsi, [rcx + 3]
+    call    arena_alloc
+    pop     rcx
+    pop     rsi
+    test    rax, rax
+    jnz     .ret
+    mov     byte [rdx], '0'
+    mov     [rdx + 1], r15b
+    lea     rdi, [rdx + 2]
+.digit:
+    test    ecx, ecx
+    jz      .put
+    lodsb
+    test    r15b, 0x20
+    jnz     .digit_put
+    cmp     al, 'a'
+    jb      .digit_put
+    sub     al, 0x20
+.digit_put:
+    stosb
+    dec     ecx
+    jmp     .digit
+.put:
+    pop     r15
+    pop     r14
+    jmp     fn_put_number_text
+.ret:
+    pop     r15
+    pop     r14
     ret
 
 ; fn_put_string / fn_put_string_n / fn_put_string_copy: a string token of
@@ -9170,6 +9807,15 @@ prep_handle_def:
     mov     byte [rel def_func], MACRO_FLAG_FUNC
     mov     rdi, rbx
     call    preprocessor_next_token        ; "("
+    ; Each parameter may be empty ("ereg(foo,)", "myreg()") and marked
+    ; (NASM 2.15): =x evaluated as a number (=x/u unsigned, =x/x hex ...),
+    ; &x made a quoted string, &&x one unless it is one already, !x its
+    ; braces kept, x+ greedy (the last, taking the commas after it)
+.param_new:
+    xor     r14d, r14d                     ; its marks (PF_*)
+    mov     qword [rel def_pcur], 0        ; its name
+    mov     byte [rel def_pcur_radix], 0
+    mov     byte [rel def_radix_next], 0
 .param:
     mov     rdi, rbx
     call    preprocessor_next_token
@@ -9177,19 +9823,102 @@ prep_handle_def:
     jnz     .fail
     movzx   eax, byte [rdx + TOKEN_kind]
     cmp     eax, TOK_RPAREN
-    je      .body
+    je      .param_end
     cmp     eax, TOK_COMMA
-    je      .param
+    je      .param_end
+    test    r14d, PF_GREEDY
+    jnz     .bad                           ; "+" ends the parameter
     cmp     eax, TOK_IDENT
+    je      .param_ident
+    cmp     eax, TOK_EQUAL
+    je      .param_eval
+    cmp     eax, TOK_AMPERSAND
+    je      .param_str
+    cmp     eax, TOK_AND
+    je      .param_condstr
+    cmp     eax, TOK_NOT
+    je      .param                         ; braces kept: they are anyway
+    cmp     eax, TOK_PLUS
+    je      .param_greedy
+    cmp     eax, TOK_SLASH
     jne     .bad
+    test    r14d, PF_EVAL
+    jz      .bad                           ; a radix for a parameter without =
+    mov     byte [rel def_radix_next], 1
+    jmp     .param
+.param_eval:
+    or      r14d, PF_EVAL
+    jmp     .param
+.param_str:
+    or      r14d, PF_STR
+    jmp     .param
+.param_condstr:
+    or      r14d, PF_STR | PF_CONDSTR
+    jmp     .param
+.param_greedy:
+    or      r14d, PF_GREEDY
+    jmp     .param
+.param_ident:
+    mov     rsi, [rdx + TOKEN_value]
+    cmp     byte [rel def_radix_next], 0
+    jne     .param_radix
+    cmp     qword [rel def_pcur], 0
+    jne     .bad                           ; two names
+    mov     [rel def_pcur], rsi
+    jmp     .param
+.param_radix:
+    ; "/x", "/ux", "/u": NASM's radix letters, u unsigned, s signed
+    mov     byte [rel def_radix_next], 0
+.radix_char:
+    movzx   eax, byte [rsi]
+    test    eax, eax
+    jz      .param
+    inc     rsi
+    mov     ecx, eax
+    or      ecx, 0x20
+    cmp     ecx, 'u'
+    je      .radix_u
+    cmp     ecx, 's'
+    je      .radix_s
+    lea     rdi, [rel def_radix_letters]
+.radix_find:
+    cmp     byte [rdi], 0
+    je      .bad
+    cmp     [rdi], cl
+    je      .radix_ok
+    inc     rdi
+    jmp     .radix_find
+.radix_ok:
+    mov     [rel def_pcur_radix], al       ; as written: upper case, upper digits
+    jmp     .radix_char
+.radix_u:
+    or      r14d, PF_UNSIGNED
+    jmp     .radix_char
+.radix_s:
+    and     r14d, ~PF_UNSIGNED
+    jmp     .radix_char
+.param_end:
     movzx   ecx, byte [rel def_nparams]
     cmp     ecx, 9
     jae     .bad                           ; %1-%9
-    mov     rax, [rdx + TOKEN_value]
+    mov     rsi, [rel def_pcur]
     lea     r8, [rel def_pnames]
-    mov     [r8 + rcx*8], rax
+    mov     [r8 + rcx*8], rsi              ; 0: an empty one, never named
+    lea     r8, [rel def_pflags]
+    mov     [r8 + rcx], r14b
+    movzx   esi, byte [rel def_pcur_radix]
+    lea     r8, [rel def_pradix]
+    mov     [r8 + rcx], sil
     inc     byte [rel def_nparams]
-    jmp     .param
+    cmp     byte [rdx + TOKEN_kind], TOK_RPAREN
+    je      .params_done
+    test    r14d, PF_GREEDY
+    jnz     .bad                           ; a greedy parameter must be last
+    jmp     .param_new
+.params_done:
+    test    r14d, PF_GREEDY
+    jz      .body
+    or      byte [rel def_func], MACRO_FLAG_GREEDY
 
     ; 3. The body: the rest of the line
 .body:
@@ -9247,14 +9976,17 @@ prep_handle_def:
     movzx   eax, byte [rel def_nparams]
     cmp     r14d, eax
     jae     .btok
-    push    r8
-    mov     rdi, [r8 + TOKEN_value]
     lea     rax, [rel def_pnames]
     mov     rsi, [rax + r14*8]
+    test    rsi, rsi
+    jz      .pname_next                    ; an empty parameter: never used
+    push    r8
+    mov     rdi, [r8 + TOKEN_value]
     call    str_cmp
     pop     r8
     test    rax, rax
     jz      .is_param
+.pname_next:
     inc     r14d
     jmp     .pname
 .is_param:
@@ -9267,6 +9999,9 @@ prep_handle_def:
     ; 4. A MACRO with the captured tokens, under NAME
 .store:
     mov     byte [rel prep_noexpand], 0
+    call    prep_def_marks
+    test    rax, rax
+    jnz     .fail
     call    prep_define_store
     jmp     .ret
 
@@ -9284,6 +10019,172 @@ prep_handle_def:
     pop     r13
     pop     r12
     pop     rbx
+    ret
+
+; ---- prep_def_marks ------------------
+;
+; prep_def_marks
+; A %define's marked parameters (=x, &x, &&x): each reference to one in
+; the body becomes a call of the function doing that to the argument,
+; evaluated when the macro is: %eval(%N) (or %=(%N) for a radix or
+; unsigned, the marks in def_pflags / def_pradix of the parameter),
+; %str(%N), %strcat(%N) - NASM's evaluation, quoting, and quoting unless
+; it is a string already.
+; Input    : rbx = PrepState, r15d = the body's tokens (def_toks)
+; Output   : rax = EXIT_OK or error; def_toks / r15d the new body
+;
+prep_def_marks:
+    push    r12
+    push    r13
+    push    r14
+    ; any marked parameter?
+    movzx   ecx, byte [rel def_nparams]
+    lea     rdx, [rel def_pflags]
+.any:
+    test    ecx, ecx
+    jz      .none
+    dec     ecx
+    test    byte [rdx + rcx], PF_EVAL | PF_STR
+    jz      .any
+    ; room for the worst: each token a reference wrapped in two calls
+    lea     esi, [r15d * 8 + 8]
+    imul    esi, esi, TOKEN_SIZE
+    mov     rdi, [rbx + PREP_arena]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     r12, rdx                       ; r12 = the new body
+    xor     r13d, r13d                     ; r13 = its tokens
+    xor     r14d, r14d                     ; r14 = the old body's index
+.tok:
+    cmp     r14d, r15d
+    jae     .done
+    mov     eax, r14d
+    imul    eax, eax, TOKEN_SIZE
+    mov     rsi, [rel def_toks]
+    add     rsi, rax                       ; rsi = the token
+    inc     r14d
+    ; a parameter reference: a directive whose text is one of def_digits
+    cmp     byte [rsi + TOKEN_kind], TOK_DIRECTIVE
+    jne     .copy
+    mov     rax, [rsi + TOKEN_value]
+    lea     rcx, [rel def_digits + 2]
+    sub     rax, rcx
+    cmp     rax, 18
+    jae     .copy
+    shr     eax, 1                         ; the parameter
+    lea     rcx, [rel def_pflags]
+    movzx   r8d, byte [rcx + rax]
+    test    r8d, PF_EVAL | PF_STR
+    jz      .copy
+    lea     rcx, [rel def_pradix]
+    movzx   r9d, byte [rcx + rax]
+    ; the calls, outermost first: the string one, then the evaluation
+    xor     r10d, r10d                     ; ")" to close
+    test    r8d, PF_STR
+    jz      .no_str
+    lea     rax, [rel s_fn_str]
+    test    r8d, PF_CONDSTR
+    jz      .str_call
+    lea     rax, [rel s_fn_condstr]
+.str_call:
+    call    .call_open
+    inc     r10d
+.no_str:
+    test    r8d, PF_EVAL
+    jz      .ref
+    lea     rax, [rel s_fn_eval]
+    test    r9d, r9d
+    jnz     .radix_call
+    test    r8d, PF_UNSIGNED
+    jz      .eval_call
+.radix_call:
+    ; %=(%N): prep_function reads the radix and sign from its name
+    lea     rax, [rel s_fn_radix]
+    test    r9d, r9d
+    jnz     .radix_letter
+    mov     r9d, '-'                       ; decimal, no prefix
+.radix_letter:
+    mov     [rax + 1], r9b
+    mov     byte [rax + 2], 's'
+    test    r8d, PF_UNSIGNED
+    jz      .radix_name
+    mov     byte [rax + 2], 'u'
+.radix_name:
+    push    rsi
+    push    r8
+    push    r9
+    push    r10
+    mov     rdi, [rbx + PREP_arena]
+    mov     esi, 4
+    call    arena_alloc
+    pop     r10
+    pop     r9
+    pop     r8
+    pop     rsi
+    test    rax, rax
+    jnz     .ret
+    mov     eax, [rel s_fn_radix]
+    mov     [rdx], eax
+    mov     rax, rdx
+.eval_call:
+    call    .call_open
+    inc     r10d
+.ref:
+    call    .put
+.close:
+    test    r10d, r10d
+    jz      .tok
+    mov     al, TOK_RPAREN
+    call    .put_punct
+    dec     r10d
+    jmp     .close
+.copy:
+    call    .put
+    jmp     .tok
+.done:
+    mov     [rel def_toks], r12
+    mov     r15d, r13d
+.none:
+    xor     eax, eax
+.ret:
+    pop     r14
+    pop     r13
+    pop     r12
+    ret
+
+; .put: the token rsi, appended (rsi kept)
+.put:
+    mov     eax, r13d
+    imul    eax, eax, TOKEN_SIZE
+    lea     rdi, [r12 + rax]
+    push    rsi
+    copy_token
+    pop     rsi
+    inc     r13d
+    ret
+; .call_open: "%name(" - the directive rax and a "(", placed as rsi is
+.call_open:
+    push    rax
+    call    .put
+    pop     rax
+    mov     ecx, r13d
+    dec     ecx
+    imul    ecx, ecx, TOKEN_SIZE
+    mov     [r12 + rcx + TOKEN_value], rax
+    mov     byte [r12 + rcx + TOKEN_kind], TOK_DIRECTIVE
+    mov     al, TOK_LPAREN
+; .put_punct: a punctuation token al, placed as rsi is
+.put_punct:
+    push    rax
+    call    .put
+    pop     rax
+    mov     ecx, r13d
+    dec     ecx
+    imul    ecx, ecx, TOKEN_SIZE
+    mov     [r12 + rcx + TOKEN_kind], al
+    mov     qword [r12 + rcx + TOKEN_value], 0
+    mov     word [r12 + rcx + TOKEN_len], 1
     ret
 
 ; ---- prep_define_store ------------------
@@ -9305,8 +10206,12 @@ prep_define_store:
     mov     r13, rdx
     mov     byte [r13 + MACRO_tag], TAG_MACRO
     movzx   eax, byte [rel def_nparams]
-    mov     [r13 + MACRO_min_params], ax
     mov     [r13 + MACRO_max_params], ax
+    test    byte [rel def_func], MACRO_FLAG_GREEDY
+    jz      .min_set
+    dec     eax                            ; "c+": may be left out
+.min_set:
+    mov     [r13 + MACRO_min_params], ax
     movzx   eax, byte [rel def_func]
     or      eax, MACRO_FLAG_DEFINE
     mov     [r13 + MACRO_flags], al
@@ -9335,12 +10240,48 @@ prep_define_store:
     ; the entry becomes the macro and keeps the constant's value for after
     ; the preprocessor (prep_unshadow)
     cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
-    je      .redefine
+    je      .overload
     cmp     word [rdx + SYMBOL_section], SHN_ABS
     jne     .redefine
     mov     rax, [rdx + SYMBOL_value]
     mov     [rdx + SYMBOL_size], rax
     or      byte [rdx + SYMBOL_pflags], SYMF_SHADOW
+    jmp     .redefine
+.overload:
+    ; "%define f(x)" then "%define f(x, y)": both, chosen by the argument
+    ; count when called; one taking as many as the new one is replaced
+    mov     rcx, [rdx + SYMBOL_value]
+    test    rcx, rcx
+    jz      .redefine
+    test    byte [rcx + MACRO_flags], MACRO_FLAG_DEFINE
+    jz      .redefine
+    test    byte [rcx + MACRO_flags], MACRO_FLAG_FUNC
+    jz      .redefine
+    test    byte [r13 + MACRO_flags], MACRO_FLAG_FUNC
+    jz      .redefine
+    lea     r8, [rdx + SYMBOL_value]       ; r8 = the link to rcx
+.ov_walk:
+    mov     ax, [rcx + MACRO_min_params]
+    cmp     ax, [r13 + MACRO_min_params]
+    jne     .ov_next
+    mov     ax, [rcx + MACRO_max_params]
+    cmp     ax, [r13 + MACRO_max_params]
+    jne     .ov_next
+    mov     rax, [rcx + MACRO_next]        ; the same arity: in its place
+    mov     [r13 + MACRO_next], rax
+    mov     [r8], r13
+    xor     eax, eax
+    jmp     .ret
+.ov_next:
+    lea     r8, [rcx + MACRO_next]
+    mov     rcx, [rcx + MACRO_next]
+    test    rcx, rcx
+    jnz     .ov_walk
+    mov     rax, [rdx + SYMBOL_value]      ; a new arity: first in the chain
+    mov     [r13 + MACRO_next], rax
+    mov     [rdx + SYMBOL_value], r13
+    xor     eax, eax
+    jmp     .ret
 .redefine:
     mov     byte [rdx + SYMBOL_kind], SYM_MACRO    ; a redefinition
     mov     [rdx + SYMBOL_value], r13
@@ -9416,11 +10357,19 @@ prep_handle_if:
 prep_handle_else:
     prologue
     push    rbx
+    push    r12
     mov     rbx, rdi
 
     mov     ax, [rbx + PREP_depth]
     test    ax, ax
     jz      .error                 ; %else without %if
+    movzx   r12d, word [rbx + PREP_skip_depth]   ; > 1: an outer level skips
+    movzx   eax, word [rbx + PREP_depth]
+    dec     eax
+    test    byte [rbx + PREP_cond_taken + rax], 4
+    jz      .else_live
+    mov     r12d, 2                        ; a dead level: no warning either
+.else_live:
 
     ; 1. If we are currently skipping at THIS depth ONLY, we toggle.
     ; If skip_depth == 1, it means the current level is the only one skipping.
@@ -9429,23 +10378,106 @@ prep_handle_else:
     
     mov     rdi, rbx
     mov     esi, 1                 ; %else always "matches" if nothing did yet
+    mov     byte [rel cond_is_else], 1
     call    prep_cond_branch
+    mov     byte [rel cond_is_else], 0
+    ; this level has had its %else: a %else or %elif after it is skipped
+    movzx   eax, word [rbx + PREP_depth]
+    dec     eax
+    or      byte [rbx + PREP_cond_taken + rax], 2
+    cmp     r12d, 1
+    ja      .done
+    lea     rsi, [rel s_dir_else]
+    call    prep_trailing
 
 .done:
     xor     rax, rax
+    pop     r12
     pop     rbx
     epilogue
 
 .error:
     mov     rax, EXIT_ERROR
+    pop     r12
     pop     rbx
     epilogue
+
+; ---- prep_trailing ----------------------
+; What is left of a %else / %endif line: NASM's warning, and it goes
+; (prep_trailing_quiet: no warning).
+; Input: rbx = PrepState, rsi = the directive's name ("%else")
+prep_trailing_quiet:
+    xor     esi, esi
+prep_trailing:
+    push    r12
+    push    r13
+    mov     r12, rsi
+    xor     r13d, r13d                     ; tokens dropped
+    sub     rsp, TOKEN_SIZE
+.peek:
+    mov     rdi, rbx
+    mov     rsi, rsp
+    call    prep_raw_peek
+    test    rax, rax
+    jnz     .done
+    movzx   eax, byte [rsp + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .done
+    cmp     eax, TOK_EOF
+    je      .done
+    ; a line after it (a %rep body cut short by %exitrep: the enclosing
+    ; body's next line): not its
+    mov     eax, [rsp + TOKEN_line]
+    cmp     eax, [rel dir_line]
+    jne     .done
+    mov     rdi, rbx
+    mov     rsi, rsp
+    call    prep_raw_next
+    inc     r13d
+    jmp     .peek
+.done:
+    add     rsp, TOKEN_SIZE
+    test    r13d, r13d
+    jz      .ret
+    test    r12, r12
+    jz      .ret                           ; (quiet)
+    mov     edi, WC_PP_TRAILING
+    call    warn_begin
+    lea     rsi, [rel s_trailing_after]
+    call    warn_text
+    mov     rsi, r12
+    call    warn_text
+    lea     rsi, [rel s_trailing_ignored]
+    call    warn_text
+    call    warn_end
+.ret:
+    pop     r13
+    pop     r12
+    ret
 
 ; ---- prep_handle_endif ------------------
 prep_handle_endif:
     prologue
     push    rbx
     mov     rbx, rdi
+
+    ; "%endif x": NASM's warning, unless the level is dead (an outer one
+    ; skips it, or it had a second %else)
+    cmp     word [rbx + PREP_skip_depth], 1
+    ja      .no_trailing
+    movzx   eax, word [rbx + PREP_depth]
+    test    eax, eax
+    jz      .endif_live
+    dec     eax
+    test    byte [rbx + PREP_cond_taken + rax], 4
+    jnz     .no_trailing_drop
+.endif_live:
+    lea     rsi, [rel s_dir_endif]
+    call    prep_trailing
+    jmp     .no_trailing
+.no_trailing_drop:
+    call    prep_trailing_quiet
+.no_trailing:
 
     ; 1. If we are skipping, decrement skip depth
     cmp     word [rbx + PREP_skip_depth], 0
@@ -9629,6 +10661,8 @@ prep_parse_count:
     ; write it so); the count, then ".nolist" with its point taken
     cmp     byte [rsp + TOKEN_kind], TOK_FLOAT
     jne     .no_count
+    xor     r9d, r9d                       ; the minimum's
+.dot_count:
     mov     rsi, [rsp + TOKEN_value]
     test    rsi, rsi
     jz      .no_count
@@ -9660,8 +10694,10 @@ prep_parse_count:
     jmp     .dot_value
 .dot_valued:
     mov     byte [rel mdef_dot], 1
-    mov     r13, rdx
     mov     r14, rdx
+    test    r9d, r9d
+    jnz     .range                         ; "0-1.nolist": the maximum's
+    mov     r13, rdx
     jmp     .range
 .count_number:
     mov     rdi, [rsp + TOKEN_value]
@@ -9680,11 +10716,15 @@ prep_parse_count:
     mov     rsi, rsp
     call    prep_raw_next
     cmp     byte [rsp + TOKEN_kind], TOK_NUMBER
-    jne     .max_star
+    jne     .max_dot
     mov     rdi, [rsp + TOKEN_value]
     call    str_to_int
     mov     r14, rdx
     jmp     .range
+.max_dot:
+    mov     r9d, 1
+    cmp     byte [rsp + TOKEN_kind], TOK_FLOAT
+    je      .dot_count
 .max_star:
     cmp     byte [rsp + TOKEN_kind], TOK_STAR
     jne     .no_max
@@ -10506,6 +11546,25 @@ prep_handle_rep:
     ;    "%rep %%len" drives compile_time_hash.
     mov     rdi, rbx
     call    prep_drop_stale_newline
+    ; "%rep .nolist 4": its lines not listed (NASM's)
+    xor     r12d, r12d
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .error
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .rep_count
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel s_rep_nolist]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .rep_count
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .error
+    mov     r12d, MACRO_FLAG_NOLIST
+.rep_count:
     mov     rdi, rbx
     call    parser_evaluate_expression
     test    rax, rax
@@ -10520,6 +11579,7 @@ prep_handle_rep:
     jnz     .error
     mov     r15, rdx               ; r15 = Macro struct
     mov     byte [r15 + MACRO_tag], TAG_MACRO
+    mov     [r15 + MACRO_flags], r12b
     mov     qword [r15 + MACRO_name], 0
     mov     word [r15 + MACRO_min_params], 0
     mov     word [r15 + MACRO_max_params], 0
@@ -10645,6 +11705,15 @@ fn_col:        resq 1              ; ... the next one's column
 fn_tok:        resb TOKEN_SIZE     ; ... a token being made
 fn_num_buf:    resb 96             ; ... a number's digits
 fn_prefix:     resb 1              ; ... 1: 0x before them
+alignb 2
+fn_radix:      resw 1              ; %=(x): the radix letter | 0x100 unsigned
+cond_is_else:  resb 1              ; prep_cond_branch: called for a %else
+interp_ccneg:  resb 1              ; prep_resolve_interp: a "%-1" being written
+interp_brace_ctx: resb 1           ; ... a "%{$name}" being read
+alignb 8
+interp_ccstart: resq 1             ; ... where its text starts in the output
+alignb 4
+dir_line:      resd 1              ; the line of the directive being handled
 idn_depth:     resd 1              ; prep_idn_collect: parentheses open
 idn_quote:     resb 1              ; ... the quote the token's text is in
 alignb 8
@@ -10655,6 +11724,12 @@ def_func:      resb 1              ; MACRO_FLAG_FUNC for NAME(a, b)
 def_nparams:   resb 1
 fn_depth:      resd 1              ; parenthesis depth in a function-like call
 def_pnames:    resq 9              ; parameter names of a function-like %define
+def_pflags:    resb 9              ; ... their marks (PF_*)
+def_pradix:    resb 9              ; ... the radix letter of an =x/x one, or 0
+def_pcur_radix: resb 1             ; the parameter being read: its radix,
+def_radix_next: resb 1             ; ... a "/" just read
+alignb 8
+def_pcur:      resq 1              ; ... and its name (0 so far)
 def_scratch:   resb DEFINE_MAX_TOKENS * TOKEN_SIZE
 alignb 8
 def_cap:       resq 1              ; their capacity
