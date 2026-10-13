@@ -593,6 +593,7 @@ code_table:
     code_msg EXIT_NOT_DEFINING,      m_macro_def, t_not_defining
     code_msg EXIT_NO_REP,            m_no_rep
     code_msg EXIT_NO_SIZE,           m_no_size
+    code_msg EXIT_SIZE_MISMATCH,     m_size_mismatch
     code_msg EXIT_COFF_RELOC,        m_coff_reloc, t_coff_reloc
     code_msg EXIT_COFF_SPECIAL,      m_coff_special
     code_msg EXIT_ILOG2,             m_ilog2
@@ -733,6 +734,7 @@ m_ea_size_mix:  db "impossible combination of address sizes", 0
 m_macro_minmax: db "minimum parameter count exceeds maximum", 0
 m_no_rep:       db "`%endrep': no matching `%rep'", 0
 m_no_size:      db "operation size not specified", 0
+m_size_mismatch: db "mismatch in operand sizes", 0
 m_ctx_deep:     db "context stack nested too deeply", 0
 m_align_mode:   db "unknown alignment mode", 0
 m_reg_size:     db "invalid register size specification", 0
