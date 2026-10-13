@@ -120,6 +120,9 @@ TYPES = [   # name, rclass, special, rsize, msize, fixreg, imm
     # one tile register each (tilezero: ModRM 11 tmm 000)
     *[("TMM%d" % n, C_TMM, 0, 0, NOMEM, n, 0) for n in range(8)],
     ("SS", C_SEG, 0, 0, NOMEM, 2, 0), ("DS", C_SEG, 0, 0, NOMEM, 3, 0),
+    # NASM's rm8 with "nohi" (pinsrb): the byte register encoded as its
+    # 32-bit one - no REX for sil / dil, no ah .. bh
+    ("RM8N", C_GPR, 6, 8, 8, 0xFF, 0),
 ]
 TY = {t[0]: i for i, t in enumerate(TYPES)}
 
@@ -984,6 +987,8 @@ def nasm_form(name, ops, enc, flags=()):
             if d == "to" and base == "fpureg":
                 to = True
                 continue
+            if d == "rs4" and base == "zmmreg":
+                continue                         # zmm1+3: the block's first register
             if d in ("b16", "b32", "b64"):
                 bc = int(d[1:])
             elif d in ("er", "sae"):
@@ -1167,6 +1172,8 @@ def nasm_forms():
         for args, n8 in nasm_form(name, ops, enc, flags):
             if not nasm_allowed(name, args[10]):
                 continue
+            if args[10] == ENC_LEGACY and re.search(r"\bnohi\b", enc):
+                args = (args[0], ["RM8N" if t == "RM8" else t for t in args[1]]) + tuple(args[2:])
             form(*args)
             if args[10] == ENC_EVEX:
                 forms[-1] = forms[-1] + (n8,)
@@ -1176,9 +1183,23 @@ nasm_forms()
 def isa_text():
     text = isa_base()
     new = sorted({f[0] for f in forms} - ISA_NAMES)
+    # the IDs the generated block already gave keep theirs (the sources name
+    # some: iretw, pushaw ...); a new mnemonic takes the next one free
+    prev = open(ISA, encoding="utf-8").read().replace("\r\n", "\n")
+    kept = {}
+    if ISA_BEGIN in prev:
+        blk = prev[prev.index(ISA_BEGIN):prev.index(ISA_END)]
+        kept = {m.group(1): int(m.group(2)) for m in re.finditer(r'mnc_ent\s+"([^"]+)",\s*0,\s*(\d+)', blk)}
+    nxt = max(list(kept.values()) + [NASM_ID0 - 1]) + 1
+    ids = {}
+    for n in new:
+        if n not in kept:
+            kept[n] = nxt
+            nxt += 1
+        ids[n] = kept[n]
     lines = text.split("\n")
     last = max(i for i, l in enumerate(lines) if re.match(r'\s*mnc_ent\s+"', l))
-    block = [ISA_BEGIN] + ['    mnc_ent "%s", 0, %d' % (n, NASM_ID0 + i) for i, n in enumerate(new)] + [ISA_END]
+    block = [ISA_BEGIN] + ['    mnc_ent "%s", 0, %d' % (n, ids[n]) for n in new] + [ISA_END]
     return "\n".join(lines[:last + 1] + block + lines[last + 1:])
 
 # ============================================================================
