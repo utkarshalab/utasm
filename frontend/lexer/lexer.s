@@ -232,6 +232,9 @@ lexer_next:
     je      .emit_single_percent
     cmp     byte [r11], 9
     je      .emit_single_percent
+    ; "%(": a data list's percent (db %(1, 2)); no directive is named so
+    cmp     byte [r11], '('
+    je      .emit_single_percent
     ; "%%" before a blank is signed modulo (-7 %% 2); %%local has none
     cmp     byte [r11], '%'
     jne     .not_dpercent
@@ -877,6 +880,10 @@ lexer_next:
     jmp     .ctx_local_loop
 
 .ctx_local_done:
+    ; "%$_ur%$_uses", "%$x_%1": what follows is pasted on - one name
+    mov     r10, [rbx + LEXER_pos]
+    call    .glue_follows
+    je      .lex_ident_interp              ; (r13: the text from the %)
     mov     r10, [rbx + LEXER_pos]
     sub     r10, r13
     mov     rdi, [rbx + LEXER_arena]
@@ -972,6 +979,10 @@ lexer_next:
     je      .interp_two
     cmp     al, '$'
     je      .interp_two
+    cmp     al, '+'
+    je      .interp_cc
+    cmp     al, '-'
+    je      .interp_cc
     sub     eax, '0'
     cmp     eax, 9
     jbe     .interp_digits
@@ -1001,6 +1012,16 @@ lexer_next:
     add     qword [rbx + LEXER_pos], 2
     add     word  [rbx + LEXER_col], 2
     jmp     .interp_scan
+.interp_cc:
+    ; "%+1" / "%-1": a condition code parameter, if a digit follows
+    lea     r11, [r10 + 2]
+    cmp     r11, [rbx + LEXER_end]
+    jge     .interp_finish
+    movzx   eax, byte [r11]
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .interp_finish
+    jmp     .interp_two
 .interp_digits:
     ; "%12": the parameter's digits (the scan takes them on anyway)
     inc     qword [rbx + LEXER_pos]
@@ -1021,7 +1042,7 @@ lexer_next:
     jmp     .interp_scan
 
 ; .glue_follows: ZF set when the text at r10 continues a name by
-; interpolation: %[...], %N, %{...}, %%name. Clobbers rax, r11.
+; interpolation: %[...], %N, %{...}, %%name, %$name. Clobbers rax, r11.
 .glue_follows:
     cmp     r10, [rbx + LEXER_end]
     jae     .glue_no
@@ -1037,6 +1058,12 @@ lexer_next:
     je      .glue_yes
     cmp     al, '%'
     je      .glue_local
+    cmp     al, '$'
+    je      .glue_local                    ; "x_%$name" (and %$$name)
+    cmp     al, '+'
+    je      .glue_cc
+    cmp     al, '-'
+    je      .glue_cc
     sub     eax, '0'
     cmp     eax, 9
     ja      .glue_no
@@ -1044,15 +1071,28 @@ lexer_next:
     cmp     eax, eax
     ret
 .glue_local:
-    ; "%%" then a name (not the "%%" modulo operator)
+    ; "%%" / "%$" then a name (not the "%%" modulo operator)
     lea     r11, [r10 + 2]
     cmp     r11, [rbx + LEXER_end]
     jae     .glue_no
+    cmp     byte [r11], '$'
+    je      .glue_yes                      ; %$$name
     push    rdi
     movzx   edi, byte [r11]
     call    str_is_ident_char
     pop     rdi
     cmp     rax, TRUE
+    ret
+.glue_cc:
+    ; "j%-1": a parameter as a condition code (%+1), or its inverse (%-1)
+    lea     r11, [r10 + 2]
+    cmp     r11, [rbx + LEXER_end]
+    jae     .glue_no
+    movzx   eax, byte [r11]
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .glue_no
+    cmp     eax, eax
     ret
 .glue_no:
     test    rsp, rsp                       ; ZF clear
@@ -1170,14 +1210,27 @@ lexer_next:
     jbe     .lex_number_done
     movzx   rax, byte [r10 - 1]
     cmp     al, 'e'
-    je      .lex_number_advance
+    je      .lex_number_e_sign
     cmp     al, 'E'
-    je      .lex_number_advance
+    je      .lex_number_e_sign
     cmp     al, 'p'
     je      .lex_number_advance
     cmp     al, 'P'
     je      .lex_number_advance
     jmp     .lex_number_done
+.lex_number_e_sign:
+    ; in a hex number "e" is a digit: "$1e+16" is $1e plus 16 (NASM's)
+    cmp     byte [r13], '$'
+    je      .lex_number_done
+    cmp     byte [r13], '0'
+    jne     .lex_number_advance
+    movzx   eax, byte [r13 + 1]
+    or      eax, 0x20
+    cmp     eax, 'x'
+    je      .lex_number_done
+    cmp     eax, 'h'
+    je      .lex_number_done
+    jmp     .lex_number_advance
 
 .is_float:
     mov     r14, 1
@@ -1227,9 +1280,12 @@ lexer_next:
     mov     rsi, rdx
 .fe_digits:
     movzx   eax, byte [rsi]
+    cmp     eax, '_'
+    je      .fe_digit                      ; "1_0e16"
     sub     eax, '0'
     cmp     eax, 9
     ja      .fe_e
+.fe_digit:
     inc     rsi
     jmp     .fe_digits
 .fe_e:
@@ -1255,6 +1311,8 @@ lexer_next:
 .fe_exp_digits:
     inc     rsi
     movzx   eax, byte [rsi]
+    cmp     eax, '_'
+    je      .fe_exp_digits                 ; "1e1_6"
     sub     eax, '0'
     cmp     eax, 9
     jbe     .fe_exp_digits
@@ -1876,6 +1934,12 @@ lexer_next:
     movzx   rdi, byte [r13]
     cmp     dil, '{'
     je      .lex_braced_directive
+    ; "%,": NASM's conditional comma (the preprocessor's prep_function)
+    cmp     dil, ','
+    jne     .lex_directive_loop
+    inc     qword [rbx + LEXER_pos]
+    inc     word  [rbx + LEXER_col]
+    jmp     .dir_name
 
 .lex_directive_loop:
     mov     r10, [rbx + LEXER_pos]
@@ -1940,6 +2004,13 @@ lexer_next:
     ; pasted on, as NASM pastes it - one interpolated name, from the %
     test    r10, r10
     jz      .dir_name
+    ; "%{$name}", "%{$name}%1": a context-local, a name of its own (its
+    ; %define's text when it has one: prep_resolve_interp)
+    cmp     byte [r13], '$'
+    jne     .braced_number
+    sub     r13, 2                         ; the text starts at the %
+    jmp     .lex_ident_interp
+.braced_number:
     xor     ecx, ecx
 .braced_digit:
     movzx   eax, byte [r13 + rcx]
