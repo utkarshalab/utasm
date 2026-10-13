@@ -279,7 +279,51 @@ BIN_PROBES = {'basic_no_section': 'nop\nret\n',
  'pp_ifdef_label': 'lbl: db 0\n%ifdef lbl\ndb 1\n%else\ndb 2\n%endif\n',
  'pp_ifdef_file': '%ifdef __FILE__\ndb 1\n%else\ndb 2\n%endif\n',
  'pp_ifdef_assign': '%assign A 3\n%ifdef A\ndb A\n%endif\n',
- 'pp_ifdef_mline': '%macro mm 0\nnop\n%endmacro\n%ifdef mm\ndb 1\n%else\ndb 2\n%endif\n'}
+ 'pp_ifdef_mline': '%macro mm 0\nnop\n%endmacro\n%ifdef mm\ndb 1\n%else\ndb 2\n%endif\n',
+ # NASM 2.15/2.16 single-line macro parameters: =eval (radix, unsigned),
+ # &string, &&string-unless-one, x+ greedy, empty ones, overloads by count
+ 'pp_def_eval': '%define tonum(=x) x\ndd tonum(1+3), tonum(5*7)\n',
+ 'pp_def_radix': '%define h(=x/x) x\n%define u(=x/u) x\n%define b(=x/b) x\ndd h(255), u(-1), b(5)\n',
+ 'pp_def_str': '%define s(&x) x\n%define q(&&x) x\ndb s(abc), q("z"), q(w)\n',
+ 'pp_def_greedy': '%define g(a,b,c+) a + 66 %, b * 3 %, c\ndb g(1,2)\ndb g(1,2,3,4,5)\n',
+ 'pp_def_overload': '%define f(x) 1\n%define f(x,y) 2\n%define f(x) 3\ndb f(a), f(a,b)\n',
+ 'pp_def_empty_param': '%define e(foo,) foo + 1\n%define m() 7\ndb e(2,3), m()\n',
+ 'pp_def_func_name': '%define bar(x) (x*2)\ndb bar(4)\nbar equ 3\ndb bar\n',
+ 'pp_cond_comma': '%define g(a,c+) [a %, c]\nmov eax, g(rbx)\nmov eax, g(rbx, rcx)\n',
+ 'pp_map_groups': '%define bar(=x,y) (x*y)\ndw %map(bar::2,1+2,3+4,5+6,7+8)\n',
+ 'pp_map_join': "%define join(sep) ''\n%define _join(sep,str) sep,str\n"
+                "%define join(sep,s1,sn+) %strcat(s1, %map(_join:(sep) %, sn))\n"
+                "db join(':')\ndb join(':','a')\ndb join(':','a','b','c')\n",
+ 'pp_rep_nolist': '%rep .nolist 2\nnop\n%endrep\n%macro m 0-1.nolist\n%rep %1 1\nret\n%endrep\n%endmacro\nm\nm .nolist\n',
+ 'pp_if_trailing': '%if 0\ndb 4\n%else trailing\ndb 5\n%elif 1\ndb 6\n%endif junk\n',
+ 'pp_ctx_paste': '%macro m 1\n%push c\n%define %$n %1\n%%top_%$n:\nx_%$n: dd %{$n}_end - x_%$n\n%{$n}_end:\n%pop\n%endmacro\nm abc\n',
+ 'pp_ctx_assign_paste': '%push c\n%assign %$i 0\n%rep 3\n%assign %$v%$i %$i*2\nmov ecx, %$v%$i\n%assign %$i %$i+1\n%endrep\n%pop\n',
+ 'pp_ctx_label_macro': '%macro m 0\nnop\n%endmacro\n%push c\n%$x m\n%pop\n',
+ 'pp_cc_params': '%macro j 1\n.l_%+1: j%-1 .l_%+1\n%endmacro\nj z\nj ae\n',
+ 'pp_interp_paste': '%use altreg\n%assign n 2\n%define g_b b\n%define g_q\nmov eax, %[r %+ n %+ d]\nmov rax, %[r %+ n %+ g_q]\n',
+ 'data_dup': 'db 6 dup (33, 34), 35\ndb %(44,55), %(\'XX\')\ndw 3 dup (0xcc, 2 dup byte (\'PQ\'), ?), 0xabcd\n'
+             'db 7 dup dword (?, word ?, ?)\ndd 4 dup (?)\n',
+ 'num_radix_rules': 'db 0h, 0x, 0b, 0dh, 0bh, 0dx, 0bx\ndd $1e+16, 1e16h, 1_0e16, 1e1_6\n',
+ 'num_radix_floats': 'dd 0d3.7282705e+4, 0x1.23456789p+15, 0q1.10642547422p+15\n'
+                     'dd 0b1.0010_0011_0100_0101_0110_0111_1000_1001p+15\n',
+ 'enc_prefixes': '{rex} add eax, edx\n{rex} add al, dl\n{vex} vcomisd xmm0, xmm1\n{vex3} vcomisd xmm0, xmm1\n'
+                 '{evex} vcomisd xmm0, xmm1\n',
+ 'enc_latevex': 'vpmadd52luq ymm3, ymm1, [rsi]\n{vex} vpmadd52luq ymm3, ymm1, [rsi]\ncpu latevex\n'
+                'vpmadd52luq ymm3, ymm1, [rsi]\ncpu default\ncpu noevex\nvpmadd52luq ymm3, ymm1, [rsi]\n',
+ 'enc_amx': 'ldtilecfg [rsi]\ntilezero tmm1\ntileloadd tmm2, [rax,rdx*2]\ntileloadd tmm2, [rax]\n'
+            'tdpbf16ps tmm1, tmm2, tmm3\ntilestored [rax+rdx], tmm1\ntilerelease\n',
+ 'enc_fp16': 'vaddph zmm1, zmm2, zmm3\nvaddph zmm1{k1}{z}, zmm2, [rax]\nvfmaddcph xmm1, xmm2, xmm3\n'
+             'vcvtph2psx zmm1, ymm2\nvmovw xmm1, [rax]\n',
+ 'enc_xop_fma4': 'vfmaddps xmm1, xmm2, xmm3, xmm4\nvprotb xmm1, xmm2, xmm3\nvpcmov xmm1, xmm2, xmm3, xmm4\n',
+ 'enc_two_operand_avx': 'vaddps xmm1, xmm3\nvaddps zmm1{k1}, zmm3\nvpcmpeqb xmm1, [rax]\n',
+ 'enc_vcmp_alias': 'vcmpeq_ospd xmm1, xmm2, xmm3\nvcmpfalse_oqpd k1, zmm2, zmm3\n',
+ 'enc_kmov_sized': 'kmov byte k1, k2\nkmov k1, word [rax]\nkmov k1, eax\nkadd k1, dword k2, k3\nkmovb k1, dl\n',
+ 'enc_split_ea': 'mov eax, [rax,rcx*4]\nmov eax, [rax+8,rcx]\n',
+ 'enc_size_prefixes': 'osp rdfsbase rax\nclzero eax\nretw\nxcryptecb\npextrw rax, xmm0, 1\nmovd r8, mm1\n',
+ 'enc_x87_forms': 'fadd\nfld\nfstp\nffreep\nfadd to st1\nfsubr to st2\n',
+ 'struc_base_offset': 'struc s, -40\n.l: resd 1\n.w: resw 1\nendstruc\nmov [rbp + s.w], ax\n'
+                      'istruc s\nat .w, db 5\niend\ndd s_size, s\n',
+ 'ptr_as_label': 'mov eax, dword ptr\nptr:\n'}
 
 # ELF objects: section contents, relocations and symbols are compared
 ELF_PROBES = {
