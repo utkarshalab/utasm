@@ -161,7 +161,10 @@
 %define WC_PP_ELSE_ELIF        17  ; pp-else-elif: %elif after %else
 %define WC_PREFIX_OPSIZE       18  ; prefix-opsize: "o32 inc ax"
 %define WC_PREFIX_HLE          19  ; prefix-hle: "xacquire mov [rax], ecx"
-%define WC_COUNT               20
+%define WC_OBSOLETE_REMOVED    20  ; obsolete-removed: "pop cs"
+%define WC_OBSOLETE_NOP        21  ; obsolete-nop: "pcommit"
+%define WC_OBSOLETE_VALID      22  ; obsolete-valid: "pop cs" under cpu 8086
+%define WC_COUNT               23
 
 ; a kept expression's record (parser_defer_record): +0 RELOC_EXPR_MARK,
 ; +8 text, +16 tokens, +24 count; and for core/known.s:
@@ -500,6 +503,7 @@
 %define CPUF_LATEVEX           0x01        ; cpu latevex: the late VEX forms too
 %define CPUF_NOVEX             0x02        ; cpu novex: no VEX forms
 %define CPUF_NOEVEX            0x04        ; cpu noevex: no EVEX forms
+%define CPUF_8086              0x08        ; cpu 8086: pop cs is still an instruction
 ; INST_flags: NASM's encoding prefixes before the mnemonic ("{rex} add eax, edx")
 %define INSTF_REX              0x01        ; {rex}: a REX byte even when none is needed
 %define INSTF_VEX              0x02        ; {vex} / {vex2}: the VEX form, not EVEX
