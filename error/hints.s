@@ -226,7 +226,7 @@ hint_suffix_len  equ $ - hint_suffix
 ; Directives recognised by parser_handle_pseudo_op (frontend/parser/parser.s),
 ; as a packed NUL-separated list. Keep in sync when adding a directive.
 directive_names:
-    db "section", 0, "global", 0, "extern", 0, "weak", 0, "local", 0, "comm", 0
+    db "section", 0, "global", 0, "extern", 0, "weak", 0, "local", 0, "common", 0
     db "bits", 0, "default", 0, "align", 0, "p2align", 0, "org", 0
     db "db", 0, "dw", 0, "dd", 0, "dq", 0
     db "resb", 0, "resw", 0, "resd", 0, "resq", 0, "equ", 0, "times", 0
