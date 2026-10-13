@@ -1405,3 +1405,28 @@ BIN_PROBES.update({
     "times_rep_wrap": "times 2 db 1,2,3,4,5\ntimes 2 db 1,2,3,4,5,6\ntimes 20 db 1,2,3,4,5\n"
                       "times 0x100 db 1,2,3,4\ntimes 2 db 1,2,3,4,5,6,7,8,9\n",
 })
+# floats: NASM's 8-bit format (db), bfloat16, $-prefixed hex floats,
+# __NaN__, %use fp's bf16; a constant too big: infinity, with the warning
+BIN_PROBES.update({
+    "float8_data": "db 0.0, 0.001953125, 0.0625, 1.0, -1.5, 240.0, 1.0e10, 0.5e-10, __Infinity__, __QNaN__\n",
+    "float_bfloat16": "bits 64\nmov ax, __bfloat16__(1.5)\nmov al, __float8__(-2.0)\nmov ax, __?bfloat16?__(3.1415)\n",
+    "float_dollar_hex": "dw $1.0, $1.0p-1, $1.23456789p+10\ndd $1.8p3\ndq $0.1p-1000\n",
+    "float_nan_name": "dw __NaN__\ndd __NaN__\ndq __NaN__\ndt __NaN__\ndo __NaN__\n",
+    "float_use_fp_bf16": "%use fp\nbf16 1.0, -1.5, NaN, Inf, 2000.0\ndb float8(1.0)\n",
+})
+WARN_CASES.update({
+    "warn_float_overflow": "dd 1.0e50\ndq 1.0e400\ndd 1.0\ndb 1.0e10\n",
+})
+# packed BCD in dt (123p, 0p123); %rep 0 runs the body no times (it ran
+# once), a negative count too, with NASM's warning; a float item before
+# does not make a later "-1" a float's negation
+BIN_PROBES.update({
+    "bcd_dt": "dt 765432109876543210p, -456p, +789p\ndt 0p123, -0p765_432_109_876_543_210\ndt 1.5, 123p\n",
+    "rep_zero": "%rep 0\ndb 1\n%endrep\n%assign n 3\n%rep 3-n\ndb 2\n%endrep\ndb 3\n",
+    "float_then_negative": "dd 1.5\n%substr s 'abc' 2,-1\ndb s\n%assign v -2\ndb v\ndb -1\n",
+})
+WARN_CASES.update({
+    "warn_bcd_rep": "dt 98765432109876543210p\n%rep -1\ndb 1\n%endrep\nnop\n",
+})
+CLI_FILES["assign.s"] = '%assign v 5\n%strlen n "abc"\n%macro m 0\n%assign w -3\ndb w\n%endmacro\ndb v, n\nm\n'
+CLI_CASES += [("-E with %assign", ["-f", "bin", "assign.s"], "pp")]
