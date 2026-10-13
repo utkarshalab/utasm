@@ -912,13 +912,24 @@ lexer_next:
     mov     r13, [rbx + LEXER_pos]         ; text starts at '%'
     add     qword [rbx + LEXER_pos], 2     ; skip "%["
     add     word  [rbx + LEXER_col], 2
+    push    r11
+    xor     r11d, r11d                     ; "%[foo%[foo3]bar]": brackets inside
 
 .interp_val_loop:
     mov     r10, [rbx + LEXER_pos]
     cmp     r10, [rbx + LEXER_end]
-    jge     .interp_val_done
+    jge     .interp_val_end
+    cmp     byte [r10], '['
+    jne     .interp_val_rb
+    inc     r11d
+    jmp     .interp_val_next
+.interp_val_rb:
     cmp     byte [r10], ']'
-    je      .interp_val_close
+    jne     .interp_val_next
+    test    r11d, r11d
+    jz      .interp_val_close
+    dec     r11d
+.interp_val_next:
     inc     qword [rbx + LEXER_pos]
     inc     word  [rbx + LEXER_col]
     jmp     .interp_val_loop
@@ -926,6 +937,8 @@ lexer_next:
 .interp_val_close:
     inc     qword [rbx + LEXER_pos]
     inc     word  [rbx + LEXER_col]
+.interp_val_end:
+    pop     r11
 
 .interp_val_done:
     mov     r10, [rbx + LEXER_pos]
@@ -989,20 +1002,36 @@ lexer_next:
     cmp     byte [r11], '['
     jne     .interp_finish
 
-    ; consume "%[" ... "]"
+    ; consume "%[" ... "]", a "%[" ... "]" inside it included
+    ; ("foo%[foo%[n]]", NASM's ppindirect)
     add     qword [rbx + LEXER_pos], 2
     add     word  [rbx + LEXER_col], 2
+    push    r11
+    xor     r11d, r11d                     ; brackets open inside
 .interp_name_loop:
     mov     r10, [rbx + LEXER_pos]
     cmp     r10, [rbx + LEXER_end]
-    jge     .interp_finish
+    jge     .interp_name_end
+    cmp     byte [r10], '['
+    jne     .interp_name_close
+    inc     r11d
+    jmp     .interp_name_next
+.interp_name_close:
     cmp     byte [r10], ']'
-    je      .interp_name_done
+    jne     .interp_name_next
+    test    r11d, r11d
+    jz      .interp_name_done
+    dec     r11d
+.interp_name_next:
     inc     qword [rbx + LEXER_pos]
     inc     word  [rbx + LEXER_col]
     jmp     .interp_name_loop
+.interp_name_end:
+    pop     r11
+    jmp     .interp_finish
 
 .interp_name_done:
+    pop     r11
     inc     qword [rbx + LEXER_pos]
     inc     word  [rbx + LEXER_col]
     jmp     .interp_scan
