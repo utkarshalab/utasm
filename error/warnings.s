@@ -68,6 +68,8 @@ warn_state:
     db 1                                ; WC_PP_TRAILING
     db 1                                ; WC_PP_ELSE_ELSE
     db 1                                ; WC_PP_ELSE_ELIF
+    db 1                                ; WC_PREFIX_OPSIZE
+    db 1                                ; WC_PREFIX_HLE
 
 [SECTION .rodata]
 warn_names:
@@ -75,6 +77,7 @@ warn_names:
     dq wn_lock_error, wn_db_empty, wn_macro_defaults, wn_label_orphan, wn_pie
     dq wn_slash_comment, wn_pp_sel_range, wn_ptr, wn_ea_absolute
     dq wn_macro_redef, wn_pp_trailing, wn_pp_else_else, wn_pp_else_elif
+    dq wn_prefix_opsize, wn_prefix_hle
 wn_other:db "other", 0
 wn_user:        db "user", 0
 wn_zeroing:     db "zeroing", 0
@@ -93,6 +96,8 @@ wn_macro_redef: db "pp-macro-redef-multi", 0
 wn_pp_trailing: db "pp-trailing", 0
 wn_pp_else_else: db "pp-else-else", 0
 wn_pp_else_elif: db "pp-else-elif", 0
+wn_prefix_opsize: db "prefix-opsize", 0
+wn_prefix_hle:  db "prefix-hle", 0
 wn_all:         db "all", 0
 wn_error:       db "error", 0
 s_warning:      db "warning: ", 0
@@ -381,6 +386,23 @@ warn_data_bounds:
     pop     rbx
 .ret:
     ret
+
+; ---- warn_number --------------------------
+;
+; warn_number
+; A number-overflow warning in NASM's words for an immediate ("signed byte
+; value exceeds bounds").
+; Input    : rsi = the text
+; Clobbers : rax, rcx, rdx, rsi, rdi, r8-r11
+;
+global warn_number
+warn_number:
+    push    rsi
+    mov     edi, WC_NUMBER_OVERFLOW
+    call    warn_begin
+    pop     rsi
+    call    warn_text
+    jmp     warn_end
 
 ; warn_keep: appends the text at rsi to warn_buf (as much as fits)
 warn_keep:
