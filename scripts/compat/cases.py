@@ -1430,3 +1430,42 @@ WARN_CASES.update({
 })
 CLI_FILES["assign.s"] = '%assign v 5\n%strlen n "abc"\n%macro m 0\n%assign w -3\ndb w\n%endmacro\ndb v, n\nm\n'
 CLI_CASES += [("-E with %assign", ["-f", "bin", "assign.s"], "pp")]
+# %defalias / %idefalias / %undefalias and the %ifdefalias family (NASM 2.15)
+BIN_PROBES.update({
+    "alias_chain": "%defalias a b\n%defalias b c\n%define c 7\ndb a, b, c\n",
+    "alias_icase": "%idefalias FOO bar\n%define bar 3\ndb foo, Foo, FOO\n",
+    "alias_tests": "%defalias a b\n%ifdefalias a\ndb 1\n%endif\n%ifndefalias b\ndb 2\n%endif\n"
+                   "%if 0\n%elifdefalias a\ndb 5\n%endif\n%ifdef a\ndb 6\n%endif\n",
+    "alias_define_undef": "%defalias a b\n%assign a 5\ndb b\n%define a 1\n%undefalias a\n%define a 2\ndb a, b\n"
+                          "%defalias c d\n%xdefine c 6\ndb d\n%undef c\n%ifdef d\ndb 9\n%endif\n",
+})
+# %?? in a single-line macro's arguments; %[...] inside %[...]; an %assign
+# expands to its value (%defstr sees it); pasted text read again (1e+36,
+# xyzzy1e + 10); __utf16__ in an expression; macro defaults as NASM counts
+# them; %ifmacro m 1+; %iftoken of an empty %define
+BIN_PROBES.update({
+    "pp_qq_in_define_args": "%define label(p, s) p %+ s\nlabel_1:\nmov ax, label(%??, _1)\nlabel_2:\nmov ax, label(%?, _2)\n",
+    "pp_interp_nested": "%assign n 2\n%assign foo2 22\n%assign foo22 3\n%assign foo%[foo%[n]] 9\ndb foo22\n"
+                        "dd foo%[foo%[n]]*100\n%define foo33bar 99\n%assign foo3 33\ndd %[foo%[foo3]bar]\n",
+    "pp_assign_is_text": "%assign b1 1\n%defstr s b1\ndb s\n%assign c 1\n%macro m 0\n%assign bl%[c] c\n"
+                         "%defstr bs bl%[c]\ndb bl%[c]\ndb bs\n%endmacro\nm\n%strlen n 'abc'\n%defstr ns n\ndb ns\n",
+    "pp_paste_rescan": "%macro df 2\ndd %1e+%2\n%endmacro\ndf 1, 36\ndf 1.2, 5\n%define N 1e%++%+ 5\ndd N, 1e+5\n"
+                       "%define foo xyzzy\n%define bar 1e+10\n%define xyzzy1e 15\n%macro dx 2\n%assign xx %1%2\ndw xx\n"
+                       "%endmacro\ndx foo, bar\n",
+    "utf_in_expression": "mov ax, __utf16__(`a`)\nmov ax, __utf16be__(`a`)\ndw __utf16__(`ab`)\n",
+    "macro_defaults_count": "%macro m 1 a\ndb %0, %2\n%endmacro\nm 5\n%macro r 0-* 7,8\ndb %0, %1, %2\n%endmacro\nr\nr 1\n"
+                            "%macro g 1-2+ 3,4\ndb %2\n%endmacro\ng 1\n",
+    "ifmacro_plus": "%macro two 2\nnop\n%endmacro\n%ifmacro two 1+\ndb 1\n%endif\n%ifmacro two 3+\ndb 2\n%endif\n",
+    "iftoken_empty_define": "%define Z\n%define T 1 2\n%iftoken Z\ndb 1\n%else\ndb 2\n%endif\n%iftoken T\ndb 3\n%else\ndb 4\n%endif\n",
+})
+WARN_CASES.update({
+    "warn_message_text": "%macro m 1-2+ a,b\n%warning %0 %1 %2\n%endmacro\nm one\nm one,two,three\n",
+})
+DIAG_CASES += [
+    ("a directive from a %define", "nop\n%define IFNDEF %ifndef\nIFNDEF foo\n"),
+    ("%rep past the limit", "nop\n%rep 2000000\nnop\n%endrep\n"),
+]
+CLI_FILES["increp.s"] = '%rep 3\ndb 0\n%include "two.inc"\n%endrep\n%define F "two.inc"\n%include F\ndb 1\n'
+CLI_FILES["two.inc"] = "db 2\n"
+CLI_CASES += [("%include in %rep", ["-f", "bin", "increp.s"], "bin"),
+              ("--limit-rep", ["-f", "bin", "--limit-rep", "5", "increp.s"], "bin")]
