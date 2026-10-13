@@ -632,16 +632,29 @@ te_match:
     je      .fail
     jmp     .next
 .imm_value:
-    ; "strict dword 5": not the byte-sized immediate forms
+    ; a sign-extended imm8 form: as amd64_imm_canon chose ("push byte x",
+    ; "add eax, strict dword 5", -O0)
+    cmp     r10d, IK_I8S
+    jne     .imm_strict
+    extern  amd64_imm_sb
+    cmp     byte [rel amd64_imm_sb], 2
+    je      .fail
+    cmp     byte [rel amd64_imm_sb], 1
+    je      .next
+.imm_strict:
+    ; "strict 5": not the sign-extended imm8 forms; "strict dword 5": not
+    ; the byte-sized ones at all
     test    byte [rdi + OPERAND_flags], OP_FLAG_STRICT
     jz      .imm_kind
     cmp     byte [rdi + OPERAND_size], 8
     je      .imm_kind
+    cmp     r10d, IK_I8S
+    je      .fail
+    cmp     byte [rdi + OPERAND_size], 0
+    je      .imm_kind
     cmp     r10d, IK_ONE
     je      .fail
     cmp     r10d, IK_I8
-    je      .fail
-    cmp     r10d, IK_I8S
     je      .fail
 .imm_kind:
     cmp     r10d, IK_ONE
@@ -849,7 +862,15 @@ te_emit:
     jz      .rex
     mov     cl, 0x66
     cmp     eax, 1
-    je      .pfx_put
+    jne     .pfx_rep
+    ; an 0F-map form's 66 is part of its opcode, not the operand size that
+    ; o16 / o32 change (cwd's, a one-byte opcode's, is)
+    cmp     byte [r13 + FM_MAP], 2
+    jb      .pfx_put
+    extern  amd64_mand66
+    mov     byte [rel amd64_mand66], 1
+    jmp     .pfx_put
+.pfx_rep:
     mov     cl, 0xF3
     cmp     eax, 2
     je      .pfx_put
