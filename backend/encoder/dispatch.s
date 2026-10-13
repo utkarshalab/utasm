@@ -28,6 +28,8 @@ extern  x86_enc_maxid
 extern  amd64_emit_byte
 extern  amd64_emit_modrm_sib
 extern  amd64_disp8n
+extern  amd64_force_sib
+extern  asm_bits
 
 ; ---- operand classes (C_* in scripts/gen_x86_enc.py) ----
 %define C_GPR       1
@@ -42,6 +44,8 @@ extern  amd64_disp8n
 %define C_SEG       10
 %define C_RC        11              ; {rn-sae} .. {rz-sae}: te_num = rounding mode
 %define C_SAE       12              ; {sae}
+%define C_TMM       13              ; AMX tile registers
+%define C_BND       14              ; MPX bound registers
 %define C_MEM       16
 %define C_IMM       17
 
@@ -56,6 +60,7 @@ extern  amd64_disp8n
 %define SP_DQ       2               ; size 32/64 sets the operand size
 %define SP_IMM      3
 %define SP_VSIB     4               ; memory with a vector index (fixreg = 1/2/3)
+%define SP_TO       5               ; "to st1" (te_high 2): x87's st(i) destination
 %define NOMEM       0xFFFF
 
 ; immediate kinds
@@ -78,7 +83,13 @@ extern  amd64_disp8n
 %define FM_FLAGS    12
 %define FM_VL       13              ; VEX/EVEX vector length (L)
 %define FM_N8       14              ; EVEX disp8*N scale
-%define FM_FIXIMM   15
+%define FM_FIXIMM   15              ; (no TF_FIXIMM: a legacy form's mode needs,
+                                    ; NASM's list - FX_* below)
+%define FX_OSIZE    3               ; 1 o16, 2 o32: 66 in the other modes
+%define FX_ASIZE    0x0C            ; 1 a16, 2 a32, 3 a64 (<< 2): 67 in the others
+%define FX_NOLONG   0x10            ; not in 64-bit mode
+%define FX_LONG     0x20            ; only in 64-bit mode
+%define FX_MUSTREP  0x40            ; an F3 of its own (xcryptecb), unless written
 %define ENC_VEX     1
 %define ENC_EVEX    2
 
@@ -98,11 +109,17 @@ extern  amd64_disp8n
 %define TF_WAIT     8
 %define TF_FIXIMM   16
 %define TF_BCST     32              ; EVEX: a memory operand may be a {1toN} broadcast
+%define TF_V0       64              ; VEX/EVEX: vvvv is operand 0's register
+                                    ; (NASM's "vaddps xmm1, xmm2")
+%define TF_B16      128             ; EVEX: the broadcast elements are 16-bit
+%define ENC_XOP     3               ; AMD XOP: 8F, then the VEX C4 layout
 
 %define MODRM_R     8
 %define MODRM_NONE  9
 
 [SECTION .bss]
+global cpu_latevex
+cpu_latevex: resb 1                 ; NASM's "cpu" encoding choices, CPUF_* (parser.s)
 te_cls:     resb 4                  ; class of each operand (0 = none)
 te_num:     resb 4                  ; register number
 te_high:    resb 4                  ; AH/CH/DH/BH
@@ -164,6 +181,8 @@ amd64_table_encode:
     movzx   eax, word [rcx + rax*2]
     test    eax, eax
     jz      .none
+    mov     r14d, eax                      ; bit 15: these forms are all there are
+    and     eax, 0x7FFF
     dec     eax
     shl     eax, 4
     lea     r13, [rel x86_enc_table]
@@ -177,6 +196,12 @@ amd64_table_encode:
     movzx   eax, word [r13 + FM_ID]
     cmp     ax, [r12 + INST_op_id]
     je      .try
+    ; none fits: for an instruction the table has every form of (NASM's
+    ; list), wrong operands - not the hand-written encoders', stubs for these
+    test    r14d, 0x8000
+    jz      .none
+    mov     eax, EXIT_ENCODE_FAIL
+    jmp     .ret
 .none:
     xor     eax, eax
     jmp     .ret
@@ -291,6 +316,10 @@ te_classify:
     jb      .st
     cmp     eax, 128
     jb      .mm
+    cmp     eax, 136
+    jb      .tmm
+    cmp     eax, 140
+    jb      .bnd
     jmp     .next
 .gpr:
     mov     r8d, C_GPR
@@ -317,14 +346,27 @@ te_classify:
 .k:
     sub     eax, 72
     mov     r8d, C_K
+    lea     rdx, [rel te_size]             ; "byte k1": the size written
+    mov     [rdx + rcx*2], r9w
     jmp     .set_num
 .st:
     sub     eax, 112
     mov     r8d, C_ST
+    movzx   r9d, byte [rdi + OPERAND_is_high]   ; 2: "to st1"
+    lea     rdx, [rel te_high]
+    mov     [rdx + rcx], r9b
     jmp     .set_num
 .mm:
     sub     eax, 120
     mov     r8d, C_MM
+    jmp     .set_num
+.tmm:
+    sub     eax, 128
+    mov     r8d, C_TMM
+    jmp     .set_num
+.bnd:
+    sub     eax, 136
+    mov     r8d, C_BND
     jmp     .set_num
 .vec:
     sub     eax, 80
@@ -360,6 +402,21 @@ te_match:
     push    rbx
     mov     byte [rel te_osz], 0
     mov     byte [rel te_osz_v], 0
+    ; a form of one mode (retd: not in 64-bit mode; clzero rax: only there)
+    test    byte [r13 + FM_FLAGS], TF_FIXIMM
+    jnz     .mode_ok
+    movzx   eax, byte [r13 + FM_FIXIMM]
+    test    eax, FX_NOLONG | FX_LONG
+    jz      .mode_ok
+    cmp     byte [rel asm_bits], 64
+    je      .mode_64
+    test    eax, FX_LONG
+    jnz     .fail
+    jmp     .mode_ok
+.mode_64:
+    test    eax, FX_NOLONG
+    jnz     .fail
+.mode_ok:
     cmp     byte [rel te_evex], 0
     je      .enc_ok
     movzx   eax, byte [r13 + FM_PFX]
@@ -367,6 +424,44 @@ te_match:
     cmp     eax, ENC_EVEX
     jne     .fail                          ; masks/broadcast/rounding: EVEX forms only
 .enc_ok:
+    ; {vex} / {evex}: only that encoding's forms
+    test    byte [r12 + INST_flags], INSTF_VEX | INSTF_EVEX
+    jz      .enc_any
+    movzx   eax, byte [r13 + FM_PFX]
+    shr     eax, 4
+    test    byte [r12 + INST_flags], INSTF_EVEX
+    jnz     .enc_want_evex
+    cmp     eax, ENC_VEX
+    jne     .fail
+    jmp     .enc_any
+.enc_want_evex:
+    cmp     eax, ENC_EVEX
+    jne     .fail
+.enc_any:
+    ; a "late" VEX form (vpmadd52luq: AVX-IFMA): only with {vex} or after
+    ; "cpu latevex"; else the EVEX form, as NASM chooses
+    test    byte [r13 + FM_VL], 0x40
+    jz      .not_late
+    test    byte [r12 + INST_flags], INSTF_VEX
+    jnz     .not_late
+    test    byte [rel cpu_latevex], CPUF_LATEVEX | CPUF_NOEVEX
+    jz      .fail                          ; (with no EVEX, the VEX one)
+.not_late:
+    ; "cpu novex" / "cpu noevex": not that encoding, unless asked for
+    test    byte [r12 + INST_flags], INSTF_VEX | INSTF_EVEX
+    jnz     .cpu_ok
+    movzx   eax, byte [r13 + FM_PFX]
+    shr     eax, 4
+    cmp     eax, ENC_VEX
+    jne     .cpu_not_vex
+    test    byte [rel cpu_latevex], CPUF_NOVEX
+    jnz     .fail
+.cpu_not_vex:
+    cmp     eax, ENC_EVEX
+    jne     .cpu_ok
+    test    byte [rel cpu_latevex], CPUF_NOEVEX
+    jnz     .fail
+.cpu_ok:
     xor     ecx, ecx
 .op:
     movzx   eax, byte [r13 + FM_TYPES + rcx]
@@ -408,6 +503,20 @@ te_match:
     cmp     eax, ENC_EVEX
     jne     .fail                          ; xmm16-31 need EVEX
 .reg_fix:
+    ; "to st1" only for the forms that take it (NASM's fpureg|to), and
+    ; only with it
+    cmp     r8d, C_ST
+    jne     .not_st_to
+    lea     rdx, [rel te_high]
+    xor     eax, eax
+    cmp     byte [rdx + rcx], 2
+    sete    al
+    xor     r10d, r10d
+    cmp     byte [rbx + TY_SPECIAL], SP_TO
+    sete    r10b
+    cmp     eax, r10d
+    jne     .fail
+.not_st_to:
     movzx   eax, byte [rbx + TY_FIXREG]
     cmp     eax, 0xFF
     je      .reg_size
@@ -416,8 +525,19 @@ te_match:
     cmp     eax, r10d
     jne     .fail
 .reg_size:
+    cmp     r8d, C_K
+    jne     .not_k
+    movzx   eax, word [rbx + TY_RSIZE]     ; K8 .. K64: the size written, if
+    test    eax, eax                       ; one is ("kmov k1, byte [x]": NASM's
+    jz      .next                          ; sizes must agree where written)
+    test    r9d, r9d
+    jz      .next
+    cmp     eax, r9d
+    jne     .fail
+    jmp     .next
+.not_k:
     cmp     r8d, C_GPR
-    jne     .next                          ; vector/k/st classes carry their size
+    jne     .next                          ; vector/st classes carry their size
     movzx   eax, word [rbx + TY_RSIZE]
     test    eax, eax
     jz      .reg_v
@@ -455,6 +575,9 @@ te_match:
     movzx   r10d, byte [rdi + OPERAND_ctrl]
     shr     r10d, 2
     and     r10d, 7                        ; log2(N)
+    mov     r11d, 16
+    test    byte [r13 + FM_FLAGS], TF_B16
+    jnz     .bc_elem
     mov     r11d, 32
     test    byte [r13 + FM_FLAGS], TF_W
     jz      .bc_elem
@@ -666,6 +789,10 @@ te_emit:
     inc     ecx
     cmp     ecx, 4
     jb      .roles
+    test    byte [r13 + FM_FLAGS], TF_V0
+    jz      .roles_done
+    mov     byte [rel te_vop], 0           ; the omitted source: the destination
+.roles_done:
 
     ; fwait (fstsw, fstcw, ...)
     test    byte [r13 + FM_FLAGS], TF_WAIT
@@ -677,8 +804,11 @@ te_emit:
     shr     eax, 4
     cmp     eax, ENC_VEX
     je      .vex
+    cmp     eax, ENC_XOP
+    je      .vex
     cmp     eax, ENC_EVEX
     je      .evex
+    call    .mode_prefixes
     ; operand-size prefix: a 16-bit operation (32-bit in bits 16) - unless
     ; the operand is sized 32/64 by REX.W alone behind a mandatory prefix
     ; (cvttsd2si eax: F2, adcx eax: 66), which the operand size is not
@@ -825,6 +955,10 @@ te_emit:
     inc     ecx
     cmp     ecx, 4
     jb      .rex_8
+    test    byte [r12 + INST_flags], INSTF_REX
+    jz      .rex_needed
+    or      r15d, 0x40                     ; {rex}: one even with no bit set
+.rex_needed:
     test    r15d, r15d
     jz      .map
     test    r8d, r8d
@@ -855,10 +989,17 @@ te_emit:
     and     ecx, 3
     or      eax, ecx                       ; pp
     mov     [rel te_vvvv], al
+    mov     al, 0x8F                       ; XOP: always the three-byte layout
+    movzx   ecx, byte [r13 + FM_PFX]
+    shr     ecx, 4
+    cmp     ecx, ENC_XOP
+    je      .vex3_esc
     cmp     byte [r13 + FM_MAP], 2
     jne     .vex3
     test    r15d, 0x0B
     jnz     .vex3
+    test    byte [r12 + INST_flags], INSTF_VEX3
+    jnz     .vex3                          ; {vex3}
     mov     al, 0xC5
     call    amd64_emit_byte
     movzx   eax, byte [rel te_vvvv]
@@ -870,9 +1011,11 @@ te_emit:
     jmp     .opcode
 .vex3:
     mov     al, 0xC4
+.vex3_esc:
     call    amd64_emit_byte
     movzx   eax, byte [r13 + FM_MAP]
     dec     eax                            ; mmmmm: 1 0F, 2 0F 38, 3 0F 3A
+                                           ; (XOP: 8, 9, 10)
     test    r15d, 4
     jnz     .vex3_x
     or      eax, 0x80
@@ -903,7 +1046,8 @@ te_emit:
     mov     al, 0x62
     call    amd64_emit_byte
     movzx   eax, byte [r13 + FM_MAP]
-    dec     eax                            ; mm: 1 0F, 2 0F 38, 3 0F 3A
+    dec     eax                            ; mmm: 1 0F, 2 0F 38, 3 0F 3A,
+                                           ; 5 and 6 (AVX512-FP16)
     test    r15d, 4
     jnz     .ev_x
     or      eax, 0x80                      ; R
@@ -1007,7 +1151,10 @@ te_emit:
     test    byte [rdi + OPERAND_ctrl], 2
     jz      .ev_next
     or      eax, 0x10                      ; b: a broadcast
-    mov     r15d, 4                        ; N = one element
+    mov     r15d, 2                        ; N = one element
+    test    byte [r13 + FM_FLAGS], TF_B16
+    jnz     .ev_next
+    mov     r15d, 4
     test    byte [r13 + FM_FLAGS], TF_W
     jz      .ev_next
     mov     r15d, 8
@@ -1078,7 +1225,12 @@ te_emit:
     push    rax
     call    te_operand
     pop     rax
+    ; FM_VL bit 7: NASM's SIB/MIB forms (tileloadd, bndldx) always take a SIB
+    movzx   ecx, byte [r13 + FM_VL]
+    shr     ecx, 7
+    mov     [rel amd64_force_sib], cl
     call    amd64_emit_modrm_sib
+    mov     byte [rel amd64_force_sib], 0
     mov     byte [rel amd64_disp8n], 1
     jmp     .imms
 .fixed_modrm:
@@ -1130,6 +1282,68 @@ te_emit:
 .fail:
     mov     eax, EXIT_ENCODE_FAIL
     jmp     .ret
+
+; .mode_prefixes: a legacy form's own F3, 66 and 67 (FX_*), in NASM's
+; order: its REP, its operand size and address size where the mode's differ
+; (retw in bits 32: 66; clzero eax in bits 64: 67). A 67 the operands need
+; (memory addressed by other registers) the encoder put out already.
+.mode_prefixes:
+    test    byte [r13 + FM_FLAGS], TF_FIXIMM
+    jnz     .mp_ret
+    movzx   r15d, byte [r13 + FM_FIXIMM]
+    test    r15d, r15d
+    jz      .mp_ret
+    test    r15d, FX_MUSTREP
+    jz      .mp_osize
+    xor     ecx, ecx
+.mp_rep_written:
+    cmp     byte [r12 + INST_prefixes + rcx], 0xF3
+    je      .mp_osize
+    inc     ecx
+    cmp     ecx, 4
+    jb      .mp_rep_written
+    mov     al, 0xF3
+    call    amd64_emit_byte
+.mp_osize:
+    mov     eax, r15d
+    and     eax, FX_OSIZE
+    jz      .mp_asize
+    cmp     byte [rel asm_bits], 16
+    je      .mp_in16
+    cmp     eax, 1                         ; o16 outside bits 16
+    jne     .mp_asize
+    jmp     .mp_66
+.mp_in16:
+    cmp     eax, 2                         ; o32 in bits 16
+    jne     .mp_asize
+.mp_66:
+    mov     al, 0x66
+    call    amd64_emit_byte
+.mp_asize:
+    mov     eax, r15d
+    shr     eax, 2
+    and     eax, 3
+    jz      .mp_ret
+    movzx   ecx, byte [rel asm_bits]       ; the mode's: 1 bits 16, 2 32, 3 64
+    shr     ecx, 4
+    cmp     ecx, 4
+    jne     .mp_mode
+    dec     ecx                            ; (64 >> 4 = 4: 3)
+.mp_mode:
+    cmp     eax, ecx
+    je      .mp_ret
+    xor     ecx, ecx
+.mp_mem:
+    lea     rdx, [rel te_cls]
+    cmp     byte [rdx + rcx], C_MEM
+    je      .mp_ret                        ; the operand's 67, if any, is out
+    inc     ecx
+    cmp     ecx, 4
+    jb      .mp_mem
+    mov     al, 0x67
+    call    amd64_emit_byte
+.mp_ret:
+    ret
 
 ; eax = low 3 bits of the R_PLUS operand's register, or 0
 .plus_bits:
