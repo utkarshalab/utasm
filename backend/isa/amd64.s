@@ -2102,6 +2102,8 @@ mnc_tb_x64:
     mnc_ent "ud2a", 0, 7183
     mnc_ent "ud2b", 0, 7184
     mnc_ent "umov", 0, 7185
+    mnc_ent "v4dpwssd", 0, 7502
+    mnc_ent "v4dpwssds", 0, 7503
     mnc_ent "vbcstnebf16ps", 0, 7186
     mnc_ent "vbcstnesh2ps", 0, 7187
     mnc_ent "vcmpeq_oqpd", 0, 7188
