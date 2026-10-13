@@ -506,7 +506,7 @@ leaves the programmer alone:
 
   NASM's passes grow with the square of the jumps. utasm makes the same
   passes, for the same sizes, but each is one walk over the jumps with
-  no searching. At `-O2` it finds the fewest long jumps instead, in one
+  no searching. At `-Os` it finds the fewest long jumps instead, in one
   look per jump that grows: 0.7 s for the 100,000.
 - **It is one pass.** No `-O` passes over the source; labels used before
   their definition are worked out at the end, and an instruction that
