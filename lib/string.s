@@ -643,12 +643,15 @@ str_to_int:
     call    str_len
     pop     rdi
     mov     r8, rax                ; r8 = characters left to read
+    ; both may be there: the larger radix is the one (NASM's readnum), so
+    ; "0dh" is hex 0d and "0x1b" hex 1b; the same one twice: decimal
+    xor     r9d, r9d               ; the prefix's radix | its length << 8
     cmp     byte [rdi], '$'
     jne     .zero_prefix
-    mov     r12, 16
-    inc     rdi
-    dec     r8
-    jmp     .digits
+    cmp     r8, 1
+    jbe     .suffix
+    mov     r9d, 16 | 1 << 8
+    jmp     .suffix
 .zero_prefix:
     cmp     r8, 2
     jbe     .suffix
@@ -658,17 +661,25 @@ str_to_int:
     call    .radix_letter
     test    eax, eax
     jz      .suffix
-    mov     r12, rax
-    add     rdi, 2
-    sub     r8, 2
-    jmp     .digits
+    lea     r9d, [rax + (2 << 8)]
 .suffix:
+    xor     eax, eax               ; the suffix's radix
     cmp     r8, 1
-    jbe     .digits
+    jbe     .choose
     movzx   ecx, byte [rdi + r8 - 1]
     call    .radix_letter
-    test    eax, eax
-    jz      .digits
+.choose:
+    cmp     r9b, al
+    ja      .by_prefix
+    jb      .by_suffix
+    jmp     .digits                ; neither, or both alike: decimal
+.by_prefix:
+    movzx   r12d, r9b
+    shr     r9d, 8
+    add     rdi, r9
+    sub     r8, r9
+    jmp     .digits
+.by_suffix:
     mov     r12, rax
     dec     r8
 
