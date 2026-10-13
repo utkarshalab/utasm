@@ -155,7 +155,10 @@
 %define WC_PTR                 12  ; ptr: "`ptr' is not a NASM keyword"
 %define WC_EA_ABSOLUTE         13  ; ea-absolute: "[5]" under default rel
 %define WC_PP_MACRO_REDEF_MULTI 14 ; pp-macro-redef-multi: %macro m 0 again
-%define WC_COUNT               15
+%define WC_PP_TRAILING         15  ; pp-trailing: "%else x", "%endif x"
+%define WC_PP_ELSE_ELSE        16  ; pp-else-else: a second %else
+%define WC_PP_ELSE_ELIF        17  ; pp-else-elif: %elif after %else
+%define WC_COUNT               18
 
 ; a kept expression's record (parser_defer_record): +0 RELOC_EXPR_MARK,
 ; +8 text, +16 tokens, +24 count; and for core/known.s:
@@ -490,6 +493,17 @@
 %define OP_FLAG_ADDR32         0x20        ; memory addressed by 32-bit registers (67 prefix)
 %define OP_FLAG_FAR            0x40        ; FAR: an indirect far jump / call (m16:32)
 %define OP_FLAG_ADDR16         0x80        ; memory addressed by 16-bit registers ([bx+si])
+; NASM's "cpu" choices of an encoding (cpu_latevex, backend/encoder/dispatch.s)
+%define CPUF_LATEVEX           0x01        ; cpu latevex: the late VEX forms too
+%define CPUF_NOVEX             0x02        ; cpu novex: no VEX forms
+%define CPUF_NOEVEX            0x04        ; cpu noevex: no EVEX forms
+; INST_flags: NASM's encoding prefixes before the mnemonic ("{rex} add eax, edx")
+%define INSTF_REX              0x01        ; {rex}: a REX byte even when none is needed
+%define INSTF_VEX              0x02        ; {vex} / {vex2}: the VEX form, not EVEX
+%define INSTF_VEX3             0x04        ; {vex3}: ... and its three-byte prefix
+%define INSTF_EVEX             0x08        ; {evex}: the EVEX form
+%define INSTF_DISP8            0x10        ; {disp8}: a one-byte displacement
+%define INSTF_DISP32           0x20        ; {disp32}: a four-byte one
 
 ; RELOC_flags
 %define RELOC_FLAG_SYM         0x01        ; "wrt ..sym": against the symbol itself,
@@ -1569,6 +1583,12 @@
 %define MACRO_FLAG_DEFINE      0x04        ; a single-line macro (%define family)
 %define MACRO_FLAG_TIMES       0x08        ; the repeated statement of a times
 %define MACRO_FLAG_NOLIST      0x10        ; %macro m 0.nolist: its lines not listed
+; the marks of a %define's parameter (frontend/macro/macro.s, prep_handle_def)
+%define PF_EVAL                0x01        ; =x: evaluated as a number
+%define PF_STR                 0x02        ; &x: made a quoted string
+%define PF_CONDSTR             0x04        ; &&x: ... unless it is one
+%define PF_GREEDY              0x08        ; x+: the rest of the arguments
+%define PF_UNSIGNED            0x10        ; =x/u: an unsigned number
 %define BIN_VSTART             0x01        ; SECTION_bin_flags: vstart= given
 %define BIN_START              0x02        ; start= given
 %define DEFINE_MAX_TOKENS      256         ; tokens in one %define body
