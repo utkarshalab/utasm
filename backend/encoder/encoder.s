@@ -159,6 +159,13 @@ amd64_encode_instruction:
     call    amd64_mode_check
     test    rax, rax
     jnz     .done
+    extern  amd64_mand66
+    mov     byte [rel amd64_mand66], 0
+    ; "mov eax, word 5": a sized immediate no form takes (mode.s)
+    extern  amd64_imm_size_check
+    call    amd64_imm_size_check
+    test    rax, rax
+    jnz     .done
     ; immediates as the operation's width sees them: 0xFFFF in a 16-bit
     ; operation is -1, so the imm8 forms apply as in NASM
     extern  amd64_imm_canon
@@ -1996,12 +2003,20 @@ amd64_encode_instruction:
     jnz     .done
     ; {rex} on an encoding with none (the table's put one itself)
     test    byte [r12 + INST_flags], INSTF_REX
-    jz      .done
+    jz      .osize
     extern  amd64_force_rex
     call    amd64_force_rex
-    jmp     .done
+    test    rax, rax
+    jnz     .done
+    jmp     .osize
 .mode_encoded:
     xor     eax, eax
+.osize:
+    ; o16 / o32 / o64: the operation size's prefix (mode.s)
+    cmp     byte [r12 + INST_osize], 0
+    je      .done
+    extern  amd64_force_osize
+    call    amd64_force_osize
 .done:
     pop     r13
     pop     r12
@@ -2122,7 +2137,9 @@ imm_ph_pcrel:   resb 1              ; PC-relative (OPERAND_pcrel)
 amd64_branch_fits_rel8:
     xor     eax, eax
     cmp     byte [rbx + ASMCTX_opt], OPT_NONE
-    je      .ret                           ; -O0: jumps as written (rel32)
+    je      .ret                           ; -O0, -O1: jumps as written (rel32)
+    cmp     byte [rbx + ASMCTX_opt], OPT_MIN
+    je      .ret
     test    rsi, rsi
     jz      .ret
     cmp     byte [rsi], TAG_SYMBOL
@@ -2336,6 +2353,20 @@ amd64_encode_mov:
         jmp .not_imm
         
     .do_imm:
+            ; mov r64: "dword x" is REX.W C7 /0 id (sign-extended); "strict
+            ; x", -O0 and -O1 the B8+r imm64 form; else the shortest (NASM)
+            cmp     byte [r13 + OPERAND_size], 64
+            jne     .imm_any
+            cmp     byte [r14 + OPERAND_size], 32
+            je      .mov_c7
+            mov     dl, 64
+            test    byte [r14 + OPERAND_flags], OP_FLAG_STRICT
+            jnz     .mov_imm64
+            cmp     byte [rbx + ASMCTX_opt], OPT_NONE
+            je      .mov_imm64
+            cmp     byte [rbx + ASMCTX_opt], OPT_MIN
+            je      .mov_imm64
+.imm_any:
             mov     dl, [r13 + OPERAND_size]
             mov     rax, [r14 + OPERAND_imm]
             
@@ -2373,6 +2404,44 @@ amd64_encode_mov:
                     jmp     .done
                     ENDIF
                 ENDIF
+            jmp     .mov_imm64
+.mov_c7:
+            ; "mov rax, dword x": REX.W C7 /0 id, a label's address as a
+            ; sign-extended 32-bit field (R_X86_64_32S)
+            mov     al, 64
+            xor     esi, esi
+            mov     rdx, r13
+            call    amd64_emit_prefixes
+            mov     al, 0xC7
+            call    amd64_emit_byte
+            lea     r13, [r12 + INST_op0]
+            lea     r14, [r12 + INST_op1]
+            mov     al, [r13 + OPERAND_reg]
+            and     al, 0x07
+            or      al, 0xC0
+            call    amd64_emit_byte
+            lea     r14, [r12 + INST_op1]
+            cmp     byte [r14 + OPERAND_kind], OP_SYMBOL
+            je      .c7_sym
+            mov     rdi, [r14 + OPERAND_imm]
+            call    amd64_emit_dword
+            jmp     .done
+.c7_sym:
+            mov     rdi, rbx
+            mov     rsi, [rbx + ASMCTX_curr_sec]
+            mov     rsi, [rsi + SECTION_size]
+            mov     rdx, [r14 + OPERAND_sym]
+            mov     rcx, [r14 + OPERAND_imm]
+            mov     r8, R_X86_64_32S
+            cmp     byte [r14 + OPERAND_pcrel], 0
+            je      .c7_abs
+            mov     r8, R_X86_64_PC32
+            add     rcx, rsi
+.c7_abs:
+            call    reloc_record
+            xor     edi, edi
+            call    amd64_emit_dword
+            jmp     .done
 .mov_imm64:
             ; 64-bit MOV REG, IMM64 / SYMBOL
             IF dl, e, 64
@@ -2723,15 +2792,19 @@ amd64_encode_arithmetic:
                 jmp .done
                 ENDIF
             
-            ; 16/32/64-bit logic
-            ; OPTIMIZATION: Check if immediate fits in 8-bit signed
+            ; 16/32/64-bit: the sign-extended imm8 form (0x83) as
+            ; amd64_imm_canon chose it, else for a value that is a signed byte
+            extern  amd64_imm_sb
+            cmp     byte [rel amd64_imm_sb], 2
+            je      .long_imm
+            cmp     byte [rel amd64_imm_sb], 1
+            je      .short_imm
             mov     rax, [r11 + OPERAND_imm]
             cmp     rax, -128
             jl      .long_imm
             cmp     rax, 127
             jg      .long_imm
-            
-            ; 8-bit optimization (0x83)
+.short_imm:
             mov     al, 0x83
             call    amd64_emit_byte
             lea     r10, [r12 + INST_op0]
@@ -2885,24 +2958,30 @@ amd64_encode_arithmetic:
                 jmp .done
                 ENDIF
             
-            ; 16/32/64-bit
+            ; 16/32/64-bit: 0x83 /n ib as for a register
+            cmp     byte [rel amd64_imm_sb], 2
+            je      .mem_long
+            cmp     byte [rel amd64_imm_sb], 1
+            je      .mem_short
+            mov     rax, [r11 + OPERAND_imm]
+            cmp     rax, -128
+            jl      .mem_long
+            cmp     rax, 127
+            jg      .mem_long
+.mem_short:
+            mov al, 0x83
+            call amd64_emit_byte
+            lea     r10, [r12 + INST_op0]
+            lea     r11, [r12 + INST_op1]
+            mov al, r14b
+            mov rdi, r10
+            call amd64_emit_modrm_sib
+            lea     r10, [r12 + INST_op0]
+            lea     r11, [r12 + INST_op1]
             mov rax, [r11 + OPERAND_imm]
-            IF rax, ge, -128
-                IF rax, le, 127
-                    mov al, 0x83
-                    call amd64_emit_byte
-                    lea     r10, [r12 + INST_op0]
-                    lea     r11, [r12 + INST_op1]
-                    mov al, r14b
-                    mov rdi, r10
-                    call amd64_emit_modrm_sib
-                    lea     r10, [r12 + INST_op0]
-                    lea     r11, [r12 + INST_op1]
-                    mov rax, [r11 + OPERAND_imm]
-                    call amd64_emit_byte
-                    jmp .done
-                    ENDIF
-                    ENDIF
+            call amd64_emit_byte
+            jmp .done
+.mem_long:
             mov al, 0x81
             call amd64_emit_byte
             lea     r10, [r12 + INST_op0]
@@ -3104,21 +3183,22 @@ amd64_encode_push:
     IF byte [r10 + OPERAND_kind], e, OP_IMM
         ; "push word 5": 66 (above) 6A ib / 68 iw
         mov     rax, [r10 + OPERAND_imm]
-        ; "push strict dword 5": the imm32 form even for a small value
-        test    byte [r10 + OPERAND_flags], OP_FLAG_STRICT
-        jz      .push_small
-        cmp     byte [r10 + OPERAND_size], 8
-        jne     .push_imm32
-.push_small:
-        IF rax, ge, -128
-            IF rax, le, 127
-                mov al, 0x6A
-                call amd64_emit_byte
-                mov rax, [r10 + OPERAND_imm]
-                call amd64_emit_byte
-                jmp .done
-                ENDIF
-                ENDIF
+        ; 6A ib as amd64_imm_canon chose it ("push byte x"; not for
+        ; "push strict dword 5" or -O0), else for a signed byte
+        cmp     byte [rel amd64_imm_sb], 2
+        je      .push_imm32
+        cmp     byte [rel amd64_imm_sb], 1
+        je      .push_byte
+        cmp     rax, -128
+        jl      .push_imm32
+        cmp     rax, 127
+        jg      .push_imm32
+.push_byte:
+        mov     al, 0x6A
+        call    amd64_emit_byte
+        mov     rax, [r10 + OPERAND_imm]
+        call    amd64_emit_byte
+        jmp     .done
 .push_imm32:
         mov     al, 0x68
         call    amd64_emit_byte
@@ -3249,6 +3329,9 @@ amd64_encode_jcc:
     jnz     .short
     test    byte [r10 + OPERAND_flags], OP_FLAG_STRICT
     jnz     .near
+    ; -O0: short unless "near" is written, as NASM (the 8086's only jcc)
+    cmp     byte [rbx + ASMCTX_opt], OPT_NONE
+    je      .short
     mov     rsi, [r10 + OPERAND_sym]
     call    amd64_branch_fits_rel8
     test    eax, eax
@@ -3838,26 +3921,33 @@ amd64_encode_imul:
     mov     rdx, r11
     call    amd64_emit_prefixes
 
+    ; the form amd64_imm_canon chose, else 6B for a signed byte
+    cmp     byte [rel amd64_imm_sb], 2
+    je      .imm_full
+    cmp     byte [rel amd64_imm_sb], 1
+    je      .imm_byte
     lea     r10, [r12 + INST_op2]
     mov     rax, [r10 + OPERAND_imm]
-    IF rax, ge, -128
-        IF rax, le, 127
-            mov     al, 0x6B
-            call    amd64_emit_byte
+    cmp     rax, -128
+    jl      .imm_full
+    cmp     rax, 127
+    jg      .imm_full
+.imm_byte:
+    mov     al, 0x6B
+    call    amd64_emit_byte
 
-            lea     r10, [r12 + INST_op0]
-            lea     r11, [r12 + INST_op1]
-            mov     al, [r10 + OPERAND_reg]
-            mov     rdi, r11
-            call    amd64_emit_modrm_sib
+    lea     r10, [r12 + INST_op0]
+    lea     r11, [r12 + INST_op1]
+    mov     al, [r10 + OPERAND_reg]
+    mov     rdi, r11
+    call    amd64_emit_modrm_sib
 
-            lea     r10, [r12 + INST_op2]
-            mov     rax, [r10 + OPERAND_imm]
-            call    amd64_emit_byte
-            jmp     .done
-            ENDIF
-        ENDIF
+    lea     r10, [r12 + INST_op2]
+    mov     rax, [r10 + OPERAND_imm]
+    call    amd64_emit_byte
+    jmp     .done
 
+.imm_full:
     mov     al, 0x69
     call    amd64_emit_byte
 
@@ -5013,8 +5103,6 @@ amd64_emit_branch_disp:
     imul    rcx, rcx, RELOC_SIZE
     add     rcx, [rbx + ASMCTX_relocs]
     add     [rcx + RELOC_addend], rax
-    jmp     .placeholder           ; not a candidate for shortening: the
-                                   ; optimizer retargets by the label alone
 .no_reloc_off:
 
     ; A jmp/jcc rel32 whose target is not defined yet: note it, so
@@ -6007,9 +6095,9 @@ amd64_emit_modrm_sib:
     je      .s3
     jmp     .s0
 .s1: mov cl, 1
-jmp .s0
+    jmp .s0
 .s2: mov cl, 2
-jmp .s0
+    jmp .s0
 .s3: mov cl, 3
 .s0:
     shl     cl, 6
@@ -6240,7 +6328,7 @@ amd64_encode_jmp:
     mov     al, 32
     test    byte [r10 + OPERAND_flags], OP_FLAG_FAR
     jz      .far_width
-    mov     al, 64                         ; far: REX.W (m16:64), as NASM
+    call    amd64_far_width
 .far_width:
     xor     rsi, rsi                       ; no ModRM.reg operand
     mov     rdx, r10                       ; ModRM.rm operand
@@ -6256,6 +6344,18 @@ amd64_encode_jmp:
     call    amd64_emit_modrm_sib
 .done:
     epilogue
+
+; amd64_far_width: al = the width of "jmp / call far [m]" (r10): m16:64
+; (REX.W) as NASM writes it, m16:32 for "far dword", m16:16 for "far word"
+amd64_far_width:
+    mov     al, [r10 + OPERAND_size]
+    cmp     al, 16
+    je      .ret
+    cmp     al, 32
+    je      .ret
+    mov     al, 64
+.ret:
+    ret
 
 ;*
 ; * [amd64_encode_call]
@@ -6292,7 +6392,7 @@ amd64_encode_call:
     mov     al, 32
     test    byte [r10 + OPERAND_flags], OP_FLAG_FAR
     jz      .far_width
-    mov     al, 64                         ; far: REX.W (m16:64), as NASM
+    call    amd64_far_width
 .far_width:
     xor     rsi, rsi                       ; no ModRM.reg operand
     mov     rdx, r10                       ; ModRM.rm operand
