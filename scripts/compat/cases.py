@@ -1376,3 +1376,32 @@ WARN_CASES.update({
 BIN_PROBES.update({
     "comm_is_a_label": "bits 64\ncomm db 1\ncomm2: dd comm\n",
 })
+# [byte x] keeps its byte (cut, with NASM's warning); empty sections at
+# their aligned address; pinsrb's r/m8 as r32 (no REX for sil); a size on a
+# vector register (insertps xmm0, dword xmm1); zmm register blocks (rs4)
+BIN_PROBES.update({
+    "disp8_forced": "bits 64\nmov eax, [byte rsp+0x01]\nmov eax, [byte rsp+0xFF]\nmov eax, [byte rsp-0xFF]\n",
+    "bin_empty_sections": "section .text\nnop\nsection .data\nd:\nsection .bss\nb:\nsection .x align=16\nx:\n"
+                          "section .text\ndw d, b, x\n",
+    "bin_empty_bss_after_data": "section .text\nnop\nsection .data\ndb 1, 2, 3\nsection .bss\nalignb 4\ne:\n"
+                                "section .text\ndw e\n",
+    "pinsrb_byte_regs": "bits 64\npinsrb xmm1, sil, 0\npinsrb xmm0, dil, 1\npinsrb xmm8, r9b, 1\npinsrb xmm0, al, 1\n",
+    "vector_reg_sized": "bits 64\ninsertps xmm0, dword xmm1, 16\nmovss xmm0, dword xmm1\naddps xmm0, oword xmm1\n",
+    "zmm_register_blocks": "bits 64\nv4fmaddps zmm0, zmm1+3, [rax]\nv4fnmaddss zmm6, zmm7+3, [rax]\n"
+                           "v4dpwssd zmm10+0, zmm11+3, [rax]\nv4dpwssds zmm8, zmm9, [rax]\n",
+})
+WARN_CASES.update({
+    "warn_obsolete": "bits 16\npop cs\ncpu 8086\npop cs\ncpu 386\npop cs\ncpu any\npcommit\n",
+})
+DIAG_CASES += [
+    ("a high register in pinsrb", "nop\npinsrb xmm0, ah, 1\n"),
+    ("a register block of five", "nop\nv4dpwssd zmm10, zmm11+4, [rax]\n"),
+]
+MODE_LINES += ["pop cs", "pcommit", "pinsrb xmm1, sil, 0", "pinsrb xmm1, al, 0"]
+# "times N resb K" is one reservation (one warning, "<res Nh>" listed);
+# a times line's bytes and "<rep Nh>" past 18 columns wrap, as NASM lists
+BIN_PROBES.update({
+    "times_res_one": "nop\ntimes 2 resb 4\ntimes 4 resb 16\ntimes 1 resb 20\ntimes 5 resw 0x100\nnop\n",
+    "times_rep_wrap": "times 2 db 1,2,3,4,5\ntimes 2 db 1,2,3,4,5,6\ntimes 20 db 1,2,3,4,5\n"
+                      "times 0x100 db 1,2,3,4\ntimes 2 db 1,2,3,4,5,6,7,8,9\n",
+})
