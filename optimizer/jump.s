@@ -631,6 +631,58 @@ relax_range_fixed:
     pop     rbx
     ret
 
+; ---- relax_range_savings -----------------
+;
+; relax_range_savings
+; rax = the bytes the forward jumps of section rdi in [rsi, rdx) give up
+; when all are made short (jmp 3, jcc 4; in bits 16: 1, 2): the distance
+; across them NASM's first pass takes (core/known.s known_pp_diff).
+; Clobbers: rcx, r8-r10.
+;
+global relax_range_savings
+relax_range_savings:
+    push    rbx
+    cmp     rsi, rdx
+    jbe     .ordered
+    xchg    rsi, rdx
+.ordered:
+    xor     eax, eax
+    lea     rcx, [rel relax_vec]
+    cmp     byte [rcx + VEC_tag], TAG_VEC
+    jne     .done
+    mov     r8, [rcx + VEC_data]
+    mov     r9, [rcx + VEC_len]
+    xor     ecx, ecx
+.next:
+    cmp     rcx, r9
+    jae     .done
+    imul    rbx, rcx, RX_SIZE
+    add     rbx, r8
+    inc     rcx
+    cmp     [rbx + RX_sec], rdi
+    jne     .next
+    mov     r10, [rbx + RX_pos]
+    cmp     r10, rsi
+    jb      .next
+    cmp     r10, rdx
+    jae     .next
+    mov     r10d, 3
+    cmp     byte [rbx + RX_kind], RELAX_JMP
+    je      .saved
+    mov     r10d, 4
+    cmp     byte [rbx + RX_kind], RELAX_JCC
+    jne     .next
+.saved:
+    test    byte [rbx + RX_cc], 0x80
+    jz      .add
+    sub     r10d, 2                        ; (rel16)
+.add:
+    add     rax, r10
+    jmp     .next
+.done:
+    pop     rbx
+    ret
+
 ; ---- relax_freeze_symref -----------------
 ;
 ; relax_freeze_symref
@@ -2384,6 +2436,8 @@ rx_backward:
     inc     r13
     cmp     byte [rbx + RX_kind], RELAX_FIXED
     jne     .next
+    cmp     dword [rbx + RX_aux32], 1
+    je      .next                          ; its size was asked for (near, bnd)
     movzx   ecx, byte [rbx + RX_cc]        ; the displacement's width
     cmp     ecx, 1
     je      .next
@@ -2715,6 +2769,10 @@ rx_apply:
     mov     rdi, r12
     extern  cfi_remap
     call    cfi_remap
+    ; and the preprocessor's label differences (core/known.s)
+    mov     rdi, r12
+    extern  known_remap
+    call    known_remap
 
 .out:
     add     rsp, 8
