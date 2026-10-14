@@ -1592,6 +1592,18 @@ ELF_PROBES.update({
                               "section .data\ngl: dd ext\nloc: dd 0\n.sub: dd 0\nx equ 5\n",
     "required_extern": "required r1\nextern e1\nglobal g\ng: nop\n",
 })
+# AVX-512 with {sae} before the immediate - five operands (vcmppd, vcmpsd,
+# vfixupimm*, vgetmant*s*, vrndscales*); the memory-only hand encoders
+# (prefetchwt1: 0F 0D /2, its REX)
+BIN_PROBES.update({
+    "evex_sae_five_operands": "bits 64\nvcmppd k5,zmm30,zmm29,{sae},0xab\nvcmpps k5{k7},zmm30,zmm29,{sae},0x7b\n"
+                              "vcmpsd k1,xmm2,xmm3,{sae},0x10\nvcmpss k5,xmm30,xmm29,{sae},0xab\n"
+                              "vfixupimmpd zmm1,zmm2,zmm3,{sae},0x10\nvfixupimmps zmm1{k2}{z},zmm2,zmm3,{sae},0x10\n"
+                              "vfixupimmsd xmm1,xmm2,xmm3,{sae},5\nvgetmantsd xmm1,xmm2,xmm3,{sae},5\n"
+                              "vrndscaless xmm30,xmm29,xmm28,{sae},0xab\nvcmppd k5,zmm30,zmm29,0xab\n",
+    "prefetch_hand_encoded": "bits 64\nprefetchwt1 [rcx]\nprefetchwt1 byte [rcx]\nprefetchwt1 [rax+r14*8+0x123]\n"
+                             "prefetchwt1 [r9]\nprefetchw [r10]\nclflush [r11]\nclflushopt [r12+rax]\n",
+})
 # what NASM rejects, rejected with its message on its line: (name, format,
 # source)
 REJECT_CASES = [
@@ -1651,4 +1663,7 @@ REJECT_CASES = [
     ("address size against the registers", "bin", "bits 64\na32 mov eax,[rbx]\n"),
     ("a16 against 32-bit registers", "bin", "bits 32\nmov eax,[a16 ebx]\n"),
     ("a32 against 64-bit registers in brackets", "elf64", "nop\nmov eax,[a32 rbx]\n"),
+]
+REJECT_CASES += [
+    ("six operands", "elf64", "vcmppd k5,zmm30,zmm29,{sae},0xab,1\n"),
 ]
