@@ -47,6 +47,7 @@ amd64_encode_instruction:
     extern  amd64_a67_at
     mov     qword [rel amd64_a67_at], -1
     mov     dword [rel amd64_rip_pending], 0
+    mov     dword [rel amd64_reloc_err], 0
     mov     byte [rel amd64_relax_kind], 0
     mov     byte [rel imm_ph_active], 0
 
@@ -2087,6 +2088,15 @@ amd64_encode_instruction:
     extern  amd64_force_osize
     call    amd64_force_osize
 .done:
+    ; an error a relocation found ("[x wrt ..gotoff]" in ELF64)
+    mov     ecx, [rel amd64_reloc_err]
+    test    ecx, ecx
+    jz      .done_ret
+    mov     dword [rel amd64_reloc_err], 0
+    test    rax, rax
+    jnz     .done_ret
+    mov     eax, ecx
+.done_ret:
     pop     r13
     pop     r12
     pop     rbx
@@ -2270,8 +2280,20 @@ amd64_fix_rip_addend:
     dec     eax
     imul    rax, rax, RELOC_SIZE
     add     rax, [rbx + ASMCTX_relocs]     ; RAX = RELOC*
-    cmp     dword [rax + RELOC_type], R_X86_64_PC32
+    ; PC-relative, whatever wrt made it ("cmp qword [rel x wrt ..got], 5":
+    ; GOTPCREL - its addend lacked the immediate after it)
+    mov     ecx, [rax + RELOC_type]
+    cmp     ecx, R_X86_64_PC32
+    je      .pcrel
+    cmp     ecx, R_X86_64_GOTPCREL
+    je      .pcrel
+    cmp     ecx, R_X86_64_GOTTPOFF
+    je      .pcrel
+    cmp     ecx, R_X86_64_PLT32
+    je      .pcrel
+    cmp     ecx, 26                        ; R_X86_64_GOTPC32
     jne     .none
+.pcrel:
     mov     rdx, [rax + RELOC_section]     ; section holding the instruction
     test    rdx, rdx
     jz      .none
@@ -2296,6 +2318,10 @@ global amd64_force_sib
 amd64_force_sib:   resb 1          ; 1: a SIB byte even with no index (dispatch.s)
 amd64_disp_emit:   resq 1          ; the disp8 value to emit (scaled for EVEX)
 amd64_branch_off:  resq 1          ; offset after a branch target label (jz $+2)
+amd64_branch_width: resb 1         ; a near branch's width written (amd64_branch_osize)
+alignb 4
+global amd64_reloc_err
+amd64_reloc_err:   resd 1          ; an error a relocation found (amd64_encode_instruction)
 [SECTION .text]
 
 extern relax_note
@@ -3407,6 +3433,8 @@ amd64_encode_jcc:
     jnz     .short
     test    byte [r10 + OPERAND_flags], OP_FLAG_STRICT
     jnz     .near
+    call    amd64_branch_sized
+    jnz     .near_emit                     ; "jz word x": near, as written
     ; -O0: short unless "near" is written, as NASM (the 8086's only jcc)
     cmp     byte [rbx + ASMCTX_opt], OPT_NONE
     je      .short
@@ -3432,7 +3460,8 @@ amd64_encode_jcc:
     and     rax, 0x0F          ; Get CC bits
     mov     r14, rax
     mov     [rel amd64_relax_cc], al
-    
+
+    call    amd64_branch_osize             ; (66 for "jz word x" in bits 32)
     mov     al, 0x0F
     call amd64_emit_byte
     mov     al, 0x80
@@ -5063,6 +5092,45 @@ amd64_encode_rm_r:
 ; *   RSI: Pointer to Symbol String
 ; *   EDX: PC Adjustment (bytes from reloc site to end of instruction)
 ; ;
+; ---- amd64_branch_sized / amd64_branch_osize ----
+;
+; amd64_branch_sized: ZF clear when a size is written on the target ("jmp
+; word x", "jz dword x"): a near branch, as written, never shortened.
+; amd64_branch_osize: and when that size is not the mode's (word in bits
+; 32, dword in bits 16), 66 before the opcode and the displacement that
+; wide (amd64_branch_width, amd64_emit_branch_disp). In bits 64 the
+; displacement is rel32 whatever is written. Clobber rax (osize: rcx, rdi).
+;
+amd64_branch_sized:
+    cmp     byte [r12 + INST_op0 + OPERAND_size], 16
+    je      .yes
+    cmp     byte [r12 + INST_op0 + OPERAND_size], 32
+    je      .yes
+    cmp     eax, eax                       ; ZF set: none
+    ret
+.yes:
+    test    esp, esp                       ; ZF clear
+    ret
+
+amd64_branch_osize:
+    mov     byte [rel amd64_branch_width], 0
+    movzx   eax, byte [r12 + INST_op0 + OPERAND_size]
+    cmp     eax, 16
+    je      .sized
+    cmp     eax, 32
+    jne     .ret
+.sized:
+    cmp     al, [rel asm_bits]
+    je      .ret                           ; the mode's own
+    cmp     byte [rel asm_bits], 64
+    je      .ret
+    shr     eax, 3
+    mov     [rel amd64_branch_width], al
+    mov     al, 0x66
+    call    amd64_emit_byte
+.ret:
+    ret
+
 ;*
 ; * [amd64_emit_branch_disp]
 ; * Emits a branch displacement and the relocation it needs, if any.
@@ -5094,6 +5162,19 @@ amd64_emit_branch_disp:
     mov     r14, rcx               ; r14 = displacement width
     mov     r15, rsi               ; r15 = symbol or name
 
+    ; a size written other than the mode's ("jmp word x" in bits 32, 66
+    ; before it: amd64_branch_osize): its width
+    movzx   eax, byte [rel amd64_branch_width]
+    mov     byte [rel amd64_branch_width], 0
+    test    eax, eax
+    jz      .width_mode
+    mov     r14d, eax
+    mov     r13d, RELOC_REL32
+    cmp     eax, 2
+    jne     .width_ok
+    mov     r13d, 13                       ; R_X86_64_PC16
+    jmp     .width_ok
+.width_mode:
     ; bits 16: a near branch takes a rel16 (E9 cw, E8 cw, 0F 8x cw)
     extern  asm_bits
     cmp     byte [rel asm_bits], 16
@@ -5273,6 +5354,10 @@ amd64_emit_branch_disp:
     xor     ecx, ecx
     test    byte [r12 + INST_op0 + OPERAND_flags], OP_FLAG_STRICT
     jnz     .fixed_kept
+    cmp     byte [r12 + INST_op0 + OPERAND_size], 16
+    je      .fixed_kept                    ; "jmp word x", "jmp dword x"
+    cmp     byte [r12 + INST_op0 + OPERAND_size], 32
+    je      .fixed_kept
     cmp     word [r12 + INST_op_id], 1298  ; JMP
     jne     .fixed_note
     cmp     byte [r12 + INST_prefixes], 0xF2
@@ -5580,8 +5665,44 @@ amd64_emit_reloc:
     mov     ecx, R_X86_64_GOTTPOFF
     cmp     eax, WRT_TLSIE
     je      .wrt_set
-    mov     ecx, R_X86_64_GOTOFF64
     cmp     eax, WRT_GOTOFF
+    jne     .wrt_not_gotoff
+    ; R_X86_64_GOTOFF64 writes 8 bytes: only a qword field takes it (ELF32:
+    ; R_386_GOTOFF, 32-bit); else NASM's error - it was written over the
+    ; next 4 bytes
+    mov     ecx, R_X86_64_GOTOFF64
+    cmp     dword [rdx + RELOC_type], R_X86_64_64
+    je      .wrt_set
+    extern  elf32_enabled
+    cmp     byte [rel elf32_enabled], 0
+    jne     .wrt_set
+    mov     dword [rel amd64_reloc_err], EXIT_GOTOFF_QWORD
+    cmp     dword [rdx + RELOC_type], R_X86_64_PC32
+    jne     .wrt_set
+    mov     dword [rel amd64_reloc_err], EXIT_GOTOFF_QWORD_ABS   ; (RIP-relative)
+    jmp     .wrt_set
+.wrt_not_gotoff:
+    cmp     eax, WRT_GOTPC
+    jne     .wrt_got
+    ; "_GLOBAL_OFFSET_TABLE_ wrt ..gotpc": the GOT's distance from the
+    ; section's start, as NASM gives it - the field's offset in the addend;
+    ; RIP-relative ("[rel _GLOBAL_OFFSET_TABLE_ wrt ..gotpc]") the GOT's
+    ; address, as GNU as (NASM makes it GOTPCREL: a GOT slot's)
+    mov     ecx, 26                        ; R_X86_64_GOTPC32
+    cmp     dword [rdx + RELOC_type], R_X86_64_PC32
+    je      .wrt_set
+    mov     rax, [rdx + RELOC_offset]
+    add     [rdx + RELOC_addend], rax
+    jmp     .wrt_set
+.wrt_got:
+    ; the GOT entry: RIP-relative ("[rel x wrt ..got]") its address
+    ; (GOTPCREL, as NASM) - GOT32 there was the entry's offset taken as a
+    ; displacement; a qword field GOT64; else GOT32
+    mov     ecx, R_X86_64_GOTPCREL
+    cmp     dword [rdx + RELOC_type], R_X86_64_PC32
+    je      .wrt_set
+    mov     ecx, 27                        ; R_X86_64_GOT64
+    cmp     dword [rdx + RELOC_type], R_X86_64_64
     je      .wrt_set
     mov     ecx, R_X86_64_GOT32
 .wrt_set:
@@ -6504,6 +6625,8 @@ amd64_encode_jmp:
     jnz     .short
     test    byte [r10 + OPERAND_flags], OP_FLAG_STRICT
     jnz     .near
+    call    amd64_branch_sized
+    jnz     .near_emit                     ; "jmp word x": near, as written
     ; "bnd jmp" (F2): near, kept so - a short jmp does not keep the
     ; bound registers (NASM shortens it and drops the bnd it was asked for)
     cmp     byte [r12 + INST_prefixes], 0xF2
@@ -6530,6 +6653,7 @@ amd64_encode_jmp:
     jnz     .near_emit
     mov     byte [rel amd64_relax_kind], RELAX_JMP
 .near_emit:
+    call    amd64_branch_osize             ; (66 for "jmp word x" in bits 32)
     mov     al, 0xE9                       ; jmp rel32 <label>
     call amd64_emit_byte
     lea     r10, [r12 + INST_op0]
@@ -6629,6 +6753,7 @@ amd64_encode_call:
     jnz     .indirect
 .direct:
 
+    call    amd64_branch_osize             ; (66 for "call word x" in bits 32)
     mov     al, 0xE8                       ; call rel32 <label>
     call amd64_emit_byte
     lea     r10, [r12 + INST_op0]
