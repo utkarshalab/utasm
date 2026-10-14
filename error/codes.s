@@ -607,6 +607,15 @@ code_table:
     code_msg EXIT_RES_NEGATIVE,      m_res_negative
     code_msg EXIT_SECTION_SIZE,      m_section_size, t_section_size
     code_msg EXIT_TIMES_LARGE,       m_times_large
+    code_msg EXIT_TIMES_NEGATIVE,    m_times_negative, t_times_negative
+    code_msg EXIT_UNDEF_BEFORE,      m_undef, t_undef_before
+    code_msg EXIT_PP_NONCONST,       m_not_simple, t_pp_nonconst
+    code_msg EXIT_BRACKET_UNKNOWN,   m_bracket_unknown, t_bracket_unknown
+    code_msg EXIT_BIN_COMMON,        m_bin_common
+    code_msg EXIT_BIN_SPECIAL,       m_bin_special
+    code_msg EXIT_FAR_NOT_RELOC,     m_far_not_reloc
+    code_msg EXIT_SEG_BASE,          m_seg_base, t_seg_base
+    code_msg EXIT_SEG_NOT_RELOC,     m_seg_not_reloc
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -716,6 +725,8 @@ m_res_negative: db "attempt to reserve negative space", 0
 m_section_size: db "section larger than 4 GiB", 0
 t_section_size: db "section `^' larger than 4 GiB", 0
 m_times_large:  db "TIMES value is too large (more than 4294967295)", 0
+m_times_negative: db "TIMES value is negative", 0
+t_times_negative: db "TIMES value ^ is negative", 0
 t_align_large:  db "absurdly large segment alignment `^'", 0
 m_use:          db "unknown `%use' package", 0
 m_cond_deep:    db "conditionals nested too deeply", 0
@@ -763,6 +774,16 @@ t_equ_fwd:      db "equ refers to `^', defined later", 0
 t_include:      db "unable to open include file `^'", 0
 t_macro_arity:  db "multi-line macro `^' does not take this number of parameters", 0
 t_undef:        db "symbol `^' not defined", 0
+t_undef_before: db "symbol `^' not defined before use", 0
+t_pp_nonconst:  db "non-constant value given to `%^'", 0
+m_bracket_unknown: db "unrecognized directive", 0
+m_bin_common:   db "binary output format does not support common variables", 0
+m_bin_special:  db "binary format does not support any special symbol types", 0
+m_far_not_reloc: db "value referenced by FAR is not relocatable", 0
+m_seg_base:     db "segment base references are not supported", 0
+t_seg_base:     db "^ format does not support segment base references", 0
+m_seg_not_reloc: db "cannot apply SEG to a non-relocatable value", 0
+t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
 t_multi:        db "symbol `^' defined more than once", 0
 t_instr:        db "parser: instruction expected, found `^'", 0
