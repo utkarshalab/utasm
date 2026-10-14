@@ -293,8 +293,13 @@ asm_ctx_fit:
     push    r14
     mov     r12, rdi
     add     rcx, 65536
-    and     rcx, -65536                    ; the size and a byte more, in 64KB
+    and     rcx, -65536                    ; the size and a byte more, in 64KB,
+    mov     r13, [r12 + SECTION_cap]       ; or twice what it holds: each growth
+    shl     r13, 1                         ; copied it all ("alignb 0x40000" 500
+    cmp     r13, rcx                       ; times took 31 s)
+    jae     .cap_set
     mov     r13, rcx
+.cap_set:
     xor     edi, edi
     mov     rsi, r13
     mov     edx, PROT_READ | PROT_WRITE
