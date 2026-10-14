@@ -641,6 +641,10 @@ asm_ctx_padto:
     mov     rsi, [rax + SECTION_size]      ; the padding's position
     lea     rdx, [rsi + r12]               ; K
     mov     ecx, r12d                      ; its length
+    test    r12, r12
+    jns     .length
+    xor     ecx, ecx                       ; K behind: none yet
+.length:
     mov     r8d, r13d
     or      r8d, 0x100                     ; fill spec: the byte
     mov     edi, RELAX_PADTO
@@ -649,7 +653,7 @@ asm_ctx_padto:
     pop     rdi
 .emit:
     test    r12, r12
-    jz      .done
+    jle     .done
     mov     rdi, rbx
     mov     esi, r13d
     call    asm_ctx_emit_byte
