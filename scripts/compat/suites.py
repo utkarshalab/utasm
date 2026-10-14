@@ -1190,3 +1190,30 @@ def tls(utasm, verbose=False):
         s.result(name, got == want and not bad_types,
                  "got %s%s" % (got, ", not TLS: %s" % bad_types if bad_types else ""))
     return s
+
+
+def readback(utasm, verbose=False):
+    """utasm's own: instructions NASM's table has wrong, as objdump reads
+    utasm's bytes back; and the ones utasm refuses (a #UD form, a register
+    VEX cannot hold)"""
+    s = Suite("objdump readback", verbose)
+    if not have("objdump"):
+        return s
+    for case in cases.READBACK_CASES:
+        line, want = case[0], case[1]
+        with tempdir() as d:
+            open(os.path.join(d, "r.s"), "w").write("bits 64\n%s\n" % line)
+            r = run([utasm, "-f", "bin", "r.s", "-o", "r.bin"], cwd=d)
+            if want is None:
+                s.result(line, r.returncode != 0 and case[2] in (r.stderr or ""),
+                         "rc %d: %s" % (r.returncode, first_line(r)))
+                continue
+            if r.returncode:
+                s.result(line, False, "utasm error: " + first_line(r))
+                continue
+            o = run(["objdump", "-D", "-b", "binary", "-m", "i386:x86-64", "-M", "intel",
+                     os.path.join(d, "r.bin")]).stdout
+        got = " ; ".join(re.sub(r"\s+", " ", f[2]).strip() for f in (x.split("\t") for x in o.splitlines())
+                         if len(f) >= 3 and re.match(r"\s+[0-9a-f]+:$", f[0]))
+        s.result(line, got == want, "objdump: %s" % got)
+    return s
