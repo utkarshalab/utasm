@@ -1136,3 +1136,57 @@ def lints(utasm, verbose=False):
             good = good and not at(n)
         s.result(name, good, "got: %r" % (r.stderr or "")[:300])
     return s
+
+
+def recovery(utasm, verbose=False):
+    """utasm's own: an error does not end the assembly - every one is
+    reported, at its line, and the assembly fails with the first one's
+    status, writing nothing."""
+    s = Suite("error recovery", verbose)
+    for name, fmt, src, lines, status in cases.RECOVERY_CASES:
+        with tempdir() as d:
+            open(os.path.join(d, "e.s"), "w").write(src)
+            r = run([utasm, "-f", fmt, "e.s", "-o", "e.o"], cwd=d)
+            wrote = os.path.exists(os.path.join(d, "e.o"))
+        got = [int(m.group(1)) for m in re.finditer(r"^e\.s:(\d+): (?:error|fatal):", r.stderr or "", re.M)]
+        good = r.returncode != 0 and not wrote
+        if lines is not None:
+            good = good and got == lines
+        else:
+            good = good and len(got) >= 2
+        if status is not None:
+            good = good and r.returncode == status
+        s.result(name, good, "rc %d, errors at %s%s" % (r.returncode, got, ", wrote output" if wrote else ""))
+    return s
+
+
+def tls(utasm, verbose=False):
+    """utasm's own: the TLS relocations GNU as writes for the same code
+    (NASM has ..tlsie only), the symbols STT_TLS, and objects ld takes."""
+    s = Suite("tls relocations", verbose)
+    for name, fmt, src, want, tls_syms in cases.TLS_CASES:
+        with tempdir() as d:
+            open(os.path.join(d, "t.s"), "w").write(src)
+            r = run([utasm, "-f", fmt, "t.s", "-o", "t.o"], cwd=d)
+            if r.returncode:
+                s.result(name, False, "utasm error: " + first_line(r))
+                continue
+            rel = run(["readelf", "-rW", os.path.join(d, "t.o")]).stdout
+            sym = run(["readelf", "-sW", os.path.join(d, "t.o")]).stdout
+        got = []
+        for l in rel.splitlines():
+            f = l.split()
+            if len(f) >= 5 and f[2].startswith("R_"):
+                add = None
+                if len(f) >= 7 and f[5] in "+-":
+                    add = int(f[6], 16) * (-1 if f[5] == "-" else 1)
+                elif len(f) == 5 and fmt == "elf64":
+                    add = 0
+                got.append((f[2], f[4], add))
+        if fmt == "elf32":
+            got = [(t, n, None) for t, n, _ in got]
+        types = {l.split()[-1]: l.split()[3] for l in sym.splitlines() if len(l.split()) >= 8}
+        bad_types = [n for n in tls_syms if types.get(n) != "TLS"]
+        s.result(name, got == want and not bad_types,
+                 "got %s%s" % (got, ", not TLS: %s" % bad_types if bad_types else ""))
+    return s
