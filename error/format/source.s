@@ -102,6 +102,8 @@ s_label:        db "a label's address", 0
 s_seg:          db "a segment register", 0
 s_ctrl:         db "a control register", 0
 s_dbg:          db "a debug register", 0
+s_tile:         db "a tile register", 0
+s_bound:        db "a bound register", 0
 s_x87:          db "an x87 register", 0
 s_mmx:          db "an MMX register", 0
 s_mask:         db "a mask register", 0
@@ -1034,34 +1036,55 @@ diag_describe:
     cmp     eax, OP_REG
     jne     .other
     movzx   eax, byte [rbx + OPERAND_reg]
-    cmp     eax, REG_CS
+    ; the parser's numbers (include/arch/amd64.inc, as dispatch.s reads
+    ; them): general 0-15, segment 24-29, control 32-47, debug 48-63, mask
+    ; 72-79, vector 80-111, x87 112-119, MMX 120-127, tile 128-135, bound
+    ; 136-139 - constant.inc's REG_CR0 and on are not these ("cr0" was
+    ; "a debug register")
+    cmp     eax, 16
     jb      .sized_reg
+    lea     rsi, [rel s_reg]
+    cmp     eax, 24
+    jb      .say
     lea     rsi, [rel s_seg]
-    cmp     eax, REG_CR0
+    cmp     eax, 30
+    jb      .say
+    lea     rsi, [rel s_reg]
+    cmp     eax, 32
     jb      .say
     lea     rsi, [rel s_ctrl]
-    cmp     eax, REG_DR0
+    cmp     eax, 48
     jb      .say
     lea     rsi, [rel s_dbg]
-    cmp     eax, REG_ST0
+    cmp     eax, 64
     jb      .say
-    lea     rsi, [rel s_x87]
-    cmp     eax, REG_MM0
-    jb      .say
-    lea     rsi, [rel s_mmx]
-    cmp     eax, REG_XMM0
+    lea     rsi, [rel s_reg]
+    cmp     eax, 72
     jb      .say
     lea     rsi, [rel s_mask]
-    cmp     eax, REG_K0
-    jae     .say_mask
+    cmp     eax, 80
+    jb      .say
+    cmp     eax, 112
+    jb      .vector
+    lea     rsi, [rel s_x87]
+    cmp     eax, 120
+    jb      .say
+    lea     rsi, [rel s_mmx]
+    cmp     eax, 128
+    jb      .say
+    lea     rsi, [rel s_tile]
+    cmp     eax, 136
+    jb      .say
+    lea     rsi, [rel s_bound]
+    cmp     eax, 140
+    jb      .say
+    jmp     .other
+.vector:
     call    diag_bits
     cmp     eax, 128
     jb      .sized_reg
     lea     r8, [rel s_bit_vec]
     jmp     .sized
-.say_mask:
-    cmp     eax, REG_K0 + 8
-    jb      .say
 .other:
     lea     rsi, [rel s_reg]
     jmp     .say
