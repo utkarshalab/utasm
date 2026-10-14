@@ -171,6 +171,113 @@ preprocessor_next_token:
     jmp     .done
 
 
+; ---- prep_label_define ------------------
+;
+; A label ("foo:") whose name is a %define with no parameters and whose
+; body ends in a name ("%define foo bar", "%define L lab_ %+ 3"): its
+; body, the last name the label, expanded in its place - NASM expands the
+; macros of a label too. Not inside its own expansion.
+; Input    : rbx = PrepState, r12 = the label token
+; Output   : rax = 0 none, 1 the expansion started, else an error
+;
+prep_label_define:
+    push    r13
+    push    r14
+    push    r15
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, [r12 + TOKEN_value]
+    call    prep_symbol_find
+    test    rax, rax
+    jnz     .no
+    cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
+    jne     .no
+    mov     r13, [rdx + SYMBOL_value]
+    test    r13, r13
+    jz      .no
+    test    byte [r13 + MACRO_flags], MACRO_FLAG_DEFINE
+    jz      .no
+    test    byte [r13 + MACRO_flags], MACRO_FLAG_FUNC
+    jnz     .no
+    mov     ecx, [r13 + MACRO_ntokens]
+    test    ecx, ecx
+    jz      .no
+    lea     eax, [rcx - 1]
+    imul    rax, rax, TOKEN_SIZE
+    add     rax, [r13 + MACRO_tokens]
+    cmp     byte [rax + TOKEN_kind], TOK_IDENT
+    je      .last_name
+    ; "%define L lab_ %+ 3": a number joined on is the name's end too
+    cmp     byte [rax + TOKEN_kind], TOK_NUMBER
+    jne     .no
+    cmp     ecx, 2
+    jb      .no
+    cmp     byte [rax - TOKEN_SIZE + TOKEN_kind], TOK_CONCAT
+    jne     .no
+.last_name:
+    ; inside its own expansion: the name stays
+    mov     rcx, [rbx + PREP_ctx]
+    mov     rcx, [rcx + ASMCTX_mac_exp]
+.painted:
+    test    rcx, rcx
+    jz      .copy
+    mov     r8, [rcx + MACROEXP_macro]
+    test    byte [r8 + MACRO_flags], MACRO_FLAG_DEFINE
+    jz      .copy
+    mov     r9, [r8 + MACRO_name]
+    cmp     r9, [r13 + MACRO_name]
+    je      .no
+    mov     rcx, [rcx + MACROEXP_parent]
+    jmp     .painted
+.copy:
+    ; a copy of the macro (its name too), the last token the label
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, MACRO_SIZE
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     r14, rdx
+    mov     rdi, r14
+    mov     rsi, r13
+    mov     ecx, MACRO_SIZE
+    rep movsb
+    mov     eax, [r13 + MACRO_ntokens]
+    imul    rsi, rax, TOKEN_SIZE
+    mov     rdi, [rbx + PREP_arena]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     r15, rdx
+    mov     rdi, r15
+    mov     rsi, [r13 + MACRO_tokens]
+    mov     eax, [r13 + MACRO_ntokens]
+    imul    rcx, rax, TOKEN_SIZE
+    rep movsb
+    mov     [r14 + MACRO_tokens], r15
+    mov     eax, [r13 + MACRO_ntokens]
+    dec     eax
+    imul    rax, rax, TOKEN_SIZE
+    add     rax, r15
+    mov     byte [rax + TOKEN_kind], TOK_LABEL
+    mov     rcx, [rax + TOKEN_value]
+    cmp     byte [rcx], '.'
+    jne     .labelled
+    mov     byte [rax + TOKEN_kind], TOK_LOCAL_LABEL
+.labelled:
+    mov     rdi, rbx
+    mov     rsi, r14
+    call    prep_expand_start
+    test    rax, rax
+    jnz     .ret
+    mov     eax, 1
+    jmp     .ret
+.no:
+    xor     eax, eax
+.ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    ret
+
 ; ---- prep_error_note --------------------
 ;
 ; An error from preprocessor_next_token / _peek_token, whose callers do not
@@ -460,6 +567,16 @@ prep_internal_next:
     ; %define being redefined must not expand its old body)
     cmp     byte [rel prep_noexpand], 0
     jne     .not_macro_call
+    ; "foo:" with "%define foo bar": the label bar, as NASM expands it
+    cmp     byte [r12 + TOKEN_kind], TOK_LABEL
+    jne     .not_label_define
+    call    prep_label_define
+    cmp     rax, 1
+    je      .next
+    test    rax, rax
+    jnz     .done
+    jmp     .not_macro_call
+.not_label_define:
     cmp     byte [r12 + TOKEN_kind], TOK_IDENT
     jne     .not_macro_call
     
@@ -534,6 +651,24 @@ prep_internal_next:
     mov     rax, [rdx + SYMBOL_value]
     test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE
     jz      .ml_word
+    ; a %define is not expanded inside its own expansion ("%define foo
+    ; foo", "a" -> b -> a, "f(f(1))" is f(1)+1): the name stays, as in NASM
+    ; (it was "macros nested too deeply"). The expansions around the token,
+    ; out to the first that is no %define
+    mov     rcx, [rbx + PREP_ctx]
+    mov     rcx, [rcx + ASMCTX_mac_exp]
+.painted:
+    test    rcx, rcx
+    jz      .not_painted
+    mov     r8, [rcx + MACROEXP_macro]
+    mov     r9, [r8 + MACRO_name]
+    cmp     r9, [rax + MACRO_name]         ; (a label's copy: prep_label_define)
+    je      .not_macro_call
+    test    byte [r8 + MACRO_flags], MACRO_FLAG_DEFINE
+    jz      .not_painted
+    mov     rcx, [rcx + MACROEXP_parent]
+    jmp     .painted
+.not_painted:
     ; "%define f(x)": f with no "(" after it is the name f, as in NASM
     ; ("bar equ 8" after "%define bar(x)")
     test    byte [rax + MACRO_flags], MACRO_FLAG_FUNC
@@ -557,6 +692,35 @@ prep_internal_next:
     cmp     byte [rel ml_state], ML_COLON
     jne     .not_macro_call
 .ml_call:
+    ; a %macro inside its own expansion is no call (only %rmacro's is),
+    ; as NASM: the line is read as written ("f" a label) - it recursed to
+    ; the depth limit
+    mov     rax, [rdx + SYMBOL_value]
+    test    byte [rax + MACRO_flags], MACRO_FLAG_RECURSIVE
+    jnz     .ml_may_call
+    mov     rcx, [rbx + PREP_ctx]
+    mov     rcx, [rcx + ASMCTX_mac_exp]
+.ml_in_own:
+    test    rcx, rcx
+    jz      .ml_may_call
+    mov     r8, [rcx + MACROEXP_macro]
+    mov     r9, [r8 + MACRO_name]
+    test    r9, r9
+    jz      .ml_outer
+    push    rcx
+    push    rdx
+    mov     rdi, r9
+    mov     rsi, [rax + MACRO_name]
+    call    str_cmp
+    pop     rdx
+    pop     rcx
+    test    rax, rax
+    jz      .not_macro_call
+    mov     rax, [rdx + SYMBOL_value]
+.ml_outer:
+    mov     rcx, [rcx + MACROEXP_parent]
+    jmp     .ml_in_own
+.ml_may_call:
     ; its arguments call no multi-line macro; its body is lines of its own
     movzx   eax, byte [rel ml_state]
     mov     [rel ml_called_at], al
@@ -3972,8 +4136,17 @@ prep_subst_const_text:
     push    rbx
     push    r12
     push    r13
+    push    r14
+    sub     rsp, 8                         ; (alignment)
     mov     rbx, rdi
     mov     r12, rsi
+    ; "start_ %+ n:": a label's name is substituted the same way, and it
+    ; stays a label (the join is a label definition)
+    movzx   r14d, byte [r12 + TOKEN_kind]
+    cmp     r14d, TOK_LABEL
+    jne     .not_label
+    mov     byte [r12 + TOKEN_kind], TOK_IDENT
+.not_label:
 
     mov     r13d, 32                       ; (a %define naming itself)
 .lookup:
@@ -4033,6 +4206,12 @@ prep_subst_const_text:
     jnz     .lookup
 
 .done:
+    cmp     r14d, TOK_LABEL
+    jne     .kind_kept
+    mov     byte [r12 + TOKEN_kind], TOK_LABEL
+.kind_kept:
+    add     rsp, 8
+    pop     r14
     pop     r13
     pop     r12
     pop     rbx
@@ -11709,6 +11888,20 @@ macro_handle_def:
     movzx   eax, byte [rel mdef_greedy]
     or      al, [rel mdef_nolist]          ; .nolist (error/codes.s: unlisted)
     or      [r15 + MACRO_flags], al
+    ; %rmacro / %irmacro: the one kind that may call itself
+    mov     rdi, [rel mdef_dir]
+    lea     rsi, [rel dir_rmacro]
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .recursive
+    mov     rdi, [rel mdef_dir]
+    lea     rsi, [rel dir_irmacro]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .not_recursive
+.recursive:
+    or      byte [r15 + MACRO_flags], MACRO_FLAG_RECURSIVE
+.not_recursive:
     mov     rax, [rel mdef_defaults]
     mov     [r15 + MACRO_defaults], rax
     mov     eax, [rel mdef_ndefaults]
