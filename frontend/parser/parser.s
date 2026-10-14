@@ -3515,6 +3515,25 @@ parser_evaluate_factor:
         mov     rdi, [r12 + TOKEN_value]
         call    str_to_int
         check_err
+        ; past 64 bits: the low 64, with NASM's warning
+        extern  str_int_wrapped
+        cmp     byte [rel str_int_wrapped], 0
+        je      .number_fits
+        push    rdx
+        mov     edi, WC_NUMBER_OVERFLOW
+        call    warn_begin
+        test    eax, eax
+        jz      .number_warned
+        lea     rsi, [rel s_num_wide_a]
+        call    warn_text
+        mov     rsi, [r12 + TOKEN_value]
+        call    warn_text
+        lea     rsi, [rel s_num_wide_b]
+        call    warn_text
+        call    warn_end
+.number_warned:
+        pop     rdx
+.number_fits:
         xor     rax, rax
         jmp     .done
     ELSEIF al, e, TOK_CHAR
@@ -4233,10 +4252,14 @@ parser_parse_mem_operand:
     call    preprocessor_putback_token
 
     push    qword [rel known_fwd_uses]
+    mov     byte [rel expr_pcrel_ok], 1    ; ("[rdi + rod1 - $$]", rod1 elsewhere)
     mov     rdi, rbx
     call    parser_evaluate_expression
+    mov     byte [rel expr_pcrel_ok], 0
     pop     r8
     check_err_to .error
+    mov     al, [rel expr_pcrel]
+    or      [r12 + OPERAND_pcrel], al
     mov     byte [rel mem_expect_term], 0
     cmp     r8, [rel known_fwd_uses]
     je      .disp_known
@@ -4434,6 +4457,12 @@ parser_parse_mem_operand:
     mov     rax, [r12 + OPERAND_sym]
     test    rax, rax
     jz      .ea_absolute                   ; no symbol: numeric address
+    ; "[baz - $]": a distance (or an expression kept) is a number, not an
+    ; address - absolute, with NASM's warning
+    cmp     byte [rax], RELOC_OFFSET_MARK
+    je      .ea_absolute
+    cmp     byte [rax], RELOC_EXPR_MARK
+    je      .ea_absolute
     cmp     byte [rax], TAG_SYMBOL
     jne     .make_rel                      ; raw name: a forward label
     cmp     byte [rax + SYMBOL_kind], SYM_CONSTANT
@@ -7095,6 +7124,19 @@ parser_handle_pseudo_op:
     add     r13, 10
     jmp     .ignored_word
 .ignored_hit:
+    ; "required x": an extern written to the object even when nothing
+    ; refers to it (NASM's)
+    mov     rdi, r12
+    lea     rsi, [rel str_required]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .not_required
+    mov     byte [rel extern_required], 1
+    mov     rdi, rbx
+    call    parser_handle_extern
+    mov     byte [rel extern_required], 0
+    jmp     .check_handler_result
+.not_required:
     ; [map ...] in an object file: not a directive (see org)
     mov     rdi, r12
     lea     rsi, [rel str_map]
@@ -8399,6 +8441,8 @@ ignored_words:db "warning", 0, 0, 0
                 db 0
 [SECTION .bss]
 stmt_bracketed: resb 1              ; the statement is in [ ]
+extern_required: resb 1             ; parser_handle_extern for "required"
+sect_sep:       resb 1              ; a section name's joining character ('-' ',')
 alignb 2
 opnd_kw_size:   resw 1              ; "qword gs:[x]": the size written
 global sectalign_off
@@ -10668,16 +10712,15 @@ parser_data_symbol:
     test    r8, r8
     jz      .try_deferred
 
-    ; A resolved symbol only carries an address for these kinds
-    movzx   eax, byte [r8 + SYMBOL_kind]
-    cmp     al, SYM_LABEL
-    je      .use_symbol
-    cmp     al, SYM_DATA
-    je      .use_symbol
-    cmp     al, SYM_EXTERN
-    je      .use_symbol
-    cmp     al, SYM_COMMON
-    je      .use_symbol
+    ; A resolved symbol carries an address when it is a label, data, an
+    ; extern - or a name only declared so far ("global foo" before "foo:":
+    ; it was written as a number, 0, with no relocation)
+    push    rdi
+    mov     rdi, r8
+    call    expr_sym_class
+    pop     rdi
+    test    eax, eax
+    jnz     .use_symbol
     ret                            ; constant / struct / macro: a number
 
 .use_symbol:
@@ -11245,6 +11288,16 @@ parser_handle_extern:
         xor     rax, rax
         ENDIF
     check_err
+    ; "required": named in the object whether used or not
+    cmp     byte [rel extern_required], 0
+    je      .not_required
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, [r12 + TOKEN_value]
+    call    symbol_find
+    test    rax, rax
+    jnz     .not_required
+    or      byte [rdx + SYMBOL_pflags], SYMF_USED
+.not_required:
 
     ; Check for comma (extern name1, name2)
     mov     rdi, rbx
@@ -11425,14 +11478,20 @@ parser_handle_section_directive:
     check_err
     mov     [r12 + TOKEN_value], rdx
 
-    ; ".note.GNU-stack": a name with '-' in it lexes as several tokens;
-    ; join the ones written together
+    ; ".note.GNU-stack", "__LD,__compact_unwind": a name with '-' or ','
+    ; in it lexes as several tokens; join the ones written together (NASM
+    ; takes the name up to a blank)
 .name_piece:
     mov     rdi, rbx
     call    preprocessor_peek_token
     check_err
+    mov     byte [rel sect_sep], '-'
     cmp     byte [rdx + TOKEN_kind], TOK_MINUS
+    je      .name_sep
+    mov     byte [rel sect_sep], ','
+    cmp     byte [rdx + TOKEN_kind], TOK_COMMA
     jne     .name_done
+.name_sep:
     mov     eax, [rdx + TOKEN_line]
     cmp     eax, [r12 + TOKEN_line]
     jne     .name_done
@@ -11442,7 +11501,25 @@ parser_handle_section_directive:
     cmp     ax, [rdx + TOKEN_col]
     jne     .name_done
     mov     rdi, rbx
-    call    preprocessor_next_token        ; the '-'
+    call    preprocessor_next_token        ; the '-' / ','
+    mov     r13, rdx
+    ; the next piece right after it ("a,b"; in "a, \"awx\"" a list goes on)
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    check_err
+    mov     eax, [rdx + TOKEN_line]
+    cmp     eax, [r13 + TOKEN_line]
+    jne     .sep_back
+    movzx   eax, word [r13 + TOKEN_col]
+    inc     eax
+    cmp     ax, [rdx + TOKEN_col]
+    jne     .sep_back
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_IDENT
+    je      .sep_piece
+    cmp     eax, TOK_NUMBER
+    jne     .sep_back
+.sep_piece:
     mov     rdi, rbx
     call    preprocessor_next_token        ; the next piece
     check_err
@@ -11460,7 +11537,8 @@ parser_handle_section_directive:
     mov     rdi, rdx
     mov     rsi, [r12 + TOKEN_value]
     call    str_concat
-    mov     byte [r15 + r14], '-'
+    mov     al, [rel sect_sep]
+    mov     [r15 + r14], al
     mov     rdi, r15
     mov     rsi, [r13 + TOKEN_value]
     call    str_concat
@@ -11469,6 +11547,13 @@ parser_handle_section_directive:
     call    str_len
     mov     [r12 + TOKEN_len], ax
     jmp     .name_piece
+    jmp     .name_done
+.sep_back:
+    ; not a name's: the separator read again after it
+    mov     rdi, rbx
+    mov     rsi, r13
+    extern  preprocessor_unread_token
+    call    preprocessor_unread_token
 .name_done:
     
     mov     rdi, [rbx + PREP_ctx]
@@ -12397,6 +12482,9 @@ str_asr:       db "asr", 0
 str_ror:       db "ror", 0
 str_comdat:    db "comdat", 0
 str_org:       db "org", 0
+str_required:  db "required", 0
+s_num_wide_a:  db "numeric constant ", 0
+s_num_wide_b:  db " does not fit in 64 bits", 0
 ; one-byte instructions a "times K-($-$$)" pads with: name, then the byte
 fill_insns:    db "nop", 0, 0, 0x90
                db "int3", 0, 0xCC
