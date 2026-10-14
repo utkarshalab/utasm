@@ -547,10 +547,23 @@ parser_parse_instruction:
     test    rdx, rdx
     jz      .not_far_pointer       ; merged into the one before (", lsl #2")
 
-    IF r14, ge, 4
-        mov     rax, 210
-        jmp     .error
-        ENDIF
+    cmp     r14, 4
+    jb      .slot_free
+    ; "vcmppd k1, zmm2, zmm3, {sae}, 5": the {sae} before the last operand
+    ; is the instruction's (INST_sae), its slot the last operand's
+    cmp     r14, 4
+    jne     .too_many
+    cmp     byte [r15 + INST_op3 + OPERAND_kind], OP_SAE
+    jne     .too_many
+    cmp     byte [r15 + INST_sae], 0
+    jne     .too_many
+    mov     byte [r15 + INST_sae], 1
+    mov     r14d, 3
+    jmp     .slot_free
+.too_many:
+    mov     rax, EXIT_ENCODE_FAIL          ; (it was "error 210")
+    jmp     .error
+.slot_free:
     
     mov     r13, rdx                ; A100.5: Preserve operand pointer (RDX) before mul
     mov     rax, OPERAND_SIZE
