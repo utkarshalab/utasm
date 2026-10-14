@@ -32,6 +32,9 @@ DEFAULT REL
 ; Functions that cannot fail (pure computation):
 ;   rax = result directly (no error code)
 
+[SECTION .bss]
+str_int_wrapped: resb 1                 ; str_to_int: the number did not fit in 64 bits
+
 [SECTION .text]
     cld                             ; ensure direction flag is always forward
 
@@ -611,8 +614,9 @@ mem_cmp:
 ;              rdx = parsed integer value (signed)
 ; Clobbers : rcx, r8, r9, r10
 ;
-global str_to_int
+global str_to_int, str_int_wrapped
 str_to_int:
+    mov     byte [rel str_int_wrapped], 0
     test    rdi, rdi
     jz      .null_ptr
 
@@ -732,13 +736,19 @@ str_to_int:
     cmp     r9, r12
     jge     .invalid
 
-    ; result = result * base + digit
+    ; result = result * base + digit - past 64 bits the low 64 are kept
+    ; and str_int_wrapped says so (NASM's "does not fit in 64 bits"
+    ; warning, parser.s); it was an error
     mov     rax, rbx
     mul     r12
     test    rdx, rdx
-    jnz     .overflow
+    jz      .no_wrap_mul
+    mov     byte [rel str_int_wrapped], 1
+.no_wrap_mul:
     add     rax, r9
-    jc      .overflow
+    jnc     .no_wrap_add
+    mov     byte [rel str_int_wrapped], 1
+.no_wrap_add:
     mov     rbx, rax
     inc     r10
     jmp     .loop
