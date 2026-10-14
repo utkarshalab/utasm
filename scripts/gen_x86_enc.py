@@ -1083,6 +1083,12 @@ def nasm_form(name, ops, enc, flags=()):
     if er_at:
         i, extra = er_at
         rt = [REG_ONLY.get(t, t) if r == "rm" else t for t, r in zip(types, roles)]
+        if len(types) >= 4 and extra == "SAE":
+            # "vcmppd k1, zmm2, zmm3, {sae}, 5": five operands; this form,
+            # its rm a register, takes the {sae} as the instruction's
+            args = (name, rt, pfx, mp, opcode, modrm, roles, (fl | fx) & ~(F_BCST | F_B16),
+                    xo if fiximm is None else fiximm, NASM_PRIO, encn, vl | 0x20)
+            out.append((args, n8))
         add(rt[:i + 1] + [extra] + rt[i + 1:], roles[:i + 1] + ["-"] + roles[i + 1:],
             (fl | fx) & ~(F_BCST | F_B16))
         for s in stars:
