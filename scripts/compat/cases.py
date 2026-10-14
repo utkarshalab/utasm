@@ -1528,6 +1528,23 @@ ELF_PROBES.update({
     "struc_absolute_symbols": "x equ 5\nstruc s\n.a: resb 1\n.b: resd 1\nendstruc\nabsolute 0x10\nb1: resb 1\n"
                               "section .text\nmov eax, [b1]\nnop\n",
 })
+# a %define is not expanded inside its own expansion ("%define foo foo");
+# a label's name is expanded ("foo:" with %define foo bar), also after %+;
+# a %macro does not call itself (only %rmacro does: "f" in f is a label)
+BIN_PROBES.update({
+    "define_self_reference": "%define foo foo\n%define a b\n%define b a\nfoo: dd foo\nb: dd a, b\n",
+    "define_in_label": "%define foo bar\n%define L lab_ %+ 3\n%assign n 3\nfoo: dd bar\nL: dd lab_3\n"
+                       "start_ %+ n: dd start_3\n%define d 7\nlbl %+ d: dd lbl7\n",
+    "macro_not_recursive": "%macro f 0\ntimes 3 nop\nf\n%endmacro\nf\n%macro a 0\nb\n%endmacro\n"
+                           "%macro b 0\ndb 7\n%endmacro\na\na\n",
+    "rmacro_recursive": "%rmacro r 1\n%if %1 > 0\ndb %1\nr %1-1\n%endif\n%endmacro\nr 3\n",
+})
+# many sections: their names looked up by a hash, their relocations and
+# jumps grouped once (each was a walk of all of them per section)
+ELF_PROBES.update({
+    "many_sections": "%assign n 0\n%rep 300\n%assign g (n & ~3) + 2\nsection .s%[n] progbits exec\nl%[n]: nop\n"
+                     "jmp l%[g]\n%assign n n+1\n%endrep\nsection .s0\njmp l299\n",
+})
 # what NASM rejects, rejected with its message on its line: (name, format,
 # source)
 REJECT_CASES = [
