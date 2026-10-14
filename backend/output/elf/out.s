@@ -1555,12 +1555,21 @@ elf64_prepare_strtab:
     ; Store current offset
     mov     [r13 + SYMBOL_name_idx], r15d
     
-    ; Advance offset
+    ; Advance offset (with %pragma's prefix and postfix: elf64_name_affix)
     mov     rdi, rsi
     extern  str_len
     call    str_len
     add     r15, rax
     inc     r15
+    mov     rdi, r13
+    call    elf64_name_affix
+    push    rdx
+    mov     rdi, rax
+    call    str_len
+    add     r15, rax
+    pop     rdi
+    call    str_len
+    add     r15, rax
     
     mov     rax, 0xFFFFFFFF
     IF r15, g, rax
@@ -1981,21 +1990,27 @@ elf64_write_strtab:
     
     ; Only write if this is the first occurrence (idx == r15)
     IF eax, e, r15d
-        mov     rsi, [rdi + SYMBOL_name]
         push    rcx                    ; io_write clobbers rcx (syscall)
-        mov     rdi, rsi
-        call    str_len
-        mov     rdx, rax
-        inc     rdx
-
-        mov     edi, r13d
+        push    rdi
+        ; the prefix, the name, the postfix (%pragma: elf64_name_affix)
+        call    elf64_name_affix
         push    rdx
-        call    elfbuf_put                 ; (a write per name was slow)
+        mov     rsi, rax
+        call    .put_text
         pop     rdx
+        pop     rdi
+        push    rdx
+        mov     rsi, [rdi + SYMBOL_name]
+        call    .put_text
+        pop     rsi
+        call    .put_text
+        lea     rsi, [rel elf_nul]
+        mov     edx, 1
+        mov     edi, r13d
+        call    elfbuf_put
         pop     rcx
         check_err
-
-        add     r15, rdx
+        inc     r15
         ENDIF
 
     inc     ecx
@@ -2012,6 +2027,51 @@ elf64_write_strtab:
     pop     r14
     pop     rbx
     epilogue
+
+; .put_text: the text rsi (0: none) into the table, r15 moved on by its
+; length; rax = OK or an error (r13d = fd)
+.put_text:
+    xor     eax, eax
+    test    rsi, rsi
+    jz      .pt_ret
+    mov     rdi, rsi
+    push    rsi
+    call    str_len
+    pop     rsi
+    test    rax, rax
+    jz      .pt_ret
+    add     r15, rax
+    mov     rdx, rax
+    mov     edi, r13d
+    call    elfbuf_put
+.pt_ret:
+    ret
+
+[SECTION .rodata]
+elf_nul:        db 0
+[SECTION .text]
+
+; ---- elf64_name_affix ---------------------
+; The prefix and postfix %pragma gives symbol rdi's name in the output:
+; rax, rdx (0 each: none) - gprefix / gpostfix for a global, an extern or
+; a common, lprefix / lpostfix for the others. Preserves rdi, rsi, rcx.
+global elf64_name_affix
+elf64_name_affix:
+    extern  pragma_affix
+    lea     rax, [rel pragma_affix]
+    cmp     byte [rdi + SYMBOL_vis], VIS_LOCAL
+    jne     .global
+    cmp     byte [rdi + SYMBOL_kind], SYM_EXTERN
+    je      .global
+    cmp     byte [rdi + SYMBOL_kind], SYM_COMMON
+    je      .global
+    mov     rdx, [rax + 24]
+    mov     rax, [rax + 16]
+    ret
+.global:
+    mov     rdx, [rax + 8]
+    mov     rax, [rax]
+    ret
 
 ; ---- elfbuf_put / elfbuf_flush ------------
 ; A buffer for the symbol and string tables, written a few KB at a time
