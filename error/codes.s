@@ -135,6 +135,19 @@ error_track_token:
     imul    r10, r10, TOKEN_SIZE
     cmp     ecx, [r9 + r10 + TOKEN_line]
     ja      .done
+    ; the line is where the expansion stands in its body (the body token
+    ; just read): an argument's tokens are the line of its %1, even when
+    ; they were written in this body too (a %rmacro calling itself listed
+    ; its lines twice, switching to the call's line and back)
+    cmp     qword [r8 + MACRO_name], 0
+    je      .body_line                     ; (a %rep body has no arguments)
+    mov     r10, [rsi + MACROEXP_body]
+    test    r10, r10
+    jz      .body_line
+    dec     r10
+    imul    r10, r10, TOKEN_SIZE
+    mov     ecx, [r9 + r10 + TOKEN_line]
+.body_line:
     mov     rax, [r8 + MACRO_name]
     test    rax, rax
     jz      .body                          ; %rep body: the body line
