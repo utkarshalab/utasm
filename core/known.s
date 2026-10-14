@@ -51,6 +51,14 @@ DEFAULT REL
 ; change what it measures: once the layout is final, pass 2 works each one
 ; out again (known_verify), and on any difference runs utasm a third time
 ; with the constants only - the expressions then as in pass 1.
+;
+; A label difference the preprocessor reads ("%if $ - $$ > 510", "%assign
+; n end - start") is taken before the code is laid out, over jumps that
+; are still long. Pass 1 notes each (known_pp_diff) and keeps nothing from
+; moving for it; once laid out, the distances are handed on, and pass 2
+; takes them, as NASM's last pass would. Laid out again, each must hold
+; (known_verify): the runs go on with the new ones, then the constants only,
+; where the preprocessor's differences keep their code as it is.
 
 %define FWD_CAP         (1 << 23)   ; names noted (reserved, used as needed)
 %define KNOWN_OUT_CAP   (1 << 28)   ; bytes of records (reserved)
@@ -98,7 +106,22 @@ key_heap:       resq 1              ; the keys
 key_used:       resq 1
 %define DEFER_CAP   (1 << 20)
 %define OCC_SLOTS   (1 << 20)
+; a preprocessor's label difference (known_pp_diff): its section, the two
+; offsets (moved with the code: known_remap), the distance taken, and pass
+; 1's key / pass 2's record
+%define PPD_SEC     0
+%define PPD_B       8
+%define PPD_A       16
+%define PPD_USED    24
+%define PPD_KEY     32
+%define PPD_SIZE    40
+%define PPD_CAP     (1 << 20)
 %define KEY_HEAP    (1 << 26)
+ppd_list:       resq 1              ; the preprocessor's label differences
+ppd_n:          resq 1
+ppd_need:       resb 1              ; pass 1: one spans code that can move
+global known_tentative
+known_tentative: resb 1             ; ... so %error / %fatal wait for the next run
 retry_code:     resq 1              ; pass 1: an error a second pass may not have
 retry_file:     resq 1              ; ... where
 retry_line:     resd 1
@@ -112,6 +135,7 @@ known_var:      db "UTASM_KNOWN="
 known_var_len   equ $ - known_var
 known_exe:      db "/proc/self/exe", 0
 known_memfd:    db "utasm-known", 0
+known_pp_text:  db 4, 0             ; the text of a preprocessor difference's key
 
 [SECTION .text]
 
@@ -501,6 +525,8 @@ known_second_pass:
     jne     .work
     cmp     qword [rel retry_code], 0
     jne     .work
+    cmp     byte [rel ppd_need], 0
+    jne     .work
 .quick_ret:
     xor     eax, eax
     ret
@@ -633,6 +659,39 @@ known_second_pass:
     inc     r15
     jmp     .defer
 .defers_done:
+    ; the preprocessor's differences, as the code is laid out
+    cmp     byte [rel ppd_need], 0
+    je      .ppds_done
+    cmp     byte [rel defer_laid], 0
+    jne     .ppd_laid
+    call    known_layout
+    mov     byte [rel defer_laid], 1
+.ppd_laid:
+    xor     r12d, r12d
+.ppd:
+    cmp     r12, [rel ppd_n]
+    jae     .ppds_done
+    imul    rbx, r12, PPD_SIZE
+    add     rbx, [rel ppd_list]
+    inc     r12
+    mov     rax, KNOWN_OUT_CAP - 65536
+    cmp     r14, rax
+    jae     .ppds_done
+    mov     rdx, [rbx + PPD_B]
+    sub     rdx, [rbx + PPD_A]
+    mov     [r13 + r14], rdx
+    add     r14, 8
+    mov     rsi, [rbx + PPD_KEY]
+.ppd_copy:
+    mov     al, [rsi]
+    mov     [r13 + r14], al
+    inc     r14
+    inc     rsi
+    test    al, al
+    jnz     .ppd_copy
+    inc     r15
+    jmp     .ppd
+.ppds_done:
     test    r15, r15
     jnz     .exec
     cmp     byte [rel defer_laid], 0
@@ -1006,6 +1065,162 @@ known_note_defer:
 .ret:
     ret
 
+; ---- known_pp_diff ------------------------
+;
+; known_pp_diff
+; A preprocessor expression's "b - a", two labels of section rdi (rsi /
+; rdx = their offsets, b's and a's), taken before the code is laid out.
+; Pass 1 notes it: the code between may move. Pass 2 takes the distance
+; pass 1's layout gave. Each is checked again once laid out (known_verify).
+; Output   : eax = 1 and rdx = the distance to take less rsi - rdx; or
+;            eax = 0 (none: keep the code between as it is), rdx as it was
+; Preserves: everything else
+;
+global known_pp_diff
+known_pp_diff:
+    push    rcx
+    push    rsi
+    push    rdi
+    push    r8
+    push    r9
+    push    r10
+    push    r11
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    mov     r12, rdi
+    mov     r13, rsi
+    mov     r14, rdx
+    mov     rax, [rel ppd_list]
+    test    rax, rax
+    jnz     .have
+    mov     rsi, PPD_CAP * PPD_SIZE
+    call    mem_reserve
+    test    rax, rax
+    jnz     .none
+    mov     [rel ppd_list], rdx
+.have:
+    cmp     qword [rel ppd_n], PPD_CAP
+    jae     .none
+    ; its name across the runs: the line, and the how-manieth there
+    lea     rdi, [rel known_pp_text]
+    mov     esi, [rel error_loc_line]
+    call    known_defer_key
+    test    rax, rax
+    jz      .none
+    mov     rbx, rax
+    mov     rcx, r13
+    sub     rcx, r14                       ; the distance now
+    cmp     byte [rel known_active], 0
+    je      .pass1
+    ; pass 2: the distance handed on (none: the code between stays)
+    mov     rsi, rbx
+    call    known_lookup
+    test    eax, eax
+    jz      .none
+    mov     rcx, rdx
+    mov     rbx, [rel known_last_rec]
+    jmp     .note
+.pass1:
+    ; over code the optimizer can resize (all of it is before here): the
+    ; distance comes from the layout, in the next run - and what this one
+    ; finds with it may not hold (%error, %fatal: known_tentative)
+    push    rcx
+    mov     rdi, r12
+    mov     rsi, r13
+    mov     rdx, r14
+    extern  relax_range_fixed
+    call    relax_range_fixed
+    pop     rcx
+    test    eax, eax
+    jnz     .note
+    mov     byte [rel ppd_need], 1
+    mov     byte [rel known_tentative], 1
+    ; taken as NASM's first pass takes it, the forward jumps across short
+    ; (the smaller layout, when it holds; the runs after check it)
+    push    rcx
+    mov     rdi, r12
+    mov     rsi, r13
+    mov     rdx, r14
+    extern  relax_range_savings
+    call    relax_range_savings
+    pop     rcx
+    cmp     r13, r14
+    jb      .backward
+    sub     rcx, rax
+    jmp     .note
+.backward:
+    add     rcx, rax                       ; ("a - b": the distance negative)
+.note:
+    mov     rax, [rel ppd_n]
+    imul    rax, rax, PPD_SIZE
+    add     rax, [rel ppd_list]
+    mov     [rax + PPD_SEC], r12
+    mov     [rax + PPD_B], r13
+    mov     [rax + PPD_A], r14
+    mov     [rax + PPD_USED], rcx
+    mov     [rax + PPD_KEY], rbx
+    inc     qword [rel ppd_n]
+    mov     rdx, rcx
+    sub     rdx, r13
+    add     rdx, r14
+    mov     eax, 1
+    jmp     .out
+.none:
+    mov     rdx, r14
+    xor     eax, eax
+.out:
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    pop     r11
+    pop     r10
+    pop     r9
+    pop     r8
+    pop     rdi
+    pop     rsi
+    pop     rcx
+    ret
+
+; ---- known_remap --------------------------
+;
+; known_remap
+; Section rdi was laid out again (optimizer/jump.s rx_apply): the offsets
+; of the preprocessor's differences in it move with its code.
+; Preserves: rbx, rbp, r12-r15
+;
+global known_remap
+known_remap:
+    push    rbx
+    push    r12
+    push    r13
+    mov     r12, rdi
+    mov     rbx, [rel ppd_list]
+    mov     r13, [rel ppd_n]
+.rec:
+    test    r13, r13
+    jz      .done
+    cmp     [rbx + PPD_SEC], r12
+    jne     .next
+    extern  relax_map_offset
+    mov     rdi, [rbx + PPD_B]
+    call    relax_map_offset
+    mov     [rbx + PPD_B], rax
+    mov     rdi, [rbx + PPD_A]
+    call    relax_map_offset
+    mov     [rbx + PPD_A], rax
+.next:
+    add     rbx, PPD_SIZE
+    dec     r13
+    jmp     .rec
+.done:
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
 ; ---- known_note_verify --------------------
 ;
 ; known_note_verify
@@ -1068,6 +1283,11 @@ global known_verify
 known_verify:
     cmp     qword [rel verify_n], 0
     jne     .check
+    cmp     byte [rel known_active], 0
+    je      .none
+    cmp     qword [rel ppd_n], 0
+    jne     .check
+.none:
     ret
 .check:
     push    rbx
@@ -1083,7 +1303,7 @@ known_verify:
     xor     r14d, r14d
 .item:
     cmp     r12, [rel verify_n]
-    jae     .checked
+    jae     .pp_items
     imul    rbx, r12, 24
     add     rbx, [rel verify_list]
     inc     r12
@@ -1118,6 +1338,25 @@ known_verify:
     mov     r13d, 1
     mov     r14d, 1
     jmp     .item
+.pp_items:
+    ; the preprocessor's differences taken (pass 2's: pass 1's are keys)
+    cmp     byte [rel known_active], 0
+    je      .checked
+    xor     r12d, r12d
+.pp_item:
+    cmp     r12, [rel ppd_n]
+    jae     .checked
+    imul    rbx, r12, PPD_SIZE
+    add     rbx, [rel ppd_list]
+    inc     r12
+    mov     rdx, [rbx + PPD_B]
+    sub     rdx, [rbx + PPD_A]
+    cmp     rdx, [rbx + PPD_USED]
+    je      .pp_item
+    mov     r13d, 1
+    mov     rax, [rbx + PPD_KEY]
+    mov     [rax], rdx                     ; the new value, for the next run
+    jmp     .pp_item
 .checked:
     test    r13d, r13d
     jz      .all_hold
