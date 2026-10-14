@@ -420,6 +420,7 @@ lst_note:
     mov     qword [r8 + LE_UNINIT], 0
     mov     qword [r8 + LE_TEXT], 0
     mov     dword [r8 + LE_REPS], 0
+    mov     byte [r8 + LE_PAD], 0
     mov     byte [r8 + LE_KIND], LK_CODE
     mov     al, [rel lst_hidden]
     mov     [r8 + LE_HIDE], al
@@ -576,6 +577,19 @@ lst_close:
     pop     r8
     ret
 
+; lst_mark_pad: the current line holds padding the jump optimizer can grow
+; (optimizer/jump.s, relax_note). Preserves every register.
+global lst_mark_pad
+lst_mark_pad:
+    push    rax
+    mov     rax, [rel lst_cur]
+    test    rax, rax
+    jz      .ret
+    mov     byte [rax + LE_PAD], 1
+.ret:
+    pop     rax
+    ret
+
 ;*
 ; * [lst_remap]
 ; * Purpose: Jump shortening rewrote this section: move its entries to the
@@ -597,11 +611,27 @@ lst_remap:
     jz      .done
     cmp     [rbx + LE_SEC], r12
     jne     .next
+    ; padding that grew from none at an offset is the line's that made it,
+    ; not the one before ("align 8" after "times 6 nop"): a line ends
+    ; before such padding, and the padding's own line starts there
+    extern  relax_map_offset_before
     mov     rdi, [rbx + LE_START]
+    cmp     byte [rbx + LE_PAD], 0
+    jne     .pad_start
     call    relax_map_offset
+    jmp     .start_mapped
+.pad_start:
+    call    relax_map_offset_before
+.start_mapped:
     mov     [rbx + LE_START], rax
     mov     rdi, [rbx + LE_END]
+    cmp     byte [rbx + LE_PAD], 0
+    jne     .pad_end
+    call    relax_map_offset_before
+    jmp     .end_mapped
+.pad_end:
     call    relax_map_offset
+.end_mapped:
     mov     [rbx + LE_END], rax
 .next:
     add     rbx, LE_SIZE
