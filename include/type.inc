@@ -154,7 +154,8 @@ struc SECTION
     field follows,     8    ; follows=: the section it comes right after
     field bin_off,     8    ; its offset in the image (binary_layout)
     field bin_flags,   1    ; BIN_VSTART / BIN_START given
-    field pad2,        7
+    field nrela,       4    ; relocations in it (elf64_relocs_in_section's count)
+    field pad2,        3
 endstruc
 
 ; ============================================================================
