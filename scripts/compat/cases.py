@@ -1797,3 +1797,67 @@ TLS_CASES = [
 REJECT_CASES += [
     ("tlsie not RIP-relative", "elf64", "extern x\nsection .text\nmov rax, [x wrt ..tlsie]\n"),
 ]
+# batch 49 (scripts/compat/encfuzz.py's findings): EVEX's disp8*N in 16-bit
+# addressing, 3DNow!, the legacy forms the hand encoders had wrong, CMPccXADD,
+# gathers in bits 32, immediates out of range (cut, as NASM, with its warning)
+BIN_PROBES.update({
+    "evex_disp8n_a16": "bits 16\nvpmovsdb qword [di-2], ymm4\nvpcmpeqb k1, zmm5, zword [di-2]\n"
+                       "vmovdqu32 yword [bx+64], ymm5\nvmovdqu32 yword [bx+si+32], ymm5\nvpaddd zmm1, zmm2, [bp]\n"
+                       "vpaddd zmm1, zmm2, [bx+0x1000]\nvpaddd zmm1, zmm2, [bp+di-128]\nvpaddd zmm1, zmm2, [si+128]\n",
+    "amd_3dnow": "bits 64\nfemms\npfadd mm1, mm2\npfrsqrt mm7, [rax+rsi*4]\npi2fd mm1, [r9+8]\npfcmpeq mm4, mm5\n"
+                 "pfmax mm0, [rcx]\npfmin mm1, mm1\npfrcp mm2, mm3\npfsub mm1, mm2\npswapd mm3, [r9+8]\n",
+    "legacy_fixed_64": "bits 64\nlfs eax, [r15]\nlss r12d, [r14-8]\nlgs rcx, [r15]\nlfs dx, [rax]\nsenduipi r15\n"
+                       "tpause r10d\nincsspq r10\nincsspd r15d\nrdsspq r12\nclrssbsy [rax+128]\nscasq\n"
+                       "cmpsd xmm11, [r12-8], 7\nmovsd xmm1, [rax]\ncmpsd\nmovsd\nmovdir64b esi, [r10]\n"
+                       "enqcmd ecx, [rcx]\nmovdir64b rsi, [r10]\nenqcmds edx, [rdx+0x12345]\n",
+    "legacy_fixed_16_32": "bits 32\nlgs si, [eax+eax*1-128]\nlss ebp, [edx]\nbits 16\nlss bx, [si+1]\nlfs ebx, [4096]\n"
+                          "prefetchwt1 byte [bp+1]\nprefetchwt1 [si+1]\n",
+    "cmpccxadd": "bits 64\ncmpoxadd [rax], ecx, edx\ncmpnlexadd [r9], rcx, r8\ncmpbexadd [rsp+8], r11d, r12d\n"
+                 "cmpzxadd [rdx], rax, rbx\ncmpnpxadd [r15+rax*4], ecx, eax\n",
+    "gathers_32": "bits 32\nvgatherdps ymm6, [ecx+ymm4*4], ymm1\nvpgatherdd xmm0{k1}, [eax+xmm2*8-128]\n"
+                  "vgatherdps xmm4{k4}, [xmm0*1-128]\nvpscatterdd [edi+zmm7*2+127]{k3}, zmm7\n",
+    "imm_cut": "bits 64\npsllw mm7, 300\nshld eax, ebx, 300\nret 0x12345\nint 300\npshufd xmm1, xmm2, 300\n"
+               "xabort 300\nenter 0x12345, 300\nvpermq ymm1, ymm2, 256\n",
+})
+# utasm's own: what objdump reads utasm's bytes as, where NASM's table is
+# wrong (its AVX512-FP16 forms: VFMADD132PH is Intel's VFNMADD132PH, sources
+# missing, roles swapped, the wrong widths) - (line, objdump's text), or
+# (line, None, the error)
+READBACK_CASES = [
+    ("vfmadd132ph zmm1, zmm2, zmm3", "vfmadd132ph zmm1,zmm2,zmm3"),
+    ("vfnmadd132ph zmm1, zmm2, zmm3", "vfnmadd132ph zmm1,zmm2,zmm3"),
+    ("vfmsub231ph ymm1, ymm2, [rax]", "vfmsub231ph ymm1,ymm2,YMMWORD PTR [rax]"),
+    ("vfmadd132sh xmm1, xmm2, xmm3", "vfmadd132sh xmm1,xmm2,xmm3"),
+    ("vpmadd132sh xmm1, xmm2, xmm3", "vfmadd132sh xmm1,xmm2,xmm3"),
+    ("vfnmsub213sh xmm1, xmm2, [rax]", "vfnmsub213sh xmm1,xmm2,WORD PTR [rax]"),
+    ("vfmulcph zmm1, zmm2, zmm3", "vfmulcph zmm1,zmm2,zmm3"),
+    ("vfcmulcph xmm1, xmm2, xmm3", "vfcmulcph xmm1,xmm2,xmm3"),
+    ("vmaxph zmm1, zmm2, zmm3", "vmaxph zmm1,zmm2,zmm3"),
+    ("vminsh xmm1, xmm2, xmm3", "vminsh xmm1,xmm2,xmm3"),
+    ("vrndscaleph zmm1, zmm2, 4", "vrndscaleph zmm1,zmm2,0x4"),
+    ("vrndscalesh xmm1, xmm2, xmm3, 4", "vrndscalesh xmm1,xmm2,xmm3,0x4"),
+    ("vcvtqq2ph xmm1, zmm2", "vcvtqq2ph xmm1,zmm2"),
+    ("vcvtuqq2ph xmm1, ymm2", "vcvtuqq2ph xmm1,ymm2"),
+    ("vcvtdq2ph xmm1, ymm2", "vcvtdq2ph xmm1,ymm2"),
+    ("vcvtdq2ph ymm1, zmm2", "vcvtdq2ph ymm1,zmm2"),
+    ("vcvtpd2ph xmm1, zmm2", "vcvtpd2ph xmm1,zmm2"),
+    ("vcvtps2phx xmm1, ymm2", "vcvtps2phx xmm1,ymm2"),
+    ("vcvtneps2bf16 xmm3, xmm15", "vcvtneps2bf16 xmm3,xmm15"),
+    ("vcvtneps2bf16 ymm3{k1}, zmm15", "vcvtneps2bf16 ymm3{k1},zmm15"),
+    ("vp2intersectd k2, zmm3, zmm30", "vp2intersectd k2,zmm3,zmm30"),
+    ("vp2intersectq k4, ymm1, [rax]", "vp2intersectq k4,ymm1,YMMWORD PTR [rax]"),
+    ("vrcpph xmm6, xmm31", "vrcpph xmm6,xmm31"),
+    ("vrsqrtsh xmm11{k6}{z}, xmm8, word [r9]", "vrsqrtsh xmm11{k6}{z},xmm8,WORD PTR [r9]"),
+    ("vgetmantph xmm28{k3}, xmm19, 5", "vgetmantph xmm28{k3},xmm19,0x5"),
+    ("vreducesh xmm5, xmm6, word [rcx+8], 7", "vreducesh xmm5,xmm6,WORD PTR [rcx+0x8],0x7"),
+    ("vgetexpsh xmm1, xmm2, xmm3", "vgetexpsh xmm1,xmm2,xmm3"),
+    ("vgetmantsh xmm1, xmm2, xmm3, 5", "vgetmantsh xmm1,xmm2,xmm3,0x5"),
+    ("vpgatherdd xmm3{k1}, dword [r9+xmm30*1]", "vpgatherdd xmm3{k1},DWORD PTR [r9+xmm30*1]"),
+    ("eadd", "mov eax,0x1 ; encls"),
+    ("eenter", "mov eax,0x2 ; enclu"),
+    ("vfcmaddcph xmm28, xmm28, xmm16", None, "#UD"),
+    ("vfmulcsh xmm1, xmm2, xmm1", None, "#UD"),
+    ("vfmaddcph zmm1, zmm2", None, "#UD"),
+    ("vpgatherqd xmm15, dword [xmm24*8+128], xmm14", None, "invalid combination"),
+    ("vfmadd132ps xmm1, xmm2", None, "invalid combination"),
+]
