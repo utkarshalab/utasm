@@ -133,6 +133,7 @@
 %define EXIT_GOTOFF_QWORD      115 ; "mov eax, x wrt ..gotoff" in ELF64
 %define EXIT_GOTOFF_QWORD_ABS  116 ; "[x wrt ..gotoff]" in ELF64
 %define EXIT_WRT_UNSUPPORTED   117 ; "mov rax, [x wrt ..tlsie]" (not RIP-relative) in ELF64
+%define EXIT_DEST_IS_SOURCE    118 ; "vfcmaddcph xmm1, xmm1, xmm2": #UD
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
