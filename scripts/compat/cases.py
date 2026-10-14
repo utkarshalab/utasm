@@ -1667,3 +1667,63 @@ REJECT_CASES = [
 REJECT_CASES += [
     ("six operands", "elf64", "vcmppd k5,zmm30,zmm29,{sae},0xab,1\n"),
 ]
+# a section declared again keeps the largest alignment asked for
+ELF_PROBES.update({
+    "elf_redeclared_align": "section .text align=64\nnop\nsection .data align=64\ndb 1\nsection .text align=32\nnop\n"
+                            "section .data\ndb 2\nsection .bss\nresb 1\nsection .bss align=16\nsection .bss align=8\nresb 1\n",
+})
+# "$ - $$" and label differences the preprocessor reads, over jumps that
+# shorten: the distance as laid out (NASM's last pass), %error / %fatal
+# only where it holds; the smaller layout when two would hold
+BIN_PROBES.update({
+    "pp_dollar_after_jumps": "bits 64\nn0: jmp n1\nn1: jmp n2\nn2: jz n3\nn3: nop\n%if ($-$$) > 7\n%error \"too big\"\n%endif\n"
+                             "%if ($-$$) > 7\n%fatal \"too big\"\n%endif\n%assign sz $-$$\ndb sz\n",
+    "pp_dollar_optimistic": "bits 64\na: jmp b\n%if ($-a) > 2\ntimes 200 nop\n%endif\nb: nop\n",
+    "pp_dollar_rep": "bits 64\n%rep 3\njmp e\n%assign s $-$$\ndb s\n%endrep\ne: nop\n%assign t e - $$\ndw t\n",
+    "pp_dollar_bootsector": "bits 16\norg 0x7c00\nstart: jmp main\nmsg: db \"hi\", 0\nmain: mov si, msg\njz done\n"
+                            "times 100 nop\njmp start\ndone: hlt\n%if ($-$$) > 510\n%error \"too big\"\n%endif\n"
+                            "times 510-($-$$) db 0\ndw 0xaa55\n",
+    "pp_dollar_macro": "bits 64\n%macro chk 1\n%if ($-$$) > %1\n%warning over %1\n%endif\n%endmacro\njmp q\nchk 2\n"
+                       "times 3 nop\nq: chk 5\njmp q\nchk 100\n",
+})
+# "absolute label+n" after jumps that shorten: the label as laid out; NASM's
+# own directive macros for %ifmacro (org in -f bin)
+BIN_PROBES.update({
+    "absolute_after_jumps": "bits 16\norg 100h\nstart: jmp main\nmsg: db \"hello$\"\nmain: mov dx, msg\nmov [buf], dl\n"
+                            "jz quit\nmov ah, 9\nint 21h\nquit: ret\nend_code:\nabsolute end_code + 7\nbuf: resb 16\ncnt: resw 1\n"
+                            "section .text\nmov [cnt], ax\n",
+    "ifmacro_builtin": "bits 64\n%ifmacro org\ndb 1\n%endif\n%ifmacro ORG 1\ndb 2\n%endif\n%ifmacro section 2\ndb 3\n%endif\n"
+                       "%ifmacro struc 3\ndb 4\n%endif\n%ifmacro osabi\ndb 5\n%endif\n%ifmacro use64 0\ndb 6\n%endif\n"
+                       "%ifnmacro iend 1\ndb 7\n%endif\n%ifmacro nosuch\ndb 8\n%endif\n",
+})
+ELF_PROBES.update({
+    "elf_ifmacro_builtin": "%ifmacro org\ndb 1\n%endif\n%ifmacro osabi 1\ndb 2\n%endif\n%ifmacro global 3\ndb 3\n%endif\n",
+})
+# movnti takes no 66 for a 32-bit register in bits 16 (66 0F C3 is not
+# movnti); adcx / adox / movbe / crc32 / popcnt / bswap as NASM in each mode
+BIN_PROBES.update({
+    "movnti_modes": "bits 16\nmovnti [si], eax\nmovnti [ebx], eax\nadcx eax, ebx\nadox eax, [ebx]\nmovbe eax, [ebx]\n"
+                    "popcnt eax, ebx\nbswap eax\nbits 32\nmovnti [esi], eax\nmovnti [si], eax\n"
+                    "bits 64\nmovnti [rsi], eax\nmovnti [rsi], rax\nmovnti [r9d], r10\n",
+})
+# branches to a number (an absolute target: E9 / E8 / 0F 8x, not FF /4
+# through a garbage address); sizes written ("near", "strict") kept when
+# code before them shrinks; MPX's MIB addresses (bndmk / bndldx / bndstx:
+# a register with a scale written is the index, ICC's third operand the
+# index, REX for r8-r15)
+BIN_PROBES.update({
+    "branch_to_number_16": "bits 16\norg 0x7c00\njmp 0x7c00\njmp 0\njz 0x7c10\ncall 0x8000\njmp near 5\n"
+                           "call near 0x7c00\njmp short $+2\n",
+    "branch_to_number_64": "bits 64\norg 0x400000\njmp 0x401000\ncall 0x402000\njnz 0x400000\njb 0x400020\n",
+    "jump_size_kept": "bits 64\nfoo: nop\njz bar\nbar: jmp near foo\njmp strict near foo\njz near foo\n"
+                      "jz baz\nbaz: jmp foo\n",
+    "mpx_mib_64": "bits 64\nbndstx [r12+0x399], bnd3\nbndstx [rax+3], bnd0, rbx\nbndstx [rax+3], rbx, bnd0\n"
+                  "bndstx [0], rcx, bnd2\nbndstx [rcx*1], bnd2\nbndstx [3,1*r12], bnd2\nbndstx [1*r12+3], bnd2\n"
+                  "bndldx bnd2, [1*rbx+3]\nbndldx bnd1, [r11+0x1234]\nbndldx bnd2, [3], rbx\nbndmk bnd1, [3,1*r12]\n"
+                  "bndmk bnd1, [r11]\nbndmk bnd1, [rcx*1]\nbndmov bnd1, [rcx*1]\n",
+    "mpx_mib_32": "bits 32\nbndstx [eax+3], bnd0, ebx\nbndstx [0], ecx, bnd2\nbndstx [ecx*1], bnd2\n"
+                  "bndldx bnd2, [3], ebx\nbndldx bnd2, [1*ebx+3]\nbndmk bnd1, [ecx*1]\nbndmov bnd1, [ecx*1]\n",
+})
+ELF_PROBES.update({
+    "elf_branch_to_number": "section .text\njmp 0x1000\ncall 0x2000\njz 0x1000\n",
+})
