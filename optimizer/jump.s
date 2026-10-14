@@ -212,6 +212,14 @@ relax_note:
     lea     rdi, [rel relax_vec]
     mov     rsi, rsp
     call    vec_push
+    ; the listing line that holds padding which can grow (lst_remap)
+    cmp     byte [rsp + RX_kind], RELAX_ALIGN
+    je      .pad_line
+    cmp     byte [rsp + RX_kind], RELAX_PADTO
+    jne     .out
+.pad_line:
+    extern  lst_mark_pad
+    call    lst_mark_pad
 
 .out:
     add     rsp, RX_SIZE
@@ -363,6 +371,130 @@ relax_pending_padto:
     mov     eax, 1
 .ret:
     ret
+
+; ---- relax_padto_negative / relax_padto_settle / relax_padto_check --
+;
+; "times K-($-$$) db F" with a count C below 0 when it is read: the jump
+; optimizer may still shorten enough before it to bring the count up to 0
+; or more, so the error is decided once it has run - as NASM's last pass
+; decides it.
+;   relax_padto_negative(rdi = C)   the count, at the current position and
+;                                   line; rax = 0 or EXIT_OOM
+;   relax_padto_settle(rdi = section, rsi = the padding's first position,
+;                      rdx = its count now)   called as the section moves
+;   relax_padto_check               rax = 0, or EXIT_TIMES_NEGATIVE with
+;                                   the line and value of the first one
+;                                   still below 0
+;   relax_times_subject(rdi = C)    "-3" as the error's subject
+; Entry: section, position, count, file (8 each), line (4), pad (4).
+;
+%define TNEG_SIZE  40
+%define TNEG_MAX   64
+
+global relax_padto_negative, relax_padto_check, relax_times_subject
+relax_padto_negative:
+    push    rbx
+    mov     rax, [rel tneg_n]
+    cmp     rax, TNEG_MAX
+    jb      .room
+    ; more than the table holds: this one's error now
+    call    relax_times_subject
+    mov     eax, EXIT_TIMES_NEGATIVE
+    pop     rbx
+    ret
+.room:
+    imul    rbx, rax, TNEG_SIZE
+    lea     rax, [rel tneg_tab]
+    add     rbx, rax
+    lea     rax, [rel global_ctx]
+    mov     rax, [rax + ASMCTX_curr_sec]
+    mov     [rbx], rax
+    xor     ecx, ecx
+    test    rax, rax
+    jz      .pos
+    mov     rcx, [rax + SECTION_size]
+.pos:
+    mov     [rbx + 8], rcx
+    mov     [rbx + 16], rdi
+    extern  error_loc_file, error_loc_line
+    mov     rax, [rel error_loc_file]
+    mov     [rbx + 24], rax
+    mov     eax, [rel error_loc_line]
+    mov     [rbx + 32], eax
+    inc     qword [rel tneg_n]
+    xor     eax, eax
+    pop     rbx
+    ret
+
+relax_padto_settle:
+    xor     ecx, ecx
+.next:
+    cmp     rcx, [rel tneg_n]
+    jae     .ret
+    imul    rax, rcx, TNEG_SIZE
+    push    rdx
+    lea     rdx, [rel tneg_tab]
+    add     rax, rdx
+    pop     rdx
+    inc     rcx
+    cmp     [rax], rdi
+    jne     .next
+    cmp     [rax + 8], rsi
+    jne     .next
+    mov     [rax + 16], rdx
+.ret:
+    ret
+
+relax_padto_check:
+    xor     ecx, ecx
+.next:
+    cmp     rcx, [rel tneg_n]
+    jae     .none
+    imul    rax, rcx, TNEG_SIZE
+    lea     rdx, [rel tneg_tab]
+    add     rax, rdx
+    inc     rcx
+    cmp     qword [rax + 16], 0
+    jge     .next
+    mov     rdx, [rax + 24]
+    mov     [rel error_loc_file], rdx
+    mov     edx, [rax + 32]
+    mov     [rel error_loc_line], edx
+    mov     rdi, [rax + 16]
+    call    relax_times_subject
+    mov     eax, EXIT_TIMES_NEGATIVE
+    ret
+.none:
+    xor     eax, eax
+    ret
+
+relax_times_subject:
+    ; the digits from the end of the buffer, then the sign
+    lea     rsi, [rel tneg_text + 23]
+    mov     byte [rsi], 0
+    mov     rax, rdi
+    neg     rax                            ; (C is below 0)
+    mov     ecx, 10
+.digit:
+    xor     edx, edx
+    div     rcx
+    add     dl, '0'
+    dec     rsi
+    mov     [rsi], dl
+    test    rax, rax
+    jnz     .digit
+    dec     rsi
+    mov     byte [rsi], '-'
+    mov     rdi, rsi
+    extern  error_set_subject
+    jmp     error_set_subject
+
+[SECTION .bss]
+alignb 8
+tneg_n:     resq 1
+tneg_tab:   resb TNEG_SIZE * TNEG_MAX
+tneg_text:  resb 24
+[SECTION .text]
 
 ; ---- rx_in_frozen (internal) -------------
 ; eax = 1 when offset rdi lies in a frozen range of rw_sec. Clobbers rcx,
@@ -1989,6 +2121,54 @@ global relax_map_offset
 relax_map_offset:
     jmp     rx_new
 
+; relax_map_offset_before: the same, but before padding that grew from none
+; at that very offset (align, times K-($-$$)): where a line ending there
+; ends. Clobbers rdx, r9.
+global relax_map_offset_before
+relax_map_offset_before:
+    push    rdi
+    call    rx_new
+    pop     rdi
+    push    rcx
+    push    r8
+    push    rax
+    ; how many records end at or before it (they are in position order)
+    cmp     byte [rel rw_pref_ok], 0
+    je      .count_all
+    call    rx_ub
+    mov     rcx, rax
+    jmp     .counted
+.count_all:
+    xor     ecx, ecx
+.count:
+    cmp     rcx, [rel rw_n]
+    jae     .counted
+    mov     r9, [rel rw_recs]
+    mov     r9, [r9 + rcx*8]
+    cmp     [r9 + RX_end], rdi
+    ja      .counted
+    inc     rcx
+    jmp     .count
+.counted:
+    pop     rax
+    ; the last of them, empty at the offset: their change undone
+.back:
+    test    rcx, rcx
+    jz      .done
+    mov     r9, [rel rw_recs]
+    mov     r9, [r9 + rcx*8 - 8]
+    cmp     [r9 + RX_end], rdi
+    jne     .done
+    cmp     [r9 + RX_pos], rdi
+    jne     .done
+    add     rax, [r9 + RX_change]
+    dec     rcx
+    jmp     .back
+.done:
+    pop     r8
+    pop     rcx
+    ret
+
 ; ---- rx_short_disp (internal) -----------
 ;
 ; The rel8 displacement a candidate would have in the current layout.
@@ -2237,6 +2417,15 @@ rx_apply:
 .sweep_align:
     mov     rdi, [rbx + RX_pos]
     call    .copy_to
+    cmp     byte [rbx + RX_kind], RELAX_PADTO
+    jne     .sweep_pad
+    ; a count that was negative: what it is now (relax_padto_check)
+    mov     rdi, r12
+    mov     rsi, [rbx + RX_pos]
+    mov     rdx, [rbx + RX_aux]
+    sub     rdx, r14
+    call    relax_padto_settle
+.sweep_pad:
     mov     esi, [rbx + RX_aux32]
     sub     rsi, [rbx + RX_change]         ; new padding
     lea     rdi, [rbp + r14]
