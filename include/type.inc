@@ -394,7 +394,8 @@ struc INST
     field tag,       1       ; always TAG_INSTRUCTION
     field nops,      1       ; operand count
     field flags,     1       ; instruction flags
-    field pad0,      1       ; explicit padding to align op_id to 2-byte boundary
+    field sae,       1       ; 1: a {sae} before the last operand, taken out
+                             ;   ("vcmppd k1, zmm2, zmm3, {sae}, 5": dispatch.s)
     field op_id,     2       ; mnemonic ID
     field pad1,      2       ; explicit padding to align next field to 8-byte boundary
     field prefixes,  4       ; instruction prefixes (up to 4 slots)
