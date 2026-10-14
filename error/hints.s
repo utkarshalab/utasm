@@ -64,7 +64,7 @@ hint_pending:   resq 1                  ; name to suggest, or 0
 ;
 global error_hint_mnemonic
 error_hint_mnemonic:
-    sub     rsp, 8
+    push    rdi                             ; the word
     call    suggest_begin
 
     lea     rax, [rel global_ctx]
@@ -78,8 +78,19 @@ error_hint_mnemonic:
     lea     rsi, [rel directive_names_end]
     call    suggest_consider_packed
 
-    add     rsp, 8
-    jmp     hint_take_result
+    ; the word itself ("org 0" in an object file, where org is no
+    ; directive): no typo to point at
+    call    suggest_result
+    pop     rdi
+    test    rdx, rdx
+    jz      hint_take
+    mov     rsi, rdx
+    extern  str_cmp_kw
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     hint_take
+    xor     edx, edx
+    jmp     hint_take
 
 ; ---- error_hint_symbol ------------------
 ;
@@ -129,6 +140,7 @@ error_hint_symbol:
 ;
 hint_take_result:
     call    suggest_result
+hint_take:
     mov     [hint_pending], rdx
     xor     eax, eax
     test    rdx, rdx
