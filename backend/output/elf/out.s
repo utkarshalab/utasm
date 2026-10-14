@@ -57,6 +57,7 @@ elf64_emit:
     mov     r12, rdi               ; r12 = AsmCtx
     mov     r13d, esi              ; r13d = fd
     mov     [rel elf_sa_ctx], r12
+    mov     qword [rel rela_count_ctx], 0  ; (elf64_relocs_in_section: count again)
     mov     al, [r12 + ASMCTX_standalone]
     mov     [rel elf_sa_on], al
     cmp     al, 1
@@ -2303,14 +2304,27 @@ elf64_write_shstrtab:
 elf64_custom_rela_off:
     mov     r8, [rel elf_sa_ctx]
     mov     r9, [r8 + ASMCTX_sections]
+    ; on from where the last call stopped, when this section comes later
+    ; (elf64_write_shdrs asks in order: from the start each time was
+    ; quadratic, NASM's manysecs)
     mov     eax, shstrtab_end - shstrtab_data
     xor     ecx, ecx
+    mov     edx, [rsi + SECTION_index]
+    dec     edx
+    cmp     edx, [rel rela_off_at]
+    jb      .next
+    cmp     dx, [r8 + ASMCTX_seccount]
+    jae     .next
+    cmp     [r9 + rdx * 8], rsi
+    jne     .next                          ; (its index not its place: all of them)
+    mov     ecx, [rel rela_off_at]
+    mov     eax, [rel rela_off_val]
 .next:
     cmp     cx, [r8 + ASMCTX_seccount]
     jae     .ret
     mov     rdx, [r9 + rcx * 8]
     cmp     rdx, rsi
-    je      .ret
+    je      .ret_at
     inc     ecx
     cmp     byte [rdx + SECTION_type], SEC_CUSTOM
     jne     .next
@@ -2322,8 +2336,16 @@ elf64_custom_rela_off:
     lea     rdi, [rdi + 1]
     jne     .len
     jmp     .next
+.ret_at:
+    mov     [rel rela_off_at], ecx
+    mov     [rel rela_off_val], eax
 .ret:
     ret
+
+[SECTION .bss]
+rela_off_at:    resd 1                  ; elf64_custom_rela_off: the place ...
+rela_off_val:   resd 1                  ; ... and the offset there
+[SECTION .text]
 
 ; ============================================================================
 ; elf64_relocs_in_section
@@ -2342,25 +2364,57 @@ elf64_relocs_in_section:
     xor     rax, rax
     test    rsi, rsi
     jz      .done
+    ; every section's count in one walk of the relocations, kept in it
+    ; (SECTION_nrela) while the context and the count of relocations stay
+    ; - a walk per section was quadratic (NASM's manysecs)
+    cmp     [rel rela_count_ctx], rdi
+    jne     .count
+    mov     ecx, [rdi + ASMCTX_nrelocs]
+    cmp     ecx, [rel rela_count_n]
+    je      .counted
+.count:
+    mov     [rel rela_count_ctx], rdi
+    mov     ecx, [rdi + ASMCTX_nrelocs]
+    mov     [rel rela_count_n], ecx
+    mov     r8, [rdi + ASMCTX_sections]
+    movzx   r9d, word [rdi + ASMCTX_seccount]
+    xor     ecx, ecx
+.zero:
+    cmp     ecx, r9d
+    jae     .zeroed
+    mov     rdx, [r8 + rcx * 8]
+    mov     dword [rdx + SECTION_nrela], 0
+    inc     ecx
+    jmp     .zero
+.zeroed:
     mov     r8, [rdi + ASMCTX_relocs]
     test    r8, r8
-    jz      .done
+    jz      .counted
     mov     r9d, [rdi + ASMCTX_nrelocs]
-    xor     rcx, rcx
+    xor     ecx, ecx
 .loop:
     cmp     ecx, r9d
-    jge     .done
+    jge     .counted
     mov     rdx, rcx
     imul    rdx, RELOC_SIZE
     add     rdx, r8
-    cmp     [rdx + RELOC_section], rsi
-    jne     .next
-    inc     rax
+    mov     rdx, [rdx + RELOC_section]
+    test    rdx, rdx
+    jz      .next
+    inc     dword [rdx + SECTION_nrela]
 .next:
     inc     ecx
     jmp     .loop
+.counted:
+    mov     eax, [rsi + SECTION_nrela]
 .done:
     ret
+
+[SECTION .bss]
+alignb 8
+rela_count_ctx: resq 1                  ; the context SECTION_nrela was counted for
+rela_count_n:   resd 1                  ; ... and its number of relocations then
+[SECTION .text]
 
 ; ============================================================================
 ; elf64_count_rela_sections
@@ -2587,6 +2641,8 @@ elf64_write_shdrs:
     push    r13
     push    r14
     push    r15
+    mov     dword [rel rela_off_at], 0     ; (elf64_custom_rela_off: from the start)
+    mov     dword [rel rela_off_val], shstrtab_end - shstrtab_data
     
     mov     rbx, rdi               ; AsmCtx
     mov     r12, rsi               ; FD
