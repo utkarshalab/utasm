@@ -154,12 +154,33 @@ reloc_record:
     mov     ecx, R_X86_64_GOTPCREL
     cmp     eax, WRT_GOTPCREL
     je      .wrt_set
-    mov     ecx, R_X86_64_GOTOFF64
     cmp     eax, WRT_GOTOFF
+    jne     .wrt_not_gotoff
+    ; R_X86_64_GOTOFF64 writes 8 bytes: a qword field only ("dq x wrt
+    ; ..gotoff"; ELF32: R_386_GOTOFF), else NASM's error
+    mov     ecx, R_X86_64_GOTOFF64
+    cmp     r8d, R_X86_64_64
     je      .wrt_set
+    extern  elf32_enabled, amd64_reloc_err
+    cmp     byte [rel elf32_enabled], 0
+    jne     .wrt_set
+    mov     dword [rel amd64_reloc_err], EXIT_GOTOFF_QWORD
+    cmp     r8d, R_X86_64_PC32
+    jne     .wrt_set
+    mov     dword [rel amd64_reloc_err], EXIT_GOTOFF_QWORD_ABS   ; (RIP-relative)
+    jmp     .wrt_set
+.wrt_not_gotoff:
     mov     ecx, R_X86_64_GOTTPOFF
     cmp     eax, WRT_TLSIE
     je      .wrt_set
+    ; "dd _GLOBAL_OFFSET_TABLE_ wrt ..gotpc": the GOT's distance from the
+    ; section's start (NASM's): the field's offset in the addend
+    mov     ecx, 26                        ; R_X86_64_GOTPC32
+    cmp     eax, WRT_GOTPC
+    jne     .wrt_not_gotpc
+    add     r14, r12
+    jmp     .wrt_set
+.wrt_not_gotpc:
     mov     ecx, R_X86_64_GOT32            ; WRT_GOT
     cmp     r8d, R_X86_64_64
     jne     .wrt_set
@@ -215,7 +236,8 @@ reloc_record:
     ; Increment count
     inc     dword [rbx + ASMCTX_nrelocs]
 
-    xor     rax, rax
+    ; an error its type found (wrt ..gotoff): the encoder reports it too
+    mov     eax, [rel amd64_reloc_err]
     jmp     .done
 
 .oom:
