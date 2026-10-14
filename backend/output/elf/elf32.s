@@ -15,6 +15,8 @@
 ;
 ;     R_X86_64_32 / 32S -> R_386_32      R_X86_64_PC32 -> R_386_PC32
 ;     R_X86_64_PLT32    -> R_386_PLT32   R_X86_64_GOT32 -> R_386_GOT32
+;     R_X86_64_GOTPC32  -> R_386_GOTPC   R_X86_64_GOTOFF64 -> R_386_GOTOFF
+;       (wrt ..gotpc / ..gotoff, the 32-bit PIC ones)
 ;     R_X86_64_16 / PC16 / 8 / PC8 -> R_386_16 / PC16 / 8 / PC8
 ;
 ;   A relocation that has no 32-bit form (R_X86_64_64: "dq label") is an
@@ -516,6 +518,10 @@ elf32_convert:
     je      .t_same
     cmp     eax, 3                         ; GOT32
     je      .t_same
+    cmp     eax, 26                        ; GOTPC32
+    je      .t_gotpc
+    cmp     eax, 25                        ; GOTOFF64 (a 32-bit field here)
+    je      .t_gotoff
     mov     ecx, 2
     cmp     eax, 12                        ; 16
     je      .t_16
@@ -532,6 +538,12 @@ elf32_convert:
     mov     eax, 1                         ; R_386_32
     ret
 .t_same:
+    ret
+.t_gotpc:
+    mov     eax, 10                        ; R_386_GOTPC
+    ret
+.t_gotoff:
+    mov     eax, 9                         ; R_386_GOTOFF
     ret
 .t_16:
     mov     eax, 20
