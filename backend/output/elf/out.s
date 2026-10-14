@@ -1674,9 +1674,9 @@ elf64_symbol_is_emitted:
     test    byte [r8 + SYMBOL_pflags], SYMF_STRUC
     jz      .skip
 .debug_only:
-    extern  dbg_enabled
-    cmp     byte [rel dbg_enabled], 0
-    jne     .emit
+    ; a struc's name and fields, the labels of an absolute block: local
+    ; numbers NASM writes as it does an equ's (with -g or not)
+    jmp     .emit
 .skip:
     xor     rax, rax
     ret
