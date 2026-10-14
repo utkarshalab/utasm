@@ -173,6 +173,35 @@ reloc_record:
     mov     ecx, R_X86_64_GOTTPOFF
     cmp     eax, WRT_TLSIE
     je      .wrt_set
+    ; "dd x wrt ..dtpoff", "dq x wrt ..tpoff": the offset, against the
+    ; symbol itself (GNU as); ..tlsgd / ..tlsld are an instruction's
+    cmp     eax, WRT_DTPOFF
+    jne     .wrt_not_dtpoff
+    mov     r9d, RELOC_FLAG_SYM
+    mov     ecx, 21                        ; R_X86_64_DTPOFF32
+    cmp     r8d, R_X86_64_64
+    jne     .wrt_set
+    mov     ecx, 17                        ; R_X86_64_DTPOFF64
+    jmp     .wrt_set
+.wrt_not_dtpoff:
+    cmp     eax, WRT_TPOFF
+    jne     .wrt_not_tpoff
+    mov     r9d, RELOC_FLAG_SYM
+    mov     ecx, 23                        ; R_X86_64_TPOFF32
+    cmp     r8d, R_X86_64_64
+    jne     .wrt_set
+    mov     ecx, 18                        ; R_X86_64_TPOFF64
+    jmp     .wrt_set
+.wrt_not_tpoff:
+    cmp     eax, WRT_TLSGD
+    je      .wrt_tls_code
+    cmp     eax, WRT_TLSLD
+    jne     .wrt_not_tls
+.wrt_tls_code:
+    mov     dword [rel amd64_reloc_err], EXIT_WRT_UNSUPPORTED
+    mov     ecx, 19
+    jmp     .wrt_set
+.wrt_not_tls:
     ; "dd _GLOBAL_OFFSET_TABLE_ wrt ..gotpc": the GOT's distance from the
     ; section's start (NASM's): the field's offset in the addend
     mov     ecx, 26                        ; R_X86_64_GOTPC32
