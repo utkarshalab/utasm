@@ -712,6 +712,7 @@ relax_run:
     cmp     byte [rbx + ASMCTX_opt], OPT_MIN
     je      .done
 
+    call    rx_bucket                      ; the records by section
     xor     r12d, r12d                     ; r12 = section slot
 .sections:
     movzx   eax, word [rbx + ASMCTX_seccount]
@@ -740,6 +741,128 @@ relax_run:
     pop     rbx
     ret
 
+; ---- rx_bucket (internal) ---------------
+;
+; The records grouped by section, in emission order within each: rx_order
+; the pointers, rx_bstart[i] .. rx_bstart[i+1] those of the section in slot
+; i (its SECTION_index - 1). rx_order stays 0 when the memory is not there
+; (rx_section then scans them all). rbx = AsmCtx; preserves rbx, r12-r15.
+;
+rx_bucket:
+    push    r12
+    push    r13
+    push    r14
+    mov     qword [rel rx_order], 0
+    lea     rax, [rel relax_vec]
+    mov     r12, [rax + VEC_data]
+    mov     r13, [rax + VEC_len]
+    movzx   r14d, word [rbx + ASMCTX_seccount]
+    ; the starts (one more than the sections), zeroed
+    mov     rdi, [rbx + ASMCTX_arena]
+    lea     rsi, [r14 * 4 + 8]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     [rel rx_bstart], rdx
+    mov     rdi, rdx
+    lea     rcx, [r14 * 4 + 8]
+    xor     eax, eax
+    rep stosb
+    mov     rdi, [rbx + ASMCTX_arena]
+    lea     rsi, [r13 * 8 + 8]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     r9, rdx                        ; the pointers
+    mov     r10, [rel rx_bstart]
+    ; 1. how many in each (counted one slot on: starts after the sums)
+    xor     ecx, ecx
+.count:
+    cmp     rcx, r13
+    jae     .counted
+    imul    rax, rcx, RX_SIZE
+    add     rax, r12
+    call    .slot
+    jc      .count_next
+    inc     dword [r10 + rdx * 4 + 4]
+.count_next:
+    inc     rcx
+    jmp     .count
+.counted:
+    ; 2. the starts
+    xor     ecx, ecx
+    xor     edx, edx
+.sum:
+    cmp     rcx, r14
+    ja      .summed
+    add     edx, [r10 + rcx * 4]
+    mov     [r10 + rcx * 4], edx
+    inc     rcx
+    jmp     .sum
+.summed:
+    ; 3. each record in its section's place (slot i's next free one is
+    ;    bstart[i]; it ends up at bstart[i+1], the next one's start: put
+    ;    back below)
+    xor     ecx, ecx
+.place:
+    cmp     rcx, r13
+    jae     .placed
+    imul    rax, rcx, RX_SIZE
+    add     rax, r12
+    call    .slot
+    jc      .place_next
+    mov     r8d, [r10 + rdx * 4]
+    mov     [r9 + r8 * 8], rax
+    inc     dword [r10 + rdx * 4]
+.place_next:
+    inc     rcx
+    jmp     .place
+.placed:
+    ; the starts again: each moved on to the next one's
+    mov     rcx, r14
+.unshift:
+    test    rcx, rcx
+    jz      .first
+    mov     eax, [r10 + rcx * 4 - 4]
+    mov     [r10 + rcx * 4], eax
+    dec     rcx
+    jmp     .unshift
+.first:
+    mov     dword [r10], 0
+    mov     [rel rx_order], r9
+.ret:
+    pop     r14
+    pop     r13
+    pop     r12
+    ret
+; .slot: record rax's section slot in rdx, CF when it has none (no section
+; in the list). Preserves rax, rcx.
+.slot:
+    mov     rdx, [rax + RX_sec]
+    test    rdx, rdx
+    jz      .none
+    mov     edx, [rdx + SECTION_index]
+    dec     edx
+    cmp     edx, r14d
+    jae     .none
+    push    rcx
+    mov     rcx, [rbx + ASMCTX_sections]
+    mov     r8, [rax + RX_sec]
+    cmp     [rcx + rdx * 8], r8
+    pop     rcx
+    jne     .none
+    clc
+    ret
+.none:
+    stc
+    ret
+
+[SECTION .bss]
+alignb 8
+rx_order:   resq 1                  ; rx_bucket: the record pointers by section ...
+rx_bstart:  resq 1                  ; ... and where each section's begin
+[SECTION .text]
+
 ; ---- rx_section (internal) --------------
 ;
 ; Shortens what it can in one section. Input: rdi = SECTION*.
@@ -755,6 +878,53 @@ rx_section:
     mov     r12, rdi                       ; r12 = section
 
     ; ---- 1. collect this section's records, in emission order ----
+    ; (from rx_bucket's grouping: each section scanning all the records
+    ; was quadratic in the sections, NASM's manysecs)
+    cmp     qword [rel rx_order], 0
+    je      .scan_all
+    mov     eax, [r12 + SECTION_index]
+    dec     eax
+    mov     rcx, [rbx + ASMCTX_sections]
+    cmp     [rcx + rax * 8], r12
+    jne     .scan_all
+    mov     rcx, [rel rx_bstart]
+    mov     edx, [rcx + rax * 4]           ; first
+    mov     r15d, [rcx + rax * 4 + 4]
+    sub     r15d, edx                      ; how many
+    xor     r8d, r8d
+    mov     r13, [rel rx_order]
+    lea     r13, [r13 + rdx * 8]           ; r13 = this section's record pointers
+    xor     ecx, ecx
+.bcount:
+    cmp     rcx, r15
+    jae     .bcounted
+    mov     rax, [r13 + rcx * 8]
+    cmp     byte [rax + RX_kind], RELAX_JCC
+    ja      .bcount_next
+    inc     r8
+.bcount_next:
+    inc     rcx
+    jmp     .bcount
+.bcounted:
+    test    r8, r8
+    jz      .ret
+    mov     rdi, [rbx + ASMCTX_arena]
+    lea     rsi, [r15*8]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     [rel rw_recs], rdx
+    mov     [rel rw_n], r15
+    mov     qword [rel rw_pref], 0
+    mov     qword [rel rw_ends], 0
+    mov     byte [rel rw_pref_ok], 0
+    mov     rdi, rdx
+    mov     rsi, r13
+    lea     rcx, [r15 * 8]
+    rep movsb
+    jmp     .filled
+
+.scan_all:
     lea     rax, [rel relax_vec]
     mov     r13, [rax + VEC_data]          ; r13 = first record
     mov     r14, [rax + VEC_len]           ; r14 = total records
