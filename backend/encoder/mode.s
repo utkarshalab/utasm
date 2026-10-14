@@ -322,6 +322,28 @@ amd64_count_size:
 .bad:
     jmp     amd64_bits_error
 
+; ---- amd64_seg_base_error ----------------
+; EXIT_SEG_BASE, naming the format: "binary output format does not support
+; segment base references" ("ELF format ..."), as NASM's - "jmp far x",
+; "seg x". Output: eax. Preserves the others.
+global amd64_seg_base_error
+amd64_seg_base_error:
+    push    rdi
+    lea     rdi, [rel s_seg_bin]
+    push    rax
+    extern  global_ctx
+    lea     rax, [rel global_ctx]
+    cmp     byte [rax + ASMCTX_fmt], FMT_BIN
+    pop     rax
+    je      .named
+    lea     rdi, [rel s_seg_elf]
+.named:
+    extern  error_set_subject
+    call    error_set_subject
+    pop     rdi
+    mov     eax, EXIT_SEG_BASE
+    ret
+
 ; ---- amd64_bits_error (internal) --------
 ; EXIT_BITS_MODE, its message naming the mode: "instruction not supported
 ; in 64-bit mode", as NASM's. Output: eax. Preserves the others.
@@ -359,6 +381,8 @@ amd64_bits_error:
 s_mode64:       db "64-bit", 0
 s_mode32:       db "32-bit", 0
 s_mode16:       db "16-bit", 0
+s_seg_bin:      db "binary output", 0
+s_seg_elf:      db "ELF", 0
 [SECTION .text]
 
 ;*
@@ -861,6 +885,7 @@ s_imm_sdimm:    db "signed dword immediate exceeds bounds", 0
 s_imm_ddata:    db "dword data exceeds bounds", 0
 s_imm_sbvalue:  db "signed byte value exceeds bounds", 0
 [SECTION .bss]
+moffs64:        resb 1                  ; "mov rax, [qword x]": A1 with 64 bits
 ; the form amd64_imm_canon chose for this instruction's immediate: 1 the
 ; sign-extended imm8 one, 2 the full one, 0 not chosen (the encoders look
 ; at the value)
@@ -1447,6 +1472,8 @@ amd64_mode_special:
     cmp     r13d, ID_CALL
     jne     .not_far
 .far_check:
+    cmp     byte [r12 + INST_nops], 1
+    je      .far_single
     cmp     byte [r12 + INST_nops], 2
     jne     .not_far
     lea     r14, [r12 + INST_op0]
@@ -1465,8 +1492,24 @@ amd64_mode_special:
     ; as NASM writes it; and ins / outs, which the encoders do not have
     cmp     r13d, ID_MOV
     jne     .not_mov64
+    mov     byte [rel moffs64], 0
     cmp     byte [r12 + INST_asize], 32
+    jne     .mov64_not_a32
+    cmp     byte [r12 + INST_op0 + OPERAND_dispsize], 64
+    je      .none                          ; (ModRM, the size ignored)
+    cmp     byte [r12 + INST_op1 + OPERAND_dispsize], 64
+    je      .none
+    jmp     .mov64
+.mov64_not_a32:
+    ; "mov rax, [qword x]": A0-A3 with a 64-bit address, as NASM writes
+    ; it ([qword x] with a32 is a 32-bit one: the size ignored)
+    cmp     byte [r12 + INST_op0 + OPERAND_dispsize], 64
+    je      .mov64_q
+    cmp     byte [r12 + INST_op1 + OPERAND_dispsize], 64
     jne     .none
+.mov64_q:
+    mov     byte [rel moffs64], 1
+.mov64:
     lea     r14, [r12 + INST_op0]
     lea     r15, [r12 + INST_op1]
     movzx   ecx, byte [r12 + INST_nops]
@@ -1876,6 +1919,8 @@ amd64_mode_special:
     jne     .none
     cmp     byte [rdi + OPERAND_kind], OP_MEM
     jne     .none
+    cmp     byte [rdi + OPERAND_relnum], 0
+    jne     .none                          ; "[rel 5]": ModRM, as NASM
     cmp     byte [rdi + OPERAND_base], 0xFF
     jne     .none
     cmp     byte [rdi + OPERAND_index], 0xFF
@@ -1908,6 +1953,12 @@ amd64_mode_special:
     pop     rdi
     ; the address: the mode's width, or the one written ([dword x])
     call    amd64_mode_default
+    cmp     byte [rel moffs64], 0
+    je      .mov_addr32
+    mov     byte [rel moffs64], 0
+    mov     eax, 64                        ; [qword x]: 64 bits
+    jmp     .mov_addr_width
+.mov_addr32:
     test    byte [rdi + OPERAND_flags], OP_FLAG_ADDR32
     jz      .mov_addr16
     mov     eax, 32
@@ -1927,6 +1978,10 @@ amd64_mode_special:
 .mov_addr_name:
     xor     edx, edx
     mov     al, R_X86_64_32
+    cmp     r15d, 64
+    jne     .mov_addr_r16
+    mov     al, R_X86_64_64
+.mov_addr_r16:
     cmp     r15d, 16
     jne     .mov_addr_rel
     mov     al, 12
@@ -1951,6 +2006,12 @@ amd64_mode_special:
 .mov_addr_out:
     cmp     r15d, 16
     je      .push_imm16
+    cmp     r15d, 64
+    jne     .mov_addr_dword
+    extern  amd64_emit_qword
+    call    amd64_emit_qword
+    jmp     .done
+.mov_addr_dword:
     call    amd64_emit_dword
     jmp     .done
 
@@ -2110,6 +2171,34 @@ amd64_mode_special:
     jmp     .done
 .mov_sreg_bad:
     mov     eax, EXIT_ENCODE_FAIL
+    jmp     .ret
+
+; ---- jmp / call far TARGET: the segment would be TARGET's own ----
+; No format here has one (NASM's "binary output format does not support
+; segment base references"); a number has none at all; 64-bit mode has no
+; direct far branch.
+.far_single:
+    lea     r14, [r12 + INST_op0]
+    test    byte [r14 + OPERAND_flags], OP_FLAG_FAR
+    jz      .not_far
+    movzx   eax, byte [r14 + OPERAND_kind]
+    cmp     eax, OP_SYMBOL
+    je      .far_single_check
+    cmp     eax, OP_IMM
+    jne     .not_far                       ; jmp far [m], jmp far reg
+.far_single_check:
+    cmp     byte [rel asm_bits], 64
+    je      .fail
+    cmp     eax, OP_SYMBOL
+    je      .far_seg_base
+    cmp     qword [r14 + OPERAND_sym], 0
+    jne     .far_seg_base
+    cmp     byte [r14 + OPERAND_fwd], 0
+    jne     .far_seg_base
+    mov     eax, EXIT_FAR_NOT_RELOC
+    jmp     .ret
+.far_seg_base:
+    call    amd64_seg_base_error
     jmp     .ret
 
 ; ---- jmp / call SEG:OFFSET: EA / 9A, the offset then the segment ----
