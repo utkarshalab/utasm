@@ -17,6 +17,8 @@
 ;     R_X86_64_PLT32    -> R_386_PLT32   R_X86_64_GOT32 -> R_386_GOT32
 ;     R_X86_64_GOTPC32  -> R_386_GOTPC   R_X86_64_GOTOFF64 -> R_386_GOTOFF
 ;       (wrt ..gotpc / ..gotoff, the 32-bit PIC ones)
+;     GOTTPOFF -> R_386_TLS_IE   TLSGD -> R_386_TLS_GD   TLSLD -> R_386_TLS_LDM
+;     DTPOFF32 -> R_386_TLS_LDO_32   TPOFF32 -> R_386_TLS_LE   (the TLS ones)
 ;     R_X86_64_16 / PC16 / 8 / PC8 -> R_386_16 / PC16 / 8 / PC8
 ;
 ;   A relocation that has no 32-bit form (R_X86_64_64: "dq label") is an
@@ -522,6 +524,16 @@ elf32_convert:
     je      .t_gotpc
     cmp     eax, 25                        ; GOTOFF64 (a 32-bit field here)
     je      .t_gotoff
+    cmp     eax, 22                        ; GOTTPOFF
+    je      .t_tls_ie
+    cmp     eax, 19                        ; TLSGD
+    je      .t_tls_gd
+    cmp     eax, 20                        ; TLSLD
+    je      .t_tls_ldm
+    cmp     eax, 21                        ; DTPOFF32
+    je      .t_tls_ldo
+    cmp     eax, 23                        ; TPOFF32
+    je      .t_tls_le
     mov     ecx, 2
     cmp     eax, 12                        ; 16
     je      .t_16
@@ -544,6 +556,21 @@ elf32_convert:
     ret
 .t_gotoff:
     mov     eax, 9                         ; R_386_GOTOFF
+    ret
+.t_tls_ie:
+    mov     eax, 15                        ; R_386_TLS_IE
+    ret
+.t_tls_gd:
+    mov     eax, 18                        ; R_386_TLS_GD
+    ret
+.t_tls_ldm:
+    mov     eax, 19                        ; R_386_TLS_LDM
+    ret
+.t_tls_ldo:
+    mov     eax, 32                        ; R_386_TLS_LDO_32
+    ret
+.t_tls_le:
+    mov     eax, 17                        ; R_386_TLS_LE
     ret
 .t_16:
     mov     eax, 20
