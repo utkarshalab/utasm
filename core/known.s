@@ -56,6 +56,7 @@ DEFAULT REL
 %define KNOWN_OUT_CAP   (1 << 28)   ; bytes of records (reserved)
 
 %define SYS_MEMFD       319
+%define KNOWN_RUNS      6           ; runs with new values before the constants only
 %define SYS_EXECVE      59
 %define SEEK_SET        0
 %define SEEK_END        2
@@ -89,7 +90,8 @@ known_env:      resb 40             ; "UTASM_KNOWN=" and the fd
 known_len:      resq 1              ; pass 2: the records' length
 defer_list:     resq 1              ; pass 1: kept expressions (operands)
 defer_n:        resq 1
-verify_list:    resq 1              ; pass 2: {record, value} taken
+verify_list:    resq 1              ; pass 2: {record, value, its record handed on} taken
+known_last_rec: resq 1              ; known_lookup: the record it last found
 verify_n:       resq 1
 occ_tab:        resq 1              ; {hash, count}: occurrences of a key
 key_heap:       resq 1              ; the keys
@@ -105,6 +107,7 @@ known_active:   resb 1              ; this is pass 2
 defer_laid:     resb 1              ; pass 1 laid the code out (exec, always)
 
 [SECTION .rodata]
+known_runs_name: db 3, "runs", 0    ; the record counting the runs (known_verify)
 known_var:      db "UTASM_KNOWN="
 known_var_len   equ $ - known_var
 known_exe:      db "/proc/self/exe", 0
@@ -294,6 +297,7 @@ known_lookup:
     inc     rax
     jmp     .probe
 .hit:
+    mov     [rel known_last_rec], rdx      ; (known_note_verify: its record)
     test    r10d, r10d
     jz      .value
     ; one that depends on the layout: checked once the code is laid out
@@ -761,18 +765,33 @@ known_exec:
     call    mem_reserve
     test    rax, rax
     jnz     .ret
+    ; (a UTASM_KNOWN this run was given is left out: the next run would
+    ; read that one, the first, whose fd is closed - or another file's now)
     xor     ecx, ecx
+    xor     r8d, r8d                       ; entries copied
 .env:
     cmp     rcx, r12
     jae     .env_done
     mov     rax, [rbx + rcx*8]
-    mov     [rdx + rcx*8], rax
     inc     rcx
+    xor     r9d, r9d
+.env_cmp:
+    cmp     r9d, known_var_len
+    jae     .env
+    mov     r10b, [rax + r9]
+    lea     r11, [rel known_var]
+    cmp     r10b, [r11 + r9]
+    jne     .env_put
+    inc     r9d
+    jmp     .env_cmp
+.env_put:
+    mov     [rdx + r8*8], rax
+    inc     r8
     jmp     .env
 .env_done:
     lea     rax, [rel known_env]
-    mov     [rdx + rcx*8], rax
-    mov     qword [rdx + rcx*8 + 8], 0
+    mov     [rdx + r8*8], rax
+    mov     qword [rdx + r8*8 + 8], 0
     mov     eax, SYS_EXECVE
     lea     rdi, [rel known_exe]
     mov     rsi, [rel utasm_argv]
@@ -1007,7 +1026,7 @@ known_note_verify:
     mov     rax, [rel verify_list]
     test    rax, rax
     jnz     .have
-    mov     rsi, DEFER_CAP * 16
+    mov     rsi, DEFER_CAP * 24
     call    mem_reserve
     test    rax, rax
     jnz     .out
@@ -1017,11 +1036,13 @@ known_note_verify:
     mov     rcx, [rel verify_n]
     cmp     rcx, DEFER_CAP
     jae     .out
-    shl     rcx, 4
+    imul    rcx, rcx, 24
     mov     rdi, [rsp + 32]                ; the record
     mov     rsi, [rsp + 40]                ; the value
     mov     [rax + rcx], rdi
     mov     [rax + rcx + 8], rsi
+    mov     rdi, [rel known_last_rec]      ; the one in the records handed on
+    mov     [rax + rcx + 16], rdi
     inc     qword [rel verify_n]
 .out:
     pop     r11
@@ -1054,12 +1075,16 @@ known_verify:
     push    r13
     push    r14
     push    r15
+    ; every one worked out in this layout; one that differs takes its new
+    ; value in the records handed on (r13 = 1: some differ, r14 = 1: one
+    ; cannot be worked out)
     xor     r12d, r12d
+    xor     r13d, r13d
+    xor     r14d, r14d
 .item:
     cmp     r12, [rel verify_n]
-    jae     .all_hold
-    mov     rbx, r12
-    shl     rbx, 4
+    jae     .checked
+    imul    rbx, r12, 24
     add     rbx, [rel verify_list]
     inc     r12
     mov     rdi, [rbx]
@@ -1067,10 +1092,8 @@ known_verify:
     je      .item_name
     call    parser_deferred_value
     test    rax, rax
-    jnz     .differs
-    cmp     rdx, [rbx + 8]
-    jne     .differs
-    jmp     .item
+    jnz     .item_lost
+    jmp     .item_value
 .item_name:
     ; a name taken for a constant that depends on the layout: it must be
     ; defined, with that value
@@ -1078,13 +1101,89 @@ known_verify:
     lea     rdi, [rel global_ctx]
     call    symbol_find
     test    rax, rax
-    jnz     .differs
+    jnz     .item_lost
     cmp     word [rdx + SYMBOL_section], SHN_ABS
-    jne     .differs
-    mov     rax, [rdx + SYMBOL_value]
-    cmp     rax, [rbx + 8]
-    jne     .differs
+    jne     .item_lost
+    mov     rdx, [rdx + SYMBOL_value]
+.item_value:
+    cmp     rdx, [rbx + 8]
+    je      .item
+    mov     r13d, 1
+    mov     rax, [rbx + 16]
+    test    rax, rax
+    jz      .item_lost
+    mov     [rax], rdx                     ; the new value, for the next run
     jmp     .item
+.item_lost:
+    mov     r13d, 1
+    mov     r14d, 1
+    jmp     .item
+.checked:
+    test    r13d, r13d
+    jz      .all_hold
+    ; NASM's next pass: utasm again with the values this layout gives, up
+    ; to KNOWN_RUNS runs (a value that settles: "[ebx + bar - $]" taking
+    ; its disp8 once "baz - $" past it moved); then, or when one could not
+    ; be worked out, the constants only
+    test    r14d, r14d
+    jnz     .differs
+    lea     rsi, [rel known_runs_name]
+    call    known_lookup
+    xor     r15d, r15d
+    test    eax, eax
+    jz      .runs
+    mov     r15, rdx
+.runs:
+    inc     r15
+    cmp     r15, KNOWN_RUNS
+    jae     .differs
+    mov     rsi, [rel known_len]
+    add     rsi, 64
+    call    mem_reserve
+    test    rax, rax
+    jnz     .differs
+    mov     r13, rdx                       ; the copy
+    xor     r14d, r14d                     ; its length
+    mov     rbx, [rel known_buf]
+    xor     ecx, ecx
+.again_record:
+    cmp     rcx, [rel known_len]
+    jae     .again_copied
+    mov     rdi, rcx                       ; the record's start
+    add     rcx, 8
+.again_name:
+    cmp     byte [rbx + rcx], 0
+    je      .again_named
+    inc     rcx
+    jmp     .again_name
+.again_named:
+    inc     rcx
+    cmp     byte [rbx + rdi + 8], 3
+    je      .again_record                  ; the old count of runs
+.again_keep:
+    cmp     rdi, rcx
+    jae     .again_record
+    mov     al, [rbx + rdi]
+    mov     [r13 + r14], al
+    inc     rdi
+    inc     r14
+    jmp     .again_keep
+.again_copied:
+    ; this run's count
+    mov     [r13 + r14], r15
+    add     r14, 8
+    lea     rsi, [rel known_runs_name]
+.again_runs_name:
+    mov     al, [rsi]
+    mov     [r13 + r14], al
+    inc     r14
+    inc     rsi
+    test    al, al
+    jnz     .again_runs_name
+    mov     rdi, r13
+    mov     rsi, r14
+    call    known_exec
+    jmp     .all_hold                      ; (the exec failed: as it is)
 .differs:
     ; the records without the expressions'
     mov     rsi, [rel known_len]
