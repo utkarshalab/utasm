@@ -631,6 +631,7 @@ code_table:
     code_msg EXIT_SEG_NOT_RELOC,     m_seg_not_reloc
     code_msg EXIT_GOTOFF_QWORD,      m_gotoff_qword
     code_msg EXIT_GOTOFF_QWORD_ABS,  m_gotoff_qword_abs
+    code_msg EXIT_WRT_UNSUPPORTED,   m_wrt_unsupported
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -800,6 +801,7 @@ t_seg_base:     db "^ format does not support segment base references", 0
 m_seg_not_reloc: db "cannot apply SEG to a non-relocatable value", 0
 m_gotoff_qword: db "ELF64 requires ..gotoff references to be qword", 0
 m_gotoff_qword_abs: db "ELF64 requires ..gotoff references to be qword absolute", 0
+m_wrt_unsupported: db "ELF format does not support this use of WRT", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
 t_multi:        db "symbol `^' defined more than once", 0
