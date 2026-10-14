@@ -1469,3 +1469,122 @@ CLI_FILES["increp.s"] = '%rep 3\ndb 0\n%include "two.inc"\n%endrep\n%define F "t
 CLI_FILES["two.inc"] = "db 2\n"
 CLI_CASES += [("%include in %rep", ["-f", "bin", "increp.s"], "bin"),
               ("--limit-rep", ["-f", "bin", "--limit-rep", "5", "increp.s"], "bin")]
+
+# a bits 16 near branch reaches anywhere in its 64 KB (IP wraps); padding
+# K - ($ - $$) that is below 0 until the jumps before it are shortened;
+# [cpu 386] and the directives a [ ] takes; %elifmacro with no name is false
+BIN_PROBES.update({
+    "jmp16_wraps": "bits 16\norg 0\njmp near init\ntimes 0x9956 - ($ - $$) db 0\ninit:\n",
+    "padto_after_shortening": "bits 64\njmp x\njmp x\nx: nop\ntimes 6-($-$$) db 0\n",
+    "bracket_directives": "[bits 16]\n[cpu 386]\n[default rel]\n[section .text]\n[warning -all]\n[absolute 0]\n"
+                          "[section .text]\nnop\n",
+    "elifmacro_no_name": "%if 0\n%elifmacro\ndb 1\n%else\ndb 2\n%endif\n%if 0\n%ifmacro\n%endif\n%endif\n",
+    # a %elif NASM cannot work out (a name not defined, a label, no macro
+    # name) ends its %if: no later branch, no message
+    "elif_never": "x: nop\n%if 0\n%elif foo\ndb 1\n%else\ndb 2\n%endif\n%if 0\n%elif x\ndb 3\n%elif 1\ndb 4\n%endif\n"
+                  "%if 0\n%elifnmacro\ndb 5\n%else\ndb 6\n%endif\n%if 1\ndb 7\n%elif foo\n%else\ndb 8\n%endif\n",
+    # padding that grows from none as the jumps before it shrink: listed on
+    # its own line
+    "align_grows_from_none": "bits 64\njmp x\njmp x\ntimes 6 nop\nalign 8\nx: nop\n",
+    "padto_grows_from_none": "bits 64\njmp x\njmp x\nx: nop\ntimes 11-($-$$) db 0\nnop\n",
+})
+# a size before far ("call qword far [rax]"); MASM's displacement before
+# the brackets (bar[rbx], 4[rbx]); a segment register and a colon before a
+# memory operand (gs:[rbx], fs:0x28, es:[di], qword gs:[x], %use masm's
+# "qword ptr gs:foo"); lea ignores the size of what it addresses; padding
+# of nops that grows as the jumps before it shrink (NASM's fwdopt)
+BIN_PROBES.update({
+    "far_after_size": "bits 64\ncall qword far [rax]\njmp qword far [rax]\ncall dword far [rax]\njmp dword far [rax]\n"
+                      "call far [rax]\nbits 16\njmp word far [bx]\njmp dword far [bx]\n",
+    "masm_disp_before_brackets": "bits 64\nmov ecx, bar[rbx]\nmov ecx, 4[rbx]\nmov ecx, bar[rbx+4]\nlea rax, bar[rbx*2]\n"
+                                 "bits 32\nmov eax, bar[ebx]\nbar: dd 0\n",
+    "segment_colon_operand": "bits 64\nmov rdi, gs:[rbx]\nmov rdi, gs:foo\nmov rdi, fs:0x28\nmov rdi, qword gs:[rbx]\n"
+                             "mov gs:[rbx], rdi\nbits 16\nmov ax, es:[di]\nmov ax, ss:[bp+2]\nfoo: dw 0\n",
+    "masm_ptr_segment": "%use masm\nbits 64\nmov rdi, qword ptr gs:foo\nmov eax, dword ptr fs:[rbx]\nfoo: dq 0\n",
+    "lea_sized_memory": "bits 64\nlea rsi, dword [foo]\nlea rsi, byte [rax]\nlea esi, qword [rax]\nlea rsi, word [rax]\n"
+                        "bits 32\nlea esi, byte [eax]\nfoo:\n",
+    "padto_nops_after_shortening": "bits 64\n%assign i 0\n%rep 60\nn%[i]: jmp n%[i+1]\n%assign i i+1\n%endrep\n"
+                                   "n60: jmp n0\ntimes 130-($-$$) nop\nhlt\n",
+})
+# "imul rax," (a macro's empty last argument): the comma ends the
+# operands; labels of an absolute block used before it, its base with the
+# org; %[...] with more than a name (macros in it expanded); a16 / a32 / a64
+# inside the brackets; [qword x]: mov's A0-A3 with a 64-bit address; [rel 5]
+# is absolute (ModRM, no moffs)
+BIN_PROBES.update({
+    "trailing_comma": "bits 64\nimul rax,\nadd eax, 1,\npush rax,\n%macro m 1-2\nmov eax, %1, %2\n%endmacro\nm 5\n",
+    "absolute_forward": "bits 16\norg 0x7c00\nx: mov [b1], dl\nmov [b2], edx\nret\nabsolute x+7\nb1: resb 1\nb2: resd 2\n",
+    "absolute_forward_plain": "bits 16\nmov [b1], dl\nret\nabsolute 0x100\nb1: resb 1\n",
+    "pp_interp_expression": "%assign i 3\n%define J 1+2\nn3: db 0\nn1: db 0\ndb n%[i+1]\ndb n%[J]\n",
+    "asize_in_brackets": "bits 64\nmov eax,[a32 foo]\nmov al,[a64 foo]\nmov eax,[a32 ebx+4]\nmov al,[a64 abs foo]\n"
+                         "bits 32\nmov eax,[a16 0x10]\nbits 16\nmov ax,[a32 0x10]\nfoo:\n",
+    "qword_moffs64": "bits 64\nmov rax,[qword 0x10]\nmov al,[qword 0xffffffffcccccccc]\nmov [qword 0x10], eax\n"
+                     "mov ax,[a64 qword 0x10]\nmov eax,[qword foo]\nmov rax,[abs qword foo]\nfoo:\n",
+    "rel_number_absolute": "bits 64\nx equ 5\nmov al,[rel 0x10]\nmov al,[rel x]\nmov eax,[rel 0x20]\ny: mov al,[rel y]\n",
+})
+ELF_PROBES.update({
+    # a struc's name and fields, an absolute block's labels: local ABS
+    # symbols, as an equ's (NASM writes them with -g or not)
+    "struc_absolute_symbols": "x equ 5\nstruc s\n.a: resb 1\n.b: resd 1\nendstruc\nabsolute 0x10\nb1: resb 1\n"
+                              "section .text\nmov eax, [b1]\nnop\n",
+})
+# what NASM rejects, rejected with its message on its line: (name, format,
+# source)
+REJECT_CASES = [
+    ("times negative", "bin", "bits 16\nnop\ntimes -1 db 0\n"),
+    ("times negative incbin", "bin", "bits 16\ntimes -3 incbin \"p.s\"\n"),
+    ("times padding past its end", "bin", "bits 16\norg 0x7c00\ntimes 520 nop\ntimes 510-($-$$) db 0\ndw 0xaa55\n"),
+    ("times padding past its end elf", "elf64", "times 4 nop\ntimes 2-($-$$) db 0\n"),
+    ("times past even shortened", "bin", "bits 64\njmp x\njmp x\nx: nop\ntimes 4-($-$$) db 0\n"),
+    ("times a label distance", "bin", "bits 64\nx: times 3 nop\ntimes x-$ db 0\n"),
+    ("jc alone", "bin", "bits 16\nnop\njc\n"),
+    ("jmp alone", "elf64", "nop\njmp\n"),
+    ("call alone", "elf64", "call\n"),
+    ("loop alone", "elf32", "loop\n"),
+    ("jrcxz alone", "elf64", "jrcxz\n"),
+    ("%ifmacro no name", "bin", "%ifmacro\n%endif\n"),
+    ("%ifnmacro no name", "bin", "nop\n%ifnmacro\n%endif\n"),
+    ("%ifmacro a number", "bin", "%ifmacro 5\n%endif\n"),
+    ("%if undefined", "bin", "%if foo\ndb 1\n%endif\n"),
+    ("%if undefined compared", "bin", "%if foo == bar\n%endif\n"),
+    ("%if undefined after &&", "bin", "%if 0 && foo\n%endif\n"),
+    ("%if a format name", "bin", "%if __OUTPUT_FORMAT__ == bin\n%endif\n"),
+    ("%if a label later", "bin", "%if y\n%endif\ny: nop\n"),
+    ("%if a label", "bin", "x: nop\n%if x\n%endif\n"),
+    ("%ifn a label", "bin", "x: nop\n%ifn x+1\n%endif\n"),
+    ("%if an extern", "elf64", "extern e\n%if e\n%endif\n"),
+    ("%assign a label", "elf64", "x: nop\n%assign v x\n"),
+    ("%assign undefined", "bin", "%assign v foo+bar\n"),
+    ("[map] in an object", "elf64", "[map all x.map]\nnop\n"),
+    ("[org] in an object", "elf32", "[org 0]\nnop\n"),
+    ("[map] in win64", "win64", "[map]\n"),
+    ("unknown in brackets", "bin", "[foo 0]\n"),
+    ("db in brackets", "bin", "[db 1]\n"),
+    ("times in brackets", "bin", "[times 2 nop]\n"),
+    ("an instruction in brackets", "elf64", "[mov eax, 1]\n"),
+    ("align in brackets", "bin", "[align 4]\n"),
+    ("struc in brackets", "bin", "[struc s]\n"),
+    ("incbin in brackets", "bin", "[incbin \"p.s\"]\n"),
+    ("brackets after a label", "bin", "x: [bits 32]\n"),
+    ("common in bin", "bin", "common c 4\n"),
+    ("common with alignment in bin", "bin", "common c 4:4\n"),
+    ("jmp far a number", "bin", "bits 16\njmp far 5\n"),
+    ("call far a number", "elf32", "call far 0x1234\n"),
+    ("jmp far a label", "bin", "bits 16\njmp far x\nx:\n"),
+    ("call far a label", "bin", "bits 32\ncall far foo\nfoo: nop\n"),
+    ("jmp far a label elf", "elf32", "jmp far x\nx:\n"),
+    ("jmp far an extern", "elf32", "extern e\njmp far e\n"),
+    ("jmp far in 64-bit mode", "elf64", "jmp far 5\n"),
+    ("jmp far in win64", "win64", "jmp far x\nx:\n"),
+    ("seg a number", "bin", "dw seg 5\n"),
+    ("seg a label", "bin", "x: dw seg x\n"),
+    ("seg a label later", "bin", "dw seg x\nx:\n"),
+    ("seg in an expression", "bin", "x: dw (seg x)+1\n"),
+    ("seg an equ", "bin", "x equ 5\ndw seg x\n"),
+    ("seg elf", "elf64", "x: dq seg x\n"),
+    ("seg an extern", "elf32", "extern e\nmov ax, seg e\n"),
+    ("seg alone", "bin", "dw seg\n"),
+    ("address size against the registers", "bin", "bits 64\na32 mov eax,[rbx]\n"),
+    ("a16 against 32-bit registers", "bin", "bits 32\nmov eax,[a16 ebx]\n"),
+    ("a32 against 64-bit registers in brackets", "elf64", "nop\nmov eax,[a32 rbx]\n"),
+]
