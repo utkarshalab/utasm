@@ -3898,6 +3898,8 @@ s_macro_defaults: db "too many default macro parameters in macro `", 0
 s_macro_redef:  db "redefining multi-line macro `", 0
 s_quote_end: db "'", 0
 s_unmacro:  db "unmacro", 0
+s_ifmacro:  db "ifmacro", 0
+s_ifnmacro: db "ifnmacro", 0
 dir_struc:  db "struc", 0
 dir_endstruc: db "endstruc", 0
 dir_unmacro:  db "unmacro", 0
@@ -4221,6 +4223,26 @@ prep_cond_enter:
 
 .overflow:
     mov     rax, EXIT_COND_DEPTH
+    ret
+
+;
+; prep_cond_never : rdi = PrepState. A %elif whose condition NASM cannot
+;                   work out (a name not defined, a label, no macro name):
+;                   it skips, and so does every later branch of the level
+;                   (NASM's COND_NEVER, with no message)
+;
+prep_cond_never:
+    push    rdi
+    xor     esi, esi
+    call    prep_cond_branch
+    pop     rdi
+    test    rax, rax
+    jnz     .ret
+    movzx   ecx, word [rdi + PREP_depth]
+    test    ecx, ecx
+    jz      .ret
+    or      byte [rdi + PREP_cond_taken + rcx - 1], 1
+.ret:
     ret
 
 ;
@@ -4672,17 +4694,30 @@ prep_handle_elif:
     movzx   r12d, word [rbx + PREP_skip_depth]
     mov     word [rbx + PREP_skip_depth], 0
 
+    mov     qword [rel expr_undef_uses], 0
     mov     rdi, rbx
     call    parser_evaluate_expression
     mov     word [rbx + PREP_skip_depth], r12w
     test    rax, rax
     jnz     .done
+    ; a name not defined, a label: no message, and no branch of this %if
+    ; is taken any more (NASM's COND_NEVER)
+    push    rdx
+    lea     rdi, [rel s_cn_if]
+    call    prep_const_check
+    pop     rdx
+    test    rax, rax
+    jnz     .never
     xor     esi, esi
     test    rdx, rdx
     setne   sil
     xor     sil, [rel elif_negate]
     mov     rdi, rbx
     call    prep_cond_branch
+    jmp     .done
+.never:
+    mov     rdi, rbx
+    call    prep_cond_never
     jmp     .done
 
 .no_eval:
@@ -5647,7 +5682,7 @@ prep_resolve_interp:
     mov     rsi, r9
     call    prep_symbol_find
     test    rax, rax
-    jnz     .scan                  ; undefined: contributes nothing
+    jnz     .interp_text           ; undefined: contributes nothing
 
     ; a %define gives its text, an %assign / equ its value
     cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
@@ -5687,6 +5722,128 @@ prep_resolve_interp:
     lea     rdi, [r14 + r15]
     call    str_len
     add     r15, rax
+    jmp     .scan
+
+.interp_text:
+    ; "%[i+1]": no one name - each name in it replaced by its %define's
+    ; text or its value, the rest kept ("3+1"), as NASM expands it; one
+    ; name not defined gives nothing
+    mov     rsi, r9
+.it_any:
+    movzx   edi, byte [rsi]
+    test    edi, edi
+    jz      .scan
+    push    rsi
+    call    str_is_ident_char
+    pop     rsi
+    inc     rsi
+    test    rax, rax
+    jnz     .it_any
+    push    r13
+    mov     r13, r9
+.it_loop:
+    call    .ensure
+    jc      .it_done
+    movzx   edi, byte [r13]
+    test    edi, edi
+    jz      .it_done
+    call    str_is_ident_char
+    test    rax, rax
+    jnz     .it_name
+    mov     [r14 + r15], dil
+    inc     r15
+    inc     r13
+    jmp     .it_loop
+.it_name:
+    mov     rsi, r13
+.it_end:
+    inc     rsi
+    movzx   edi, byte [rsi]
+    test    edi, edi
+    jz      .it_have
+    push    rsi
+    call    str_is_ident_char
+    pop     rsi
+    test    rax, rax
+    jnz     .it_end
+.it_have:
+    push    rsi                            ; the name's end
+    mov     rdx, rsi
+    sub     rdx, r13
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, r13
+    call    arena_alloc_string
+    test    rax, rax
+    jnz     .it_copy
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, rdx
+    call    prep_symbol_find
+    test    rax, rax
+    jnz     .it_copy
+    cmp     byte [rdx + SYMBOL_kind], SYM_CONSTANT
+    je      .it_value
+    cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
+    jne     .it_copy
+    mov     rax, [rdx + SYMBOL_value]
+    test    rax, rax
+    jz      .it_copy
+    test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE
+    jz      .it_copy
+    ; a %define: its tokens' text
+    push    r12
+    push    r13
+    mov     r12, [rax + MACRO_tokens]
+    mov     r13d, [rax + MACRO_ntokens]
+.it_tok:
+    test    r13d, r13d
+    jz      .it_tok_done
+    mov     rdx, r12
+    call    prep_idn_text
+.it_chr:
+    movzx   ecx, byte [rax]
+    test    ecx, ecx
+    jz      .it_next_tok
+    call    .ensure
+    jc      .it_next_tok
+    mov     [r14 + r15], cl
+    inc     r15
+    inc     rax
+    jmp     .it_chr
+.it_next_tok:
+    add     r12, TOKEN_SIZE
+    dec     r13d
+    jmp     .it_tok
+.it_tok_done:
+    pop     r13
+    pop     r12
+    pop     r13                            ; on past the name
+    jmp     .it_loop
+.it_value:
+    mov     rsi, [rdx + SYMBOL_value]
+    lea     rdi, [r14 + r15]
+    call    str_int_to_str
+    lea     rdi, [r14 + r15]
+    call    str_len
+    add     r15, rax
+    pop     r13
+    jmp     .it_loop
+.it_copy:
+    ; not a macro: the name as written
+    pop     rsi
+.it_copy_ch:
+    cmp     r13, rsi
+    jae     .it_loop
+    push    rsi
+    call    .ensure
+    pop     rsi
+    jc      .it_done
+    mov     al, [r13]
+    mov     [r14 + r15], al
+    inc     r15
+    inc     r13
+    jmp     .it_copy_ch
+.it_done:
+    pop     r13
     jmp     .scan
 
 .ctx_local:
@@ -6163,12 +6320,17 @@ prep_handle_assign:
     mov     r13, [r12 + TOKEN_value]
 
     ; 2. Evaluate the value (same evaluator %if uses)
+    mov     qword [rel expr_undef_uses], 0
     mov     rdi, rbx
     extern  parser_evaluate_expression
     call    parser_evaluate_expression
     test    rax, rax
     jnz     .error
     mov     r14, rdx               ; r14 = value
+    lea     rdi, [rel s_cn_assign]
+    call    prep_const_check
+    test    rax, rax
+    jnz     .done
 
     ; 3. Re-assign in place when the name already exists (it may have been
     ;    a %define: it is a number now)
@@ -6921,7 +7083,26 @@ prep_handle_iftest:
     cmp     r12d, IFT_ENV
     je      .t_env
     cmp     eax, TOK_IDENT
-    jne     .decided
+    je      .t_macro_name
+    ; "%ifmacro" with no name (or a number, a string): "`%ifmacro' expects
+    ; a macro name", as NASM; %elifmacro takes it as false, and so does a
+    ; branch being skipped
+    test    r13d, 2
+    jz      .t_macro_if
+    mov     byte [rel cond_never_pending], 1   ; %elifmacro: COND_NEVER
+    jmp     .decided
+.t_macro_if:
+    test    r14d, r14d
+    jnz     .decided
+    lea     rdi, [rel s_ifmacro]
+    test    r13d, 1
+    jz      .t_macro_subject
+    lea     rdi, [rel s_ifnmacro]
+.t_macro_subject:
+    call    error_set_subject
+    mov     eax, EXIT_MACRO_NO_NAME
+    jmp     .restore
+.t_macro_name:
     mov     rsi, [rdx + TOKEN_value]
     mov     rdi, [rbx + PREP_ctx]
     call    prep_symbol_find
@@ -7108,7 +7289,13 @@ prep_handle_iftest:
     call    prep_cond_enter
     jmp     .ret
 .elif:
+    cmp     byte [rel cond_never_pending], 0
+    jne     .elif_never
     call    prep_cond_branch
+    jmp     .ret
+.elif_never:
+    mov     byte [rel cond_never_pending], 0
+    call    prep_cond_never
     jmp     .ret
 .restore:
     mov     [rbx + PREP_skip_depth], r14w
@@ -10819,9 +11006,19 @@ prep_handle_if:
     ; 2. Evaluate expression
     mov     rdi, rbx
     call    prep_drop_stale_newline
+    extern  expr_undef_uses
+    mov     qword [rel expr_undef_uses], 0
     mov     rdi, rbx
     extern  parser_evaluate_expression
     call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .done
+    lea     rdi, [rel s_cn_if]
+    cmp     byte [rel cond_negate], 0
+    je      .if_named
+    lea     rdi, [rel s_cn_ifn]
+.if_named:
+    call    prep_const_check
     test    rax, rax
     jnz     .done
 
@@ -10845,6 +11042,63 @@ prep_handle_if:
     pop     r12
     pop     rbx
     epilogue
+
+; ---- prep_const_check -------------------
+;
+; The value of a %if or %assign must be a number now: a name not defined
+; yet is "symbol `foo' not defined before use" (the first one; NASM's
+; preprocessor reads the line once, a label further on is not known to
+; it), a label or an extern "non-constant value given to `%if'".
+; Input    : rbx = PrepState, rdi = the directive's name (no %), rcx /
+;            r11 as parser_evaluate_expression left them
+; Output   : rax = 0 or the error (its subject set); rdx kept when 0
+;
+prep_const_check:
+    xor     eax, eax
+    cmp     qword [rel expr_undef_uses], 0
+    jne     .undef
+    test    rcx, rcx
+    jnz     .nonconst                      ; a kept expression of labels
+    push    rdi
+    mov     rdi, r11
+    extern  expr_sym_class
+    call    expr_sym_class
+    pop     rdi
+    test    eax, eax
+    jnz     .nonconst_set
+    ret
+.nonconst_set:
+    xor     eax, eax
+.nonconst:
+    call    error_set_subject
+    mov     eax, EXIT_PP_NONCONST
+    ret
+.undef:
+    ; an extern has no section either: not a number, but declared
+    push    rdi
+    extern  expr_undef_first
+    mov     rsi, [rel expr_undef_first]
+    mov     rdi, [rbx + PREP_ctx]
+    call    prep_symbol_find
+    pop     rdi
+    test    rax, rax
+    jnz     .undef_named
+    movzx   eax, byte [rdx + SYMBOL_kind]
+    cmp     eax, SYM_EXTERN
+    je      .nonconst_set
+    cmp     eax, SYM_COMMON
+    je      .nonconst_set
+.undef_named:
+    mov     rdi, [rel expr_undef_first]
+    call    error_set_subject
+    mov     eax, EXIT_UNDEF_BEFORE
+    ret
+
+[SECTION .rodata]
+s_cn_if:     db "if", 0
+s_cn_ifn:    db "ifn", 0
+s_cn_assign: db "assign", 0
+[SECTION .text]
 
 ; ---- prep_handle_else -------------------
 prep_handle_else:
@@ -12348,6 +12602,7 @@ alignb 8
 prep_error_subj: resq 1                 ; prep_error's subject
 prep_error:     resd 1                  ; the first error a caller got, or 0
 cond_negate:    resb 1                  ; %ifn / %elifn: the result inverted
+cond_never_pending: resb 1              ; %elifmacro with no name: COND_NEVER
 stk_text:       resb STK_TEXT               ; %arg / %local definitions
 elif_negate:    resb 1
 alignb 4
