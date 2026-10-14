@@ -30,6 +30,8 @@
 %define LE_PFILE    56              ; q nested body line: the enclosing
 %define LE_PLINE    64              ; d body's lines up to here are listed
                                     ;   first (an inner %rep block)
+%define LE_PAD      68              ; b 1: padding the jump optimizer can
+                                    ;   grow (align, times K-($-$$))
 %define LE_WARN     72              ; q its warnings: {q next, q offset in the line, text}, or 0
 %define LE_UNINIT   80              ; q its "?" bytes: {q from, q to (from
                                     ;   the entry's start), q next}, or 0
