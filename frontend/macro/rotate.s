@@ -20,7 +20,7 @@
 %include "include/constant.inc"
 %include "include/type.inc"
 
-extern  parser_evaluate_expression
+extern  parser_evaluate_pp
 
 
 [SECTION .text]
@@ -41,7 +41,7 @@ prep_handle_rotate:
     mov     rbx, rdi
 
     mov     rdi, rbx
-    call    parser_evaluate_expression
+    call    parser_evaluate_pp
     test    rax, rax
     jnz     .ret
     mov     r14, rdx                       ; r14 = n
