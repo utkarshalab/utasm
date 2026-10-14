@@ -1099,7 +1099,10 @@ diag_describe:
     push    r8
     lea     rsi, [rel s_a]
     cmp     eax, 8
-    jne     .article
+    je      .article_an
+    cmp     eax, 80
+    jne     .article                       ; ("an 80-bit")
+.article_an:
     lea     rsi, [rel s_an]
 .article:
     mov     edi, 2
