@@ -1378,6 +1378,7 @@ parser_evaluate_additive:
     push    r14
     push    r15
     sub     rsp, 16                ; [rsp] = the position coefficient
+    mov     qword [rsp + 8], 0     ; [rsp + 8] = a label held (expr_plus_names)
 
     mov     rbx, rdi               ; RBX = PrepState
 
@@ -1427,7 +1428,26 @@ parser_evaluate_additive:
         mov     [rsp], rax
         call    expr_plus_names            ; (one of two names not known yet)
         test    rax, rax
-        jnz     .error                     ; ("label + label")
+        jz      .plus_named
+        ; "_GLOBAL_OFFSET_TABLE_ + $$ - .getgot": a label added to an
+        ; address is held until a label of its section is taken away - the
+        ; two a distance, a number (NASM's PIC idiom); else "label + label"
+        cmp     rax, EXIT_NOT_SIMPLE
+        jne     .error
+        cmp     qword [rsp + 8], 0
+        jne     .error
+        test    rcx, rcx
+        jnz     .error
+        test    r11, r11
+        jz      .error
+        movzx   edx, word [r11 + SYMBOL_section]
+        test    edx, edx
+        jz      .error
+        cmp     edx, 0xFF00
+        jae     .error
+        mov     [rsp + 8], r11
+        jmp     .loop
+.plus_named:
         ; "1 + label", "CONST + label": the label is the right-hand term's
         test    r14, r14
         jnz     .loop
@@ -1466,6 +1486,29 @@ parser_evaluate_additive:
         cmp     word [r11 + SYMBOL_section], SHN_ABS
         je      .loop
 .minus_symbol:
+        ; the label held after a "+" and one of its section: a distance
+        ; (a number), the code between keeping its size
+        mov     rax, [rsp + 8]
+        test    rax, rax
+        jz      .minus_unheld
+        test    rcx, rcx
+        jnz     .minus_unheld
+        movzx   edx, word [rax + SYMBOL_section]
+        cmp     dx, [r11 + SYMBOL_section]
+        jne     .minus_unheld
+        mov     qword [rsp + 8], 0
+        push    rdi
+        push    rsi
+        mov     rsi, [rax + SYMBOL_value]
+        mov     rdi, [rbx + PREP_ctx]
+        mov     rdi, [rdi + ASMCTX_sections]
+        mov     rdi, [rdi + rdx*8 - 8]     ; (the index is 1-based)
+        mov     rdx, [r11 + SYMBOL_value]
+        call    relax_freeze_range
+        pop     rsi
+        pop     rdi
+        jmp     .loop
+.minus_unheld:
 
         ; "later - $$", "end - start" with a label not defined yet: the
         ; distance is only known at the end. It is recorded under a name
@@ -1681,6 +1724,10 @@ parser_evaluate_additive:
         ENDIF
 
 .stop:
+    ; a label still held: two addresses added ("label + label")
+    mov     rax, EXIT_NOT_SIMPLE
+    cmp     qword [rsp + 8], 0
+    jne     .error
     mov     rdx, r13
     xor     rax, rax
 
@@ -12560,6 +12607,7 @@ wrt_words:
     db "..gotoff", 0, 0, 0, WRT_GOTOFF
     db "..tlsie", 0, 0,0,0, WRT_TLSIE
     db "..sym", 0, 0,0,0,0,0, WRT_SYM
+    db "..gotpc", 0, 0,0,0, WRT_GOTPC
     db 0
 [SECTION .text]
 
