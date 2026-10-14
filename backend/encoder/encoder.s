@@ -58,6 +58,12 @@ amd64_encode_instruction:
     call    amd64_lea_address
     test    rax, rax
     jnz     .error
+    ; "lea rsi, dword [foo]": the size of what is addressed does not
+    ; matter to lea (NASM ignores it)
+    cmp     byte [r12 + INST_op1 + OPERAND_kind], OP_MEM
+    jne     .not_lea
+    mov     byte [r12 + INST_op1 + OPERAND_size], 0
+    mov     word [r12 + INST_op1 + OPERAND_xsize], 0
 .not_lea:
 
     ; {disp8} / {disp32}: the displacement's size, for each memory operand
@@ -91,24 +97,31 @@ amd64_encode_instruction:
     ;     branches keep the label itself (they measure the distance to it).
     movzx   eax, word [r12 + INST_op_id]
     cmp     eax, 1059                      ; CALL
-    je      .sym_done
+    je      .branch
     cmp     eax, 1298                      ; JMP
-    je      .sym_done
+    je      .branch
     cmp     eax, 1373                      ; LOOP
-    je      .sym_done
+    je      .branch
     cmp     eax, 2151                      ; XBEGIN
-    je      .sym_done
+    je      .branch
     cmp     eax, 3000
     jb      .sym_not_jcc
     cmp     eax, 3099                      ; Jcc
-    jbe     .sym_done
+    jbe     .branch
 .sym_not_jcc:
     cmp     eax, 6524
     jb      .sym_ops
     cmp     eax, 6529                      ; LOOPcc, JECXZ, JRCXZ
-    jbe     .sym_done
+    jbe     .branch
     cmp     eax, 6536                      ; JCXZ
-    je      .sym_done
+    jne     .sym_ops
+.branch:
+    ; "jc" or "jmp" with nothing to go to: no form (NASM's invalid
+    ; combination; utasm wrote rel32 0 and FF 24 00)
+    cmp     byte [r12 + INST_nops], 0
+    jne     .sym_done
+    mov     rax, EXIT_ENCODE_FAIL
+    jmp     .error
 .sym_ops:
     xor     ecx, ecx
 .sym_op:
@@ -3682,6 +3695,7 @@ amd64_lea_address:
 
 [SECTION .rodata]
 lea_ea_absolute: db "absolute address can not be RIP-relative", 0
+s_ea_dispsize:  db "displacement size ignored on absolute address", 0
 [SECTION .text]
 
 ;*
@@ -5837,6 +5851,18 @@ amd64_emit_modrm_sib:
     cmp     byte [rel asm_bits], 64
     jne     .abs_legacy
 
+    ; "add eax, [qword 0x10]": a ModRM address is 32 bits (only mov's
+    ; A0-A3 take 64), NASM's warning
+    cmp     byte [r13 + OPERAND_dispsize], 64
+    jne     .abs_disp_ok
+    extern  reloc_quiet
+    cmp     byte [rel reloc_quiet], 0
+    jne     .abs_disp_ok
+    mov     edi, WC_EA_DISPSIZE
+    lea     rsi, [rel s_ea_dispsize]
+    call    amd64_warn_class
+.abs_disp_ok:
+
     mov     al, r14b
     shl     al, 3
     or      al, 4
@@ -5848,7 +5874,13 @@ amd64_emit_modrm_sib:
     test    rsi, rsi
     jz      .abs_no_sym
     xor     edx, edx               ; absolute: no PC adjustment
+    ; a 32-bit address (a32: 67) is zero-extended, a 64-bit one's disp32
+    ; sign-extended
     mov     al, R_X86_64_32S
+    cmp     byte [r12 + INST_asize], 32
+    jne     .abs_sym_reloc
+    mov     al, R_X86_64_32
+.abs_sym_reloc:
     call    amd64_emit_reloc
     call    .disp_addend           ; [label + 4]: the 4
     xor     rdi, rdi
@@ -6814,6 +6846,7 @@ amd64_emit_word:
 ;*
 ; * [amd64_emit_qword]
 ; ;
+global amd64_emit_qword
 amd64_emit_qword:
     push    rax
     push    rcx
