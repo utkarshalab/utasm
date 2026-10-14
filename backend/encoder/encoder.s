@@ -7159,20 +7159,28 @@ amd64_encode_rm_r_0f:
 ; ;
 amd64_encode_rm_m:
     prologue
-    lea     r10, [r12 + INST_op0]
-    
-    ; Multi-byte Opcode (R13)
-    mov     ax, r13w
-    xchg    al, ah
-    IF al, ne, 0
-        call amd64_emit_byte
-    ENDIF
-    mov     al, ah
+    ; the prefixes the address needs first (REX.X / REX.B for
+    ; "[rax + r14*8]", 67): they were left out ("prefetchwt1 [rax+r14*8]")
+    lea     rdx, [r12 + INST_op0]
+    xor     rsi, rsi
+    mov     al, 32                         ; (no REX.W)
+    call    amd64_emit_prefixes
+
+    ; Multi-byte Opcode (R13): the first byte (if any), then the second -
+    ; held in r13, not in ah, which amd64_emit_byte does not keep (it was
+    ; 0F 00 for prefetchwt1's 0F 0D)
+    mov     eax, r13d
+    shr     eax, 8
+    test    al, al
+    jz      .one_byte
     call    amd64_emit_byte
-    
+.one_byte:
+    mov     eax, r13d
+    call    amd64_emit_byte
+
     ; ModRM with Digit (R14)
     mov     al, r14b
-    mov     rdi, r10
+    lea     rdi, [r12 + INST_op0]
     call    amd64_emit_modrm_sib
     jmp     .done
 .done:
