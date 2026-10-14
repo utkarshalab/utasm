@@ -132,6 +132,7 @@
 %define EXIT_SEG_NOT_RELOC     114 ; "seg 5"
 %define EXIT_GOTOFF_QWORD      115 ; "mov eax, x wrt ..gotoff" in ELF64
 %define EXIT_GOTOFF_QWORD_ABS  116 ; "[x wrt ..gotoff]" in ELF64
+%define EXIT_WRT_UNSUPPORTED   117 ; "mov rax, [x wrt ..tlsie]" (not RIP-relative) in ELF64
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
@@ -560,6 +561,11 @@
 %define WRT_SYM                6           ; ..sym      as usual, against the symbol
 %define WRT_IMAGEBASE          7           ; ..imagebase (-f win64) IMAGE_REL_AMD64_ADDR32NB
 %define WRT_GOTPC              8           ; ..gotpc    R_X86_64_GOTPC32 (R_386_GOTPC)
+; the TLS models GNU as has (NASM has ..tlsie only)
+%define WRT_TLSGD              9           ; ..tlsgd    R_X86_64_TLSGD (R_386_TLS_GD)
+%define WRT_TLSLD              10          ; ..tlsld    R_X86_64_TLSLD (R_386_TLS_LDM)
+%define WRT_DTPOFF             11          ; ..dtpoff   DTPOFF32 / DTPOFF64 (R_386_TLS_LDO_32)
+%define WRT_TPOFF              12          ; ..tpoff    TPOFF32 / TPOFF64 (R_386_TLS_LE)
 
 ; -f win64: NASM's section classes (parser_coff_class)
 %define COFF_CODE              0
@@ -578,6 +584,7 @@
 %define ETYPE_NOTYPE           0
 %define ETYPE_OBJECT           1
 %define ETYPE_FUNC             2
+%define ETYPE_TLS              6           ; STT_TLS ("extern x:tls"; a label in .tdata / .tbss)
 
 ; ============================================================================
 ; CONTEXT FLAGS
