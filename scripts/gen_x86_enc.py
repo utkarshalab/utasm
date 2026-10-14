@@ -255,7 +255,8 @@ form("crc32", "R32 RM32", "F2", "38", 0xF1, M_R, "reg rm")
 form("crc32", "R64 RM64", "F2", "38", 0xF1, M_R, "reg rm", F_W)
 form("adcx", "RDQ RMDQ", "66", "38", 0xF6, M_R, "reg rm", F_OSZ)
 form("adox", "RDQ RMDQ", "F3", "38", 0xF6, M_R, "reg rm", F_OSZ)
-form("movnti", "MDQ RDQ", "np", "0f", 0xC3, M_R, "rm reg", F_OSZ)
+# (movnti: the shared map's M R32 / M R64 - NASM's "np", no 66 for a 32-bit
+# register in bits 16: 66 0F C3 is not movnti)
 # NASM also spells movsxd r64, r/m32 as movsx
 form("movsx", "R64 RM32", "", "", 0x63, M_R, "reg rm", F_W)
 
@@ -1140,8 +1141,10 @@ HAND_IDS = hand_ids()
 # wrong bytes or none)
 NASM_OVER = {"ldtilecfg", "sttilecfg", "tileloadd", "tileloaddt1", "tilestored", "tilezero",
              "tilerelease", "tdpbssd", "tdpbsud", "tdpbusd", "tdpbuud", "tdpbf16ps", "tdpfp16ps",
-             # MPX (REX.B lost), the address-size ones (clzero eax: 67)
-             "bndcl", "bndcu", "bndcn", "bndmk", "bndmov", "invlpga", "clzero", "umonitor"}
+             # MPX (REX.B lost; bndldx / bndstx: REX, 67 and the SIB too), the
+             # address-size ones (clzero eax: 67)
+             "bndcl", "bndcu", "bndcn", "bndmk", "bndmov", "bndldx", "bndstx",
+             "invlpga", "clzero", "umonitor"}
 
 def nasm_allowed(name, encn):
     """Whether NASM's form of this mnemonic goes in the table. They come
