@@ -1545,6 +1545,53 @@ ELF_PROBES.update({
     "many_sections": "%assign n 0\n%rep 300\n%assign g (n & ~3) + 2\nsection .s%[n] progbits exec\nl%[n]: nop\n"
                      "jmp l%[g]\n%assign n n+1\n%endrep\nsection .s0\njmp l299\n",
 })
+# "baz - $" across sections: a number in a flat binary; the second pass's
+# values taken again until they settle ("[ebx + bar - $]" its disp8);
+# numbers past 64 bits keep the low 64 with NASM's warning; a displacement
+# is 32 (16) bits, so [eax + 0xffffffff] is [eax - 1], a disp8; a lone "%"
+# at the end of a line is one token; "section a,b" is one name; a name
+# declared global before it is defined is still an address
+BIN_PROBES.update({
+    "cross_section_distance": "bits 32\nmov ebx,[ebx + bar - $]\nmov eax,[baz - $]\nmov ecx, baz - $\n"
+                              "bar: hlt\nsection .data\nbaz: dd 0\n",
+    "known_runs_settle": "bits 32\nmov ebx,[ebx + 5 - $]\nmov eax,[baz + 0 - $]\nsection .data\nbaz: dd 0\n",
+    "number_past_64_bits": "bits 64\nmov al, [qword 0x1ffffffffffffffff]\ndq 0x10000000000000000\ndq 18446744073709551617\n",
+    "displacement_wraps": "bits 64\nmov cl, [rax + 0xffffffff]\nbits 32\nmov cl, [eax + 0xffffffff]\n"
+                          "mov cl, [byte eax + 0xffffffff]\nbits 16\nmov cl, [di + 0xffff]\nmov cl, [di + 0x1ffff]\n"
+                          "mov cl, [byte di + 0xffff]\n",
+    "iftoken_lone_percent": "%iftoken %\ndb 1\n%else\ndb 2\n%endif\n%iftoken %%\ndb 3\n%endif\n",
+    "global_before_defined": "bits 64\nglobal foo\nsection .text\nmov rax, foo\ndq foo\nsection .data\ndd foo\nfoo: dd 0\n",
+})
+ELF_PROBES.update({
+    "section_name_comma": "section __LD,__compact_unwind\ndd 0\n",
+    "global_declared_first": "global foo\nsection .data\ndq foo\nfoo: dd 0\nsection .text\nmov rax, foo\n"
+                             "global bar\ndq bar\nbar: dd 0\n",
+    "pcrel_across_sections": "bits 64\nsection .text\nnop\nmov eax, [baz - $]\nlea rax, [rdi + rod1 - $$]\n"
+                             "mov ecx, baz - $\ndefault rel\nmov eax, [baz - $]\nsection .rodata\nrod1: dd 0\n"
+                             "section .data\nbaz: dd 0\ndd baz - $\n",
+    "pcrel_across_sections_back": "bits 64\nsection .rodata\nrod1: dd 0\nsection .text\nnop\n"
+                                  "lea rax, [rdi + rod1 - $$]\nmov eax, rod1 - $$\n",
+})
+ELF32_CASES.update({
+    "pcrel_across_sections": "nop\nmov eax, [baz - $]\nmov ebx, [ebx + baz - $]\nmov ecx, baz - $\ndd baz - $\n"
+                             "dw baz - $\nsection .data\nbaz: dd 0\n",
+})
+# %num's digits: N > 0 exactly N (the low ones), N < 0 at least -N;
+# "add eax, byte foo": imm8 with an 8-bit relocation; %pragma's prefixes
+# on global and local names; "required" writes an extern unused
+BIN_PROBES.update({
+    "num_digits": "%define a 64\n%define b -30\ndb %num(a*b,10), `\\n`\ndb %num(a*b,3), `\\n`\n"
+                  "db %num(a*b,-3), `\\n`\ndb %num(a*b,10,2), `\\n`\ndb %num(255,4,16), `\\n`\ndb %num(5,-4), `\\n`\n",
+})
+ELF_PROBES.update({
+    "imm_byte_relocation": "extern foo, bar\nadd eax, byte foo\nadd edx, byte (bar-$$)\n",
+    "pragma_prefixes": "%pragma elf gprefix\n%pragma elf lprefix .L.\n%pragma output gprefix _\n"
+                       "%pragma output lprefix L.\nextern malloc\nglobal call_malloc\ncall_malloc:\n"
+                       "call malloc\nret\nmyfunc:\njmp call_malloc\n",
+    "pragma_output_prefixes": "%pragma output gprefix _\n%pragma output lprefix L.\nextern ext\nglobal gl\n"
+                              "section .data\ngl: dd ext\nloc: dd 0\n.sub: dd 0\nx equ 5\n",
+    "required_extern": "required r1\nextern e1\nglobal g\ng: nop\n",
+})
 # what NASM rejects, rejected with its message on its line: (name, format,
 # source)
 REJECT_CASES = [
