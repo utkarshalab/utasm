@@ -437,9 +437,12 @@ reloc_resolve_all:
 .local_narrow:
     cmp     ecx, 2
     jne     .local_byte
-    movsx   r10, ax
-    cmp     r10, rax
-    jne     .local_range
+    ; a bits 16 near branch: IP wraps in its 64 KB, so any distance there
+    ; is one ("jmp near" 0x9956 on from 0, NASM's br3392472)
+    mov     r10, rax
+    add     r10, 0xFFFF
+    cmp     r10, 0x1FFFE
+    ja      .local_range
     mov     [r9], ax
     jmp     .local_done
 .local_byte:
@@ -935,12 +938,14 @@ reloc_apply_one:
     jmp     .done_patch
 
 .pc16:
-    ; a near branch in bits 16: a 2-byte PC-relative field
+    ; a near branch in bits 16: a 2-byte PC-relative field; IP wraps in
+    ; its 64 KB, so any distance within that reaches
     sub     rax, r9
     add     rax, [rbx + RELOC_addend]
-    movsx   rcx, ax
-    cmp     rcx, rax
-    jne     .range_err
+    mov     rcx, rax
+    add     rcx, 0xFFFF
+    cmp     rcx, 0x1FFFE
+    ja      .range_err
     mov     [r8], ax
     jmp     .done_patch
 
