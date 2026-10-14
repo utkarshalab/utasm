@@ -3712,6 +3712,7 @@ amd64_lea_address:
     ret
 
 [SECTION .rodata]
+amd64_abs_target: db RELOC_ABS_MARK, 0   ; a branch to a number (amd64_emit_branch_disp)
 lea_ea_absolute: db "absolute address can not be RIP-relative", 0
 s_ea_dispsize:  db "displacement size ignored on absolute address", 0
 s_disp_bounds:  db "dword data exceeds bounds", 0
@@ -5121,8 +5122,20 @@ amd64_emit_branch_disp:
     mov     [rel amd64_branch_off], rax
 .off_done:
 
+    ; a number ("jmp 0x7c00", "jz 0x7c10", "call 0x8000"): an absolute
+    ; target, through a relocation against no symbol with the number its
+    ; addend (RELOC_ABS_MARK) - it was a jump to the next instruction (jcc)
+    ; or through a garbage address (jmp / call: FF /4 [rax+rax])
     test    r15, r15
-    jz      .placeholder
+    jnz     .target_named
+    lea     r8, [r12 + INST_op0]
+    cmp     byte [r8 + OPERAND_kind], OP_IMM
+    jne     .placeholder
+    mov     rax, [r8 + OPERAND_imm]
+    mov     [rel amd64_branch_off], rax
+    lea     r15, [rel amd64_abs_target]
+    jmp     .relocate
+.target_named:
 
     cmp     byte [r15], TAG_SYMBOL
     jne     .relocate              ; a raw name means a forward reference
@@ -5255,7 +5268,24 @@ amd64_emit_branch_disp:
     mov     rsi, [r8 + SECTION_size]       ; the displacement goes here
     mov     rdx, [r15 + SYMBOL_value]      ; the target's offset
     add     rdx, [rel amd64_branch_off]
+    ; 1: its size was asked for ("jmp near x", "strict", "bnd jmp"): the
+    ; optimizer keeps it, whatever moves (rx_backward made it short)
     xor     ecx, ecx
+    test    byte [r12 + INST_op0 + OPERAND_flags], OP_FLAG_STRICT
+    jnz     .fixed_kept
+    cmp     word [r12 + INST_op_id], 1298  ; JMP
+    jne     .fixed_note
+    cmp     byte [r12 + INST_prefixes], 0xF2
+    je      .fixed_kept
+    cmp     byte [r12 + INST_prefixes + 1], 0xF2
+    je      .fixed_kept
+    cmp     byte [r12 + INST_prefixes + 2], 0xF2
+    je      .fixed_kept
+    cmp     byte [r12 + INST_prefixes + 3], 0xF2
+    jne     .fixed_note
+.fixed_kept:
+    mov     ecx, 1
+.fixed_note:
     mov     r8, r14                        ; width: 1, 2 or 4
     mov     edi, RELAX_FIXED
     call    relax_note
@@ -6459,7 +6489,13 @@ amd64_encode_jmp:
     cmp     byte [r10 + OPERAND_kind], OP_REG
     je      .indirect
     cmp     qword [r10 + OPERAND_sym], 0
-    je      .indirect
+    jne     .direct
+    ; a number is an address to jump to (E9), not one to jump through
+    cmp     byte [r10 + OPERAND_kind], OP_IMM
+    jne     .indirect
+    test    byte [r10 + OPERAND_flags], OP_FLAG_FAR
+    jnz     .indirect
+.direct:
 
     ; Pick the 2-byte form (EB rel8) or the 5-byte form (E9 rel32), with
     ; the same rules as amd64_encode_jcc: explicit short / near / strict
@@ -6468,6 +6504,16 @@ amd64_encode_jmp:
     jnz     .short
     test    byte [r10 + OPERAND_flags], OP_FLAG_STRICT
     jnz     .near
+    ; "bnd jmp" (F2): near, kept so - a short jmp does not keep the
+    ; bound registers (NASM shortens it and drops the bnd it was asked for)
+    cmp     byte [r12 + INST_prefixes], 0xF2
+    je      .near_emit
+    cmp     byte [r12 + INST_prefixes + 1], 0xF2
+    je      .near_emit
+    cmp     byte [r12 + INST_prefixes + 2], 0xF2
+    je      .near_emit
+    cmp     byte [r12 + INST_prefixes + 3], 0xF2
+    je      .near_emit
     mov     rsi, [r10 + OPERAND_sym]
     call    amd64_branch_fits_rel8
     test    eax, eax
@@ -6575,7 +6621,13 @@ amd64_encode_call:
     cmp     byte [r10 + OPERAND_kind], OP_REG
     je      .indirect
     cmp     qword [r10 + OPERAND_sym], 0
-    je      .indirect
+    jne     .direct
+    ; a number is an address to call (E8), not one to call through
+    cmp     byte [r10 + OPERAND_kind], OP_IMM
+    jne     .indirect
+    test    byte [r10 + OPERAND_flags], OP_FLAG_FAR
+    jnz     .indirect
+.direct:
 
     mov     al, 0xE8                       ; call rel32 <label>
     call amd64_emit_byte
