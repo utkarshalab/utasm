@@ -116,6 +116,7 @@ parser_parse_instruction:
     mov     [rsp], r10
     mov     [rsp + 8], r11
     mov     qword [rsp + 16], 0     ; is_bracketed = 0
+    mov     qword [rsp + 24], 0     ; a word of the line read (a label)
     
     ; 2. Get mnemonic token
 .get_mnemonic:
@@ -129,6 +130,8 @@ parser_parse_instruction:
     call    preprocessor_peek_token
     check_err
     IF byte [rdx + TOKEN_kind], e, TOK_LBRACKET
+        cmp     qword [rsp + 24], 0
+        jne     .bracket_mid
         ; Consume the LBRACKET
         mov     rdi, rbx
         call    preprocessor_next_token
@@ -141,6 +144,41 @@ parser_parse_instruction:
     call    preprocessor_next_token
     check_err
     mov     r12, rdx
+
+    ; "[db 1]", "[mov eax, 1]", "[align 4]": only NASM's directives go in
+    ; [ ] (the primitives; db, align, struc ... are no directives there)
+    cmp     qword [rsp + 16], 1
+    jne     .bracket_ok
+    cmp     byte [r12 + TOKEN_kind], TOK_IDENT
+    jne     .bracket_ok
+    lea     r13, [rel bracket_words]
+.bracket_word:
+    cmp     byte [r13], 0
+    je      .bracket_unknown
+    mov     rdi, [r12 + TOKEN_value]
+    mov     rsi, r13
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .bracket_ok
+.bracket_skip:
+    inc     r13
+    cmp     byte [r13 - 1], 0
+    jne     .bracket_skip
+    jmp     .bracket_word
+.bracket_mid:
+    ; "x: [bits 32]": a [ ] statement begins its line (NASM: "parser:
+    ; instruction expected")
+    extern  error_subject
+    mov     qword [rel error_subject], 0
+    mov     rax, EXIT_UNKNOWN_INSTR
+    jmp     .done
+.bracket_unknown:
+    mov     rdi, [r12 + TOKEN_value]
+    extern  error_set_subject
+    call    error_set_subject
+    mov     rax, EXIT_BRACKET_UNKNOWN
+    jmp     .done
+.bracket_ok:
     
     mov     al, [r12 + TOKEN_kind]
     IF al, e, TOK_EOF
@@ -149,8 +187,10 @@ parser_parse_instruction:
         jmp     .done
         ENDIF
     IF al, e, TOK_NEWLINE
+        mov     qword [rsp + 24], 0
         jmp     .get_mnemonic           ; Skip empty lines
         ENDIF
+    mov     qword [rsp + 24], 1
 
     ; NASM's encoding prefixes: "{rex} add eax, edx", "{vex3} vcomisd ..."
     cmp     al, TOK_LBRACE
@@ -555,8 +595,17 @@ parser_parse_instruction:
     IF byte [rdx + TOKEN_kind], e, TOK_COMMA
         mov     rdi, rbx
         call    preprocessor_next_token
+        ; "imul rax," (a macro's empty last argument): the comma ends
+        ; the operands, as in NASM
+        mov     rdi, rbx
+        call    preprocessor_peek_token
+        cmp     byte [rdx + TOKEN_kind], TOK_NEWLINE
+        je      .operands_end
+        cmp     byte [rdx + TOKEN_kind], TOK_EOF
+        je      .operands_end
         jmp     .operand_loop
         ENDIF
+.operands_end:
     
     ; If bracketed instruction/directive, consume closing RBRACKET
     cmp     qword [rsp + 16], 1
@@ -661,11 +710,18 @@ parser_parse_instruction:
     check_err
     jmp     .get_mnemonic
 .no_label:
-    ; Remember the closest known instruction/directive; utasm.s prints it
-    ; as a hint after the error line.
+    ; "[foo 0]": NASM's "unrecognized directive [foo]" (an org or a map
+    ; in an object file too)
     mov     rdi, [r12 + TOKEN_value]
     extern  error_set_subject
-    call    error_set_subject              ; "... expected, found `x'"
+    call    error_set_subject
+    cmp     byte [rel stmt_bracketed], 0
+    je      .no_label_word
+    mov     rax, EXIT_BRACKET_UNKNOWN
+    jmp     .done
+.no_label_word:
+    ; Remember the closest known instruction/directive; utasm.s prints it
+    ; as a hint after the error line ("... expected, found `x'").
     call    error_hint_mnemonic
     mov     rax, EXIT_UNKNOWN_INSTR
     jmp     .done
@@ -878,6 +934,25 @@ parser_parse_operand:
         mov     r13, rdx
         cmp     byte [r13 + TOKEN_kind], TOK_LBRACKET
         je      .sized_mem
+        ; "call qword far [rax]": far after the size
+        cmp     byte [r13 + TOKEN_kind], TOK_IDENT
+        jne     .sized_not_far
+        mov     rdi, [r13 + TOKEN_value]
+        lea     rsi, [rel str_far]
+        call    str_cmp_kw
+        test    rax, rax
+        jnz     .sized_not_far
+        or      byte [r12 + OPERAND_flags], OP_FLAG_FAR
+        mov     rdi, rbx
+        call    preprocessor_next_token
+        jmp     .sized_token
+.sized_not_far:
+        ; "qword gs:[rbx]": "gs:" lexed as a label, as at the start
+        cmp     byte [r13 + TOKEN_kind], TOK_LABEL
+        jne     .sized_not_label
+        mov     byte [r13 + TOKEN_kind], TOK_IDENT
+        mov     byte [rel far_colon], 1
+.sized_not_label:
         cmp     byte [rel masm_mem], 0
         jne     .open_mem
         ; A register with its size written out ("movzx r9d, byte al"): the
@@ -898,7 +973,8 @@ parser_parse_operand:
         movzx   eax, byte [r12 + OPERAND_reg]
         sub     eax, 24
         cmp     eax, 5
-        jbe     .sized_reg
+        mov     [rel opnd_kw_size], cx     ; ("qword gs:[rbx]": the size)
+        jbe     .reg_or_seg
         ; a mask register takes any size: NASM's "kmov byte k1, k2" picks
         ; kmovb by it
         cmp     eax, 72 - 24
@@ -932,9 +1008,27 @@ parser_parse_operand:
         ; %use masm: "ptr x", "ptr fs:[x]": a memory operand with no
         ; bracket of its own (parser_parse_mem_operand ends it at a comma
         ; or the end of the line)
+        ; "qword ptr gs:foo": "gs:" lexed as a label, its colon read
+        cmp     byte [rel far_colon], 0
+        je      .open_putback
+        mov     byte [rel far_colon], 0
+        mov     rsi, [r13 + TOKEN_value]
+        call    parser_seg_override
+        check_err
+        mov     rdi, rbx
+        call    preprocessor_peek_token
+        cmp     byte [rdx + TOKEN_kind], TOK_LBRACKET
+        jne     .open_parse
+        mov     rdi, rbx
+        call    preprocessor_next_token
+        call    parser_parse_mem_operand
+        check_err
+        jmp     .success
+.open_putback:
         mov     rdi, rbx
         mov     rsi, r13
         call    preprocessor_putback_token
+.open_parse:
         mov     byte [rel mem_open], 1
         call    parser_parse_mem_operand
         mov     byte [rel mem_open], 0
@@ -947,8 +1041,8 @@ parser_parse_operand:
         mov     rsi, [r13 + TOKEN_value]
         call    parser_parse_reg_info
         IF rax, ne, ERR
-            mov     byte [r12 + OPERAND_kind], OP_REG
-            jmp     .success
+            mov     word [rel opnd_kw_size], 0
+            jmp     .reg_or_seg
             ENDIF
 
         ; Not a register, fall through to expression (it's a symbol)
@@ -1023,6 +1117,18 @@ parser_parse_operand:
 .not_fwd:
     test    rax, rax
     IF z
+        ; "bar[rbx]", "4[rbx]": MASM's displacement before the brackets,
+        ; which NASM takes as [bar + rbx]
+        push    rdx
+        push    rcx
+        push    r11
+        mov     rdi, rbx
+        call    preprocessor_peek_token
+        pop     r11
+        pop     rcx
+        cmp     byte [rdx + TOKEN_kind], TOK_LBRACKET
+        pop     rdx
+        je      .disp_before_mem
         mov     byte [r12 + OPERAND_kind], OP_IMM
         mov     [r12 + OPERAND_imm], rdx
         ; If the expression involved symbols, we mark it.
@@ -1042,6 +1148,86 @@ parser_parse_operand:
 
     ; not an operand: the expression evaluator's code says why
     jmp     .error
+
+.reg_or_seg:
+    ; "gs:[rbx]", "fs:0x28", "es:[di]": a segment register and a colon
+    ; make the operand memory with that segment (not for jmp / call,
+    ; where "cs:foo" is no far pointer: NASM's error)
+    ; (the register table's ids: cs ds es fs gs ss are 24-29,
+    ; include/arch/amd64.inc)
+    movzx   eax, byte [r12 + OPERAND_reg]
+    sub     eax, 24
+    cmp     eax, 5
+    ja      .is_reg
+    movzx   ecx, word [r15 + INST_op_id]
+    cmp     ecx, 1298                      ; JMP
+    je      .is_reg
+    cmp     ecx, 1059                      ; CALL
+    je      .is_reg
+    ; "gs:" lexes as a label: the colon is already read (far_colon)
+    cmp     byte [rel far_colon], 0
+    je      .seg_colon_peek
+    mov     byte [rel far_colon], 0
+    lea     rcx, [rel seg_prefix_bytes]
+    movzx   eax, byte [rcx + rax]
+    push    rax
+    jmp     .seg_after_colon
+.seg_colon_peek:
+    push    rax
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    pop     rax
+    cmp     byte [rdx + TOKEN_kind], TOK_COLON
+    jne     .is_reg
+    lea     rcx, [rel seg_prefix_bytes]
+    movzx   eax, byte [rcx + rax]
+    push    rax
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the colon
+.seg_after_colon:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    pop     rax
+    mov     [r12 + OPERAND_segment], al
+    mov     byte [r12 + OPERAND_reg], 0
+    ; the size: the one written before it, not the segment register's
+    movzx   eax, word [rel opnd_kw_size]
+    mov     [r12 + OPERAND_size], al
+    mov     [r12 + OPERAND_xsize], ax
+    cmp     byte [rdx + TOKEN_kind], TOK_LBRACKET
+    jne     .seg_open
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the [
+    call    parser_parse_mem_operand
+    check_err
+    jmp     .success
+.seg_open:
+    mov     byte [rel mem_open], 1
+    call    parser_parse_mem_operand
+    mov     byte [rel mem_open], 0
+    check_err
+    jmp     .success
+.is_reg:
+    mov     byte [r12 + OPERAND_kind], OP_REG
+    jmp     .success
+
+.disp_before_mem:
+    ; the displacement first, then what the brackets add to it (as the
+    ; displacement of [table + rax + FIELD] is gathered)
+    mov     [r12 + OPERAND_imm], rdx
+    mov     qword [r12 + OPERAND_sym], 0
+    test    r11, r11
+    jz      .disp_sym_name
+    mov     [r12 + OPERAND_sym], r11
+    jmp     .disp_sym_done
+.disp_sym_name:
+    mov     [r12 + OPERAND_sym], rcx
+.disp_sym_done:
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the [
+    call    parser_parse_mem_operand
+    check_err
+    jmp     .success
 
 .success:
     ; AVX-512 decorators after a register or memory operand: {k1} {z} {1to16}
@@ -2270,6 +2456,7 @@ parser_eval_expr_body:
 ; *          with no section yet, "global x" before "x:")
 ; * Preserves the others.
 ; ;
+global expr_sym_class
 expr_sym_class:
     xor     eax, eax
     test    rdi, rdi
@@ -3000,6 +3187,37 @@ parser_evaluate_factor:
         jmp     .done
         ENDIF
 
+    ; "seg x": x's segment - which no format here has (NASM's "binary
+    ; output format does not support segment base references"), and a
+    ; number none at all
+    cmp     al, TOK_IDENT
+    jne     .not_seg
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [rel str_seg_op]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .not_seg_word
+    mov     rdi, rbx
+    call    parser_evaluate_factor
+    check_err
+    test    rcx, rcx
+    jnz     .seg_base                      ; a name not defined yet
+    cmp     qword [rel expr_coeff], 0
+    jne     .seg_base                      ; $
+    mov     rdi, r11
+    call    expr_sym_class
+    test    eax, eax
+    jnz     .seg_base                      ; a label, an extern
+    mov     eax, EXIT_SEG_NOT_RELOC
+    jmp     .done
+.seg_base:
+    extern  amd64_seg_base_error
+    call    amd64_seg_base_error
+    jmp     .done
+.not_seg_word:
+    mov     al, [r12 + TOKEN_kind]
+.not_seg:
+
     ; A floating-point constant, in the format float_fmt names (dw/dd/dq/dt
     ; or __floatNN__ set it); anywhere else it is an error, as in NASM
     cmp     al, TOK_FLOAT
@@ -3443,8 +3661,7 @@ parser_evaluate_factor:
             jmp     .done
 .sym_unknown:
             call    known_note_forward     ; (pass 1: noted)
-            inc     qword [rel expr_undef_uses]
-            mov     [rel expr_undef_name], rsi
+            call    expr_note_undef
             pop     rdx
 .sym_defined:
             mov     r15, rdx               ; return SYMBOL* in r11 (A78)
@@ -3475,8 +3692,7 @@ parser_evaluate_factor:
             jmp     .done
 .unknown_yet:
             call    known_note_forward
-            inc     qword [rel expr_undef_uses]
-            mov     [rel expr_undef_name], rsi
+            call    expr_note_undef
             inc     qword [rel known_pos_uses]
             ; Deferred symbol (R_ABS64 reloc)
             mov     rdx, 0
@@ -3678,6 +3894,87 @@ parser_parse_mem_operand:
             or      byte [r12 + OPERAND_flags], OP_FLAG_ABS
             ENDIF
         ENDIF
+
+    ; 1c. "[a32 foo]": the address size, as the a16 / a32 / a64 prefix
+    ;     gives it (r15 is the instruction)
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .no_asize
+    mov     rdi, [rdx + TOKEN_value]
+    movzx   eax, byte [rdi]
+    or      eax, 0x20
+    cmp     eax, 'a'
+    jne     .no_asize
+    cmp     byte [rdi + 3], 0
+    jne     .no_asize
+    movzx   eax, word [rdi + 1]
+    mov     ecx, 16
+    cmp     eax, '1' | '6' << 8
+    je      .asize_kw
+    mov     ecx, 32
+    cmp     eax, '3' | '2' << 8
+    je      .asize_kw
+    mov     ecx, 64
+    cmp     eax, '6' | '4' << 8
+    jne     .no_asize
+.asize_kw:
+    push    rcx
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the word
+    pop     rcx
+    mov     [r15 + INST_asize], cl
+    movzx   eax, byte [rel asm_bits]
+    cmp     ecx, eax
+    je      .kw_again                      ; the mode's own: no byte
+    cmp     ecx, 64
+    je      .asize_kw_bad                  ; a64 outside 64-bit code
+    cmp     eax, 64
+    jne     .asize_kw_67
+    cmp     ecx, 16
+    je      .asize_kw_bad                  ; a16 in 64-bit code
+.asize_kw_67:
+    xor     ecx, ecx
+.asize_kw_slot:
+    cmp     byte [r15 + INST_prefixes + rcx], 0x67
+    je      .kw_again                      ; (a32 written twice)
+    cmp     byte [r15 + INST_prefixes + rcx], 0
+    je      .asize_kw_put
+    inc     ecx
+    cmp     ecx, 4
+    jb      .asize_kw_slot
+    jmp     .no_asize
+.asize_kw_put:
+    mov     byte [r15 + INST_prefixes + rcx], 0x67
+.kw_again:
+    ; "[a64 abs foo]", "[a32 rel x]": abs / rel after the size too
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .no_asize
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [str_abs]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .kw_rel
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    or      byte [r12 + OPERAND_flags], OP_FLAG_ABS
+    jmp     .no_asize
+.kw_rel:
+    lea     rsi, [str_rel]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .no_asize
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     byte [r12 + OPERAND_flags], OP_FLAG_REL
+    mov     byte [r12 + OPERAND_base], REG_RIP
+    jmp     .no_asize
+.asize_kw_bad:
+    mov     eax, EXIT_EA_SIZE_MIX
+    jmp     .error
+.no_asize:
 
 .loop:
     ; a register the expression evaluator took as "4*rcx" (mem_scaled_*)
@@ -3968,6 +4265,19 @@ parser_parse_mem_operand:
     ; the registers into base and index, now that all are known
     call    .place_terms
     check_err_to .error
+    ; "a32 mov eax, [rbx]", "[a16 ebx]": registers of another size than
+    ; the address size written (NASM's "impossible combination")
+    movzx   eax, byte [r15 + INST_asize]
+    test    eax, eax
+    jz      .asize_regs_ok
+    mov     ecx, [rel mem_addr_width]
+    test    ecx, ecx
+    jz      .asize_regs_ok
+    cmp     eax, ecx
+    je      .asize_regs_ok
+    mov     eax, EXIT_EA_SIZE_MIX
+    jmp     .error
+.asize_regs_ok:
     ; a size that cannot be the address's: [dword bx+4], [word ebx],
     ; [qword x] outside bits 64, [word x] in bits 64
     movzx   eax, byte [r12 + OPERAND_dispsize]
@@ -4086,6 +4396,28 @@ parser_parse_mem_operand:
     ; Not affected: [abs label], fs:/gs: overrides (never RIP-relative),
     ; purely numeric addresses, and equ constants / struct fields (plain
     ; numbers, not relocatable addresses).
+    ; "[rel 0xaaaa]": a number has no RIP-relative form either - absolute,
+    ; with NASM's warning (the same for an equ constant)
+    test    byte [r12 + OPERAND_flags], OP_FLAG_REL
+    jz      .not_rel_number
+    cmp     byte [r12 + OPERAND_index], 0xFF
+    jne     .not_rel_number
+    mov     rax, [r12 + OPERAND_sym]
+    test    rax, rax
+    jz      .rel_number
+    cmp     byte [rax], TAG_SYMBOL
+    jne     .not_rel_number                ; a label not defined yet
+    cmp     byte [rax + SYMBOL_kind], SYM_CONSTANT
+    je      .rel_number
+    cmp     byte [rax + SYMBOL_kind], SYM_STRUCT_FIELD
+    je      .rel_number
+    cmp     word [rax + SYMBOL_section], 0xFFF1
+    jne     .not_rel_number
+.rel_number:
+    and     byte [r12 + OPERAND_flags], ~OP_FLAG_REL & 0xFF
+    mov     byte [r12 + OPERAND_base], 0xFF
+    jmp     .ea_absolute
+.not_rel_number:
     mov     rax, [rbx + PREP_ctx]
     test    dword [rax + ASMCTX_flags], CTX_FLAG_DEFAULT_REL
     jz      .rel_done
@@ -4117,7 +4449,9 @@ parser_parse_mem_operand:
     mov     byte [r12 + OPERAND_base], REG_RIP
     jmp     .rel_done
 .ea_absolute:
-    ; "[5]" under default rel: absolute, with NASM's warning
+    ; "[5]" under default rel: absolute, with NASM's warning (and the
+    ; ModRM form, no moffs: mode.s)
+    mov     byte [r12 + OPERAND_relnum], 1
     mov     edi, WC_EA_ABSOLUTE
     call    warn_begin
     test    eax, eax
@@ -6274,7 +6608,7 @@ parser_define_label:
     or      byte [rsi + SYMBOL_pflags], SYMF_STRUC
     mov     rcx, [rax + SECTION_addr]
     add     [rsi + SYMBOL_value], rcx
-    mov     word [rsi + SYMBOL_section], 0
+    mov     word [rsi + SYMBOL_section], SHN_ABS    ; (as an equ: pass 2 knows it)
 .not_abs_new:
 
     mov     rdi, rbx
@@ -6315,7 +6649,7 @@ parser_define_label:
     or      byte [rdx + SYMBOL_pflags], SYMF_STRUC
     mov     rcx, [rax + SECTION_addr]
     add     [rdx + SYMBOL_value], rcx
-    mov     word [rdx + SYMBOL_section], 0
+    mov     word [rdx + SYMBOL_section], SHN_ABS
 .not_abs_old:
         
     mov     [rbx + ASMCTX_last_symbol], rdx    ; Store for potential equ override
@@ -6672,6 +7006,8 @@ parser_handle_pseudo_op:
     je      .cpu_rest
     cmp     eax, TOK_EOF
     je      .cpu_rest
+    cmp     eax, TOK_RBRACKET
+    je      .cpu_rest                      ; "[cpu 386]" (a "386]" was a level)
     cmp     eax, TOK_NUMBER
     je      .cpu_level
     cmp     eax, TOK_IDENT
@@ -6759,6 +7095,16 @@ parser_handle_pseudo_op:
     add     r13, 10
     jmp     .ignored_word
 .ignored_hit:
+    ; [map ...] in an object file: not a directive (see org)
+    mov     rdi, r12
+    lea     rsi, [rel str_map]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .ignored_list
+    call    parser_object_out
+    test    eax, eax
+    jnz     .not_ignored
+.ignored_list:
     ; [list -] / [list +]: the listing stops and goes on
     mov     rdi, r12
     lea     rsi, [rel str_list]
@@ -6888,6 +7234,11 @@ parser_handle_pseudo_op:
         jmp     .check_handler_result
         ENDIF
 
+    ; org and [map] are the flat formats' (NASM's bin macros): in an
+    ; object file a word like any other
+    call    parser_object_out
+    test    eax, eax
+    jnz     .not_org
     mov     rdi, r12
     lea     rsi, [rel str_org]
     call    str_cmp_kw
@@ -6896,6 +7247,7 @@ parser_handle_pseudo_op:
         call    parser_handle_org
         jmp     .check_handler_result
         ENDIF
+.not_org:
     
     mov     rdi, r12
     lea     rsi, [rel str_extern]
@@ -7926,8 +8278,10 @@ expr_pcrel:    resb 1              ; the value is PC-relative ("x - $", x elsewh
 expr_pcrel_ok: resb 1              ; ... and the writer can make it so
 alignb 8
 expr_last_record: resq 1            ; the record the last expression was kept as
+global expr_undef_uses, expr_undef_first
 expr_undef_uses: resq 1            ; names met not defined (parser_late_equs)
 expr_undef_name: resq 1            ; ... the last
+expr_undef_first: resq 1           ; ... the first since expr_undef_uses was 0
 late_only_alias: resb 1            ; parser_late_aliases: labels only
 alignb 8
 late_list:     resq 1              ; equs of something defined later:
@@ -8045,6 +8399,8 @@ ignored_words:db "warning", 0, 0, 0
                 db 0
 [SECTION .bss]
 stmt_bracketed: resb 1              ; the statement is in [ ]
+alignb 2
+opnd_kw_size:   resw 1              ; "qword gs:[x]": the size written
 global sectalign_off
 sectalign_off:  resb 1              ; "sectalign off": align leaves the section's
 [SECTION .text]
@@ -8120,6 +8476,32 @@ parser_absolute:
     call    parser_evaluate_expression
     test    rax, rax
     jnz     .ret
+    ; "absolute x+7" in a flat binary: x's address, its section's start
+    ; (org) with it, as NASM has it
+    test    r11, r11
+    jz      .based
+    movzx   ecx, word [r11 + SYMBOL_section]
+    test    ecx, ecx
+    jz      .based
+    cmp     ecx, SHN_ABS
+    jae     .based
+    mov     rax, [rbx + PREP_ctx]
+    cmp     byte [rax + ASMCTX_fmt], FMT_BIN
+    jne     .based
+    mov     r8, [rax + ASMCTX_sections]
+    movzx   r9d, word [rax + ASMCTX_seccount]
+.find_sec:
+    test    r9d, r9d
+    jz      .based
+    mov     r10, [r8]
+    cmp     [r10 + SECTION_index], cx
+    je      .sec_found
+    add     r8, 8
+    dec     r9d
+    jmp     .find_sec
+.sec_found:
+    add     rdx, [r10 + SECTION_addr]
+.based:
     push    rdx
     mov     rax, [rel abs_section]
     test    rax, rax
@@ -8856,8 +9238,6 @@ parser_handle_times:
 .count_known:
     cmp     qword [rel expr_coeff], -1
     jne     .count_done
-    test    r15, r15
-    js      .count_done
     mov     rax, [rbx + PREP_ctx]
     mov     rdi, [rax + ASMCTX_curr_sec]
     test    rdi, rdi
@@ -8931,6 +9311,8 @@ parser_handle_times:
     ; "db F" with F a number or a character: written directly, N bytes
     ; (times 4194304 db 0 is a table, not four million statements); with a
     ; count K - ($ - $$) it is padding the jump optimizer can lengthen
+    cmp     r13d, 1
+    je      .fill_insn
     cmp     r13d, 2
     jne     .not_padto
     cmp     byte [r12 + TOKEN_kind], TOK_IDENT
@@ -8955,17 +9337,47 @@ parser_handle_times:
     call    str_to_int
     test    rax, rax
     jnz     .not_padto
+    jmp     .padto_fill
+.fill_insn:
+    ; "times 260-($-$$) nop": padding of one-byte instructions (nop,
+    ; int3, hlt) the jump optimizer can lengthen too (NASM's fwdopt)
+    cmp     byte [rel times_padto], 0
+    je      .not_padto
+    cmp     byte [r12 + TOKEN_kind], TOK_IDENT
+    jne     .not_padto
+    lea     r14, [rel fill_insns]
+.fill_insn_next:
+    cmp     byte [r14], 0
+    je      .not_padto
+    mov     rdi, [r12 + TOKEN_value]
+    mov     rsi, r14
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .fill_insn_hit
+    add     r14, 6
+    jmp     .fill_insn_next
+.fill_insn_hit:
+    movzx   edx, byte [r14 + 5]
 .padto_fill:
-    test    r15, r15
-    js      .not_padto                     ; a negative count
     cmp     byte [rel times_padto], 0
     jne     .padto_record                  ; even empty now: it can grow
     test    r15, r15
-    jz      .not_padto                     ; times 0
+    jle     .not_padto                     ; times 0 (or below)
     jmp     .fill_bytes
 .padto_record:
     xor     edi, edi
     call    relax_defer_end                ; the range is the padding's own
+    ; "times 510-($-$$) db 0" past 510 bytes: no padding, and an error
+    ; unless shortening the jumps before it brings the count up to 0
+    ; (relax_padto_negative; NASM's last pass decides it)
+    test    r15, r15
+    jns     .padto_note
+    mov     rdi, r15
+    extern  relax_padto_negative
+    call    relax_padto_negative
+    test    rax, rax
+    jnz     .ret
+.padto_note:
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, r15
     movzx   edx, dl
@@ -8991,6 +9403,8 @@ parser_handle_times:
 .not_padto:
     mov     edi, 1
     call    relax_defer_end
+    test    r15, r15
+    js      .negative
     test    r13d, r13d
     jz      .ok                        ; "times N" alone
     test    r15, r15
@@ -9043,6 +9457,13 @@ parser_handle_times:
     jmp     .ok
 .times_nonconst:
     mov     eax, EXIT_TIMES_NONCONST
+    jmp     .ret
+.negative:
+    ; "TIMES value -1 is negative" (the line is not repeated)
+    mov     rdi, r15
+    extern  relax_times_subject
+    call    relax_times_subject
+    mov     eax, EXIT_TIMES_NEGATIVE
     jmp     .ret
 .ok:
     xor     eax, eax
@@ -9254,6 +9675,21 @@ parser_handle_align:
     pop     r13
     pop     r12
     epilogue
+
+; parser_object_out: eax = 1 when the output is an object file (-f elf64,
+; elf32, win64; not a flat binary or an executable of its own), where org
+; and [map] are no directives. Clobbers rcx.
+global parser_object_out
+parser_object_out:
+    xor     eax, eax
+    lea     rcx, [rel global_ctx]
+    cmp     byte [rcx + ASMCTX_fmt], FMT_ELF64
+    jne     .ret
+    cmp     byte [rcx + ASMCTX_standalone], 0
+    jne     .ret
+    inc     eax
+.ret:
+    ret
 
 ;*
 ; * [parser_handle_org]
@@ -10414,7 +10850,17 @@ parser_emit_data_64:
 .error:
     epilogue
 
-; parser_count_known: ZF set when the count just evaluated (rcx / r11) is a
+; expr_note_undef: name rsi met, not defined yet. Preserves all but flags.
+expr_note_undef:
+    cmp     qword [rel expr_undef_uses], 0
+    jne     .counted
+    mov     [rel expr_undef_first], rsi
+.counted:
+    inc     qword [rel expr_undef_uses]
+    mov     [rel expr_undef_name], rsi
+    ret
+
+; parser_count_known: ZF set when the count just evaluated(rcx / r11) is a
 ; number: no name not defined yet, no address. Preserves every register.
 parser_count_known:
     push    rax
@@ -11763,6 +12209,11 @@ parser_handle_common:
     jnz     .ret
     cmp     byte [rdx + TOKEN_kind], TOK_COLON
     jne     .define
+    ; -f bin: no symbol types, nor common blocks
+    lea     rax, [rel global_ctx]
+    cmp     byte [rax + ASMCTX_fmt], FMT_BIN
+    mov     eax, EXIT_BIN_SPECIAL
+    je      .ret
     ; -f win64: a common block has no alignment there (NASM's error)
     extern  coff_enabled
     mov     rax, EXIT_COFF_SPECIAL
@@ -11776,6 +12227,10 @@ parser_handle_common:
     jnz     .ret
     mov     r14, rdx
 .define:
+    lea     rax, [rel global_ctx]
+    cmp     byte [rax + ASMCTX_fmt], FMT_BIN
+    mov     eax, EXIT_BIN_COMMON
+    je      .ret
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, r12
     call    symbol_find
@@ -11942,6 +12397,21 @@ str_asr:       db "asr", 0
 str_ror:       db "ror", 0
 str_comdat:    db "comdat", 0
 str_org:       db "org", 0
+; one-byte instructions a "times K-($-$$)" pads with: name, then the byte
+fill_insns:    db "nop", 0, 0, 0x90
+               db "int3", 0, 0xCC
+               db "hlt", 0, 0, 0xF4
+               db 0
+str_seg_op:    db "seg", 0
+; the words a [ ] statement takes (NASM's directives; org and map the flat
+; formats', osabi ELF's)
+bracket_words: db "absolute", 0, "bits", 0, "common", 0, "cpu", 0, "debug", 0
+               db "default", 0, "extern", 0, "float", 0, "global", 0
+               db "static", 0, "list", 0, "section", 0, "segment", 0
+               db "warning", 0, "sectalign", 0, "pragma", 0, "required", 0
+               db "org", 0, "map", 0, "osabi", 0, "gprefix", 0, "gpostfix", 0
+               db "lprefix", 0, "lpostfix", 0, "dollarhex", 0, 0
+str_map:       db "map", 0
 str_text:      db ".text", 0
 str_db:        db "db", 0
 str_data:      db ".data", 0
