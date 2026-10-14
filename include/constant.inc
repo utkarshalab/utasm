@@ -121,6 +121,15 @@
 %define EXIT_SECTION_SIZE      100 ; a section with bytes past 4 GiB
 %define EXIT_TIMES_LARGE       101 ; "times 0x100000000 ..."
 %define EXIT_SIZE_MISMATCH     102 ; "mov eax, word 5": a sized immediate the form does not take
+%define EXIT_TIMES_NEGATIVE    103 ; "times -1 db 0"
+%define EXIT_UNDEF_BEFORE      104 ; "%if foo": foo not defined (yet)
+%define EXIT_PP_NONCONST       105 ; "%if x" with x a label
+%define EXIT_BRACKET_UNKNOWN   106 ; "[foo 0]": no directive of that name
+%define EXIT_BIN_COMMON        107 ; -f bin: "common c 4"
+%define EXIT_BIN_SPECIAL       108 ; -f bin: "common c 4:4", "global f:function"
+%define EXIT_FAR_NOT_RELOC     112 ; "jmp far 5": no segment to take
+%define EXIT_SEG_BASE          113 ; "jmp far x": x's segment, which no format here has
+%define EXIT_SEG_NOT_RELOC     114 ; "seg 5"
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
@@ -166,7 +175,8 @@
 %define WC_OBSOLETE_VALID      22  ; obsolete-valid: "pop cs" under cpu 8086
 %define WC_FLOAT_OVERFLOW      23  ; float-overflow: "dd 1.0e50"
 %define WC_PP_REP_NEGATIVE     24  ; pp-rep-negative: "%rep -1"
-%define WC_COUNT               25
+%define WC_EA_DISPSIZE         25  ; ea-dispsize: "add eax, [qword 0x10]"
+%define WC_COUNT               26
 
 ; a kept expression's record (parser_defer_record): +0 RELOC_EXPR_MARK,
 ; +8 text, +16 tokens, +24 count; and for core/known.s:
