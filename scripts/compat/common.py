@@ -12,7 +12,6 @@ KNOWN = {
     "op_cmp3": "NASM's <=> disagrees with its own manual",
 # a value that measures its own instruction: NASM converges on the short
     # form; utasm keeps the long one (correct, the value of that layout)
-    "expr self_push": "push dword (e - s) over itself: 68 id (NASM: 6A ib)",
     "expr self_add": "add eax, (e - s) * 30 over itself: 05 id (NASM: 83 /0 ib)",
     # NASM writes a meaningless number for a negated address in an object
     "scalar -l1 back elf64": "NASM's value for -label in an object",
@@ -26,6 +25,10 @@ KNOWN = {
     "listing pp_rep_nolist": "NASM lists a .nolist %rep's bytes on its %endrep line",
     "listing struc_base_offset": "NASM lists at's padding as 00<rep 4h>",
     "listing disp8_forced": "NASM gives the [byte x] bounds warning twice (once a pass)",
+    "global_declared_first": "utasm relocates against a global symbol itself (as GNU as), NASM against its section",
+    "listing cross_section_distance": "NASM lists a value across sections before the sections are placed",
+    "listing known_runs_settle": "NASM lists a value across sections before the sections are placed",
+    "listing displacement_wraps": "NASM warns for [eax + 0xffffffff], an address that wraps exactly to eax - 1",
     "listing rmacro_recursive": "a %rmacro calling itself: utasm lists its nested lines twice (to fix)",
     "listing ptr_as_label": "the line after \"dword ptr\" is read early: its bytes list there",
 # -f win64: a label with no section before it is an undefined external in
