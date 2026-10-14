@@ -1051,6 +1051,44 @@ def warnings(utasm, verbose=False):
 
 
 # ---------------------------------------------------------------------------
+# rejections: what NASM refuses, utasm refuses with NASM's message, on the
+# same line
+# ---------------------------------------------------------------------------
+def _error_at(r):
+    for line in re.sub(r"\x1b\[[0-9;]*m", "", (r.stdout or "") + (r.stderr or "")).splitlines():
+        m = re.match(r"\S+?:(\d+): (?:error|fatal): (.*)", line)
+        if m:
+            return "%s: %s" % (m.group(1), m.group(2).strip())
+    return None
+
+
+def rejections(utasm, verbose=False):
+    s = Suite("rejections", verbose)
+
+    def one(case):
+        name, fmt, src = case
+        with tempdir() as d:
+            open(os.path.join(d, "p.s"), "w").write(src)
+            rn = run(["nasm", "-f", fmt, "p.s", "-o", "n.out"], cwd=d)
+            ru = run([utasm, "-f", fmt, "p.s", "-o", "u.out"], cwd=d, timeout=30)
+            return name, rn, ru, os.path.exists(os.path.join(d, "u.out"))
+
+    with cf.ThreadPoolExecutor(JOBS) as ex:
+        for name, rn, ru, wrote in ex.map(one, cases.REJECT_CASES):
+            if _crashed(ru):
+                s.result(name, False, "utasm crashed")
+            elif rn.returncode == 0:
+                s.result(name, False, "NASM accepts it: not a rejection")
+            elif ru.returncode == 0:
+                s.result(name, False, "utasm accepts it; NASM: " + first_line(rn))
+            else:
+                want, got = _error_at(rn), _error_at(ru)
+                s.result(name, want == got and not wrote,
+                         "nasm %s | utasm %s%s" % (want, got, " (an output file)" if wrote else ""))
+    return s
+
+
+# ---------------------------------------------------------------------------
 # explanations: with --color, utasm shows the line and marks the place, and
 # explains operand errors (no NASM to compare with: the expected text)
 # ---------------------------------------------------------------------------
