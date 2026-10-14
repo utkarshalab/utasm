@@ -1605,6 +1605,7 @@
 %define MACRO_FLAG_DEFINE      0x04        ; a single-line macro (%define family)
 %define MACRO_FLAG_TIMES       0x08        ; the repeated statement of a times
 %define MACRO_FLAG_NOLIST      0x10        ; %macro m 0.nolist: its lines not listed
+%define MACRO_FLAG_RECURSIVE   0x20        ; %rmacro / %irmacro: may call itself
 ; the marks of a %define's parameter (frontend/macro/macro.s, prep_handle_def)
 %define PF_EVAL                0x01        ; =x: evaluated as a number
 %define PF_STR                 0x02        ; &x: made a quoted string
