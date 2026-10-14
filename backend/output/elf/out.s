@@ -1862,8 +1862,24 @@ elf64_write_symtab:
     movzx   eax, byte [r10 + SYMBOL_vis]   ; VIS_LOCAL=0, VIS_GLOBAL=1, VIS_WEAK=2
     shl     al, 4
     ; the type the source declared ("global f:function"), STT_NOTYPE
-    ; otherwise, as NASM
+    ; otherwise, as NASM; a label in a TLS section (.tdata, .tbss) is
+    ; STT_TLS whatever was declared, as GNU as makes it - the linker takes
+    ; TLS relocations against TLS symbols only
     or      al, [r10 + SYMBOL_etype]
+    extern  global_ctx
+    movzx   ecx, word [r10 + SYMBOL_section]
+    test    ecx, ecx
+    jz      .type_done
+    lea     rdx, [rel global_ctx]
+    cmp     cx, [rdx + ASMCTX_seccount]
+    ja      .type_done
+    mov     rdx, [rdx + ASMCTX_sections]
+    mov     rdx, [rdx + rcx*8 - 8]
+    test    word [rdx + SECTION_flags], SHF_TLS
+    jz      .type_done
+    and     al, 0xF0
+    or      al, ETYPE_TLS
+.type_done:
     mov     [rsp + 48 + SYM64_INFO], al
 
     ; st_other: the declared visibility (hidden, protected, ...)
