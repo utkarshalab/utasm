@@ -543,6 +543,10 @@
 ; parser_defer_record) holding its tokens, which the relocation pass
 ; evaluates once every label is placed.
 %define RELOC_EXPR_MARK        0x1E
+; A relocation named by this byte alone has no symbol: a branch to a number
+; ("jmp 0x7c00"), the number in its addend - against nothing in an object
+; (symbol 0, GNU as's *ABS*), a value of 0 where sections are placed.
+%define RELOC_ABS_MARK         0x1D
 
 ; "wrt ..name" (reloc_wrt): the relocation the next reloc_record makes
 %define WRT_NONE               0
