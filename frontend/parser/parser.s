@@ -12588,6 +12588,8 @@ sym_attr_words:
     db "data", 0, 0,0,0,0,0,0, ETYPE_OBJECT
     db "object", 0, 0,0,0,0, ETYPE_OBJECT
     db "notype", 0, 0,0,0,0, ETYPE_NOTYPE
+    db "tls", 0, 0,0,0,0,0,0,0, ETYPE_TLS
+    db "tls_object", 0, ETYPE_TLS
     db "default", 0, 0,0,0, 0x10
     db "internal", 0, 0, 0, 0x11
     db "hidden", 0, 0,0,0,0, 0x12
@@ -12608,6 +12610,11 @@ wrt_words:
     db "..tlsie", 0, 0,0,0, WRT_TLSIE
     db "..sym", 0, 0,0,0,0,0, WRT_SYM
     db "..gotpc", 0, 0,0,0, WRT_GOTPC
+    db "..tlsgd", 0, 0,0,0, WRT_TLSGD
+    db "..tlsld", 0, 0,0,0, WRT_TLSLD
+    db "..dtpoff", 0, 0, 0, WRT_DTPOFF
+    db "..tpoff", 0, 0,0,0, WRT_TPOFF
+    db "..gottpoff", 0, WRT_TLSIE
     db 0
 [SECTION .text]
 
