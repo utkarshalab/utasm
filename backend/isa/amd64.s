@@ -1927,7 +1927,37 @@ mnc_tb_x64:
     mnc_ent "blcs", 0, 7008
     mnc_ent "blsfill", 0, 7009
     mnc_ent "blsic", 0, 7010
+    mnc_ent "cmpaexadd", 0, 7504
+    mnc_ent "cmpaxadd", 0, 7505
+    mnc_ent "cmpbexadd", 0, 7506
+    mnc_ent "cmpbxadd", 0, 7507
+    mnc_ent "cmpcxadd", 0, 7508
+    mnc_ent "cmpexadd", 0, 7509
+    mnc_ent "cmpgexadd", 0, 7510
+    mnc_ent "cmpgxadd", 0, 7511
+    mnc_ent "cmplexadd", 0, 7512
+    mnc_ent "cmplxadd", 0, 7513
+    mnc_ent "cmpnaexadd", 0, 7514
+    mnc_ent "cmpnaxadd", 0, 7515
+    mnc_ent "cmpnbexadd", 0, 7516
+    mnc_ent "cmpnbxadd", 0, 7517
+    mnc_ent "cmpncxadd", 0, 7518
+    mnc_ent "cmpnexadd", 0, 7519
+    mnc_ent "cmpngexadd", 0, 7520
+    mnc_ent "cmpngxadd", 0, 7521
+    mnc_ent "cmpnlexadd", 0, 7522
+    mnc_ent "cmpnlxadd", 0, 7523
+    mnc_ent "cmpnoxadd", 0, 7524
+    mnc_ent "cmpnpxadd", 0, 7525
+    mnc_ent "cmpnsxadd", 0, 7526
+    mnc_ent "cmpnzxadd", 0, 7527
+    mnc_ent "cmpoxadd", 0, 7528
+    mnc_ent "cmppexadd", 0, 7529
+    mnc_ent "cmppoxadd", 0, 7530
+    mnc_ent "cmppxadd", 0, 7531
+    mnc_ent "cmpsxadd", 0, 7532
     mnc_ent "cmpxchg486", 0, 7011
+    mnc_ent "cmpzxadd", 0, 7533
     mnc_ent "cpu_read", 0, 7012
     mnc_ent "cpu_write", 0, 7013
     mnc_ent "dmint", 0, 7014
@@ -2089,6 +2119,7 @@ mnc_tb_x64:
     mnc_ent "rsldt", 0, 7170
     mnc_ent "rsts", 0, 7171
     mnc_ent "salc", 0, 7172
+    mnc_ent "scasq", 0, 7534
     mnc_ent "slwpcb", 0, 7173
     mnc_ent "smi", 0, 7174
     mnc_ent "smintold", 0, 7175
@@ -2166,9 +2197,7 @@ mnc_tb_x64:
     mnc_ent "vcvtneeph2ps", 0, 7245
     mnc_ent "vcvtneobf162ps", 0, 7246
     mnc_ent "vcvtneoph2ps", 0, 7247
-    mnc_ent "vendscaleph", 0, 7248
-    mnc_ent "vendscalesh", 0, 7249
-    mnc_ent "vfcmulcpch", 0, 7250
+    mnc_ent "vfcmulcpch", 0, 7535
     mnc_ent "vfmadd123pd", 0, 7251
     mnc_ent "vfmadd123ps", 0, 7252
     mnc_ent "vfmadd123sd", 0, 7253
@@ -2220,7 +2249,6 @@ mnc_tb_x64:
     mnc_ent "vfmsubps", 0, 7299
     mnc_ent "vfmsubsd", 0, 7300
     mnc_ent "vfmsubss", 0, 7301
-    mnc_ent "vfmulcpch", 0, 7302
     mnc_ent "vfnmadd123pd", 0, 7303
     mnc_ent "vfnmadd123ps", 0, 7304
     mnc_ent "vfnmadd123sd", 0, 7305
@@ -2265,10 +2293,6 @@ mnc_tb_x64:
     mnc_ent "vgatherpf1dps", 0, 7344
     mnc_ent "vgatherpf1qpd", 0, 7345
     mnc_ent "vgatherpf1qps", 0, 7346
-    mnc_ent "vgetmaxph", 0, 7347
-    mnc_ent "vgetmaxsh", 0, 7348
-    mnc_ent "vgetminph", 0, 7349
-    mnc_ent "vgetminsh", 0, 7350
     mnc_ent "vldqqu", 0, 7351
     mnc_ent "vmgexit", 0, 7352
     mnc_ent "vmovntqq", 0, 7353
@@ -2337,24 +2361,24 @@ mnc_tb_x64:
     mnc_ent "vpmacswd", 0, 7416
     mnc_ent "vpmacsww", 0, 7417
     mnc_ent "vpmadcswd", 0, 7418
-    mnc_ent "vpmadd132ph", 0, 7419
-    mnc_ent "vpmadd132sh", 0, 7420
-    mnc_ent "vpmadd213ph", 0, 7421
-    mnc_ent "vpmadd213sh", 0, 7422
-    mnc_ent "vpmadd231ph", 0, 7423
-    mnc_ent "vpmadd231sh", 0, 7424
-    mnc_ent "vpmsub132ph", 0, 7425
-    mnc_ent "vpmsub132sh", 0, 7426
-    mnc_ent "vpmsub213ph", 0, 7427
-    mnc_ent "vpmsub213sh", 0, 7428
-    mnc_ent "vpmsub231ph", 0, 7429
-    mnc_ent "vpmsub231sh", 0, 7430
-    mnc_ent "vpnmadd132sh", 0, 7431
-    mnc_ent "vpnmadd213sh", 0, 7432
-    mnc_ent "vpnmadd231sh", 0, 7433
-    mnc_ent "vpnmsub132sh", 0, 7434
-    mnc_ent "vpnmsub213sh", 0, 7435
-    mnc_ent "vpnmsub231sh", 0, 7436
+    mnc_ent "vpmadd132ph", 0, 7536
+    mnc_ent "vpmadd132sh", 0, 7537
+    mnc_ent "vpmadd213ph", 0, 7538
+    mnc_ent "vpmadd213sh", 0, 7539
+    mnc_ent "vpmadd231ph", 0, 7540
+    mnc_ent "vpmadd231sh", 0, 7541
+    mnc_ent "vpmsub132ph", 0, 7542
+    mnc_ent "vpmsub132sh", 0, 7543
+    mnc_ent "vpmsub213ph", 0, 7544
+    mnc_ent "vpmsub213sh", 0, 7545
+    mnc_ent "vpmsub231ph", 0, 7546
+    mnc_ent "vpmsub231sh", 0, 7547
+    mnc_ent "vpnmadd132sh", 0, 7548
+    mnc_ent "vpnmadd213sh", 0, 7549
+    mnc_ent "vpnmadd231sh", 0, 7550
+    mnc_ent "vpnmsub132sh", 0, 7551
+    mnc_ent "vpnmsub213sh", 0, 7552
+    mnc_ent "vpnmsub231sh", 0, 7553
     mnc_ent "vpopcntb", 0, 7437
     mnc_ent "vpopcntd", 0, 7438
     mnc_ent "vpopcntq", 0, 7439
