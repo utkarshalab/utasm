@@ -232,6 +232,11 @@ lexer_next:
     je      .emit_single_percent
     cmp     byte [r11], 9
     je      .emit_single_percent
+    ; ... or the end of its line ("%iftoken %": one token, NASM's iftoken)
+    cmp     byte [r11], 10
+    je      .emit_single_percent
+    cmp     byte [r11], 13
+    je      .emit_single_percent
     ; "%(": a data list's percent (db %(1, 2)); no directive is named so
     cmp     byte [r11], '('
     je      .emit_single_percent
