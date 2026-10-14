@@ -322,6 +322,8 @@ _start:
     je      .preprocess_only
 
 .assembly_loop:
+    ; what the statement may leave behind if it fails (rc_rollback)
+    call    rc_snapshot
     ; PHASE_PARSER covers the whole frontend: the lexer and preprocessor are
     ; demand-driven from inside parser_parse_instruction, so this one span
     ; accounts for lexing, macro expansion and parsing together.
@@ -347,11 +349,11 @@ _start:
     mov     rcx, rax
     call    prep_error_take
     test    eax, eax
-    jnz     .error_in_parser
+    jnz     .error_in_statement
     mov     rax, rcx
 
     test    rax, rax
-    jnz     .error_in_parser
+    jnz     .error_in_statement
     
     test    rdx, rdx
     jz      .finish_assembly
@@ -601,8 +603,14 @@ _start:
     mov     r15, rax
     mov     edi, eax
     call    error_report_code
-    mov     rax, EXIT_ENCODER_ERROR
-    jmp     .exit
+    ; the assembly goes on with the next statement, as NASM's does, so that
+    ; every error is reported; it fails at the end. What the statement
+    ; emitted is taken back: what follows lies where it would.
+    mov     eax, EXIT_ENCODER_ERROR
+    call    rc_failed
+    test    eax, eax
+    jnz     .parser_failed                 ; (too many)
+    jmp     .assembly_loop
 
 .error_in_linker:
     ; located errors (undefined symbols) are reported where they are found;
@@ -611,6 +619,28 @@ _start:
     call    error_report_code
     mov     rax, EXIT_LINKER_ERROR
     jmp     .exit
+
+.error_in_statement:
+    ; a statement the parser could not take: as the encoder's (below), the
+    ; next statement, unless nothing sensible can follow (no memory, a file
+    ; that cannot be read, utasm's own failure, a macro running away)
+    cmp     rax, EXIT_FATAL
+    je      .parser_failed
+    mov     r15, rax
+    mov     edi, eax
+    call    error_report_code
+    mov     eax, r15d
+    call    rc_fatal
+    test    eax, eax
+    jnz     .parser_failed
+    mov     eax, EXIT_PARSER_ERROR
+    call    rc_failed
+    test    eax, eax
+    jnz     .parser_failed                 ; (too many)
+    call    rc_skip_line                   ; (the rest of its line)
+    test    eax, eax
+    jnz     .parser_failed
+    jmp     .assembly_loop
 
 .error_in_parser:
     ; %fatal has printed its own message: nothing to add
@@ -622,6 +652,9 @@ _start:
     call    error_report_code
 .parser_failed:
     mov     rax, EXIT_PARSER_ERROR
+    cmp     dword [rel rc_status], 0
+    je      .exit
+    mov     eax, [rel rc_status]           ; the first failure's kind
     jmp     .exit
 
 
@@ -761,3 +794,139 @@ print_num:
     msg_newline:      db 10, 0
     msg_cmdline:      db "command line", 0
 
+; ============================================================================
+; ERROR RECOVERY: a statement that fails is reported, taken back, and the
+; assembly goes on with the next one (NASM's way): every error is reported,
+; and the assembly fails at the end (error_deferred).
+; ============================================================================
+
+[SECTION .bss]
+alignb 8
+rc_sec:         resq 1              ; the section before the statement ...
+rc_size:        resq 1              ; ... its size
+rc_relax:       resq 1              ; the optimizer's records
+rc_nrelocs:     resd 1              ; the relocations
+global rc_status
+rc_status:      resd 1              ; the first failure's exit status
+rc_errors:      resd 1              ; failures so far
+
+[SECTION .rodata]
+rc_too_many:    db "utasm: error: too many errors (100), stopping", 10, 0
+
+[SECTION .text]
+
+; rc_snapshot: what the statement about to be read may change. Preserves
+; rbx, r12-r15.
+rc_snapshot:
+    lea     rcx, [rel global_ctx]
+    mov     rax, [rcx + ASMCTX_curr_sec]
+    mov     [rel rc_sec], rax
+    test    rax, rax
+    jz      .no_sec
+    mov     rax, [rax + SECTION_size]
+    mov     [rel rc_size], rax
+.no_sec:
+    mov     eax, [rcx + ASMCTX_nrelocs]
+    mov     [rel rc_nrelocs], eax
+    extern  relax_count
+    call    relax_count
+    mov     [rel rc_relax], rax
+    ret
+
+; rc_failed: the statement failed (eax = its exit status: parser or
+; encoder): what it emitted is taken back - its bytes (when its section is
+; still the current one), relocations and optimizer records - and the
+; failure counted. eax = 1 at RC_MAX_ERRORS: "too many errors", the
+; assembly stops (a runaway macro failing on each call printed thousands).
+; Preserves rbx, r12-r15.
+%define RC_MAX_ERRORS 100
+rc_failed:
+    cmp     dword [rel rc_status], 0
+    jne     .status_kept
+    mov     [rel rc_status], eax
+.status_kept:
+    inc     dword [rel error_deferred]
+    inc     dword [rel rc_errors]
+    lea     rcx, [rel global_ctx]
+    mov     rax, [rcx + ASMCTX_curr_sec]
+    test    rax, rax
+    jz      .relocs
+    cmp     rax, [rel rc_sec]
+    jne     .relocs                        ; (it changed section: leave it)
+    mov     rdx, [rel rc_size]
+    cmp     rdx, [rax + SECTION_size]
+    ja      .relocs
+    mov     [rax + SECTION_size], rdx
+.relocs:
+    mov     eax, [rel rc_nrelocs]
+    cmp     eax, [rcx + ASMCTX_nrelocs]
+    ja      .relax
+    mov     [rcx + ASMCTX_nrelocs], eax
+.relax:
+    mov     rdi, [rel rc_relax]
+    extern  relax_truncate
+    call    relax_truncate
+    xor     eax, eax
+    cmp     dword [rel rc_errors], RC_MAX_ERRORS
+    jb      .ret
+    extern  print_str
+    mov     edi, 2
+    lea     rsi, [rel rc_too_many]
+    call    print_str
+    mov     eax, 1
+.ret:
+    ret
+
+; rc_fatal: eax = 1 when the error eax leaves nothing sensible to go on
+; with (memory, files, utasm's own failure, a macro running away)
+rc_fatal:
+    cmp     eax, EXIT_OOM
+    je      .yes
+    cmp     eax, EXIT_IO_ERROR
+    je      .yes
+    cmp     eax, EXIT_INTERNAL
+    je      .yes
+    cmp     eax, EXIT_ASSERTION
+    je      .yes
+    cmp     eax, EXIT_MACRO_RECURSION
+    je      .yes
+    cmp     eax, EXIT_FILE_NOT_FOUND
+    jb      .no
+    cmp     eax, EXIT_INVALID_FORMAT
+    jbe     .yes                           ; (the file codes)
+.no:
+    xor     eax, eax
+    ret
+.yes:
+    mov     eax, 1
+    ret
+
+; rc_skip_line: the tokens left on the line of a statement that failed, and
+; its end. eax = 0, or 1 when the source cannot be read on.
+rc_skip_line:
+    extern  preprocessor_peek_token, preprocessor_next_token
+    push    rbx
+.next:
+    lea     rdi, [rel global_prep]
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .stop
+    movzx   ecx, byte [rdx + TOKEN_kind]
+    cmp     ecx, TOK_EOF
+    je      .done
+    lea     rdi, [rel global_prep]
+    push    rcx
+    call    preprocessor_next_token
+    pop     rcx
+    test    rax, rax
+    jnz     .stop
+    cmp     ecx, TOK_NEWLINE
+    jne     .next
+.done:
+    xor     eax, eax
+    pop     rbx
+    ret
+.stop:
+    mov     eax, 1
+    pop     rbx
+    ret
