@@ -523,6 +523,18 @@ parser_parse_instruction:
 .parse_operands:
     xor     r14, r14
     mov     byte [rel far_colon], 0
+    ; bndmk / bndldx / bndstx: an MIB address (parser_parse_mem_operand)
+    movzx   eax, word [r15 + INST_op_id]
+    mov     byte [rel mem_mib], 0
+    cmp     eax, 1046                      ; BNDLDX
+    je      .mib
+    cmp     eax, 1047                      ; BNDMK
+    je      .mib
+    cmp     eax, 1049                      ; BNDSTX
+    jne     .mib_noted
+.mib:
+    mov     byte [rel mem_mib], 1
+.mib_noted:
 
     ; Check for 0-operand instruction
     mov     rdi, rbx
@@ -619,7 +631,18 @@ parser_parse_instruction:
         jmp     .operand_loop
         ENDIF
 .operands_end:
-    
+    ; "bndstx [rax+3], bnd0, rbx", "bndldx bnd2, [3], ebx" (ICC's): the
+    ; register is the address's index, as NASM encodes it
+    cmp     byte [rel mem_mib], 0
+    je      .mib_done
+    cmp     r14, 3
+    jne     .mib_done
+    call    parser_mib_index
+    test    rax, rax
+    jnz     .error
+    mov     r14d, 2
+.mib_done:
+
     ; If bracketed instruction/directive, consume closing RBRACKET
     cmp     qword [rsp + 16], 1
     je      .instruction_consume_rbracket
@@ -1554,6 +1577,18 @@ parser_evaluate_additive:
         mov     rdi, [rdx + rax*8 - 8]     ; the index is 1-based
         mov     rsi, [r15 + SYMBOL_value]
         mov     rdx, [r11 + SYMBOL_value]
+        ; in a preprocessor expression ("%if $ - $$ > 510"): the distance
+        ; with the jumps between shortened, as NASM's last pass gives it,
+        ; and nothing is kept from moving (core/known.s)
+        cmp     byte [rel expr_pp], 0
+        je      .diff_keep_range
+        extern  known_pp_diff
+        call    known_pp_diff
+        test    eax, eax
+        jz      .diff_keep_range
+        add     r13, rdx                   ; (that distance less this one)
+        jmp     .diff_number
+.diff_keep_range:
         call    relax_freeze_range
         extern  known_note_diff
         call    known_note_diff            ; (core/known.s: "len equ $ - msg")
@@ -1922,6 +1957,16 @@ parser_offset_name:
 ; * Output : RAX = OK or an error, RDX = value, RCX = deferred name (0 if
 ; *          none), R11 = resolved SYMBOL* (0 if none)
 ; ;
+global parser_evaluate_pp
+; parser_evaluate_pp: parser_evaluate_expression for the preprocessor (%if,
+; %assign, %rep ...), whose value is taken before the code is laid out: a
+; "b - a" over code that can shrink comes from the layout (known_pp_diff)
+parser_evaluate_pp:
+    inc     byte [rel expr_pp]
+    call    parser_evaluate_expression
+    dec     byte [rel expr_pp]
+    ret
+
 global parser_evaluate_expression
 parser_evaluate_expression:
     inc     dword [rel expr_level]
@@ -3874,12 +3919,96 @@ parser_get_arch_tables:
         ENDIF
     epilogue
 
+; ---- parser_mib_index ---------------------
+;
+; parser_mib_index
+; bndldx / bndstx with three operands (ICC's "bndstx [rax+3], bnd0, rbx"):
+; the general register becomes the address's index (times 1), and is taken
+; out of the operands. Not one memory operand and one such register, or an
+; address with an index already: left for the encoder to refuse.
+; Input    : r15 = the INST (three operands)
+; Output   : rax = OK
+; Clobbers : rcx, rdx, rsi, rdi, r8-r10
+;
+parser_mib_index:
+    mov     r8, -1                         ; the memory operand
+    mov     r9, -1                         ; the general register
+    xor     ecx, ecx
+.find:
+    cmp     ecx, 3
+    jae     .found
+    imul    rdx, rcx, OPERAND_SIZE
+    lea     rdx, [r15 + INST_op0 + rdx]
+    cmp     byte [rdx + OPERAND_kind], OP_MEM
+    jne     .not_mem
+    mov     r8, rdx
+    jmp     .next
+.not_mem:
+    cmp     byte [rdx + OPERAND_kind], OP_REG
+    jne     .next
+    cmp     byte [rdx + OPERAND_reg], 16   ; (a general one: 0 .. 15)
+    jae     .next
+    mov     r9, rcx
+.next:
+    inc     ecx
+    jmp     .find
+.found:
+    cmp     r8, -1
+    je      .ok
+    cmp     r9, -1
+    je      .ok
+    cmp     byte [r8 + OPERAND_index], 0xFF
+    jne     .ok
+    imul    rdx, r9, OPERAND_SIZE
+    lea     rsi, [r15 + INST_op0 + rdx]
+    ; the address's width is the register's ([0], ecx: 32-bit); a base
+    ; of another width: left as it is
+    xor     ecx, ecx
+    cmp     byte [rsi + OPERAND_size], 32
+    jne     .not32
+    mov     ecx, OP_FLAG_ADDR32
+.not32:
+    cmp     byte [rsi + OPERAND_size], 16
+    jne     .width
+    mov     ecx, OP_FLAG_ADDR16
+.width:
+    cmp     byte [r8 + OPERAND_base], 0xFF
+    je      .width_set
+    mov     al, [r8 + OPERAND_flags]
+    and     al, OP_FLAG_ADDR32 | OP_FLAG_ADDR16
+    cmp     al, cl
+    jne     .ok
+.width_set:
+    or      [r8 + OPERAND_flags], cl
+    mov     al, [rsi + OPERAND_reg]
+    mov     [r8 + OPERAND_index], al
+    mov     byte [r8 + OPERAND_scale], 1
+    ; the operands after it move down one
+    lea     rdi, [rsi]
+    add     rsi, OPERAND_SIZE
+    mov     ecx, 2
+    sub     rcx, r9
+    imul    rcx, rcx, OPERAND_SIZE
+    rep     movsb
+    mov     byte [r15 + INST_op2 + OPERAND_kind], OP_NONE
+    mov     byte [r15 + INST_nops], 2
+.ok:
+    xor     eax, eax
+    ret
+
 ;*
 ; * [parser_parse_mem_operand]
 ; * Purpose: Technical SIB Parser.
 ; ;
 parser_parse_mem_operand:
     prologue
+    ; an MIB address (bndmk, bndldx, bndstx): a register with a scale written is
+    ; the index ("[rcx*1]", "[1*rbx+3]"), as under nosplit; one without, the
+    ; base - NASM's
+    cmp     byte [rel mem_mib], 0
+    je      .not_mib
+    or      byte [r12 + OPERAND_flags], OP_FLAG_NOSPLIT
+.not_mib:
     mov     byte [rel mem_scaling], 1      ; "4*rcx": parser_evaluate_term
     mov     byte [rel mem_expect_term], 1  ; (a term must come)
     xor     eax, eax
@@ -3887,6 +4016,7 @@ parser_parse_mem_operand:
     mov     [rel mem_scaled_take], eax
     mov     [rel mem_terms_n], eax
     mov     [rel mem_addr_width], eax
+    mov     byte [rel mem_after_comma], 0
     mov     byte [rel mem_term_pending], 0
     mov     byte [r12 + OPERAND_kind], OP_MEM
     mov     byte [r12 + OPERAND_scale], 1 ; Default scale
@@ -4079,9 +4209,11 @@ parser_parse_mem_operand:
         ENDIF
 
     ; NASM's split form "[eax+8, ecx*4]" (the index after the comma; the
-    ; MIB operand of tileloadd and bndldx): as "+"
+    ; MIB operand of tileloadd and bndldx): as "+", but a register after
+    ; the comma is the index even times 1 ("[3, 1*r12]": r12 no base)
     IF al, e, TOK_COMMA
         mov     byte [rel mem_expect_term], 1
+        mov     byte [rel mem_after_comma], 2
         jmp     .loop
         ENDIF
 
@@ -4530,6 +4662,7 @@ parser_parse_mem_operand:
 ; rax = OK or EXIT_INVALID_ADDR (more registers than there is room for).
 .add_term:
     mov     byte [rel mem_expect_term], 0
+    or      dl, [rel mem_after_comma]      ; (2: after a split form's comma)
     lea     r10, [rel mem_terms_reg]
     mov     r8d, [rel mem_terms_n]
     xor     r9d, r9d
@@ -4647,6 +4780,8 @@ parser_parse_mem_operand:
     jnc     .pt_index
     cmp     rcx, 1
     jne     .pt_one_scaled
+    test    byte [r10], 2
+    jnz     .pt_index                      ; "[3, r12]": the index
     test    byte [r12 + OPERAND_flags], OP_FLAG_NOSPLIT
     jz      .pt_base
     cmp     byte [r10], 0
@@ -4766,7 +4901,10 @@ mem_scaled_coef:  resq MEM_SCALED_MAX     ; its scale
 mem_term_coef:    resq 1                  ; the register being placed: scale
 mem_terms_coef:   resq MEM_SCALED_MAX     ; the address's registers, as written:
 mem_terms_reg:    resb MEM_SCALED_MAX     ; scale, register, and whether the
-mem_terms_mul:    resb MEM_SCALED_MAX     ; scale was written (.add_term)
+mem_terms_mul:    resb MEM_SCALED_MAX     ; scale was written (.add_term);
+                                          ; 2: after a split form's comma
+mem_after_comma:  resb 1                  ; 2 once "[base, index]"'s comma is read
+mem_mib:          resb 1                  ; the instruction's address is an MIB
 alignb 4
 mem_terms_n:      resd 1
 mem_scaled_n:     resd 1
@@ -8395,6 +8533,7 @@ eop_tilde:     db "~", 0
 eop_bang:      db "!", 0
 expr_level:    dd 0                ; parser_evaluate_expression's nesting
 expr_lost:     db 0                ; a label not defined yet went into arithmetic
+expr_pp:       db 0                ; in a preprocessor expression (parser_evaluate_pp)
 expr_deferring: db 0               ; parser_deferred_value is working one out
 ds_utf_cap:    dq DS_UTF_SIZE
 global asm_bits
@@ -8533,8 +8672,10 @@ parser_absolute:
     call    parser_evaluate_expression
     test    rax, rax
     jnz     .ret
-    ; "absolute x+7" in a flat binary: x's address, its section's start
-    ; (org) with it, as NASM has it
+    ; "absolute x+7": x's offset as the code is laid out, the jumps before
+    ; it shortened (core/known.s, as for "%if $ - $$"; or that code keeps
+    ; its size); in a flat binary its section's start (org) with it, as
+    ; NASM has it
     test    r11, r11
     jz      .based
     movzx   ecx, word [r11 + SYMBOL_section]
@@ -8543,8 +8684,6 @@ parser_absolute:
     cmp     ecx, SHN_ABS
     jae     .based
     mov     rax, [rbx + PREP_ctx]
-    cmp     byte [rax + ASMCTX_fmt], FMT_BIN
-    jne     .based
     mov     r8, [rax + ASMCTX_sections]
     movzx   r9d, word [rax + ASMCTX_seccount]
 .find_sec:
@@ -8557,6 +8696,22 @@ parser_absolute:
     dec     r9d
     jmp     .find_sec
 .sec_found:
+    push    rdx
+    mov     rdi, r10
+    mov     rsi, [r11 + SYMBOL_value]
+    xor     edx, edx                       ; (from the section's start)
+    call    known_pp_diff
+    test    eax, eax
+    jz      .abs_kept
+    add     [rsp], rdx
+    jmp     .abs_taken
+.abs_kept:
+    call    relax_freeze_range
+.abs_taken:
+    pop     rdx
+    mov     rax, [rbx + PREP_ctx]
+    cmp     byte [rax + ASMCTX_fmt], FMT_BIN
+    jne     .based
     add     rdx, [r10 + SECTION_addr]
 .based:
     push    rdx
@@ -11043,6 +11198,7 @@ s_attr_q:      db '"', 0
 [SECTION .bss]
 alignb 8
 attr_value:    resq 1              ; an unknown section attribute's value text
+sec_prev_align: resq 1             ; a redeclared section's alignment before
 attr_seen:     resb 2              ; parser_section_attrs: an attribute, align=
 align_hex:     resb 24             ; "0x..." for an alignment's error
 struc_open:    resq 1              ; a struc a section line left (its name)
@@ -11690,22 +11846,34 @@ parser_handle_section_directive:
 
     ; 3. NASM attributes: progbits, nobits, alloc, exec, write, align=N
     mov     word [rel attr_seen], 0
+    mov     rax, [r13 + SECTION_align]
+    mov     [rel sec_prev_align], rax
     call    parser_section_attrs
     check_err
-    cmp     byte [rel coff_enabled], 0
-    jne     .attrs_applied                 ; (ELF's rule, below)
     ; a new section declared with attributes and no align=: aligned to 1,
     ; whatever its name's default (NASM's: "section .text progbits") -
     ; .text too, which utasm makes before the source names it, while it
     ; is still empty and not named before
     cmp     r15, OK
-    jne     .attrs_new
+    jne     .attrs_not_old
     cmp     byte [rel text_declared], 0
-    jne     .attrs_applied
+    jne     .attrs_existing
     cmp     qword [r13 + SECTION_size], 0
-    jne     .attrs_applied
+    jne     .attrs_existing
     cmp     byte [r13 + SECTION_type], SEC_TEXT
-    jne     .attrs_applied
+    je      .attrs_not_old                 ; (.text, not named yet: as new)
+.attrs_existing:
+    ; a section declared again keeps the largest alignment asked for:
+    ; "section .text align=64" then "section .text align=32" is 64, what
+    ; the code placed under the first relies on (as NASM)
+    mov     rax, [rel sec_prev_align]
+    cmp     rax, [r13 + SECTION_align]
+    jbe     .attrs_applied
+    mov     [r13 + SECTION_align], rax
+    jmp     .attrs_applied
+.attrs_not_old:
+    cmp     byte [rel coff_enabled], 0
+    jne     .attrs_applied                 ; (ELF's rule, below)
 .attrs_new:
     cmp     byte [rel attr_seen], 0
     je      .attrs_applied
