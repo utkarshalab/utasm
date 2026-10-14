@@ -303,6 +303,8 @@ reloc_resolve_all:
     jnz     .ret
     jmp     .local_done
 .not_expr:
+    cmp     byte [rsi], RELOC_ABS_MARK
+    je      .check_next                    ; a branch to a number: kept (symbol 0)
     cmp     byte [rsi], RELOC_OFFSET_MARK
     jne     .check_symbol
     ; "later - $$": an offset in the section, written here (or, across
@@ -559,6 +561,11 @@ reloc_resolve_all:
     jnz     .ret
     jmp     .next
 .not_expr2:
+    cmp     byte [rsi], RELOC_ABS_MARK
+    jne     .not_abs2
+    xor     eax, eax                       ; a number's: no symbol, it is the addend
+    jmp     .calc_patch_va
+.not_abs2:
     cmp     byte [rsi], RELOC_OFFSET_MARK
     jne     .resolve
     mov     rdi, rbx
