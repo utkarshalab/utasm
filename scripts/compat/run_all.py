@@ -48,7 +48,7 @@ def main(argv):
             suites.sections, suites.symbol_imm, suites.ubf, suites.diagnostics,
             suites.command_line, suites.listing, suites.dwarf, suites.elf32, suites.coff, suites.cfi,
             suites.expressions, suites.limits, suites.robustness, suites.warnings, suites.rejections,
-            suites.explanations, suites.lints]
+            suites.explanations, suites.lints, suites.recovery, suites.tls]
     if not quick:
         runs += [suites.encoder, suites.operand_shapes, suites.modes, suites.addresses]
     good = True
