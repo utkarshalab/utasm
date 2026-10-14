@@ -2289,6 +2289,10 @@ amd64_fix_rip_addend:
     je      .pcrel
     cmp     ecx, R_X86_64_GOTTPOFF
     je      .pcrel
+    cmp     ecx, 19                        ; R_X86_64_TLSGD
+    je      .pcrel
+    cmp     ecx, 20                        ; R_X86_64_TLSLD
+    je      .pcrel
     cmp     ecx, R_X86_64_PLT32
     je      .pcrel
     cmp     ecx, 26                        ; R_X86_64_GOTPC32
@@ -5662,9 +5666,15 @@ amd64_emit_reloc:
     mov     ecx, R_X86_64_GOTPCREL
     cmp     eax, WRT_GOTPCREL
     je      .wrt_set
-    mov     ecx, R_X86_64_GOTTPOFF
     cmp     eax, WRT_TLSIE
-    je      .wrt_set
+    jb      .wrt_not_tls
+    cmp     eax, WRT_TPOFF
+    ja      .wrt_not_tls
+    cmp     eax, WRT_TLSIE
+    je      .wrt_tls
+    cmp     eax, WRT_TLSGD
+    jae     .wrt_tls
+.wrt_not_tls:
     cmp     eax, WRT_GOTOFF
     jne     .wrt_not_gotoff
     ; R_X86_64_GOTOFF64 writes 8 bytes: only a qword field takes it (ELF32:
@@ -5693,6 +5703,43 @@ amd64_emit_reloc:
     je      .wrt_set
     mov     rax, [rdx + RELOC_offset]
     add     [rdx + RELOC_addend], rax
+    jmp     .wrt_set
+.wrt_tls:
+    ; thread-local storage, against the symbol itself (GNU as: a local one
+    ; too, not its section). ..tlsie / ..tlsgd / ..tlsld are PC-relative in
+    ; ELF64 ("[rel x wrt ..tlsgd]"), absolute in ELF32 (elf32.s maps them)
+    or      byte [rdx + RELOC_flags], RELOC_FLAG_SYM
+    mov     ecx, R_X86_64_GOTTPOFF
+    cmp     eax, WRT_TLSIE
+    je      .tls_pc
+    mov     ecx, 19                        ; R_X86_64_TLSGD
+    cmp     eax, WRT_TLSGD
+    je      .tls_pc
+    mov     ecx, 20                        ; R_X86_64_TLSLD
+    cmp     eax, WRT_TLSLD
+    je      .tls_pc
+    ; ..dtpoff / ..tpoff: the offset, 32-bit or a qword
+    cmp     eax, WRT_DTPOFF
+    jne     .tls_tpoff
+    mov     ecx, 21                        ; R_X86_64_DTPOFF32
+    cmp     dword [rdx + RELOC_type], R_X86_64_64
+    jne     .wrt_set
+    mov     ecx, 17                        ; R_X86_64_DTPOFF64
+    jmp     .wrt_set
+.tls_tpoff:
+    mov     ecx, 23                        ; R_X86_64_TPOFF32
+    cmp     dword [rdx + RELOC_type], R_X86_64_64
+    jne     .wrt_set
+    mov     ecx, 18                        ; R_X86_64_TPOFF64
+    jmp     .wrt_set
+.tls_pc:
+    cmp     byte [rel elf32_enabled], 0
+    jne     .wrt_set
+    cmp     dword [rdx + RELOC_type], R_X86_64_PC32
+    je      .wrt_set
+    ; GOTTPOFF / TLSGD / TLSLD over an absolute field: no such thing in
+    ; ELF64 (NASM's error) - it was taken as PC-relative there
+    mov     dword [rel amd64_reloc_err], EXIT_WRT_UNSUPPORTED
     jmp     .wrt_set
 .wrt_got:
     ; the GOT entry: RIP-relative ("[rel x wrt ..got]") its address
