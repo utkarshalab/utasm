@@ -75,6 +75,7 @@ warn_state:
     db 1                                ; WC_OBSOLETE_VALID
     db 1                                ; WC_FLOAT_OVERFLOW
     db 1                                ; WC_PP_REP_NEGATIVE
+    db 1                                ; WC_EA_DISPSIZE
 
 [SECTION .rodata]
 warn_names:
@@ -83,7 +84,7 @@ warn_names:
     dq wn_slash_comment, wn_pp_sel_range, wn_ptr, wn_ea_absolute
     dq wn_macro_redef, wn_pp_trailing, wn_pp_else_else, wn_pp_else_elif
     dq wn_prefix_opsize, wn_prefix_hle, wn_obsolete_removed, wn_obsolete_nop
-    dq wn_obsolete_valid, wn_float_overflow, wn_pp_rep_negative
+    dq wn_obsolete_valid, wn_float_overflow, wn_pp_rep_negative, wn_ea_dispsize
 wn_other:db "other", 0
 wn_user:        db "user", 0
 wn_zeroing:     db "zeroing", 0
@@ -109,6 +110,7 @@ wn_obsolete_nop: db "obsolete-nop", 0
 wn_obsolete_valid: db "obsolete-valid", 0
 wn_float_overflow: db "float-overflow", 0
 wn_pp_rep_negative: db "pp-rep-negative", 0
+wn_ea_dispsize: db "ea-dispsize", 0
 wn_all:         db "all", 0
 wn_error:       db "error", 0
 s_warning:      db "warning: ", 0
