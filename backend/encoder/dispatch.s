@@ -135,10 +135,14 @@ te_plusop:  resb 1
 te_vop:     resb 1
 te_vvvv:    resb 1                  ; inverted vvvv | L << 4 | pp, for the VEX bytes
 te_evex:    resb 1                  ; an operand needs EVEX (mask, broadcast, rounding)
+te_i8_relax: resb 1                 ; the second round: a byte immediate out of range taken
+te_i8_cut:  resb 1                  ; ... and this form took one
 
 [SECTION .rodata]
 ; segment register IDs 24-29 (cs ds es fs gs ss) -> encoding
 te_segnum:  db 1, 3, 0, 4, 5, 2
+s_i8_bounds: db "byte data exceeds bounds", 0
+s_i16_bounds: db "word data exceeds bounds", 0
 
 [SECTION .text]
 
@@ -189,6 +193,8 @@ amd64_table_encode:
     lea     r13, [rel x86_enc_table]
     add     r13, rax                       ; r13 = first form of the mnemonic
     call    te_classify
+    mov     byte [rel te_i8_relax], 0
+    mov     r15, r13
 .try:
     call    te_match
     test    eax, eax
@@ -197,6 +203,15 @@ amd64_table_encode:
     movzx   eax, word [r13 + FM_ID]
     cmp     ax, [r12 + INST_op_id]
     je      .try
+    ; none fits: once more, a byte immediate out of range taken - its low
+    ; byte, with NASM's "byte data exceeds bounds" ("psllw mm7, 300" was
+    ; refused); a form that takes the value whole was looked for first
+    cmp     byte [rel te_i8_relax], 0
+    jne     .no_fit
+    mov     byte [rel te_i8_relax], 1
+    mov     r13, r15
+    jmp     .try
+.no_fit:
     ; none fits: for an instruction the table has every form of (NASM's
     ; list), wrong operands - not the hand-written encoders', stubs for these
     test    r14d, 0x8000
@@ -207,6 +222,25 @@ amd64_table_encode:
     xor     eax, eax
     jmp     .ret
 .encode:
+    ; the immediates cut: NASM's warning for each ("enter 0x12345, 300":
+    ; the word's, then the byte's)
+    extern  warn_begin, warn_text, warn_end
+    test    byte [rel te_i8_cut], 2
+    jz      .bounds_byte
+    mov     edi, WC_NUMBER_OVERFLOW
+    call    warn_begin
+    lea     rsi, [rel s_i16_bounds]
+    call    warn_text
+    call    warn_end
+.bounds_byte:
+    test    byte [rel te_i8_cut], 1
+    jz      .emit
+    mov     edi, WC_NUMBER_OVERFLOW
+    call    warn_begin
+    lea     rsi, [rel s_i8_bounds]
+    call    warn_text
+    call    warn_end
+.emit:
     call    te_emit
 .ret:
     pop     r15
@@ -290,6 +324,16 @@ te_classify:
     movzx   eax, byte [rdi + OPERAND_vsib]
     lea     rdx, [rel te_vsib]
     mov     [rdx + rcx], al
+    ; a vector index of 16-31 ([r9 + xmm30*1]): EVEX only - a VEX gather
+    ; took it as xmm14
+    test    eax, eax
+    jz      .mem_class
+    movzx   eax, byte [rdi + OPERAND_index]
+    sub     eax, 80
+    test    eax, 16
+    jz      .mem_class
+    mov     byte [rel te_evex], 1
+.mem_class:
     mov     r8d, C_MEM
     jmp     .set_cls
 .reg:
@@ -401,6 +445,7 @@ te_classify:
 ; ;
 te_match:
     push    rbx
+    mov     byte [rel te_i8_cut], 0
     mov     byte [rel te_osz], 0
     mov     byte [rel te_osz_v], 0
     ; a form of one mode (retd: not in 64-bit mode; clzero rax: only there)
@@ -715,9 +760,14 @@ te_match:
     jmp     .next
 .i_8:
     cmp     rax, -128
-    jl      .fail
+    jl      .i_8_out
     cmp     rax, 255
-    jg      .fail
+    jg      .i_8_out
+    jmp     .next
+.i_8_out:
+    cmp     byte [rel te_i8_relax], 0
+    je      .fail
+    or      byte [rel te_i8_cut], 1        ; (taken in the second round: cut)
     jmp     .next
 .i_8s:
     cmp     rax, -128
@@ -727,9 +777,14 @@ te_match:
     jmp     .next
 .i_16:
     cmp     rax, -32768
-    jl      .fail
+    jl      .i_16_out
     cmp     rax, 65535
-    jg      .fail
+    jg      .i_16_out
+    jmp     .next
+.i_16_out:
+    cmp     byte [rel te_i8_relax], 0
+    je      .fail
+    or      byte [rel te_i8_cut], 2        ; ("ret 0x12345": its low word)
     jmp     .next
 .i_32:
     mov     rdx, -2147483648
@@ -1396,13 +1451,51 @@ te_emit:
 .mp_mem:
     lea     rdx, [rel te_cls]
     cmp     byte [rdx + rcx], C_MEM
-    je      .mp_ret                        ; the operand's 67, if any, is out
+    je      .mp_mem_size
     inc     ecx
     cmp     ecx, 4
     jb      .mp_mem
     mov     al, 0x67
     call    amd64_emit_byte
 .mp_ret:
+    ret
+.mp_mem_size:
+    ; an address size the form takes from a register ("movdir64b esi,
+    ; [r10]": a32, [r10d]): the address registers written are of the
+    ; mode's size - its 67 was not out. Registers of another size put
+    ; their own 67 out already
+    push    rax
+    call    te_operand
+    pop     rax
+    ; the address's own size: 2 by 32-bit registers, 1 by 16-bit ones
+    mov     ecx, 2
+    test    byte [rdi + OPERAND_flags], OP_FLAG_ADDR32
+    jnz     .mp_mem_own
+    mov     ecx, 1
+    test    byte [rdi + OPERAND_flags], OP_FLAG_ADDR16
+    jz      .mp_mem_mode
+.mp_mem_own:
+    cmp     eax, ecx
+    je      .mp_ret                        ; (its 67 is out)
+    jmp     .mp_mem_mix
+.mp_mem_mode:
+    ; registers of the mode's size: a32 in bits 64 only ([r10] and
+    ; [r10d] are the same bits); in other modes the address would be
+    ; another one - NASM's 67 over it addresses something else
+    cmp     eax, 2
+    jne     .mp_mem_mix
+    cmp     byte [rel asm_bits], 64
+    jne     .mp_mem_mix
+    cmp     byte [rdi + OPERAND_base], REG_RIP
+    je      .mp_mem_mix                    ; ([rel x]: no 32-bit form of it)
+    mov     al, 0x67
+    call    amd64_emit_byte
+    ret
+.mp_mem_mix:
+    ; "enqcmds dx, [eax]": the register's address size is not the
+    ; address's - NASM's "impossible combination of address sizes"
+    extern  amd64_reloc_err
+    mov     dword [rel amd64_reloc_err], EXIT_EA_SIZE_MIX
     ret
 
 ; eax = low 3 bits of the R_PLUS operand's register, or 0
