@@ -491,6 +491,8 @@ amd64_mode_check:
     jnz     .mem_low
     cmp     byte [rdi + OPERAND_base], 0xFF
     jne     .fail                          ; 64-bit address registers
+    cmp     byte [rdi + OPERAND_vsib], 0
+    jne     .mem_vector                    ; ([xmm1*4 + 8]: a gather's, no base)
     cmp     byte [rdi + OPERAND_index], 0xFF
     jne     .fail
     jmp     .op
@@ -501,9 +503,21 @@ amd64_mode_check:
     cmp     eax, 8
     jae     .fail_operands                 ; r8d - r15d
 .mem_index:
+    cmp     byte [rdi + OPERAND_vsib], 0
+    jne     .mem_vector
     movzx   eax, byte [rdi + OPERAND_index]
     cmp     eax, 0xFF
     je      .op
+    cmp     eax, 8
+    jae     .fail_operands
+    jmp     .op
+.mem_vector:
+    ; a gather's vector index: xmm0 - xmm7 outside 64-bit mode (it was
+    ; taken for a 64-bit address register: "vgatherdps ymm6, [ecx+ymm4*4],
+    ; ymm1" in bits 32 was refused)
+    movzx   eax, byte [rdi + OPERAND_index]
+    sub     eax, 80
+    and     eax, 31
     cmp     eax, 8
     jae     .fail_operands
     jmp     .op
