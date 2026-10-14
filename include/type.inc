@@ -380,7 +380,9 @@ struc OPERAND
     field sym,        8       ; pointer to Symbol
     field vsib,       1       ; vector index register: 1 xmm, 2 ymm, 3 zmm (gathers)
     field fwd,        1       ; a symbol not defined yet went into it (encoder.s)
-    field pad2,       6       ; alignment padding to maintain multiple of 8
+    field relnum,     1       ; 1: "[rel 5]", a number absolute after all
+                              ; (no moffs form: mode.s)
+    field pad2,       5       ; alignment padding to maintain multiple of 8
 endstruc
 
 ; ============================================================================
