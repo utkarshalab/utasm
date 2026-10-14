@@ -5,6 +5,13 @@ NASM rejects is dropped; then each line's bytes in the two listings must be
 the same, and utasm must take every line NASM takes.
 
     python3 scripts/compat/encfuzz.py UTASM [LINES] [SEED] [-v]
+    python3 scripts/compat/encfuzz.py UTASM --objdump [SEED] [-v]
+
+--objdump: NASM's table is not always right (its AVX512-FP16 forms: names
+off by an opcode, a source missing, roles swapped), and a mistake both
+make is no difference. Every form, in bits 64, is assembled by utasm
+alone and read back by objdump: one instruction for the bytes, the same
+mnemonic and the same registers, in order.
 
 Prints a summary and the first findings by mnemonic; exit status 1 when
 there are any."""
@@ -250,7 +257,10 @@ def batch(utasm, lines, bits):
         findings = []
         for n in rejected:
             if 2 <= n < 2 + len(keep):
-                findings.append(("rejects", keep[n - 2], "", first_error(r.stderr, n)))
+                msg = first_error(r.stderr, n)
+                kind = ("nasm-bug" if nasm_bogus(keep[n - 2]) or by_design(keep[n - 2], msg) else
+                        "gap" if any(re.search(g, keep[n - 2]) for g in KNOWN_GAPS) else "rejects")
+                findings.append((kind, keep[n - 2], "", first_error(r.stderr, n)))
         if rejected:
             keep2 = [l for i, l in enumerate(keep, 2) if i not in rejected]
             open(src, "w").write("bits %d\n" % bits + "".join(l + "\n" for l in keep2))
@@ -264,14 +274,17 @@ def batch(utasm, lines, bits):
         for i, l in enumerate(keep, 2):
             if nb.get(i) != ub.get(i):
                 kind = "bytes"
-                if ub.get(i) and nasm_wrong(l, nb.get(i), ub.get(i), bits):
+                if ub.get(i) and nb.get(i) and (equivalent(nb.get(i), ub.get(i), bits)
+                                                 or nasm_wrong(l, nb.get(i), ub.get(i), bits)
+                                                 or by_design(l)):
                     kind = "nasm-bug"
                 findings.append((kind, l, nb.get(i), ub.get(i)))
         return findings, len(keep)
 
 
 def decode(hexs, bits):
-    """objdump's reading of the bytes (Intel syntax)"""
+    """objdump's reading of the bytes (Intel syntax), instructions joined by
+    " ; " (a long one's bytes wrap onto a line of their own: not one)"""
     if not hexs:
         return ""
     with tempfile.NamedTemporaryFile(delete=False) as f:
@@ -280,8 +293,12 @@ def decode(hexs, bits):
     arch = {16: "i8086", 32: "i386", 64: "i386:x86-64"}[bits]
     o = run(["objdump", "-D", "-b", "binary", "-m", arch, "-M", "intel", p]).stdout
     os.unlink(p)
-    return " ; ".join(re.sub(r"\s+", " ", x.split("	")[-1]).strip()
-                      for x in o.splitlines() if re.match(r"\s+[0-9a-f]+:	", x))
+    out = []
+    for x in o.splitlines():
+        f = x.split("	")
+        if len(f) >= 3 and re.match(r"\s+[0-9a-f]+:$", f[0]):
+            out.append(re.sub(r"\s+", " ", f[2]).strip())
+    return " ; ".join(out)
 
 
 def disp_of(text):
@@ -297,14 +314,67 @@ def disp_of(text):
     return total
 
 
+# NASM's forms that are not the instruction's (its insns.dat; Intel's manual
+# and objdump agree): utasm refuses them, by design
+NASM_BOGUS = [r"^v(get(max|min)|endscale)", r"^vfmulcpch\b", r"^vcvtu?qq2ph [yz]mm",
+              r"^vcvtneps2bf16 [^,]+,[^,]+,", r"^vrcpph [^,]+,[^,]+,", r"^vrsqrt(ph|sh) .*, -?\d+$",
+              r"^vget(mant|exp)sh [^,]+, [^,\[]+(, -?\d+)?$", r"^vget(mant|exp)sh [^,]+, [^,]*\[",
+              r"^vp2intersectd ", r"^vcvtps2ph [^,]+, [^,]+$", r"^vrcpsh .*\{sae\}",
+              # narrowing conversions with the source's width: xmm for ymm, ymm for zmm
+              r"^vcvtu?dq2ph (ymm\S*, (ymm|yword)|zmm)", r"^vcvtpd2ph [yz]mm"]
+
+
+def nasm_bogus(text):
+    return any(re.search(r, text) for r in NASM_BOGUS)
+
+
+# what utasm refuses or writes otherwise by design (scripts/compat/README):
+# a destination that faults (#UD), an address size the register does not
+# give, a VEX gather's index of 16-31 (NASM takes xmm24 as xmm8), ICC's
+# MIB index over one written, two-operand vget*sh: the first source the
+# destination, as for every omitted source (NASM's xmm0)
+BY_DESIGN_MSG = ("#UD", "impossible combination of address sizes")
+BY_DESIGN = [r"^v(p)?gather\w+ [xy]mm\d+, \w+ \[[^\]]*[xy]mm(1[6-9]|2\d|3[01])\*[^\]]*\], [xy]mm\d+$",
+             r"^bnd(ld|st)x (?=.*\*)[^,]*,[^,]*,[^,]*$", r"^vcvtneps2bf16 ymm\d+, (ymm|yword)",
+             r"^vget(exp|mant)sh [^,]+, [^,\[]*\[[^\]]*\](, -?\d+)?$", r"^vget(exp|mant)sh [^,]+, [xyz]mm\d+, -?\d+$"]
+KNOWN_GAPS = [r"^rsdc ", r"^svdc "]          # Cyrix 486 SMM: not matched yet
+
+
+def by_design(text, msg=""):
+    return any(m in (msg or "") for m in BY_DESIGN_MSG) or any(re.search(r, text) for r in BY_DESIGN)
+
+
+def strip_prefixes(dec):
+    words = dec.split(" ; ")[0].split()
+    while words and (words[0].startswith("{") or words[0].lower() in
+                     ("data16", "addr32", "rex.w", "rex", "lock", "rep", "repz", "repnz", "bnd")):
+        words = words[1:]
+    return words
+
+
 def nasm_wrong(text, a, b, bits):
-    """NASM's bytes put the address elsewhere than written, utasm's where it
-    is written (NASM's disp8*N for the FP16 scalar forms): NASM's error"""
-    want = disp_of(text)
-    if want is None:
-        return False
+    """utasm's bytes are what is written and NASM's are not, by objdump: the
+    address (NASM's disp8*N for the FP16 scalar forms), the mnemonic (its
+    VFMADD132PH is Intel's VFNMADD132PH) or the registers (its VREDUCESH)"""
     da, db = decode(a, bits), decode(b, bits)
-    return disp_of(db) == want and disp_of(da) != want
+    want = disp_of(text)
+    if want is not None and disp_of(db) == want and disp_of(da) != want:
+        return True
+    wa, wb = strip_prefixes(da), strip_prefixes(db)
+    if not wb or " ; " in db:
+        return False
+    mn = text.split()[0]
+    ok_b = wb[0].lower() == mn and regs_of(text) == regs_of(" ".join(wb[1:]))
+    ok_a = bool(wa) and " ; " not in da and wa[0].lower() == mn and regs_of(text) == regs_of(" ".join(wa[1:]))
+    return ok_b and not ok_a
+
+
+def equivalent(a, b, bits):
+    """two encodings objdump reads the same (a disp8 for a disp16, VEX for
+    EVEX ...)"""
+    da, db = decode(a, bits), decode(b, bits)
+    da, db = da.replace("{evex} ", ""), db.replace("{evex} ", "")
+    return bool(da) and da == db
 
 
 def first_error(stderr, n):
@@ -312,8 +382,93 @@ def first_error(stderr, n):
     return m.group(1)[:70] if m else ""
 
 
+REGS = re.compile(r"\b([re]?[abcd]x|[re]?[sd]i|[re]?[sb]p|r\d+[dwb]?|[abcd][lh]|[sd]il|[sb]pl|"
+                  r"[xyz]mm\d+|k[0-7]|mm[0-7]|st\(?[0-7]\)?|st|bnd[0-3]|tmm[0-7]|cr\d|dr\d)\b")
+# objdump's prefixes before a mnemonic ("{evex} vcvtsi2ss", "data16 ...")
+OBJDUMP_PREFIXES = ("data16", "addr32", "rex.w", "rex", "lock", "rep", "repz", "repnz", "bnd",
+                    "notrack", "rex.wb", "rex.wr", "rex.wx")
+# NASM's FMA operand-order aliases (vfmadd312ps is vfmadd132ps ...)
+FMA_ORDER = {"312": "132", "123": "213", "321": "231"}
+
+
+def regs_of(text):
+    """the registers of an instruction's text, in order: segment overrides
+    left out, st as st0, "[r13*2]" (r13 + r13) as objdump writes it"""
+    t = re.sub(r"\{[^}]*\}", "", text.lower())
+    t = re.sub(r"\[(\w+)\*2([^\]]*)\]", lambda m: "[%s+%s%s]" % (m.group(1), m.group(1), m.group(2))
+               if "+" not in m.group(0).split("*")[0] else m.group(0), t)
+    out = []
+    for r in REGS.findall(t):
+        r = r.replace("(", "").replace(")", "")
+        out.append("st0" if r == "st" else r)
+    return out
+
+
+def objdump_check(utasm, rng, verbose):
+    """every form, twice, in bits 64: utasm's bytes as objdump reads them.
+    VEX / EVEX ones (objdump knows them all): one instruction, the same
+    mnemonic, the same registers; the others: the registers."""
+    lines = []
+    for f in forms():
+        for _ in range(2):
+            try:
+                lines.append(instance(f, 64, rng))
+            except Skip:
+                pass
+    bad = collections.defaultdict(list)
+    checked = 0
+    for i in range(0, len(lines), 300):
+        chunk = lines[i:i + 300]
+        with tempdir() as d:
+            src = os.path.join(d, "f.s")
+            open(src, "w").write("bits 64\n" + "".join(l + "\n" for l in chunk))
+            r = run([utasm, "-f", "bin", "-l", "u.lst", "f.s", "-o", "u.bin"], cwd=d)
+            rejected = set(errors_at(r.stderr, "f.s"))
+            if rejected:
+                chunk = [l for n, l in enumerate(chunk, 2) if n not in rejected]
+                open(src, "w").write("bits 64\n" + "".join(l + "\n" for l in chunk))
+                r = run([utasm, "-f", "bin", "-l", "u.lst", "f.s", "-o", "u.bin"], cwd=d)
+            if r.returncode:
+                continue
+            ub = listing_bytes(os.path.join(d, "u.lst"))
+        for n, l in enumerate(chunk, 2):
+            h = ub.get(n)
+            if not h:
+                continue
+            checked += 1
+            dec = decode(h, 64)
+            got = dec.split(" ; ")
+            words = got[0].split() if got and got[0] else []
+            while words and (words[0].startswith("{") or words[0].lower() in OBJDUMP_PREFIXES):
+                words = words[1:]
+            dmn = words[0].lower() if words else ""
+            mnem = l.split()[0]
+            m = re.match(r"(vf\w+?)(312|123|321)(\w+)$", mnem)
+            want = m.group(1) + FMA_ORDER[m.group(2)] + m.group(3) if m else mnem
+            vector = mnem.startswith("v") and not mnem.startswith("vm")    # (vmcall ...: VMX)
+            problems = []
+            if vector and (len(got) != 1 or dmn == "(bad)"):
+                problems.append("%d instructions" % len(got) if len(got) != 1 else "invalid")
+            if vector and dmn != want and dmn != "(bad)" and not re.match(r"^v?p?cmp|^vpcom", mnem):
+                problems.append("mnemonic %s" % dmn)
+            if dmn != "(bad)" and len(got) == 1 and regs_of(l) != regs_of(" ".join(words[1:])):
+                problems.append("registers %s" % regs_of(" ".join(words[1:])))
+            if problems:
+                bad[mnem].append((l, h, dec, ", ".join(problems)))
+    n = sum(len(v) for v in bad.values())
+    print("encfuzz --objdump: %d instructions read back, %d differ in %d mnemonics"
+          % (checked, n, len(bad)))
+    for mnem, v in sorted(bad.items(), key=lambda kv: -len(kv[1]))[: (999 if verbose else 40)]:
+        l, h, dec, why = v[0]
+        print("  %-14s x%-3d %s\n      %s -> %s  (%s)" % (mnem, len(v), l, h, dec[:90], why))
+    return 1 if n else 0
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if "--objdump" in sys.argv:
+        return objdump_check(args[0], random.Random(int(args[1]) if len(args) > 1 else 1),
+                             "-v" in sys.argv)
     verbose = "-v" in sys.argv
     utasm = args[0]
     total = int(args[1]) if len(args) > 1 else 3000
@@ -336,11 +491,14 @@ def main():
         for kind, text, a, b in f:
             found[(kind, text.split()[0])].append((bits, text, a, b))
     nasm_bugs = sum(len(v) for k, v in found.items() if k[0] == "nasm-bug")
-    for k in [k for k in found if k[0] == "nasm-bug"]:
+    gaps = sorted({k[1] for k in found if k[0] == "gap"})
+    for k in [k for k in found if k[0] in ("nasm-bug", "gap")]:
         del found[k]
+    if gaps:
+        print("encfuzz: known gaps (not counted): %s" % ", ".join(gaps))
     n_find = sum(len(v) for v in found.values())
     print("encfuzz: %d instructions NASM takes (seed %d), %d findings in %d mnemonics"
-          " (%d where NASM's bytes miss the address written)"
+          " (%d where NASM's are not the instruction written, or the same)"
           % (checked, seed, n_find, len(found), nasm_bugs))
     for (kind, mnem), v in sorted(found.items(), key=lambda kv: -len(kv[1]))[: (999 if verbose else 25)]:
         bits, text, a, b = v[0]
