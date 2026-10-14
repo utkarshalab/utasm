@@ -139,15 +139,16 @@ amd64_encode_instruction:
     jne     .sym_next
     cmp     word [rsi + SYMBOL_section], SHN_ABS
     je      .sym_next                      ; "x equ 5": a number
-    movzx   eax, byte [rsi + SYMBOL_kind]
-    cmp     eax, SYM_LABEL
-    je      .sym_convert
-    cmp     eax, SYM_DATA
-    je      .sym_convert
-    cmp     eax, SYM_EXTERN
-    je      .sym_convert
-    cmp     eax, SYM_COMMON
-    jne     .sym_next
+    ; an address: a label, data, an extern - or a name only declared so far
+    ; ("global foo" before "foo:": it was written as a number, 0, with no
+    ; relocation)
+    push    rdi
+    mov     rdi, rsi
+    extern  expr_sym_class
+    call    expr_sym_class
+    pop     rdi
+    test    eax, eax
+    jz      .sym_next
 .sym_convert:
     mov     rax, [rdi + OPERAND_imm]
     sub     rax, [rsi + SYMBOL_value]      ; what was added to it
@@ -454,6 +455,14 @@ amd64_encode_instruction:
     mov     byte [rdi + OPERAND_kind], OP_IMM
     mov     qword [rdi + OPERAND_imm], IMM_PLACEHOLDER
     mov     qword [rdi + OPERAND_sym], 0
+    ; "add eax, byte foo": the sign-extended imm8 form, an 8-bit
+    ; relocation (R_X86_64_8, PC8 for "byte (bar - $$)"), as NASM
+    mov     byte [rel imm_ph_byte], 0
+    cmp     byte [rdi + OPERAND_size], 8
+    jne     .ph_width
+    mov     qword [rdi + OPERAND_imm], IMM_PLACEHOLDER & 0x7F
+    mov     byte [rel imm_ph_byte], 1
+.ph_width:
     xor     eax, eax
     cmp     byte [r12 + INST_op0 + OPERAND_size], 64
     sete    al
@@ -2118,6 +2127,14 @@ amd64_imm_fixup:
     mov     rdx, [rax + SECTION_data]
     cmp     rcx, [rax + SECTION_cap]
     ja      .none                          ; (not in the buffer: no bytes)
+    cmp     byte [rel imm_ph_byte], 0
+    je      .try4
+    mov     byte [rel imm_ph_byte], 0
+    test    rcx, rcx
+    jz      .none
+    cmp     byte [rdx + rcx - 1], IMM_PLACEHOLDER & 0x7F
+    je      .w1                            ; ("byte foo": its one byte)
+.try4:
     cmp     rcx, 4
     jb      .try2
     cmp     dword [rdx + rcx - 4], IMM_PLACEHOLDER
@@ -2177,6 +2194,7 @@ imm_ph_addend:  resq 1
 imm_ph_active:  resb 1
 imm_ph_wide:    resb 1              ; a 64-bit operation
 imm_ph_pcrel:   resb 1              ; PC-relative (OPERAND_pcrel)
+imm_ph_byte:    resb 1              ; "byte foo": a 1-byte placeholder
 [SECTION .text]
 
 ;*
@@ -3696,6 +3714,7 @@ amd64_lea_address:
 [SECTION .rodata]
 lea_ea_absolute: db "absolute address can not be RIP-relative", 0
 s_ea_dispsize:  db "displacement size ignored on absolute address", 0
+s_disp_bounds:  db "dword data exceeds bounds", 0
 [SECTION .text]
 
 ;*
@@ -5851,10 +5870,13 @@ amd64_emit_modrm_sib:
     cmp     byte [rel asm_bits], 64
     jne     .abs_legacy
 
-    ; "add eax, [qword 0x10]": a ModRM address is 32 bits (only mov's
-    ; A0-A3 take 64), NASM's warning
-    cmp     byte [r13 + OPERAND_dispsize], 64
-    jne     .abs_disp_ok
+    ; "add eax, [qword 0x10]", "mov cl, [byte 0x12345678]": an absolute
+    ; ModRM address is 32 bits (only mov's A0-A3 take 64), NASM's warning
+    movzx   eax, byte [r13 + OPERAND_dispsize]
+    test    eax, eax
+    jz      .abs_disp_ok
+    cmp     eax, 32
+    je      .abs_disp_ok
     extern  reloc_quiet
     cmp     byte [rel reloc_quiet], 0
     jne     .abs_disp_ok
@@ -5881,6 +5903,10 @@ amd64_emit_modrm_sib:
     jne     .abs_sym_reloc
     mov     al, R_X86_64_32
 .abs_sym_reloc:
+    cmp     byte [r13 + OPERAND_pcrel], 0
+    je      .abs_sym_type
+    mov     al, R_X86_64_PC32              ; "[rod1 - $$]": PC-relative
+.abs_sym_type:
     call    amd64_emit_reloc
     call    .disp_addend           ; [label + 4]: the 4
     xor     rdi, rdi
@@ -5970,6 +5996,9 @@ amd64_emit_modrm_sib:
     cmp     byte [r13 + OPERAND_dispsize], 16
     je      .a16_modrm                     ; [word bx+4]: a disp16
     mov     rax, [r13 + OPERAND_imm]
+    ; 16 bits, sign-extended: "[di + 0xffff]" is [di - 1] (a disp8)
+    movsx   rax, ax
+    mov     [r13 + OPERAND_imm], rax
     cmp     byte [r13 + OPERAND_dispsize], 8
     je      .a16_disp_size                 ; [byte bx+4]: a disp8 if it fits
     xor     edx, edx
@@ -6080,6 +6109,33 @@ amd64_emit_modrm_sib:
 
 .plain_disp:
     mov     rdi, [r13 + OPERAND_imm] ; Displacement
+    ; the displacement is 32 bits, sign-extended: "[eax + 0xffffffff]" is
+    ; [eax - 1] (the address wraps), a disp8 - as NASM; one with more
+    ; than 32 bits loses them, with its warning
+    movsxd  rax, edi
+    cmp     rax, rdi
+    je      .disp_canon
+    push    rcx                            ; (the index register)
+    mov     rcx, rdi
+    shr     rcx, 32
+    jz      .disp_cut                      ; 0xffffffff: the 32 bits of -1
+    mov     rcx, rdi
+    sar     rcx, 32
+    cmp     rcx, -1
+    je      .disp_cut
+    extern  reloc_quiet
+    cmp     byte [rel reloc_quiet], 0
+    jne     .disp_cut
+    push    rax
+    mov     edi, WC_NUMBER_OVERFLOW
+    lea     rsi, [rel s_disp_bounds]
+    call    amd64_warn_class
+    pop     rax
+.disp_cut:
+    pop     rcx
+    mov     rdi, rax
+    mov     [r13 + OPERAND_imm], rdi
+.disp_canon:
     mov     [rel amd64_disp_emit], rdi
 
     ; [dword ebx+4] / [byte ebx+4]: the size written
@@ -6235,6 +6291,10 @@ amd64_emit_modrm_sib:
     jz      .disp_plain
     xor     edx, edx               ; absolute: no PC adjustment
     mov     al, R_X86_64_32S
+    cmp     byte [r13 + OPERAND_pcrel], 0
+    je      .disp_type
+    mov     al, R_X86_64_PC32              ; "[rdi + rod1 - $$]": PC-relative
+.disp_type:
     call    amd64_emit_reloc
     call    .disp_addend           ; [rbx + label + 4]: the 4
     xor     rdi, rdi
@@ -6279,6 +6339,11 @@ amd64_emit_modrm_sib:
     jne     .da_set
     sub     rax, [rsi + SYMBOL_value]
 .da_set:
+    ; PC-relative ("x - $$", x elsewhere): the field's place too
+    cmp     byte [r13 + OPERAND_pcrel], 0
+    je      .da_put
+    add     rax, [rdx + RELOC_offset]
+.da_put:
     mov     [rdx + RELOC_addend], rax
     pop     rsi
     pop     rdx
