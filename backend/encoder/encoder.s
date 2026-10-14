@@ -1274,13 +1274,9 @@ amd64_encode_instruction:
 
     ; ---- Step 3: FMA3 / FMA4 (EVEX/VEX) ----
     ELSEIF_RANGE ax, 1832, 1909    ; FMA3 Range
-        ; Complex VEX.DDS/NDS encoding required. Stubbing for OS kernel purity.
-        mov     al, 0x0F
-        call amd64_emit_byte
-        mov al, 0x38
-        call amd64_emit_byte
-        mov     al, 0x98
-        call amd64_emit_byte
+        ; their forms are the table's (dispatch.s): operands none of them
+        ; takes are an error - this wrote 0F 38 98 for any of them
+        jmp     .error
 
     ; ---- Step 4: Legacy 8087 Math ----
     ELSEIF ax, e, 5300             ; FSIN
@@ -1351,39 +1347,30 @@ amd64_encode_instruction:
 
     ; ---- Step 5: AVX-512 (EVEX) ----
     ELSEIF_RANGE ax, 5400, 5412    ; AVX-512 Range
-        ; Complete EVEX 4-byte prefix stub
-        mov     al, 0x62
-        call amd64_emit_byte
-        mov     al, 0xF1
-        call amd64_emit_byte
-        mov     al, 0xFD
-        call amd64_emit_byte
-        mov     al, 0x08
-        call amd64_emit_byte
+        ; the table's forms only (it wrote 62 F1 FD 08 and nothing more)
+        jmp     .error
 
     ; ---- Step 6: VNNI & BFLOAT16 ----
     ELSEIF_RANGE ax, 5500, 5503    ; VNNI Range
-        ; VEX/EVEX hybrid stub
-        mov     al, 0x62
-        call amd64_emit_byte
+        ; the table's forms only (it wrote a lone 62)
+        jmp     .error
 
     ; ---- Step 7: 3DNow! & AMD XOP ----
     ELSEIF_RANGE ax, 5600, 5612    ; 3DNow Range
-        ; 3DNow uses 0F 0F [ModRM] [Opcode] suffix
-        mov     al, 0x0F
-        call amd64_emit_byte
-        mov al, 0x0F
-        call amd64_emit_byte
+        ; 3DNow! (0F 0F /r and its opcode byte after) and femms are the
+        ; table's, NASM's forms (scripts/gen_x86_enc.py); XOP has none: an
+        ; error (this wrote 0F 0F alone)
+        jmp     .error
 
     ; ---- Step 8: SGX Enclave Sub-Leafs ----
     ELSEIF_RANGE ax, 5700, 5706    ; SGX Range
-        ; Resolves to ENCLS (0F 01 CF) or ENCLU (0F 01 D7)
-        mov     al, 0x0F
-        call amd64_emit_byte
-        mov al, 0x01
-        call amd64_emit_byte
-        mov     al, 0xCF
-        call amd64_emit_byte
+        ; a leaf function by its name: "mov eax, leaf" and ENCLS (0F 01 CF)
+        ; or ENCLU (0F 01 D7) - eadd / eblock / ecreate / einit are ENCLS
+        ; leaves, eenter / eresume / egetkey ENCLU ones (it was ENCLS for
+        ; all, and no leaf)
+        call    amd64_sgx_leaf
+        test    rax, rax
+        jnz     .done
 
     ELSEIF ax, e, 1054             ; BT
         mov     r13, 0xA3
@@ -6205,11 +6192,33 @@ amd64_emit_modrm_sib:
     cmp     r9d, 6
     jne     .a16_modrm
 .a16_disp_size:
+    ; EVEX: a disp8 counts in units of N (compressed displacement), as in
+    ; 32/64-bit addressing: a multiple of N only, else a disp16 - "[bp-2]"
+    ; was disp8 FE, read as bp - 2*N
+    mov     [rel amd64_disp_emit], rax     ; the disp8 written
+    mov     rcx, rax
+    movzx   r9d, r9b                       ; (the r/m, kept)
+    push    r9
+    movzx   r9d, byte [rel amd64_disp8n]
+    cmp     r9d, 1
+    jbe     .a16_disp8
+    push    rax
+    cqo
+    idiv    r9
+    mov     rcx, rax
+    pop     rax
+    mov     [rel amd64_disp_emit], rcx
+    test    rdx, rdx
+    jnz     .a16_disp16
+.a16_disp8:
     mov     edx, 1
-    movsx   rcx, al
-    cmp     rcx, rax
-    je      .a16_modrm
+    movsx   r9, cl
+    cmp     r9, rcx
+    je      .a16_disp_picked
+.a16_disp16:
     mov     edx, 2
+.a16_disp_picked:
+    pop     r9
 .a16_modrm:
     mov     eax, edx
     shl     eax, 6
@@ -6285,7 +6294,7 @@ amd64_emit_modrm_sib:
     call    amd64_emit_word
     jmp     .done_sib
 .disp_n_byte:
-    mov     rax, rdi
+    mov     rax, [rel amd64_disp_emit]     ; (16-bit addressing: scaled for EVEX)
     call    amd64_emit_byte
     jmp     .done_sib
 
@@ -6641,6 +6650,40 @@ amd64_emit_dword:
     pop     rdi
     pop     rcx
     pop     rax
+    ret
+
+; amd64_sgx_leaf: the SGX leaf mnemonics (r12 = INST, ids 5700 - 5706):
+; B8 leaf (mov eax, leaf; 66 first in bits 16), then ENCLS or ENCLU.
+; rax = OK, or EXIT_ENCODE_FAIL with operands
+sgx_leaves:     db 1, 0xCF, 9, 0xCF, 0, 0xCF, 2, 0xCF, 2, 0xD7, 3, 0xD7, 1, 0xD7
+amd64_sgx_leaf:
+    cmp     byte [r12 + INST_nops], 0
+    jne     .bad
+    movzx   eax, word [r12 + INST_op_id]
+    sub     eax, 5700
+    lea     rcx, [rel sgx_leaves]
+    push    r15
+    lea     r15, [rcx + rax*2]
+    cmp     byte [rel asm_bits], 16
+    jne     .mov
+    mov     al, 0x66
+    call    amd64_emit_byte
+.mov:
+    mov     al, 0xB8
+    call    amd64_emit_byte
+    movzx   edi, byte [r15]
+    call    amd64_emit_dword
+    mov     al, 0x0F
+    call    amd64_emit_byte
+    mov     al, 0x01
+    call    amd64_emit_byte
+    mov     al, [r15 + 1]
+    call    amd64_emit_byte
+    pop     r15
+    xor     eax, eax
+    ret
+.bad:
+    mov     eax, EXIT_ENCODE_FAIL
     ret
 
 ;*
