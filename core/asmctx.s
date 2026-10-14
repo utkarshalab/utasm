@@ -10,7 +10,10 @@
 %include "include/type.inc"
 %include "include/macro.inc"
 
+extern hash_fnv1a_str
 extern io_mmap
+
+%define SEC_HASH 131072                ; sec_hash's slots: twice MAX_SECTIONS, a power of 2
 extern io_munmap
 extern arena_alloc_struct
 extern str_cmp
@@ -231,6 +234,19 @@ asm_ctx_create_section:
     mov     rax, [rbx + ASMCTX_sections]
     mov     [rax + rcx*8], r14
     inc     word [rbx + ASMCTX_seccount]
+
+    ; and into the index by name (asmctx_find_section)
+    mov     rdi, r12
+    call    hash_fnv1a_str
+    lea     rcx, [rel sec_hash]
+.hash_slot:
+    and     eax, SEC_HASH - 1
+    cmp     qword [rcx + rax*8], 0
+    je      .hash_put
+    inc     eax
+    jmp     .hash_slot
+.hash_put:
+    mov     [rcx + rax*8], r14
     
     mov     rax, EXIT_OK
     mov     rdx, r14
@@ -446,30 +462,40 @@ asmctx_find_section:
     mov     rbx, rdi
     mov     r12, rsi
     
-    mov     r13, [rbx + ASMCTX_sections]
-    movzx   ecx, word [rbx + ASMCTX_seccount]
-    xor     rax, rax
-    
-.loop:
-    test    ecx, ecx
+    ; by the index of names (16384 sections looked up one by one was
+    ; quadratic: NASM's manysecs): an entry counts while it is the
+    ; section its index says (the absolute block's left the list; the ELF
+    ; writer renumbers, moving the entries with their indexes)
+    mov     rdi, r12
+    call    hash_fnv1a_str
+    mov     r13, rax
+.probe:
+    and     r13d, SEC_HASH - 1
+    lea     rax, [rel sec_hash]
+    mov     r8, [rax + r13*8]
+    test    r8, r8
     jz      .not_found
-    
-    mov     r8, [r13 + rax*8]      ; R8 = SECTION*
-    push    rax
-    push    rcx
+    mov     ecx, [r8 + SECTION_index]
+    dec     ecx
+    movzx   edx, word [rbx + ASMCTX_seccount]
+    cmp     ecx, edx
+    jae     .probe_next
+    mov     rax, [rbx + ASMCTX_sections]
+    cmp     [rax + rcx*8], r8
+    jne     .probe_next
+    push    r8
+    sub     rsp, 8
     mov     rdi, [r8 + SECTION_name]
     mov     rsi, r12
     extern  str_cmp
     call    str_cmp
-    mov     r9, rax                ; keep compare result across the restores
-    pop     rcx
-    pop     rax
-    test    r9, r9
+    add     rsp, 8
+    pop     r8
+    test    rax, rax
     jz      .found
-    
-    inc     rax
-    dec     ecx
-    jmp     .loop
+.probe_next:
+    inc     r13d
+    jmp     .probe
     
 .found:
     mov     rdx, r8
@@ -680,6 +706,8 @@ asm_ctx_align_fill:
     jmp     asm_ctx_align
 
 [SECTION .bss]
+alignb 8
+sec_hash:       resq SEC_HASH           ; SECTION* by the hash of its name
 asm_align_fill: resw 1             ; 0x100 | fill byte, or 0 for the default
 align_buf:      resb 0x10000       ; smartalign's padding
 [SECTION .text]
