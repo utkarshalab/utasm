@@ -815,6 +815,105 @@ x87_forms()
 INSNS = os.path.join(ROOT, "scripts", "nasm", "insns.dat")
 NASM_PRIO = 50
 
+# NASM's AVX512-FP16 FMA names are off from Intel's: its VFMADD132PH is
+# opcode 9C, Intel's VFNMADD132PH (a negated result, silently); its
+# VPMADD132PH is 98, Intel's VFMADD132PH; the scalar ones are all VP...SH.
+# Taken by Intel's names (the opcode decides), as objdump reads them.
+NAME_FIX = {}
+for n in ("132", "213", "231"):
+    NAME_FIX.update({"vpmadd%sph" % n: "vfmadd%sph" % n, "vfmadd%sph" % n: "vfnmadd%sph" % n,
+                     "vpmsub%sph" % n: "vfmsub%sph" % n, "vfmsub%sph" % n: "vfnmsub%sph" % n,
+                     "vpmadd%ssh" % n: "vfmadd%ssh" % n, "vpnmadd%ssh" % n: "vfnmadd%ssh" % n,
+                     "vpmsub%ssh" % n: "vfmsub%ssh" % n, "vpnmsub%ssh" % n: "vfnmsub%ssh" % n})
+NAME_FIX["vfcmulcpch"] = "vfcmulcph"          # (NASM's spelling)
+# NASM's lines that are wrong, replaced by EXTRA_INSNS: vcvtqq2ph /
+# vcvtuqq2ph write xmm whatever the source (NASM: ymm, zmm), vp2intersectd
+# takes m256 / m512 (NASM: m128) and a mask pair
+NASM_WRONG = {"vcvtqq2ph", "vcvtuqq2ph", "vp2intersectd",
+              # (by encfuzz.py --objdump: objdump reads them as another
+              # instruction, or as invalid)
+              "vgetmantph", "vgetmantsh", "vgetexpsh", "vreducesh", "vrcpph", "vrcpsh",
+              "vrsqrtph", "vrsqrtsh", "vcvtneps2bf16",
+              # NASM's misspellings, a source missing: vmaxph, vrndscaleph ... are below
+              "vgetmaxph", "vgetmaxsh", "vgetminph", "vgetminsh", "vendscaleph",
+              "vendscalesh", "vfmulcpch",
+              # narrowing conversions with the source's width (xmm for ymm)
+              "vcvtdq2ph", "vcvtudq2ph", "vcvtpd2ph"}
+# (v4fmaddss / v4fnmaddss: NASM's zmm spelling kept, Intel's xmm one added below)
+# NASM's VCVTPS2PH of map 5 (no imm8) is Intel's VCVTPS2PHX: NASM's lines are
+# wrong in their destinations, those below are right; the F16C / AVX-512
+# VCVTPS2PH (with an imm8) stays
+NASM_WRONG_MAP5 = {"vcvtps2ph"}
+# conditions, as NASM spells them in cc mnemonics, and their codes
+CONDITIONS = [("o", 0), ("no", 1), ("b", 2), ("c", 2), ("nae", 2), ("ae", 3), ("nb", 3), ("nc", 3),
+              ("e", 4), ("z", 4), ("ne", 5), ("nz", 5), ("be", 6), ("na", 6), ("a", 7), ("nbe", 7),
+              ("s", 8), ("ns", 9), ("p", 10), ("pe", 10), ("np", 11), ("po", 11), ("l", 12),
+              ("nge", 12), ("ge", 13), ("nl", 13), ("le", 14), ("ng", 14), ("g", 15), ("nle", 15)]
+# forms NASM has wrong or not at all, from Intel's manual, in insns.dat's
+# notation
+EXTRA_INSNS = '''
+VCVTQQ2PH	xmmreg|mask|z,xmmrm128|b64	[rm:fv: evex.128.np.map5.w1 5b /r]	AVX512FP16
+VCVTQQ2PH	xmmreg|mask|z,ymmrm256|b64	[rm:fv: evex.256.np.map5.w1 5b /r]	AVX512FP16
+VCVTQQ2PH	xmmreg|mask|z,zmmrm512|b64|er	[rm:fv: evex.512.np.map5.w1 5b /r]	AVX512FP16
+VCVTUQQ2PH	xmmreg|mask|z,xmmrm128|b64	[rm:fv: evex.128.f2.map5.w1 7a /r]	AVX512FP16
+VCVTUQQ2PH	xmmreg|mask|z,ymmrm256|b64	[rm:fv: evex.256.f2.map5.w1 7a /r]	AVX512FP16
+VCVTUQQ2PH	xmmreg|mask|z,zmmrm512|b64|er	[rm:fv: evex.512.f2.map5.w1 7a /r]	AVX512FP16
+VP2INTERSECTD	kreg,xmmreg,xmmrm128|b32	[rvm:fv: evex.nds.128.f2.0f38.w0 68 /r]	AVX512VP2INTERSECT
+VP2INTERSECTD	kreg,ymmreg,ymmrm256|b32	[rvm:fv: evex.nds.256.f2.0f38.w0 68 /r]	AVX512VP2INTERSECT
+VP2INTERSECTD	kreg,zmmreg,zmmrm512|b32	[rvm:fv: evex.nds.512.f2.0f38.w0 68 /r]	AVX512VP2INTERSECT
+VP2INTERSECTQ	kreg,xmmreg,xmmrm128|b64	[rvm:fv: evex.nds.128.f2.0f38.w1 68 /r]	AVX512VP2INTERSECT
+VP2INTERSECTQ	kreg,ymmreg,ymmrm256|b64	[rvm:fv: evex.nds.256.f2.0f38.w1 68 /r]	AVX512VP2INTERSECT
+VP2INTERSECTQ	kreg,zmmreg,zmmrm512|b64	[rvm:fv: evex.nds.512.f2.0f38.w1 68 /r]	AVX512VP2INTERSECT
+VFMULCPH	xmmreg|mask|z,xmmreg*,xmmrm128|b32	[rvm:fv: evex.nds.128.f3.map6.w0 d6 /r]	AVX512FP16
+VFMULCPH	ymmreg|mask|z,ymmreg*,ymmrm256|b32	[rvm:fv: evex.nds.256.f3.map6.w0 d6 /r]	AVX512FP16
+VFMULCPH	zmmreg|mask|z,zmmreg*,zmmrm512|b32|er	[rvm:fv: evex.nds.512.f3.map6.w0 d6 /r]	AVX512FP16
+VMAXPH	xmmreg|mask|z,xmmreg*,xmmrm128|b16	[rvm:fv: evex.nds.128.np.map5.w0 5f /r]	AVX512FP16
+VMAXPH	ymmreg|mask|z,ymmreg*,ymmrm256|b16	[rvm:fv: evex.nds.256.np.map5.w0 5f /r]	AVX512FP16
+VMAXPH	zmmreg|mask|z,zmmreg*,zmmrm512|b16|sae	[rvm:fv: evex.nds.512.np.map5.w0 5f /r]	AVX512FP16
+VMINPH	xmmreg|mask|z,xmmreg*,xmmrm128|b16	[rvm:fv: evex.nds.128.np.map5.w0 5d /r]	AVX512FP16
+VMINPH	ymmreg|mask|z,ymmreg*,ymmrm256|b16	[rvm:fv: evex.nds.256.np.map5.w0 5d /r]	AVX512FP16
+VMINPH	zmmreg|mask|z,zmmreg*,zmmrm512|b16|sae	[rvm:fv: evex.nds.512.np.map5.w0 5d /r]	AVX512FP16
+VMAXSH	xmmreg|mask|z,xmmreg*,xmmrm16|sae	[rvm:t1s: evex.nds.lig.f3.map5.w0 5f /r]	AVX512FP16
+VMINSH	xmmreg|mask|z,xmmreg*,xmmrm16|sae	[rvm:t1s: evex.nds.lig.f3.map5.w0 5d /r]	AVX512FP16
+VRNDSCALEPH	xmmreg|mask|z,xmmrm128|b16,imm8	[rmi:fv: evex.128.np.0f3a.w0 08 /r ib]	AVX512FP16
+VRNDSCALEPH	ymmreg|mask|z,ymmrm256|b16,imm8	[rmi:fv: evex.256.np.0f3a.w0 08 /r ib]	AVX512FP16
+VRNDSCALEPH	zmmreg|mask|z,zmmrm512|b16|sae,imm8	[rmi:fv: evex.512.np.0f3a.w0 08 /r ib]	AVX512FP16
+VRNDSCALESH	xmmreg|mask|z,xmmreg*,xmmrm16|sae,imm8	[rvmi:t1s: evex.nds.lig.np.0f3a.w0 0a /r ib]	AVX512FP16
+VCVTPS2PHX	xmmreg|mask|z,xmmrm128|b32	[rm:fv: evex.128.66.map5.w0 1d /r]	AVX512FP16
+VCVTPS2PHX	xmmreg|mask|z,ymmrm256|b32	[rm:fv: evex.256.66.map5.w0 1d /r]	AVX512FP16
+VCVTPS2PHX	ymmreg|mask|z,zmmrm512|b32|er	[rm:fv: evex.512.66.map5.w0 1d /r]	AVX512FP16
+VCVTNEPS2BF16	xmmreg|mask|z,xmmrm128|b32	[rm:fv: evex.128.f3.0f38.w0 72 /r]	AVX512BF16
+VCVTNEPS2BF16	xmmreg|mask|z,ymmrm256|b32	[rm:fv: evex.256.f3.0f38.w0 72 /r]	AVX512BF16
+VCVTNEPS2BF16	ymmreg|mask|z,zmmrm512|b32	[rm:fv: evex.512.f3.0f38.w0 72 /r]	AVX512BF16
+VCVTNEPS2BF16	xmmreg,xmmrm128	[rm: vex.128.f3.0f38.w0 72 /r]	AVXNECONVERT,LATEVEX
+VCVTNEPS2BF16	xmmreg,ymmrm256	[rm: vex.256.f3.0f38.w0 72 /r]	AVXNECONVERT,LATEVEX
+VGETMANTPH	xmmreg|mask|z,xmmrm128|b16,imm8	[rmi:fv: evex.128.np.0f3a.w0 26 /r ib]	AVX512FP16
+VGETMANTPH	ymmreg|mask|z,ymmrm256|b16,imm8	[rmi:fv: evex.256.np.0f3a.w0 26 /r ib]	AVX512FP16
+VGETMANTPH	zmmreg|mask|z,zmmrm512|b16|sae,imm8	[rmi:fv: evex.512.np.0f3a.w0 26 /r ib]	AVX512FP16
+VGETMANTSH	xmmreg|mask|z,xmmreg*,xmmrm16|sae,imm8	[rvmi:t1s: evex.nds.lig.np.0f3a.w0 27 /r ib]	AVX512FP16
+VGETEXPSH	xmmreg|mask|z,xmmreg*,xmmrm16|sae	[rvm:t1s: evex.nds.lig.66.map6.w0 43 /r]	AVX512FP16
+VREDUCESH	xmmreg|mask|z,xmmreg*,xmmrm16|sae,imm8	[rvmi:t1s: evex.nds.lig.np.0f3a.w0 57 /r ib]	AVX512FP16
+VRCPPH	xmmreg|mask|z,xmmrm128|b16	[rm:fv: evex.128.66.map6.w0 4c /r]	AVX512FP16
+VRCPPH	ymmreg|mask|z,ymmrm256|b16	[rm:fv: evex.256.66.map6.w0 4c /r]	AVX512FP16
+VRCPPH	zmmreg|mask|z,zmmrm512|b16	[rm:fv: evex.512.66.map6.w0 4c /r]	AVX512FP16
+VRCPSH	xmmreg|mask|z,xmmreg*,xmmrm16	[rvm:t1s: evex.nds.lig.66.map6.w0 4d /r]	AVX512FP16
+VRSQRTPH	xmmreg|mask|z,xmmrm128|b16	[rm:fv: evex.128.66.map6.w0 4e /r]	AVX512FP16
+VRSQRTPH	ymmreg|mask|z,ymmrm256|b16	[rm:fv: evex.256.66.map6.w0 4e /r]	AVX512FP16
+VRSQRTPH	zmmreg|mask|z,zmmrm512|b16	[rm:fv: evex.512.66.map6.w0 4e /r]	AVX512FP16
+VRSQRTSH	xmmreg|mask|z,xmmreg*,xmmrm16	[rvm:t1s: evex.nds.lig.66.map6.w0 4f /r]	AVX512FP16
+VCVTDQ2PH	xmmreg|mask|z,xmmrm128|b32	[rm:fv: evex.128.np.map5.w0 5b /r]	AVX512FP16
+VCVTDQ2PH	xmmreg|mask|z,ymmrm256|b32	[rm:fv: evex.256.np.map5.w0 5b /r]	AVX512FP16
+VCVTDQ2PH	ymmreg|mask|z,zmmrm512|b32|er	[rm:fv: evex.512.np.map5.w0 5b /r]	AVX512FP16
+VCVTUDQ2PH	xmmreg|mask|z,xmmrm128|b32	[rm:fv: evex.128.f2.map5.w0 7a /r]	AVX512FP16
+VCVTUDQ2PH	xmmreg|mask|z,ymmrm256|b32	[rm:fv: evex.256.f2.map5.w0 7a /r]	AVX512FP16
+VCVTUDQ2PH	ymmreg|mask|z,zmmrm512|b32|er	[rm:fv: evex.512.f2.map5.w0 7a /r]	AVX512FP16
+VCVTPD2PH	xmmreg|mask|z,xmmrm128|b64	[rm:fv: evex.128.66.map5.w1 5a /r]	AVX512FP16
+VCVTPD2PH	xmmreg|mask|z,ymmrm256|b64	[rm:fv: evex.256.66.map5.w1 5a /r]	AVX512FP16
+VCVTPD2PH	xmmreg|mask|z,zmmrm512|b64|er	[rm:fv: evex.512.66.map5.w1 5a /r]	AVX512FP16
+V4FMADDSS	xmmreg|mask|z,xmmreg|rs4,mem128	[rvm:m128:evex.dds.lig.f2.0f38.w0 9b /r]	AVX5124FMAPS
+V4FNMADDSS	xmmreg|mask|z,xmmreg|rs4,mem128	[rvm:m128:evex.dds.lig.f2.0f38.w0 ab /r]	AVX5124FMAPS
+'''
+
 NASM_TYPES = {
     "reg8": "R8", "reg16": "R16", "reg32": "R32", "reg64": "R64", "reg32na": "R32",
     "rm8": "RM8", "rm16": "RM16", "rm32": "RM32", "rm64": "RM64",
@@ -912,8 +1011,9 @@ def nasm_form(name, ops, enc, flags=()):
                         wide = v
         elif t in OSZ_WIDTH:
             osz = t
-        elif t == "np" or t in VSIB_NOTES or t in ("nohi", "norexw"):
-            pass                                 # (nohi: no ah..bh, which VEX has not)
+        elif t == "np" or t in VSIB_NOTES or t in ("nohi", "norexw", "repe", "repne"):
+            pass                                 # (nohi: no ah..bh, which VEX has not;
+                                                 # repe: the rep a string op takes)
         elif t in ("a16", "a32", "a64"):
             asz = {"a16": 1, "a32": 2, "a64": 3}[t]
         elif t == "mustrep":
@@ -988,7 +1088,7 @@ def nasm_form(name, ops, enc, flags=()):
             if d == "to" and base == "fpureg":
                 to = True
                 continue
-            if d == "rs4" and base == "zmmreg":
+            if d == "rs4" and base in ("zmmreg", "xmmreg"):
                 continue                         # zmm1+3: the block's first register
             if d in ("b16", "b32", "b64"):
                 bc = int(d[1:])
@@ -1144,6 +1244,17 @@ NASM_OVER = {"ldtilecfg", "sttilecfg", "tileloadd", "tileloaddt1", "tilestored",
              # MPX (REX.B lost; bndldx / bndstx: REX, 67 and the SIB too), the
              # address-size ones (clzero eax: 67)
              "bndcl", "bndcu", "bndcn", "bndmk", "bndmov", "bndldx", "bndstx",
+             # 3DNow! the stub wrote 0F 0F alone for (femms too)
+             "femms", "pfadd", "pfcmpeq", "pfmax", "pfmin", "pfrcp", "pfrsqrt", "pi2fd",
+             # scripts/compat/encfuzz.py's findings: lfs / lgs / lss were 0F 00
+             # with a REX.W; senduipi, tpause, umwait, incssp*, rdssp* lost
+             # their REX.B; clrssbsy was setssbsy; prefetchwt1 took a 66 in
+             # bits 16; cmpsd / movsd with operands were the string ones
+             "lfs", "lgs", "lss", "senduipi", "tpause", "umwait", "incsspd", "incsspq",
+             "rdsspd", "rdsspq", "clrssbsy", "setssbsy", "prefetchwt1", "uiret", "testui",
+             "cmpsd", "movsd", "rsdc", "svdc",
+             # their immediates cut without a word, enter's imm16 to a byte
+             "ret", "retn", "int", "enter",
              "invlpga", "clzero", "umonitor"}
 
 def nasm_allowed(name, encn):
@@ -1168,13 +1279,35 @@ NASM_LEGACY_SEEN = set()
 NASM_SEEN = set()
 
 def nasm_forms():
+    lines = []
     for line in open(INSNS, encoding="utf-8"):
         if line.startswith(";") or not line.strip():
             continue
         m = re.match(r"(\S+)\s+(\S+)\s+\[(.*?)\]\s+(\S+)", line)
         if not m:
             continue
-        name, ops, enc, flags = m.group(1).lower(), m.group(2), m.group(3), m.group(4).split(",")
+        raw = m.group(1)
+        if raw.lower() in NASM_WRONG:
+            continue                     # (the forms in EXTRA_INSNS instead)
+        if raw.lower() in NASM_WRONG_MAP5 and "map5" in m.group(3):
+            continue
+        if "cc" in raw and raw != raw.upper():
+            # CMPccXADD: one mnemonic a condition, its code added to the
+            # opcode ("e0+c")
+            for cc, code in CONDITIONS:
+                enc = re.sub(r"\b([0-9a-f]{2})\+c\b", lambda x: "%02x" % (int(x.group(1), 16) + code),
+                             m.group(3))
+                lines.append((raw.replace("cc", cc).lower(), m.group(2), enc, m.group(4)))
+            continue
+        lines.append((NAME_FIX.get(raw.lower(), raw.lower()), m.group(2), m.group(3), m.group(4)))
+        if raw.lower() in NAME_FIX and (raw.lower().startswith("vp") or raw.lower() == "vfcmulcpch"):
+            # NASM's own spelling too, where it names no other instruction
+            lines.append((raw.lower(), m.group(2), m.group(3), m.group(4)))
+    for line in EXTRA_INSNS.strip().splitlines():
+        m = re.match(r"(\S+)\s+(\S+)\s+\[(.*?)\]\s+(\S+)", line.strip())
+        lines.append((m.group(1).lower(), m.group(2), m.group(3), m.group(4)))
+    for name, ops, enc, flags in lines:
+        flags = flags.split(",")
         NASM_SEEN.add(name)
         if not re.search(r"\b(vex|evex|xop)\.", enc):
             NASM_LEGACY_SEEN.add(name)
