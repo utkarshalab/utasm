@@ -45,8 +45,12 @@ linker_run:
     extern  relax_run
     mov     rdi, rbx
     call    relax_run
+    ; a "times K-($-$$)" still below 0 now the jumps are as short as they go
+    extern  relax_padto_check
+    call    relax_padto_check
+    check_err
 
-    ; 0.1 .cfi_ directives: .eh_frame, from the code as it now is
+    ; 0.1.cfi_ directives: .eh_frame, from the code as it now is
     extern  cfi_build
     mov     rdi, rbx
     call    cfi_build
