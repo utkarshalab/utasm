@@ -463,6 +463,12 @@ te_match:
     test    byte [rel cpu_latevex], CPUF_NOEVEX
     jnz     .fail
 .cpu_ok:
+    ; a {sae} taken out (INST_sae): only the forms that take it (VL 0x20)
+    cmp     byte [r12 + INST_sae], 0
+    je      .sae_ok
+    test    byte [r13 + FM_VL], 0x20
+    jz      .fail
+.sae_ok:
     xor     ecx, ecx
 .op:
     movzx   eax, byte [r13 + FM_TYPES + rcx]
@@ -1211,6 +1217,11 @@ te_emit:
     inc     ecx
     cmp     ecx, 4
     jb      .ev_ops
+    ; a {sae} taken out of the operands: b, L'L 00
+    cmp     byte [r12 + INST_sae], 0
+    je      .ev_sae_done
+    mov     eax, 0x10
+.ev_sae_done:
     test    byte [rel te_vvvv], 16
     jnz     .ev_aaa
     or      eax, 0x08                      ; V'
