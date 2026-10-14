@@ -1727,3 +1727,35 @@ BIN_PROBES.update({
 ELF_PROBES.update({
     "elf_branch_to_number": "section .text\njmp 0x1000\ncall 0x2000\njz 0x1000\n",
 })
+# a size written on a branch ("jmp word x" in bits 32: 66 E9 rel16, kept
+# near); 32-bit PIC (wrt ..gotpc / ..got / ..gotoff / ..plt, the
+# "_GLOBAL_OFFSET_TABLE_ + $$ - .getgot" idiom); ELF64's GOT forms by the
+# field (GOTPCREL RIP-relative, GOT64 for a qword) and ..gotoff qword only
+BIN_PROBES.update({
+    "branch_sizes_32": "bits 32\nstart: jmp word start\njmp dword start\ncall word start\njz fwd\n"
+                       "jmp word fwd\njmp dword fwd\ncall dword fwd\nfwd: nop\njmp strict word start\n",
+    "branch_sizes_16": "bits 16\ns: jmp dword s\ncall dword s\njmp word s\njmp dword f\ncall word f\nf: nop\n",
+})
+ELF32_CASES.update({
+    "pic_gotpc": "extern _GLOBAL_OFFSET_TABLE_, printf\nglobal greet:function\nsection .text\ngreet: push ebx\n"
+                 "call .getgot\n.getgot: pop ebx\nadd ebx, _GLOBAL_OFFSET_TABLE_ + $$ - .getgot wrt ..gotpc\n"
+                 "mov eax, [ebx + integer wrt ..got]\nmov [ebx + localint wrt ..gotoff], eax\n"
+                 "lea eax, [ebx + msg wrt ..gotoff]\ncall printf wrt ..plt\npop ebx\nret\n"
+                 "section .data\nglobal integer:data 4\ninteger: dd 1\nlocalint: dd 2\nmsg: db \"hi\", 0\n"
+                 "dd _GLOBAL_OFFSET_TABLE_ wrt ..gotpc\ndd localint wrt ..gotoff\n",
+})
+ELF_PROBES.update({
+    "elf_got_forms": "extern foo\nsection .text\nmov r15, [rel foo wrt ..got]\nlea r12, [rel foo wrt ..got]\n"
+                     "mov rax, [qword foo wrt ..got]\nmov rax, [qword foo wrt ..gotoff]\nmov rax, [abs foo wrt ..got]\n"
+                     "section .data\ndq foo wrt ..gotoff\n",
+})
+REJECT_CASES += [
+    ("gotoff not qword", "elf64", "extern foo\nlea rax, [foo wrt ..gotoff]\n"),
+    ("gotoff dd", "elf64", "extern x\nsection .data\ndd x wrt ..gotoff\n"),
+]
+# a RIP-relative wrt reference with an immediate after it: the addend
+# counts the immediate (GOTPCREL "- 5"), as for a plain one
+ELF_PROBES.update({
+    "elf_got_trailing_imm": "default rel\nextern x\nsection .text\ncmp qword [x wrt ..got], 5\n"
+                            "mov dword [x wrt ..got], 0x12345678\nadd qword [x wrt ..got], 9\n",
+})
