@@ -278,6 +278,179 @@ prep_label_define:
     pop     r13
     ret
 
+; ---- prep_handle_pragma -----------------
+;
+; "%pragma NS gprefix TEXT" (gpostfix, lprefix, lpostfix): the text the
+; output puts before / after the names of global symbols (and externs,
+; commons) or of local ones, as NASM's. NS is "output" or the output's own
+; ("elf", "elf64" / "elf32", "win", "win64", "coff", "bin"); the first one
+; given for each wins ("%pragma elf gprefix" with no text: none, even
+; with "%pragma output gprefix _" after it). Other pragmas: ignored.
+; Input: rbx = PrepState. The rest of the line is left (drained after).
+;
+global pragma_affix
+prep_handle_pragma:
+    push    r12
+    push    r13
+    push    r14
+    mov     byte [rel prep_noexpand], 1
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the namespace
+    test    rax, rax
+    jnz     .out
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .out
+    mov     r12, [rdx + TOKEN_value]
+    mov     rdi, r12
+    call    prep_pragma_ns
+    test    eax, eax
+    jz      .out
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the directive
+    test    rax, rax
+    jnz     .out
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .out
+    mov     r13, [rdx + TOKEN_value]
+    lea     r14, [rel pragma_words]
+    xor     ecx, ecx
+.word:
+    cmp     byte [r14], 0
+    je      .out
+    mov     rdi, r13
+    mov     rsi, r14
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .hit
+    inc     ecx
+.skip:
+    inc     r14
+    cmp     byte [r14 - 1], 0
+    jne     .skip
+    jmp     .word
+.hit:
+    lea     r14, [rel pragma_affix]
+    lea     r14, [r14 + rcx * 8]
+    cmp     qword [r14], 0
+    jne     .out                           ; the first one wins
+    ; the text: the line's tokens up to its end, joined
+    lea     rdi, [rel pragma_buf]
+    mov     byte [rdi], 0
+.text:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .text_done
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .text_done
+    cmp     eax, TOK_EOF
+    je      .text_done
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    call    prep_idn_text
+    mov     rsi, rax
+    mov     rdi, rsi
+    call    str_len
+    mov     r13, rax
+    lea     rdi, [rel pragma_buf]
+    call    str_len
+    add     rax, r13
+    cmp     rax, 120
+    jae     .text
+    lea     rdi, [rel pragma_buf]
+    call    str_concat
+    jmp     .text
+.text_done:
+    lea     rdi, [rel pragma_buf]
+    call    str_len
+    lea     rsi, [rax + 1]
+    mov     rdi, [rbx + PREP_arena]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .out
+    mov     [r14], rdx                     ; (an empty text: set all the same)
+    mov     rdi, rdx
+    lea     rsi, [rel pragma_buf]
+    call    str_concat
+.out:
+    mov     byte [rel prep_noexpand], 0
+    pop     r14
+    pop     r13
+    pop     r12
+    ret
+
+; prep_pragma_ns: eax = 1 when the namespace rdi applies to this output
+prep_pragma_ns:
+    push    r12
+    mov     r12, rdi
+    lea     rsi, [rel s_pns_output]
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .yes
+    extern  coff_enabled, elf32_enabled, global_ctx
+    lea     rax, [rel global_ctx]
+    cmp     byte [rax + ASMCTX_fmt], FMT_BIN
+    jne     .not_bin
+    lea     rsi, [rel s_pns_bin]
+    jmp     .one
+.not_bin:
+    cmp     byte [rax + ASMCTX_fmt], FMT_ELF64
+    jne     .no
+    cmp     byte [rel coff_enabled], 0
+    je      .elf
+    mov     rdi, r12
+    lea     rsi, [rel s_pns_win]
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .yes
+    mov     rdi, r12
+    lea     rsi, [rel s_pns_win64]
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .yes
+    lea     rsi, [rel s_pns_coff]
+    jmp     .one
+.elf:
+    mov     rdi, r12
+    lea     rsi, [rel s_pns_elf]
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .yes
+    lea     rsi, [rel s_pns_elf64]
+    cmp     byte [rel elf32_enabled], 0
+    je      .one
+    lea     rsi, [rel s_pns_elf32]
+.one:
+    mov     rdi, r12
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .yes
+.no:
+    xor     eax, eax
+    pop     r12
+    ret
+.yes:
+    mov     eax, 1
+    pop     r12
+    ret
+
+[SECTION .rodata]
+pragma_words:   db "gprefix", 0, "gpostfix", 0, "lprefix", 0, "lpostfix", 0, 0
+s_pns_output:   db "output", 0
+s_pns_bin:      db "bin", 0
+s_pns_elf:      db "elf", 0
+s_pns_elf64:    db "elf64", 0
+s_pns_elf32:    db "elf32", 0
+s_pns_win:      db "win", 0
+s_pns_win64:    db "win64", 0
+s_pns_coff:     db "coff", 0
+[SECTION .bss]
+alignb 8
+pragma_affix:   resq 4              ; gprefix, gpostfix, lprefix, lpostfix (0: none given)
+pragma_buf:     resb 128
+[SECTION .text]
+
 ; ---- prep_error_note --------------------
 ;
 ; An error from preprocessor_next_token / _peek_token, whose callers do not
@@ -2976,6 +3149,8 @@ prep_handle_directive:
     call    prep_handle_use
     jmp     .done_cleanup
 .m_pragma:
+    mov     rdi, rbx
+    call    prep_handle_pragma
     mov     rdi, rbx
     call    prep_drain_line
     xor     eax, eax
@@ -8672,10 +8847,20 @@ prep_function:
     jb      .f_bad
     cmp     r15, 36
     ja      .f_bad
+    ; digits: N > 0 exactly N, the low ones ("%num(x,3)" of 1844...696 is
+    ; 696), N < 0 at least -N, as NASM
+    mov     rdx, r13
+    test    rdx, rdx
+    jle     .num_least
+    mov     byte [rel fn_exact], 1
+    jmp     .num_digits_set
+.num_least:
+    neg     rdx
+.num_digits_set:
     mov     rax, rbp
     mov     rcx, r15
-    mov     rdx, r13
     call    fn_utoa                        ; rdx = text, rcx = length
+    mov     byte [rel fn_exact], 0
     test    rax, rax
     jnz     .f_ret
     mov     rsi, rdx
@@ -9949,6 +10134,14 @@ fn_utoa:
     inc     ecx
     test    r12, r12
     jnz     .digit
+    ; exactly that many (fn_exact): the low digits only
+    cmp     byte [rel fn_exact], 0
+    je      .pad
+    cmp     rcx, r13
+    jbe     .pad
+    sub     rcx, r13
+    add     rdi, rcx
+    mov     rcx, r13
 .pad:
     cmp     r13, 0
     jle     .padded
@@ -12705,6 +12898,7 @@ fn_cap:        resq 1              ; ... room
 fn_col:        resq 1              ; ... the next one's column
 fn_tok:        resb TOKEN_SIZE     ; ... a token being made
 fn_num_buf:    resb 96             ; ... a number's digits
+fn_exact:      resb 1              ; fn_utoa: the digits asked for exactly (%num)
 fn_prefix:     resb 1              ; ... 1: 0x before them
 alignb 2
 fn_radix:      resw 1              ; %=(x): the radix letter | 0x100 unsigned
