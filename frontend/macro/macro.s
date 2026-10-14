@@ -4239,6 +4239,44 @@ s_quote_end: db "'", 0
 s_unmacro:  db "unmacro", 0
 s_ifmacro:  db "ifmacro", 0
 s_ifnmacro: db "ifnmacro", 0
+; NASM's directives that are multi-line macros of its own (standard.mac,
+; outbin.mac, outelf.mac, outcoff.mac), for %ifmacro: the name, its
+; parameter counts (0xFF: any number more), the formats (0 all, 1 bin,
+; 2 ELF, 3 COFF)
+builtin_macros:
+    db "section", 0, 1, 0xFF, 0
+    db "segment", 0, 1, 0xFF, 0
+    db "sectalign", 0, 1, 0xFF, 0
+    db "absolute", 0, 1, 0xFF, 0
+    db "struc", 0, 1, 2, 0
+    db "endstruc", 0, 0, 0, 0
+    db "istruc", 0, 1, 1, 0
+    db "at", 0, 1, 0xFF, 0
+    db "iend", 0, 0, 0, 0
+    db "align", 0, 1, 0xFF, 0
+    db "alignb", 0, 1, 0xFF, 0
+    db "bits", 0, 1, 0xFF, 0
+    db "use16", 0, 0, 0, 0
+    db "use32", 0, 0, 0, 0
+    db "use64", 0, 0, 0, 0
+    db "extern", 0, 1, 0xFF, 0
+    db "static", 0, 1, 0xFF, 0
+    db "global", 0, 1, 0xFF, 0
+    db "required", 0, 1, 0xFF, 0
+    db "common", 0, 1, 0xFF, 0
+    db "cpu", 0, 1, 0xFF, 0
+    db "float", 0, 1, 0xFF, 0
+    db "default", 0, 1, 0xFF, 0
+    db "userel", 0, 0, 0, 0
+    db "useabs", 0, 0, 0, 0
+    db "usebnd", 0, 0, 0, 0
+    db "usenobnd", 0, 0, 0, 0
+    db "incbin", 0, 1, 0xFF, 0
+    db "org", 0, 1, 0xFF, 1
+    db "osabi", 0, 1, 0xFF, 2
+    db "export", 0, 1, 0xFF, 3
+    db "safeseh", 0, 1, 1, 3
+    db 0
 dir_struc:  db "struc", 0
 dir_endstruc: db "endstruc", 0
 dir_unmacro:  db "unmacro", 0
@@ -5050,7 +5088,7 @@ prep_handle_elif:
 
     mov     qword [rel expr_undef_uses], 0
     mov     rdi, rbx
-    call    parser_evaluate_expression
+    call    parser_evaluate_pp
     mov     word [rbx + PREP_skip_depth], r12w
     test    rax, rax
     jnz     .done
@@ -5562,7 +5600,7 @@ prep_handle_substr:
 .have_text:
     call    .skip_comma
     mov     rdi, rbx
-    call    parser_evaluate_expression ; 1-based start
+    call    parser_evaluate_pp ; 1-based start
     test    rax, rax
     jnz     .ret
     mov     r14, rdx
@@ -5571,7 +5609,7 @@ prep_handle_substr:
     test    eax, eax
     jz      .have_len
     mov     rdi, rbx
-    call    parser_evaluate_expression
+    call    parser_evaluate_pp
     test    rax, rax
     jnz     .ret
     mov     r15, rdx
@@ -6676,8 +6714,8 @@ prep_handle_assign:
     ; 2. Evaluate the value (same evaluator %if uses)
     mov     qword [rel expr_undef_uses], 0
     mov     rdi, rbx
-    extern  parser_evaluate_expression
-    call    parser_evaluate_expression
+    extern  parser_evaluate_pp
+    call    parser_evaluate_pp
     test    rax, rax
     jnz     .error
     mov     r14, rdx               ; r14 = value
@@ -7106,6 +7144,32 @@ prep_handle_message:
     push    r13
     mov     rbx, rdi
     mov     r13d, esi
+    ; %error / %fatal in a run whose "$ - $$" the layout is still to give
+    ; (core/known.s): the next run, which has it, says whether they hold
+    cmp     r13d, 1
+    jb      .reported
+    extern  known_tentative, known_defer_error
+    cmp     byte [rel known_tentative], 0
+    je      .reported
+    mov     edi, EXIT_FATAL                ; (if there is no next run after all)
+    call    known_defer_error
+.skip:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .skipped
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .skipped
+    cmp     eax, TOK_EOF
+    je      .skipped
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    jmp     .skip
+.skipped:
+    xor     eax, eax
+    jmp     .ret
+.reported:
     mov     edi, 2                         ; severity: fatal
     cmp     r13d, 1
     je      .head
@@ -7345,6 +7409,73 @@ prep_handle_exit:
     pop     rbx
     ret
 
+; ---- prep_builtin_macro -------------------
+;
+; prep_builtin_macro
+; Is rsi one of NASM's own multi-line macros (builtin_macros), in this
+; output format? As written: "%ifmacro ORG" is false in NASM too.
+; Input    : rdi = PrepState, rsi = the name
+; Output   : eax = 1, ecx = its least count, edx = its most (MACRO_VARIADIC:
+;            any); or eax = 0
+; Clobbers : r8-r10
+;
+prep_builtin_macro:
+    push    rbx
+    lea     r8, [rel builtin_macros]
+    ; the format: 1 bin, 2 ELF, 3 COFF
+    mov     rax, [rdi + PREP_ctx]
+    mov     r10d, 1
+    cmp     byte [rax + ASMCTX_fmt], FMT_BIN
+    je      .entry
+    extern  coff_enabled
+    mov     r10d, 3
+    cmp     byte [rel coff_enabled], 0
+    jne     .entry
+    mov     r10d, 2
+.entry:
+    cmp     byte [r8], 0
+    je      .none
+    xor     ecx, ecx
+.char:
+    movzx   eax, byte [rsi + rcx]
+    movzx   ebx, byte [r8 + rcx]
+    cmp     eax, ebx
+    jne     .skip
+    inc     ecx
+    test    eax, eax
+    jnz     .char
+    ; the name: its counts and formats after the NUL
+    lea     r9, [r8 + rcx]
+    movzx   eax, byte [r9 + 2]
+    test    eax, eax
+    jz      .found
+    cmp     eax, r10d
+    jne     .none                          ; (another format's)
+.found:
+    movzx   ecx, byte [r9]
+    movzx   edx, byte [r9 + 1]
+    cmp     edx, 0xFF
+    jne     .counted
+    mov     edx, MACRO_VARIADIC
+.counted:
+    mov     eax, 1
+    pop     rbx
+    ret
+.skip:
+    ; to the next entry: past the name's NUL and its three bytes
+.skip_name:
+    cmp     byte [r8], 0
+    je      .skipped
+    inc     r8
+    jmp     .skip_name
+.skipped:
+    add     r8, 4
+    jmp     .entry
+.none:
+    xor     eax, eax
+    pop     rbx
+    ret
+
 ; ---- %ifnum / %ifstr / %ifid / %ifempty / %ifmacro / %ifdef ----
 ;
 ; prep_handle_iftest
@@ -7458,15 +7589,28 @@ prep_handle_iftest:
     jmp     .restore
 .t_macro_name:
     mov     rsi, [rdx + TOKEN_value]
+    push    rsi
     mov     rdi, [rbx + PREP_ctx]
     call    prep_symbol_find
+    pop     rsi
     test    rax, rax
-    jnz     .decided
+    jnz     .t_builtin
     cmp     byte [rdx + SYMBOL_kind], SYM_MACRO
-    jne     .decided
+    jne     .t_builtin
     mov     rax, [rdx + SYMBOL_value]
     test    byte [rax + MACRO_flags], MACRO_FLAG_DEFINE
-    jnz     .decided
+    jz      .tm_found
+.t_builtin:
+    ; none of the source's: NASM's directives that are macros of its own
+    ; ("%ifmacro org" is true in -f bin)
+    mov     rdi, rbx
+    call    prep_builtin_macro
+    test    eax, eax
+    jz      .decided
+    mov     [rel builtin_min], cx
+    mov     [rel builtin_max], dx
+    mov     eax, 1                         ; (not a MACRO*: builtin_min / max)
+.tm_found:
     ; "%ifmacro m 2", "m 1-3", "m 1-*": one of that name taking such a
     ; count (overloads by MACRO_next); with no count, any
     push    rax                            ; [rsp + 16] the macro
@@ -7523,6 +7667,8 @@ prep_handle_iftest:
 .tm_macro:
     test    rax, rax
     jz      .tm_none
+    cmp     rax, 1
+    je      .tm_builtin
     movzx   ecx, word [rax + MACRO_min_params]
     cmp     rcx, [rsp]
     ja      .tm_next                       ; takes more than asked
@@ -7534,6 +7680,15 @@ prep_handle_iftest:
 .tm_next:
     mov     rax, [rax + MACRO_next]
     jmp     .tm_macro
+.tm_builtin:
+    movzx   ecx, word [rel builtin_min]
+    cmp     rcx, [rsp]
+    ja      .tm_none
+    movzx   ecx, word [rel builtin_max]
+    cmp     rcx, [rsp + 8]
+    jb      .tm_none
+    add     rsp, 24
+    jmp     .true
 .tm_none:
     add     rsp, 24
     jmp     .decided
@@ -7786,7 +7941,7 @@ prep_handle_iassign:
     jnz     .ret
     mov     r12, rdx
     mov     rdi, rbx
-    call    parser_evaluate_expression
+    call    parser_evaluate_pp
     test    rax, rax
     jnz     .ret
     mov     r13, rdx
@@ -9531,7 +9686,7 @@ fn_close:
 ; fn_expr: an expression, a number: rdx; then fn_sep (ecx)
 fn_expr:
     mov     rdi, rbx
-    call    parser_evaluate_expression
+    call    parser_evaluate_pp
     test    rax, rax
     jnz     .ret
     test    rcx, rcx
@@ -11381,8 +11536,8 @@ prep_handle_if:
     extern  expr_undef_uses
     mov     qword [rel expr_undef_uses], 0
     mov     rdi, rbx
-    extern  parser_evaluate_expression
-    call    parser_evaluate_expression
+    extern  parser_evaluate_pp
+    call    parser_evaluate_pp
     test    rax, rax
     jnz     .done
     lea     rdi, [rel s_cn_if]
@@ -12701,7 +12856,7 @@ prep_handle_rep:
     mov     r12d, MACRO_FLAG_NOLIST
 .rep_count:
     mov     rdi, rbx
-    call    parser_evaluate_expression
+    call    parser_evaluate_pp
     test    rax, rax
     jnz     .error
     mov     r14, rdx               ; r14 = count
@@ -12990,6 +13145,8 @@ prep_error_subj: resq 1                 ; prep_error's subject
 prep_error:     resd 1                  ; the first error a caller got, or 0
 cond_negate:    resb 1                  ; %ifn / %elifn: the result inverted
 cond_never_pending: resb 1              ; %elifmacro with no name: COND_NEVER
+builtin_min:    resw 1                  ; %ifmacro: NASM's own macro's counts
+builtin_max:    resw 1
 stk_text:       resb STK_TEXT               ; %arg / %local definitions
 elif_negate:    resb 1
 alignb 4
