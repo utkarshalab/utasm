@@ -92,6 +92,7 @@ s_pie_c:    db "] or lea reg, [rel ...]", 0
 s_pie_expr: db "an expression' will not link into a PIE: use rip-relative addressing ([rel ...])", 0
 [SECTION .bss]
 reloc_quiet: resb 1                     ; no warnings: a trial encoding
+offset_kept: resb 1                     ; reloc_offset_write made a relocation to keep
 [SECTION .text]
 
 ;
@@ -304,12 +305,16 @@ reloc_resolve_all:
 .not_expr:
     cmp     byte [rsi], RELOC_OFFSET_MARK
     jne     .check_symbol
-    ; "later - $$": an offset in the section, written here
+    ; "later - $$": an offset in the section, written here (or, across
+    ; sections, made a PC-relative relocation the object keeps)
+    mov     byte [rel offset_kept], 0
     mov     rdi, rbx
     mov     rsi, r13
     call    reloc_offset_write
     test    rax, rax
     jnz     .ret
+    cmp     byte [rel offset_kept], 0
+    jne     .check_next
     jmp     .local_done
 .check_symbol:
     mov     rdi, rbx
@@ -791,14 +796,31 @@ reloc_offset_write:
     jnz     .undef
     cmp     word [rdx + SYMBOL_section], 0
     je      .undef
+    xor     r10d, r10d                     ; the sections' addresses apart
     mov     ax, [r15 + SYMBOL_section]
     cmp     ax, [rdx + SYMBOL_section]
-    jne     .bad                           ; not in one section
+    je      .one_section
+    ; in a flat binary (or an executable of its own) each section has its
+    ; address by now: "baz - $" across sections is a number all the same
+    ; (it was "expression syntax error", NASM's pcrel)
+    cmp     byte [rbx + ASMCTX_fmt], FMT_BIN
+    je      .addresses
+    cmp     byte [rbx + ASMCTX_standalone], 0
+    je      .pc_relative
+.addresses:
+    movzx   edi, word [r15 + SYMBOL_section]
+    call    .sec_addr
+    mov     r10, rax
+    movzx   edi, word [rdx + SYMBOL_section]
+    call    .sec_addr
+    sub     r10, rax
+.one_section:
     mov     r8, [r13 + RELOC_section]
     test    r8, r8
     jz      .bad
     mov     rax, [r15 + SYMBOL_value]
     sub     rax, [rdx + SYMBOL_value]
+    add     rax, r10
     add     rax, [r13 + RELOC_addend]
     mov     r9, [r8 + SECTION_data]
     test    r9, r9
@@ -847,6 +869,73 @@ reloc_offset_write:
     pop     r13
     pop     r12
     pop     rbx
+    ret
+; .sec_addr: the address of the section with index edi (rbx = AsmCtx), 0
+; when there is none. Clobbers rax, rcx, rdi, r8, r9; keeps rdx.
+; an object file: "baz - $" with B in the field's own section is A's
+; address relative to the field - a PC-relative relocation against A, as
+; NASM writes it (S + A' - P, A' = the constant + P - B); kept for the
+; writer (offset_kept), not written here
+.pc_relative:
+    mov     r8, [r13 + RELOC_section]
+    test    r8, r8
+    jz      .bad
+    movzx   eax, word [rdx + SYMBOL_section]
+    cmp     eax, [r8 + SECTION_index]
+    jne     .bad                           ; neither side here
+    mov     ecx, [r13 + RELOC_type]
+    mov     eax, R_X86_64_PC32
+    cmp     ecx, R_X86_64_32
+    je      .pc_type
+    cmp     ecx, R_X86_64_32S
+    je      .pc_type
+    mov     eax, R_X86_64_PC64
+    cmp     ecx, R_X86_64_64
+    je      .pc_type
+    mov     eax, 13                        ; R_X86_64_PC16
+    cmp     ecx, 12                        ; R_X86_64_16
+    je      .pc_type
+    mov     eax, 15                        ; R_X86_64_PC8
+    cmp     ecx, 14                        ; R_X86_64_8
+    jne     .bad
+.pc_type:
+    mov     [r13 + RELOC_type], eax
+    mov     rax, [r13 + RELOC_offset]
+    sub     rax, [rdx + SYMBOL_value]
+    add     [r13 + RELOC_addend], rax
+    mov     rax, [r15 + SYMBOL_name]
+    mov     [r13 + RELOC_sym], rax
+    mov     byte [rel offset_kept], 1
+    xor     eax, eax
+    jmp     .ret
+
+.sec_addr:
+    xor     eax, eax
+    test    edi, edi
+    jz      .sa_ret
+    mov     r8, [rbx + ASMCTX_sections]
+    movzx   r9d, word [rbx + ASMCTX_seccount]
+    lea     ecx, [rdi - 1]
+    cmp     ecx, r9d
+    jae     .sa_scan
+    mov     rcx, [r8 + rcx * 8]
+    cmp     [rcx + SECTION_index], edi
+    je      .sa_found
+.sa_scan:
+    xor     ecx, ecx
+.sa_next:
+    cmp     ecx, r9d
+    jae     .sa_ret
+    mov     rax, [r8 + rcx * 8]
+    inc     ecx
+    cmp     [rax + SECTION_index], edi
+    jne     .sa_next
+    mov     rcx, rax
+.sa_found:
+    mov     rax, [rcx + SECTION_addr]
+    ret
+.sa_ret:
+    xor     eax, eax
     ret
 
 ;*
