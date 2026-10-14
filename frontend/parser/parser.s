@@ -642,6 +642,11 @@ parser_parse_instruction:
     jnz     .error
     mov     r14d, 2
 .mib_done:
+    ; the complex FP16 ones (vfmaddcph, vfcmulcsh ...): a destination that is
+    ; a source faults (#UD) - an error, not an instruction that cannot run
+    call    parser_complex_dest
+    test    rax, rax
+    jnz     .error
 
     ; If bracketed instruction/directive, consume closing RBRACKET
     cmp     qword [rsp + 16], 1
@@ -3965,6 +3970,54 @@ parser_get_arch_tables:
         xor     rdx, rdx
         ENDIF
     epilogue
+
+; ---- parser_complex_dest ------------------
+;
+; parser_complex_dest
+; vfmaddcph / vfcmaddcph / vfmulcph / vfcmulcph and their sh forms (r15 =
+; the INST): the destination register must not be a source (Intel: #UD).
+; Output   : rax = OK or EXIT_DEST_IS_SOURCE
+; Clobbers : rcx, rdx
+;
+parser_complex_dest:
+    movzx   eax, word [r15 + INST_op_id]
+    cmp     eax, 1807
+    jb      .other
+    cmp     eax, 1810
+    jbe     .complex                       ; vfcmaddc*, vfcmulc*
+    cmp     eax, 1833
+    je      .complex
+    cmp     eax, 1834
+    je      .complex                       ; vfmaddc*
+    cmp     eax, 1872
+    je      .complex
+    cmp     eax, 1873
+    jne     .other                         ; vfmulc*
+.complex:
+    ; (two operands: the first source is the destination - always #UD)
+    cmp     byte [r15 + INST_nops], 2
+    je      .bad
+    cmp     byte [r15 + INST_op0 + OPERAND_kind], OP_REG
+    jne     .ok
+    mov     dl, [r15 + INST_op0 + OPERAND_reg]
+    cmp     byte [r15 + INST_op1 + OPERAND_kind], OP_REG
+    jne     .src2
+    cmp     dl, [r15 + INST_op1 + OPERAND_reg]
+    je      .bad
+.src2:
+    cmp     byte [r15 + INST_nops], 3
+    jb      .ok
+    cmp     byte [r15 + INST_op2 + OPERAND_kind], OP_REG
+    jne     .ok
+    cmp     dl, [r15 + INST_op2 + OPERAND_reg]
+    je      .bad
+.ok:
+.other:
+    xor     eax, eax
+    ret
+.bad:
+    mov     eax, EXIT_DEST_IS_SOURCE
+    ret
 
 ; ---- parser_mib_index ---------------------
 ;
