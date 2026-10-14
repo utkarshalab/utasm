@@ -26,6 +26,7 @@ KNOWN = {
     "listing pp_rep_nolist": "NASM lists a .nolist %rep's bytes on its %endrep line",
     "listing struc_base_offset": "NASM lists at's padding as 00<rep 4h>",
     "listing disp8_forced": "NASM gives the [byte x] bounds warning twice (once a pass)",
+    "listing rmacro_recursive": "a %rmacro calling itself: utasm lists its nested lines twice (to fix)",
     "listing ptr_as_label": "the line after \"dword ptr\" is read early: its bytes list there",
 # -f win64: a label with no section before it is an undefined external in
     # NASM's object (its .text is made only for code or data); utasm's is a
