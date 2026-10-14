@@ -1759,3 +1759,41 @@ ELF_PROBES.update({
     "elf_got_trailing_imm": "default rel\nextern x\nsection .text\ncmp qword [x wrt ..got], 5\n"
                             "mov dword [x wrt ..got], 0x12345678\nadd qword [x wrt ..got], 9\n",
 })
+# utasm's own: after an error the assembly goes on, so every error is
+# reported (NASM stops after its first pass's): (name, format, source, the
+# lines with an error, the exit status - 4 the parser's first, 5 the
+# encoder's). No output is written.
+RECOVERY_CASES = [
+    ("each kind", "elf64", "bits 64\nmov eax, ebx\nmov al, bx\nfoo bar\nadd rax, [rbx+rcx*3+rdx]\nnop\n"
+                           "movq xmm0, cr0\ndb 1, 2, )\nret\n", [3, 4, 5, 7, 8], 5),
+    ("every line", "elf64", "x y\nmov al, bx\nz w\n", [1, 2, 3], 4),
+    ("labels after one", "bin", "bits 64\na: mov al, bx\nb: jmp a\nmov eax, b\nc: mov bl, cx\njmp c\n", [2, 5], 5),
+    ("across sections", "elf64", "section .data\ndd )\nsection .text\nmov al, bx\nsection .data\ndb 1\n", [2, 4], 4),
+    ("macro calls", "elf64", "%macro m 0\n  mov al, bx\n%endmacro\nm\nnop\nm\n", None, 5),
+    ("after a missing include", "elf64", "%include \"nosuch.inc\"\nmov al, bx\n", [1, 2], 4),
+    ("stops at 100", "elf64", "mov al, bx\n" * 120, list(range(1, 101)), 5),
+]
+# thread-local storage (GNU as's models; NASM has ..tlsie only): (name,
+# format, source, the relocations as readelf -r shows them, GNU as's for the
+# same code: (type, symbol, addend)), and the symbols that must be STT_TLS
+_TLS64 = ("global x\nextern ext:tls\nsection .tbss\nx: resd 1\nz: resd 1\nsection .text\ndb 0x66\n"
+          "lea rdi, [rel x wrt ..tlsgd]\nlea rdi, [rel x wrt ..tlsld]\nmov eax, [rax + x wrt ..dtpoff]\n"
+          "mov eax, [fs:x wrt ..tpoff]\nmov rax, [rel x wrt ..gottpoff]\nmov eax, [fs:z wrt ..tpoff]\n"
+          "mov rax, [rel ext wrt ..tlsie]\ncmp qword [rel x wrt ..gottpoff], 3\n"
+          "section .debug_info\ndq x wrt ..dtpoff\ndd x wrt ..dtpoff\ndq x wrt ..tpoff\n")
+TLS_CASES = [
+    ("elf64 models", "elf64", _TLS64,
+     [("R_X86_64_TLSGD", "x", -4), ("R_X86_64_TLSLD", "x", -4), ("R_X86_64_DTPOFF32", "x", 0),
+      ("R_X86_64_TPOFF32", "x", 0), ("R_X86_64_GOTTPOFF", "x", -4), ("R_X86_64_TPOFF32", "z", 0),
+      ("R_X86_64_GOTTPOFF", "ext", -4), ("R_X86_64_GOTTPOFF", "x", -5),
+      ("R_X86_64_DTPOFF64", "x", 0), ("R_X86_64_DTPOFF32", "x", 0), ("R_X86_64_TPOFF64", "x", 0)],
+     ["x", "z", "ext"]),
+    ("elf32 models", "elf32", "global x\nsection .tbss\nx: resd 1\nsection .text\n"
+     "lea eax, [ebx*1 + x wrt ..tlsgd]\nlea eax, [ebx + x wrt ..tlsld]\nmov eax, [eax + x wrt ..dtpoff]\n"
+     "mov eax, [gs:x wrt ..tpoff]\nmov eax, [x wrt ..tlsie]\n",
+     [("R_386_TLS_GD", "x", None), ("R_386_TLS_LDM", "x", None), ("R_386_TLS_LDO_32", "x", None),
+      ("R_386_TLS_LE", "x", None), ("R_386_TLS_IE", "x", None)], ["x"]),
+]
+REJECT_CASES += [
+    ("tlsie not RIP-relative", "elf64", "extern x\nsection .text\nmov rax, [x wrt ..tlsie]\n"),
+]
