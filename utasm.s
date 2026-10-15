@@ -192,6 +192,10 @@ _start:
     call    cli_parse
     test    rax, rax
     jnz     .show_usage
+    ; -X json: stderr a pipe to the JSON writer (error/json.s) - before
+    ; diag_init, which then sees no terminal there
+    extern  diag_json_start
+    call    diag_json_start
     ; on a terminal, messages show the line and explain (error/format)
     extern  diag_init
     call    diag_init
@@ -430,6 +434,11 @@ _start:
     call    gas_macro_finish
     test    rax, rax
     jnz     .error_in_parser
+    ; a FASM virtual block with no end virtual
+    extern  fasm_finish
+    call    fasm_finish
+    test    rax, rax
+    jnz     .error_in_parser
 
     ; %error lines were reported as they were reached; no output after them
     cmp     dword [rel error_deferred], 0
@@ -493,6 +502,12 @@ _start:
     test    rax, rax
     jnz     .error_in_linker
 .no_listing:
+    ; --map / [map]: the map file, the addresses final
+    extern  map_write
+    lea     rdi, [rel global_ctx]
+    call    map_write
+    test    rax, rax
+    jnz     .error_in_linker
 
     ; Profiler teardown. Both calls return immediately when profiling is off,
     ; so this needs no flag check of its own.
@@ -600,6 +615,15 @@ _start:
     jmp     .exit
 
 .exit_io_error:
+    ; the source cannot be opened or read: said (it exited silently)
+    mov     rdi, [rbx + ASMCTX_input]
+    test    rdi, rdi
+    jz      .io_said
+    extern  error_set_subject
+    call    error_set_subject
+    mov     edi, EXIT_INPUT_OPEN
+    call    error_report_code
+.io_said:
     mov     rax, 3
     jmp     .exit
 
@@ -672,6 +696,8 @@ _start:
     extern  warn_flush
     push    rax                            ; the exit status (warn_flush
     call    warn_flush                     ; may clobber it: "--format nope"
+    extern  diag_json_finish
+    call    diag_json_finish               ; (-X json: its writer done)
     pop     rax                            ; exited 0); the warnings held
     mov     rdi, rax
     mov     rax, 60 ; SYS_EXIT
@@ -775,11 +801,13 @@ print_num:
                    db "  --before text             a line ahead of the source", 10
                    db "  -E                        preprocess only (to stdout, or the -o file)", 10
                    db "  -l file                   write a listing (lines, offsets, bytes)", 10
+                   db "  --map file                write a map file (sections, symbols)", 10
                    db "  -g                        DWARF debug information (line table)", 10
                    db "  -M, -MD, -MF file, -MT t, -MQ t, -MP", 10
                    db "                            Makefile dependencies, as NASM writes them", 10
                    db "  -w+error                  warnings are errors (other -w/-W accepted)", 10
                    db "  -X gnu | -X vc            message style: file:line: | file(line) :", 10
+                   db "  -X json                   each message a JSON object on stderr", 10
                    db "  -s, -Z file               messages on stdout / into a file", 10
                    db "  -O0 | -O1 | -Ox           NASM's levels: nothing shortened | byte", 10
                    db "                            immediates | all (default; also -O2..-O9)", 10
