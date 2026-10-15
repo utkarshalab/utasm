@@ -333,6 +333,21 @@ lst_note:
     jnz     .named
     ret
 .named:
+    ; a GNU macro's or repetition's text (frontend/parser/gas_macro.s): no
+    ; lines of its own - its bytes are the calling line's, as NASM lists a
+    ; .nolist macro
+    push    rax
+    extern  global_prep
+    lea     rax, [rel global_prep]
+    mov     rax, [rax + PREP_lexer]
+    test    rax, rax
+    jz      .listable
+    cmp     byte [rax + LEXER_nolist], 0
+    je      .listable
+    pop     rax
+    ret
+.listable:
+    pop     rax
     push    rax
     push    r8
     push    r9
