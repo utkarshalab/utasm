@@ -364,6 +364,19 @@ mt_is:
     or      eax, 1
     ret
 
+; mt_isq: token rcx a "?" (MASM's no value)? ZF. Preserves rcx, rsi, rdi.
+mt_isq:
+    cmp     rcx, [rel mt_n]
+    jae     .q_no
+    push    rax
+    call    mt_tok
+    cmp     byte [rax + TOKEN_kind], TOK_QUESTION
+    pop     rax
+    ret
+.q_no:
+    or      eax, 1
+    ret
+
 ; mt_kind: eax = the kind of token rcx (0 past the end)
 mt_kind:
     xor     eax, eax
@@ -376,26 +389,130 @@ mt_kind:
 .k_ret:
     ret
 
-; mt_put: the text of tokens [rcx, rdx) after the expansion
+; mt_put: the text of tokens [rcx, rdx) after the expansion, a blank
+; between two; a string quoted again (prep_tokens_text gives its bare
+; text): its own quote, or its bytes as numbers when it holds what a quote
+; cannot (a `...` one's escapes worked out, a NUL, a control byte).
+; Preserves rsi, r12-r15.
 mt_put:
-    cmp     rcx, rdx
+    push    rsi
+    push    r12
+    push    r13
+    mov     r12, rcx
+    mov     r13, rdx
+    mov     r8, rcx                        ; (the first)
+.p_next:
+    cmp     r12, r13
     jae     .p_ret
-    push    rsi
-    mov     rsi, rdx
-    sub     rsi, rcx
-    push    rsi
+    cmp     r12, r8
+    je      .p_first
+    mov     al, ' '
+    call    mb_putc
+.p_first:
+    push    r8
+    mov     rcx, r12
     call    mt_tok
-    mov     rsi, rax
-    pop     rdx
+    cmp     byte [rax + TOKEN_kind], TOK_STRING
+    je      .p_string
     mov     rdi, rbx
+    mov     rsi, rax
+    mov     edx, 1
     call    prep_tokens_text
     test    rax, rax
-    jnz     .p_pop
+    jnz     .p_tok_done
     mov     rsi, rdx
     call    mb_putz
-.p_pop:
-    pop     rsi
+    jmp     .p_tok_done
+.p_string:
+    call    mt_string
+.p_tok_done:
+    pop     r8
+    inc     r12
+    jmp     .p_next
 .p_ret:
+    pop     r13
+    pop     r12
+    pop     rsi
+    ret
+
+; mt_string: the string token rax as text that reads back as it
+mt_string:
+    push    r12
+    push    r13
+    push    r14
+    mov     r12, [rax + TOKEN_value]
+    movzx   r13d, word [rax + TOKEN_len]
+    test    byte [rax + TOKEN_flags], TOK_FLAG_COUNTED
+    jnz     .s_len
+    mov     rdi, r12
+    push    rax
+    call    str_len
+    mov     r13, rax
+    pop     rax
+.s_len:
+    movzx   r14d, byte [rax + TOKEN_quote]
+    cmp     r14d, '"'
+    je      .s_check
+    cmp     r14d, "'"
+    je      .s_check
+    mov     r14d, '"'                      ; (a `...` one, if it can)
+.s_check:
+    ; its own quote, a NUL, a control byte, a backslash (` strings): numbers
+    xor     ecx, ecx
+.s_scan:
+    cmp     rcx, r13
+    jae     .s_quoted
+    movzx   eax, byte [r12 + rcx]
+    cmp     eax, r14d
+    je      .s_bytes
+    cmp     eax, 0x20
+    jb      .s_bytes
+    inc     rcx
+    jmp     .s_scan
+.s_quoted:
+    test    r13, r13
+    jz      .s_bytes                       ; ("": no bytes - 0 bytes as "")
+    mov     eax, r14d
+    call    mb_putc
+    xor     ecx, ecx
+.s_char:
+    cmp     rcx, r13
+    jae     .s_close
+    mov     al, [r12 + rcx]
+    call    mb_putc
+    inc     rcx
+    jmp     .s_char
+.s_close:
+    mov     eax, r14d
+    call    mb_putc
+    jmp     .s_ret
+.s_bytes:
+    test    r13, r13
+    jnz     .s_numbers
+    mov     al, '"'
+    call    mb_putc
+    call    mb_putc
+    jmp     .s_ret
+.s_numbers:
+    xor     ecx, ecx
+.s_num:
+    cmp     rcx, r13
+    jae     .s_ret
+    test    rcx, rcx
+    jz      .s_num_first
+    mov     al, ','
+    call    mb_putc
+    mov     al, ' '
+    call    mb_putc
+.s_num_first:
+    movzx   eax, byte [r12 + rcx]
+    call    mb_num
+    inc     rcx
+    jmp     .s_num
+.s_ret:
+    pop     r14
+    pop     r13
+    pop     r12
     ret
 
 ; mt_close: the token after the bracket at rcx closes it: rcx = its index
@@ -857,8 +974,21 @@ masm_word:
     lea     rsi, [rel w_option]
     call    .word
     je      .skip
-    xor     eax, eax
-    jmp     .ret
+    ; TYPE ITEMS (no name)
+    mov     rsi, r12
+    call    m_typeword
+    test    eax, eax
+    jz      .not_ours
+    mov     r14d, eax
+    mov     r15, r8
+    call    mt_collect
+    test    rax, rax
+    jnz     .done_rax
+    xor     r12d, r12d
+    mov     eax, r14d
+    mov     r8, r15
+    call    masm_data
+    jmp     .done_rax
 .word:
     mov     rdi, r12
     call    str_cmp_kw
@@ -1017,9 +1147,75 @@ masm_label_word:
     call    str_cmp_kw
     test    rax, rax
     jz      .endp
+    mov     rdi, r13
+    lea     rsi, [rel w_struct]
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .struct
+    mov     rdi, r13
+    lea     rsi, [rel w_struc]
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .struct
+    mov     rdi, r13
+    lea     rsi, [rel w_ends]
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .ends
+    ; NAME TYPE ITEMS - not when NAME is an instruction ("push dword 5")
+    ; or a directive (".IF sdword ptr eax < 0", ".WHILE x" - x a "dword
+    ; [rbp - 4]")
+    cmp     byte [r12], '.'
+    je      .none
+    mov     rsi, r13
+    call    m_typeword
+    test    eax, eax
+    jz      .none
+    mov     r14d, eax
+    mov     r15, r8
+    mov     rdi, r12
+    extern  parser_is_mnemonic
+    call    parser_is_mnemonic
+    test    eax, eax
+    jnz     .none
+    ; nor NASM's words a type may follow ("istruc POINT", "extern x")
+    lea     r10, [rel nasm_words]
+.nasm_word:
+    cmp     byte [r10], 0
+    je      .is_data
+    mov     rdi, r12
+    mov     rsi, r10
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .none
+.nasm_skip:
+    inc     r10
+    cmp     byte [r10 - 1], 0
+    jne     .nasm_skip
+    jmp     .nasm_word
+.is_data:
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; (the type)
+    call    mt_collect
+    test    rax, rax
+    jnz     .done
+    mov     eax, r14d
+    mov     r8, r15
+    call    masm_data
+    jmp     .done
 .none:
     xor     eax, eax
     jmp     .ret
+.struct:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    call    masm_struct_begin
+    jmp     .done
+.ends:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    call    masm_struct_end
+    jmp     .done
 .proc:
     mov     rdi, rbx
     call    preprocessor_next_token
@@ -3069,11 +3265,19 @@ mc_operand:
 ; ---- masm_finish --------------------------
 ;
 ; masm_finish
-; The source read: a PROC or a block still open is an error.
+; The source read: a PROC, a STRUCT or a block still open is an error.
 ; Output   : rax = OK or an error
 ;
 global masm_finish
 masm_finish:
+    cmp     byte [rel ms_open], 0
+    je      .structs
+    mov     byte [rel ms_open], 0
+    mov     rdi, [rel ms_name]
+    call    error_set_subject
+    mov     eax, EXIT_MASM_STRUCT_OPEN
+    ret
+.structs:
     xor     eax, eax
     cmp     qword [rel mk_n], 0
     je      .procs
@@ -3099,3 +3303,1283 @@ mi_taken:       resq 1              ; INVOKE: the registers loaded (bits)
 mi_r64:         resq 1
 mi_r32:         resq 1
 mc_signed:      resb 1
+
+; ============================================================================
+; MASM'S DATA AND STRUCTURES
+; ============================================================================
+;   [NAME] TYPE ITEM, ...           data: TYPE byte .. qword, sbyte .. sqword,
+;       real4 / real8 / real10, oword; ITEM a value, a string (byte), ? (0;
+;       reserved in a nobits section), N DUP (ITEM, ...). NAME is a typed
+;       variable: a memory operand of TYPE's size by its name ("mov eax, x"),
+;       its address with OFFSET x / ADDR x; SIZEOF / LENGTHOF / TYPE know it
+;   NAME STRUCT ... NAME ENDS       a structure: its fields "F TYPE ITEM" (a
+;       NASM struc: NAME.F the offsets, NAME_size); their items the defaults
+;   NAME T <V1, V2 ...> / {...}     an instance (istruc): the values given,
+;       the defaults for the rest; NAME.F each field, typed ("mov eax, pt.x")
+;   [REG].T.F                       a field through a register, typed
+
+%define V_next       0
+%define V_name       8
+%define V_size       16
+%define V_count      24
+%define V_struct     32
+%define V_SIZE       40
+%define S_next       0
+%define S_name       8
+%define S_size       16
+%define S_nf         24
+%define S_fields     32
+%define S_SIZE       40
+%define FL_name      0
+%define FL_esize     8
+%define FL_count     16
+%define FL_init      24             ; the default's text, or 0 (zero)
+%define FL_dup       32             ; 1: the default is repeated (DUP)
+%define FL_struct    40
+%define FL_SIZE      48
+%define MS_MAXF      256
+
+[SECTION .rodata]
+w_struct:   db "struct", 0
+nasm_words: db "istruc", 0, "struc", 0, "at", 0, "times", 0, "extern", 0, "global", 0
+            db "common", 0, "static", 0, "section", 0, "segment", 0, 0
+w_struc:    db "struc", 0
+w_ends:     db "ends", 0
+w_dup:      db "dup", 0
+w_q:        db "?", 0
+d_dirs:     db "db", 0, "dw", 0, "dd", 0, "dq", 0, "dt", 0, "do", 0, "dy", 0
+r_dirs:     db "resb", 0, "resw", 0, "resd", 0, "resq", 0, "rest", 0, "reso", 0, "resy", 0
+s_times:    db "times ", 0
+s_zero1:    db " 0", 0
+s_one:      db " 1", 0
+s_istruc:   db "istruc ", 0
+s_iend:     db "iend", 0
+s_at:       db "at ", 0
+s_struc:    db "struc ", 0
+s_endstruc: db "endstruc", 0
+s_dot:      db ".", 0
+s_resb:     db "resb ", 0
+s_size:     db "_size", 0
+s_plus_sp:  db " + ", 0
+s_open_b:   db " [", 0
+
+[SECTION .bss]
+alignb 8
+mv_table:       resq 256            ; typed variables, by name
+ms_table:       resq 256            ; structures
+ms_open:        resb 1
+alignb 8
+ms_name:        resq 1
+ms_nf:          resq 1
+ms_off:         resq 1
+ms_fields:      resb MS_MAXF * FL_SIZE
+
+[SECTION .text]
+
+; m_hash: the slot of the name rsi in table rdi: rax. Preserves rsi.
+m_hash:
+    push    rsi
+    mov     eax, 2166136261
+.h_next:
+    movzx   ecx, byte [rsi]
+    test    ecx, ecx
+    jz      .h_done
+    xor     eax, ecx
+    imul    eax, eax, 16777619
+    inc     rsi
+    jmp     .h_next
+.h_done:
+    and     eax, 255
+    lea     rax, [rdi + rax * 8]
+    pop     rsi
+    ret
+
+; m_lookup: the entry named rsi in table rdi (names at +8): rax (0 none)
+m_lookup:
+    call    m_hash
+    mov     rax, [rax]
+.l_next:
+    test    rax, rax
+    jz      .l_ret
+    push    rax
+    push    rsi
+    mov     rdi, [rax + 8]
+    call    m_streq
+    pop     rsi
+    pop     rax
+    je      .l_ret
+    mov     rax, [rax]
+    jmp     .l_next
+.l_ret:
+    ret
+
+; m_streq: rdi and rsi the same (case kept)? ZF
+m_streq:
+.e_next:
+    mov     al, [rdi]
+    cmp     al, [rsi]
+    jne     .e_ret
+    test    al, al
+    jz      .e_ret
+    inc     rdi
+    inc     rsi
+    jmp     .e_next
+.e_ret:
+    ret
+
+; m_alloc: rsi bytes of the arena (zeroed): rdx. Output rax = OK or error
+m_alloc:
+    mov     rdi, [rbx + PREP_arena]
+    extern  arena_alloc
+    jmp     arena_alloc
+
+; m_insert: the entry rdx (its name at +8) into table rdi
+m_insert:
+    push    rdx
+    mov     rsi, [rdx + 8]
+    call    m_hash
+    pop     rdx
+    mov     rcx, [rax]
+    mov     [rdx], rcx
+    mov     [rax], rdx
+    ret
+
+; ---- the lookups ---------------------------
+
+; m_struct: the structure named rsi: rax (0 none)
+m_struct:
+    lea     rdi, [rel ms_table]
+    jmp     m_lookup
+
+; ---- masm_var_size ------------------------
+;
+; masm_var_size
+; Is the name a typed variable (a MASM data definition's)? eax = its
+; element's size, 0 when it is not one.
+; Input    : rdi = the name
+; Preserves: rbx, r12-r15
+;
+global masm_var_size
+masm_var_size:
+    cmp     byte [rel masm_hl], 0
+    jne     .on
+    xor     eax, eax
+    ret
+.on:
+    mov     rsi, rdi
+    lea     rdi, [rel mv_table]
+    call    m_lookup
+    test    rax, rax
+    jz      .ret
+    mov     rax, [rax + V_size]
+    cmp     rax, 32
+    jbe     .ret
+    xor     eax, eax                       ; (a structure: no one size)
+.ret:
+    ret
+
+; m_field: the field "T.F" (rsi): rax = it (0 none). Preserves rbx, r12-r15.
+m_field:
+    push    r12
+    push    r13
+    mov     r12, rsi
+    ; the last '.' splits it
+    xor     r13d, r13d
+    mov     rcx, rsi
+.f_scan:
+    mov     al, [rcx]
+    test    al, al
+    jz      .f_split
+    cmp     al, '.'
+    jne     .f_step
+    mov     r13, rcx
+.f_step:
+    inc     rcx
+    jmp     .f_scan
+.f_split:
+    xor     eax, eax
+    test    r13, r13
+    jz      .f_ret
+    cmp     r13, r12
+    je      .f_ret
+    mov     byte [r13], 0                  ; (the type's name, for a moment)
+    mov     rsi, r12
+    call    m_struct
+    mov     byte [r13], '.'
+    test    rax, rax
+    jz      .f_ret
+    mov     rcx, [rax + S_nf]
+    mov     r8, [rax + S_fields]
+    xor     eax, eax
+.f_field:
+    test    rcx, rcx
+    jz      .f_ret
+    mov     rdi, [r8 + FL_name]
+    lea     rsi, [r13 + 1]
+    push    rcx
+    push    r8
+    call    m_streq
+    pop     r8
+    pop     rcx
+    je      .f_hit
+    add     r8, FL_SIZE
+    dec     rcx
+    jmp     .f_field
+.f_hit:
+    mov     rax, r8
+.f_ret:
+    pop     r13
+    pop     r12
+    ret
+
+; ---- masm_field_size ----------------------
+;
+; masm_field_size
+; "[rbx].POINT.y": the size of field "POINT.y" (its element's), 0 when
+; there is no such field.
+; Input    : rdi = the name
+;
+global masm_field_size
+masm_field_size:
+    mov     rsi, rdi
+    call    m_field
+    test    rax, rax
+    jz      .ret
+    mov     rax, [rax + FL_esize]
+.ret:
+    ret
+
+; ---- masm_size_op -------------------------
+;
+; masm_size_op
+; SIZEOF / LENGTHOF / TYPE NAME (or (NAME)) in an expression: of a
+; structure, a field (T.F), a typed variable, a type word, or a NASM struc
+; (NAME_size).
+; Input    : rdi = PrepState (NAME next), esi = 0 SIZEOF, 1 LENGTHOF, 2 TYPE
+; Output   : rax = OK or an error, rdx = the value
+;
+global masm_size_op
+masm_size_op:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    mov     rbx, rdi
+    mov     r12d, esi
+    xor     r14d, r14d                     ; 1: in parentheses
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_LPAREN
+    jne     .named
+    mov     r14d, 1
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret
+.named:
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .bad
+    mov     r13, [rdx + TOKEN_value]
+    ; a structure
+    mov     rsi, r13
+    call    m_struct
+    test    rax, rax
+    jz      .not_struct
+    mov     rcx, [rax + S_size]
+    mov     rdx, rcx
+    cmp     r12d, 1
+    jne     .value
+    mov     edx, 1
+    jmp     .value
+.not_struct:
+    ; a typed variable
+    mov     rsi, r13
+    lea     rdi, [rel mv_table]
+    call    m_lookup
+    test    rax, rax
+    jz      .not_var
+    mov     rcx, [rax + V_size]
+    mov     r8, [rax + V_count]
+    jmp     .sized
+.not_var:
+    ; a field
+    mov     rsi, r13
+    call    m_field
+    test    rax, rax
+    jz      .not_field
+    mov     rcx, [rax + FL_esize]
+    mov     r8, [rax + FL_count]
+    jmp     .sized
+.not_field:
+    ; a type word
+    lea     r10, [rel types]
+.type_entry:
+    cmp     byte [r10], 0
+    je      .not_type
+    mov     rdi, r13
+    mov     rsi, r10
+    call    str_cmp_kw
+    mov     r11, r10
+.type_skip:
+    inc     r11
+    cmp     byte [r11 - 1], 0
+    jne     .type_skip
+    test    rax, rax
+    jz      .type_hit
+    lea     r10, [r11 + 1]
+    jmp     .type_entry
+.type_hit:
+    movzx   ecx, byte [r11]
+    and     ecx, 0x3F
+    mov     r8d, 1
+    jmp     .sized
+.not_type:
+    ; a NASM struc: NAME_size
+    sub     rsp, 128
+    mov     rdi, rsp
+    mov     rsi, r13
+    xor     ecx, ecx
+.copy:
+    mov     al, [rsi + rcx]
+    mov     [rdi + rcx], al
+    test    al, al
+    jz      .copied
+    inc     ecx
+    cmp     ecx, 120
+    jb      .copy
+    add     rsp, 128
+    jmp     .unknown
+.copied:
+    lea     rdi, [rsp + rcx]
+    lea     rsi, [rel s_size]
+.cat:
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    test    al, al
+    jnz     .cat
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, rsp
+    extern  symbol_find
+    call    symbol_find
+    add     rsp, 128
+    test    rax, rax
+    jnz     .unknown
+    mov     rcx, [rdx + SYMBOL_value]
+    mov     r8d, 1
+    jmp     .sized
+.sized:
+    ; rcx = the element's size, r8 = how many
+    mov     rdx, rcx
+    imul    rdx, r8                        ; SIZEOF
+    cmp     r12d, 1
+    jne     .not_length
+    mov     rdx, r8                        ; LENGTHOF
+.not_length:
+    cmp     r12d, 2
+    jne     .value
+    mov     rdx, rcx                       ; TYPE
+.value:
+    push    rdx
+    test    r14d, r14d
+    jz      .done
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .pop_ret
+    cmp     byte [rdx + TOKEN_kind], TOK_RPAREN
+    jne     .pop_bad
+.done:
+    pop     rdx
+    xor     eax, eax
+    jmp     .ret
+.pop_bad:
+    pop     rdx
+.bad:
+    mov     eax, EXIT_UNEXPECTED_TOKEN
+    jmp     .ret
+.pop_ret:
+    pop     rdx
+    jmp     .ret
+.unknown:
+    mov     rdi, r13
+    call    error_set_subject
+    mov     eax, EXIT_MASM_SIZEOF
+.ret:
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
+; ---- the data -----------------------------
+
+; m_typeword: the type word rsi: eax = its code (the types table's), r8 =
+; the structure when it names one (eax 0x100); 0 neither
+m_typeword:
+    push    rsi
+    lea     r10, [rel types]
+.tw_entry:
+    cmp     byte [r10], 0
+    je      .tw_struct
+    mov     rdi, [rsp]
+    push    r10
+    mov     rsi, r10
+    call    str_cmp_kw
+    pop     r10
+    mov     r11, r10
+.tw_skip:
+    inc     r11
+    cmp     byte [r11 - 1], 0
+    jne     .tw_skip
+    test    rax, rax
+    jz      .tw_hit
+    lea     r10, [r11 + 1]
+    jmp     .tw_entry
+.tw_hit:
+    movzx   eax, byte [r11]
+    xor     r8d, r8d
+    pop     rsi
+    ret
+.tw_struct:
+    mov     rsi, [rsp]
+    call    m_struct
+    mov     r8, rax
+    test    rax, rax
+    jz      .tw_none
+    mov     eax, 0x100
+    pop     rsi
+    ret
+.tw_none:
+    xor     eax, eax
+    pop     rsi
+    ret
+
+; m_dir: rsi = the data (r15d = 0) or reserving (1) directive for size r9d
+m_dir:
+    lea     rsi, [rel d_dirs]
+    test    r15d, r15d
+    jz      .md_list
+    lea     rsi, [rel r_dirs]
+.md_list:
+    xor     ecx, ecx
+    cmp     r9d, 1
+    je      .md_n
+    inc     ecx
+    cmp     r9d, 2
+    je      .md_n
+    inc     ecx
+    cmp     r9d, 4
+    je      .md_n
+    inc     ecx
+    cmp     r9d, 8
+    je      .md_n
+    inc     ecx
+    cmp     r9d, 10
+    je      .md_n
+    inc     ecx
+    cmp     r9d, 16
+    je      .md_n
+    inc     ecx
+.md_n:
+    jmp     nth_word
+
+; m_nobits: is the current section a nobits one? ZF clear when it is
+m_nobits:
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_curr_sec]
+    test    rax, rax
+    jz      .nb_no
+    cmp     dword [rax + SECTION_elf_type], SHT_NOBITS
+    jne     .nb_no
+    or      eax, 1
+    ret
+.nb_no:
+    xor     eax, eax
+    ret
+
+; m_items: the items of tokens [rcx, rdx) as data of size r9d: one line
+; each; rax = how many elements (a string's characters, N DUP's N times
+; its items'). Output in m_count; rax = OK or error
+m_items:
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    push    r9
+    call    mt_split
+    ; (mx_* is reused below by the DUP's items: copied out first)
+    mov     r12, [rel mx_cnt]
+    cmp     r12, 64
+    ja      .it_bad
+    sub     rsp, 64 * 16
+    xor     ecx, ecx
+.it_copy:
+    cmp     rcx, r12
+    jae     .it_copied
+    lea     rax, [rel mx_s]
+    mov     rdx, [rax + rcx * 8]
+    mov     r8, rcx
+    shl     r8, 4
+    mov     [rsp + r8], rdx
+    lea     rax, [rel mx_n]
+    mov     rdx, [rax + rcx * 8]
+    mov     [rsp + r8 + 8], rdx
+    inc     rcx
+    jmp     .it_copy
+.it_copied:
+    mov     qword [rel m_count], 0
+    xor     r13d, r13d
+.it_item:
+    cmp     r13, r12
+    jae     .it_done
+    mov     r8, r13
+    shl     r8, 4
+    mov     rcx, [rsp + r8]                ; its first token
+    mov     r14, [rsp + r8 + 8]
+    add     r14, rcx                       ; its end
+    mov     r9, [rsp + 64 * 16]            ; the size
+    call    m_item
+    test    rax, rax
+    jnz     .it_out
+    inc     r13
+    jmp     .it_item
+.it_done:
+    xor     eax, eax
+.it_out:
+    add     rsp, 64 * 16
+    pop     r9
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    ret
+.it_bad:
+    mov     eax, EXIT_INVALID_EXPR
+    pop     r9
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    ret
+
+; m_item: one item, tokens [rcx, r14), size r9d - its line, its elements
+; added to m_count. Output rax = OK or error
+m_item:
+    push    r12
+    push    r15
+    mov     r12, rcx
+    call    m_nobits
+    setnz   al
+    movzx   r15d, al                       ; 1: reserved
+    ; ? alone
+    lea     rax, [r12 + 1]
+    cmp     rax, r14
+    jne     .mi_dup
+    mov     rcx, r12
+    call    mt_isq
+    jne     .mi_dup
+    call    mb_line
+    call    m_dir
+    call    mb_putz
+    lea     rsi, [rel s_one]
+    test    r15d, r15d
+    jnz     .mi_q
+    lea     rsi, [rel s_zero1]
+.mi_q:
+    call    mb_putz
+    call    mb_nl
+    inc     qword [rel m_count]
+    jmp     .mi_ok
+.mi_dup:
+    ; N DUP (ITEMS)
+    mov     rcx, r12
+.mi_find:
+    cmp     rcx, r14
+    jae     .mi_value
+    lea     rsi, [rel w_dup]
+    call    mt_is
+    je      .mi_dup_at
+    inc     rcx
+    jmp     .mi_find
+.mi_dup_at:
+    push    rcx                            ; the DUP
+    ; its count (a number, for LENGTHOF)
+    mov     r8d, 1
+    lea     rax, [r12 + 1]
+    cmp     rax, rcx
+    jne     .mi_dup_n
+    push    rcx
+    mov     rcx, r12
+    call    mt_tok
+    pop     rcx
+    cmp     byte [rax + TOKEN_kind], TOK_NUMBER
+    jne     .mi_dup_n
+    push    rcx
+    push    r9
+    mov     rdi, [rax + TOKEN_value]
+    extern  str_to_int
+    call    str_to_int
+    pop     r9
+    pop     rcx
+    mov     r8, rdx
+.mi_dup_n:
+    push    r8
+    ; (ITEMS): ? alone, or the items repeated
+    mov     rcx, [rsp + 8]
+    inc     rcx
+    call    mt_kind
+    cmp     eax, TOK_LPAREN
+    jne     .mi_pop2_bad
+    lea     rsi, [rcx + 1]                 ; the items' first
+    lea     rdi, [r14 - 1]                 ; ... and the ')'
+    push    rsi
+    push    rdi
+    mov     rcx, rdi
+    call    mt_kind
+    cmp     eax, TOK_RPAREN
+    jne     .mi_pop4_bad
+    pop     rdi
+    pop     rsi
+    ; "N DUP (?)"
+    lea     rax, [rsi + 1]
+    cmp     rax, rdi
+    jne     .mi_dup_items
+    mov     rcx, rsi
+    push    rsi
+    push    rdi
+    call    mt_isq
+    pop     rdi
+    pop     rsi
+    jne     .mi_dup_items
+    call    mb_line
+    test    r15d, r15d
+    jz      .mi_dup_zero
+    call    m_dir                          ; resX N
+    call    mb_putz
+    mov     al, ' '
+    call    mb_putc
+    jmp     .mi_dup_count
+.mi_dup_zero:
+    lea     rsi, [rel s_times]             ; times N dX 0
+    call    mb_putz
+    mov     rcx, r12
+    mov     rdx, [rsp + 8]
+    call    mt_put
+    mov     al, ' '
+    call    mb_putc
+    call    m_dir
+    call    mb_putz
+    lea     rsi, [rel s_zero1]
+    call    mb_putz
+    call    mb_nl
+    jmp     .mi_dup_counted
+.mi_dup_count:
+    mov     rcx, r12
+    mov     rdx, [rsp + 8]
+    call    mt_put
+    call    mb_nl
+.mi_dup_counted:
+    pop     r8
+    add     [rel m_count], r8
+    add     rsp, 8
+    jmp     .mi_ok
+.mi_dup_items:
+    ; times N dX ITEMS
+    push    rsi
+    push    rdi
+    call    mb_line
+    lea     rsi, [rel s_times]
+    call    mb_putz
+    mov     rcx, r12
+    mov     rdx, [rsp + 24]                ; (the DUP)
+    call    mt_put
+    mov     al, ' '
+    call    mb_putc
+    call    m_dir
+    call    mb_putz
+    mov     al, ' '
+    call    mb_putc
+    pop     rdx
+    pop     rcx
+    push    rcx
+    push    rdx
+    call    mt_put
+    call    mb_nl
+    ; its elements: N times its items'
+    pop     rdx
+    pop     rcx
+    call    mt_split
+    mov     rax, [rel mx_cnt]
+    pop     r8
+    imul    rax, r8
+    add     [rel m_count], rax
+    add     rsp, 8
+    jmp     .mi_ok
+.mi_value:
+    ; a value, or a string: dX ITEM
+    call    mb_line
+    call    m_dir
+    call    mb_putz
+    mov     al, ' '
+    call    mb_putc
+    mov     rcx, r12
+    mov     rdx, r14
+    call    mt_put
+    call    mb_nl
+    ; a string alone: its characters
+    mov     rax, 1
+    lea     rcx, [r12 + 1]
+    cmp     rcx, r14
+    jne     .mi_counted
+    mov     rcx, r12
+    call    mt_tok
+    cmp     byte [rax + TOKEN_kind], TOK_STRING
+    mov     rcx, rax
+    mov     eax, 1
+    jne     .mi_counted
+    movzx   eax, word [rcx + TOKEN_len]
+    test    byte [rcx + TOKEN_flags], TOK_FLAG_COUNTED
+    jnz     .mi_counted
+    push    rdi
+    mov     rdi, [rcx + TOKEN_value]
+    call    str_len
+    pop     rdi
+.mi_counted:
+    add     [rel m_count], rax
+.mi_ok:
+    xor     eax, eax
+    pop     r15
+    pop     r12
+    ret
+.mi_pop4_bad:
+    add     rsp, 16
+.mi_pop2_bad:
+    add     rsp, 16
+    mov     eax, EXIT_UNEXPECTED_TOKEN
+    pop     r15
+    pop     r12
+    ret
+
+; masm_data: "[NAME] TYPE ITEMS" (r12 = NAME or 0, eax = the type's code,
+; r8 = its structure or 0; the items collected). Output rax = OK or error
+masm_data:
+    push    r13
+    push    r14
+    push    r15
+    mov     r13d, eax
+    mov     r14, r8
+    cmp     byte [rel ms_open], 0
+    jne     .field
+    call    mb_begin
+    test    r12, r12
+    jz      .no_label
+    call    mb_line
+    mov     rsi, r12
+    call    mb_putz
+    mov     al, ':'
+    call    mb_putc
+    call    mb_nl
+.no_label:
+    test    r14, r14
+    jnz     .instance
+    mov     r9d, r13d
+    and     r9d, 0x3F
+    xor     ecx, ecx
+    mov     rdx, [rel mt_n]
+    call    m_items
+    test    rax, rax
+    jnz     .ret
+    ; NAME a typed variable
+    test    r12, r12
+    jz      .push
+    mov     rsi, V_SIZE
+    call    m_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     [rdx + V_name], r12
+    mov     eax, r13d
+    and     eax, 0x3F
+    mov     [rdx + V_size], rax
+    mov     rax, [rel m_count]
+    mov     [rdx + V_count], rax
+    lea     rdi, [rel mv_table]
+    call    m_insert
+.push:
+    call    mb_push
+.ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    ret
+.field:
+    call    masm_field
+    jmp     .ret
+.instance:
+    call    masm_instance
+    test    rax, rax
+    jnz     .ret
+    jmp     .push
+
+; masm_instance: "NAME T <V1, V2 ...>" (r12 NAME, r14 T): istruc T, the
+; values or the defaults; NAME.F each field, typed
+masm_instance:
+    push    r13
+    push    r15
+    call    m_nobits
+    jz      .data
+    ; reserved
+    call    mb_line
+    lea     rsi, [rel s_resb]
+    call    mb_putz
+    mov     rax, [r14 + S_size]
+    call    mb_num
+    call    mb_nl
+    jmp     .named
+.data:
+    ; the values: <...> / {...} split, or none
+    mov     qword [rel mx_cnt], 0
+    mov     rcx, [rel mt_n]
+    test    rcx, rcx
+    jz      .values
+    xor     ecx, ecx
+    call    mt_kind
+    cmp     eax, TOK_LT
+    je      .bracketed
+    cmp     eax, TOK_LBRACE
+    jne     .values                        ; (? or nothing: the defaults)
+.bracketed:
+    mov     rdx, [rel mt_n]
+    dec     rdx
+    mov     ecx, 1
+    call    mt_split
+.values:
+    ; mx_* copied out: the fields' lines reuse mt_put only
+    mov     r15, [rel mx_cnt]
+    call    mb_line
+    lea     rsi, [rel s_istruc]
+    call    mb_putz
+    mov     rsi, [r14 + S_name]
+    call    mb_putz
+    call    mb_nl
+    xor     r13d, r13d
+.field:
+    cmp     r13, [r14 + S_nf]
+    jae     .end
+    imul    r8, r13, FL_SIZE
+    add     r8, [r14 + S_fields]
+    call    mb_line
+    lea     rsi, [rel s_at]
+    call    mb_putz
+    mov     rsi, [r14 + S_name]
+    call    mb_putz
+    lea     rsi, [rel s_dot]
+    call    mb_putz
+    mov     rsi, [r8 + FL_name]
+    call    mb_putz
+    lea     rsi, [rel s_comma]
+    call    mb_putz
+    mov     r9, [r8 + FL_esize]
+    ; given (not empty, not ?)?
+    cmp     r13, r15
+    jae     .default
+    lea     rax, [rel mx_n]
+    mov     rdx, [rax + r13 * 8]
+    test    rdx, rdx
+    jz      .default
+    lea     rax, [rel mx_s]
+    mov     rcx, [rax + r13 * 8]
+    add     rdx, rcx
+    cmp     rdx, rcx
+    je      .default
+    lea     rax, [rcx + 1]
+    cmp     rax, rdx
+    jne     .given
+    push    rcx
+    push    rdx
+    call    mt_isq
+    pop     rdx
+    pop     rcx
+    je      .zero
+.given:
+    push    rcx
+    push    rdx
+    xor     r15d, r15d                     ; (m_dir: data)
+    push    r8
+    call    m_dir_r15
+    pop     r8
+    call    mb_putz
+    mov     al, ' '
+    call    mb_putc
+    pop     rdx
+    pop     rcx
+    call    mt_put
+    mov     r15, [rel mx_cnt]
+    jmp     .field_end
+.default:
+    mov     rsi, [r8 + FL_init]
+    test    rsi, rsi
+    jz      .zero
+    cmp     qword [r8 + FL_dup], 0
+    je      .default_items
+    ; "N DUP (V)": times COUNT dX V
+    push    rsi
+    lea     rsi, [rel s_times]
+    call    mb_putz
+    mov     rax, [r8 + FL_count]
+    call    mb_num
+    mov     al, ' '
+    call    mb_putc
+    pop     rsi
+.default_items:
+    push    rsi
+    push    r15
+    xor     r15d, r15d
+    push    r8
+    call    m_dir_r15
+    pop     r8
+    pop     r15
+    call    mb_putz
+    mov     al, ' '
+    call    mb_putc
+    pop     rsi
+    call    mb_putz
+    jmp     .field_end
+.zero:
+    ; times COUNT dX 0
+    lea     rsi, [rel s_times]
+    call    mb_putz
+    mov     rax, [r8 + FL_count]
+    call    mb_num
+    mov     al, ' '
+    call    mb_putc
+    push    r15
+    xor     r15d, r15d
+    push    r8
+    call    m_dir_r15
+    pop     r8
+    pop     r15
+    call    mb_putz
+    lea     rsi, [rel s_zero1]
+    call    mb_putz
+.field_end:
+    call    mb_nl
+    inc     r13
+    jmp     .field
+.end:
+    call    mb_line
+    lea     rsi, [rel s_iend]
+    call    mb_putz
+    call    mb_nl
+.named:
+    ; NAME.F: "%define NAME.F SIZE [NAME + T.F]"
+    test    r12, r12
+    jz      .ok
+    xor     r13d, r13d
+.define:
+    cmp     r13, [r14 + S_nf]
+    jae     .var
+    imul    r8, r13, FL_SIZE
+    add     r8, [r14 + S_fields]
+    call    mb_line
+    lea     rsi, [rel s_define]
+    call    mb_putz
+    mov     rsi, r12
+    call    mb_putz
+    lea     rsi, [rel s_dot]
+    call    mb_putz
+    mov     rsi, [r8 + FL_name]
+    call    mb_putz
+    mov     al, ' '
+    call    mb_putc
+    mov     r9, [r8 + FL_esize]
+    cmp     r9, 32
+    ja      .unsized
+    push    r8
+    call    size_word
+    pop     r8
+    call    mb_putz
+.unsized:
+    lea     rsi, [rel s_open_b]
+    call    mb_putz
+    mov     rsi, r12
+    call    mb_putz
+    lea     rsi, [rel s_plus_sp]
+    call    mb_putz
+    mov     rsi, [r14 + S_name]
+    call    mb_putz
+    lea     rsi, [rel s_dot]
+    call    mb_putz
+    mov     rsi, [r8 + FL_name]
+    call    mb_putz
+    lea     rsi, [rel s_close]
+    call    mb_putz
+    call    mb_nl
+    inc     r13
+    jmp     .define
+.var:
+    mov     rsi, V_SIZE
+    call    m_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     [rdx + V_name], r12
+    mov     rax, [r14 + S_size]
+    mov     [rdx + V_size], rax
+    mov     qword [rdx + V_count], 1
+    mov     [rdx + V_struct], r14
+    lea     rdi, [rel mv_table]
+    call    m_insert
+.ok:
+    xor     eax, eax
+.ret:
+    pop     r15
+    pop     r13
+    ret
+
+; m_dir_r15: m_dir with r9 the size (a structure's field: its size word
+; when it has one, else db)
+m_dir_r15:
+    cmp     r9, 32
+    jbe     m_dir
+    mov     r9d, 1
+    jmp     m_dir
+
+; ---- STRUCT -------------------------------
+
+; masm_struct_begin: "NAME STRUCT" (r12 NAME)
+masm_struct_begin:
+    mov     eax, EXIT_MASM_NESTED
+    cmp     byte [rel ms_open], 0
+    jne     .ret
+    call    mt_collect
+    test    rax, rax
+    jnz     .ret
+    mov     byte [rel ms_open], 1
+    mov     [rel ms_name], r12
+    mov     qword [rel ms_nf], 0
+    mov     qword [rel ms_off], 0
+    xor     eax, eax
+.ret:
+    ret
+
+; masm_field: "F TYPE ITEMS" in the STRUCT open (r12 F, r13d the type's
+; code, r14 its structure or 0; the items collected): the field noted
+masm_field:
+    push    r15
+    mov     eax, EXIT_INVALID_EXPR
+    mov     rcx, [rel ms_nf]
+    cmp     rcx, MS_MAXF
+    jae     .ret
+    test    r12, r12
+    jz      .ret                           ; (an unnamed field)
+    imul    r15, rcx, FL_SIZE
+    lea     rax, [rel ms_fields]
+    add     r15, rax
+    mov     [r15 + FL_name], r12
+    mov     qword [r15 + FL_init], 0
+    mov     qword [r15 + FL_dup], 0
+    mov     [r15 + FL_struct], r14
+    mov     eax, r13d
+    and     eax, 0x3F
+    test    r14, r14
+    jz      .esize
+    mov     rax, [r14 + S_size]
+.esize:
+    mov     [r15 + FL_esize], rax
+    mov     qword [r15 + FL_count], 1
+    ; the default: ?, N DUP (V), or V (a string: its characters)
+    mov     rcx, [rel mt_n]
+    test    rcx, rcx
+    jz      .noted
+    cmp     rcx, 1
+    jne     .dup
+    xor     ecx, ecx
+    call    mt_isq
+    je      .noted
+    call    mt_tok
+    cmp     byte [rax + TOKEN_kind], TOK_STRING
+    jne     .text
+    movzx   ecx, word [rax + TOKEN_len]
+    test    byte [rax + TOKEN_flags], TOK_FLAG_COUNTED
+    jnz     .str_len
+    push    rax
+    mov     rdi, [rax + TOKEN_value]
+    call    str_len
+    mov     rcx, rax
+    pop     rax
+.str_len:
+    mov     [r15 + FL_count], rcx
+    jmp     .text
+.dup:
+    ; N DUP (V)
+    mov     ecx, 1
+    lea     rsi, [rel w_dup]
+    call    mt_is
+    jne     .text
+    xor     ecx, ecx
+    call    mt_tok
+    cmp     byte [rax + TOKEN_kind], TOK_NUMBER
+    jne     .bad
+    mov     rdi, [rax + TOKEN_value]
+    call    str_to_int
+    test    rax, rax
+    jnz     .bad
+    mov     [r15 + FL_count], rdx
+    mov     ecx, 2
+    call    mt_kind
+    cmp     eax, TOK_LPAREN
+    jne     .bad
+    ; (?): zeros; (V): V repeated
+    mov     rax, [rel mt_n]
+    cmp     rax, 5
+    jne     .dup_text
+    mov     ecx, 3
+    call    mt_isq
+    je      .noted
+.dup_text:
+    mov     qword [r15 + FL_dup], 1
+    mov     ecx, 3
+    mov     rdx, [rel mt_n]
+    dec     rdx
+    jmp     .keep
+.text:
+    ; several values: an array of them
+    xor     ecx, ecx
+    mov     rdx, [rel mt_n]
+    push    rcx
+    push    rdx
+    call    mt_split
+    mov     rax, [rel mx_cnt]
+    cmp     rax, 1
+    jbe     .one_item
+    mov     [r15 + FL_count], rax
+.one_item:
+    pop     rdx
+    pop     rcx
+.keep:
+    ; the text kept (the arena): as mt_put writes it (strings quoted)
+    push    rcx
+    push    rdx
+    call    mb_begin
+    pop     rdx
+    pop     rcx
+    call    mt_put
+    call    mb_keep
+    test    rax, rax
+    jnz     .ret
+    mov     [r15 + FL_init], rdx
+.noted:
+    mov     rax, [r15 + FL_esize]
+    imul    rax, [r15 + FL_count]
+    add     [rel ms_off], rax
+    inc     qword [rel ms_nf]
+    xor     eax, eax
+.ret:
+    pop     r15
+    ret
+.bad:
+    mov     eax, EXIT_UNEXPECTED_TOKEN
+    pop     r15
+    ret
+
+; masm_struct_end: "NAME ENDS" (r12 NAME): struc NAME / .F resX N ... /
+; endstruc; the structure kept. ENDS with no STRUCT open: a segment's end
+masm_struct_end:
+    push    r13
+    push    r14
+    call    mt_collect
+    test    rax, rax
+    jnz     .ret
+    xor     eax, eax
+    cmp     byte [rel ms_open], 0
+    je      .ret                           ; (a segment's: nothing)
+    mov     rdi, r12
+    mov     rsi, [rel ms_name]
+    call    m_streq_ci
+    mov     eax, EXIT_MASM_ENDS
+    jne     .ret
+    mov     byte [rel ms_open], 0
+    ; kept: the structure and its fields
+    mov     rsi, S_SIZE
+    call    m_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     r14, rdx
+    mov     [r14 + S_name], r12
+    mov     rax, [rel ms_off]
+    mov     [r14 + S_size], rax
+    mov     rax, [rel ms_nf]
+    mov     [r14 + S_nf], rax
+    imul    rsi, rax, FL_SIZE
+    add     rsi, 8
+    call    m_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     [r14 + S_fields], rdx
+    mov     rdi, rdx
+    lea     rsi, [rel ms_fields]
+    mov     rcx, [rel ms_nf]
+    imul    rcx, rcx, FL_SIZE
+    rep movsb
+    mov     rdx, r14
+    lea     rdi, [rel ms_table]
+    call    m_insert
+    ; the text
+    call    mb_begin
+    call    mb_line
+    lea     rsi, [rel s_struc]
+    call    mb_putz
+    mov     rsi, r12
+    call    mb_putz
+    call    mb_nl
+    xor     r13d, r13d
+.field:
+    cmp     r13, [r14 + S_nf]
+    jae     .end
+    imul    r8, r13, FL_SIZE
+    add     r8, [r14 + S_fields]
+    call    mb_line
+    lea     rsi, [rel s_dot]
+    call    mb_putz
+    mov     rsi, [r8 + FL_name]
+    call    mb_putz
+    mov     al, ' '
+    call    mb_putc
+    mov     r9, [r8 + FL_esize]
+    mov     rax, [r8 + FL_count]
+    cmp     r9, 32
+    jbe     .sized
+    imul    rax, r9                        ; (a structure's: its bytes)
+    mov     r9d, 1
+.sized:
+    push    rax
+    push    r15
+    mov     r15d, 1
+    push    r8
+    call    m_dir
+    pop     r8
+    pop     r15
+    call    mb_putz
+    mov     al, ' '
+    call    mb_putc
+    pop     rax
+    call    mb_num
+    call    mb_nl
+    inc     r13
+    jmp     .field
+.end:
+    call    mb_line
+    lea     rsi, [rel s_endstruc]
+    call    mb_putz
+    call    mb_nl
+    call    mb_push
+.ret:
+    pop     r14
+    pop     r13
+    ret
+
+[SECTION .bss]
+m_count:        resq 1              ; m_items: the elements
