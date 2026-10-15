@@ -425,6 +425,11 @@ _start:
     ; GNU's .type / .size / .hidden ..., on the symbols once all are read
     extern  gas_finish
     call    gas_finish
+    ; a GNU .if with no .endif
+    extern  gas_macro_finish
+    call    gas_macro_finish
+    test    rax, rax
+    jnz     .error_in_parser
 
     ; %error lines were reported as they were reached; no output after them
     cmp     dword [rel error_deferred], 0
