@@ -139,6 +139,16 @@
 %define EXIT_MERGE_ENTSIZE     121 ; '.section .rodata.cst8, "aM", @progbits'
 %define EXIT_SYM_TYPE          122 ; ".type f, @nonsense"
 %define EXIT_POPSECTION        123 ; ".popsection" with none pushed
+%define EXIT_GAS_RAW           124 ; a GNU .macro / .rept inside a NASM macro or %rep
+%define EXIT_GAS_NO_ENDM       125 ; ".macro m" and no .endm
+%define EXIT_GAS_NO_ENDR       126 ; ".rept 3" and no .endr
+%define EXIT_GAS_STRAY         127 ; ".endif" with no .if open, ".endm" alone ...
+%define EXIT_GAS_NO_ENDIF      128 ; ".if 1" and no .endif
+%define EXIT_GAS_ARG_REQ       129 ; a :req parameter not given
+%define EXIT_GAS_ARG_MANY      130 ; more arguments than parameters
+%define EXIT_GAS_ARG_NAME      131 ; "m x=1" with no parameter x
+%define EXIT_GAS_NO_MACRO      132 ; ".purgem m" with no macro m
+%define EXIT_GAS_PARAMS        133 ; ".macro m a:bogus"
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
