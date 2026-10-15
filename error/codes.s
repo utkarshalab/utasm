@@ -663,6 +663,7 @@ code_table:
     code_msg EXIT_MASM_FIELD,        m_masm_field, t_masm_field
     code_msg EXIT_MASM_ENDS,         m_masm_ends
     code_msg EXIT_MASM_STRUCT_OPEN,  m_masm_struct_open, t_masm_struct_open
+    code_msg EXIT_FASM_FORMAT,       m_fasm_format, t_fasm_format
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -876,6 +877,8 @@ t_masm_field:   db "no structure field `^'", 0
 m_masm_ends:    db "ENDS's name is not the STRUCT's", 0
 m_masm_struct_open: db "STRUCT with no ENDS", 0
 t_masm_struct_open: db "STRUCT `^' with no ENDS", 0
+m_fasm_format:  db "format: not the output format -f chose (ELF64 [executable], ELF, binary)", 0
+t_fasm_format:  db "format `^': not the output format -f chose (ELF64 [executable], ELF, binary)", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
 t_multi:        db "symbol `^' defined more than once", 0
