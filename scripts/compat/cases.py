@@ -2245,3 +2245,139 @@ FASM_CASES = [
     ("virtual open", "virtual at 0\ndb 1\n", None, "`virtual' with no `end virtual'"),
     ("assign a label", "label: nop\nlabel = 5\n", None, "inconsistently redefined"),
 ]
+
+# batch 54: MASM's PROC / LOCAL / INVOKE / .IF & co (frontend/parser/masm.s)
+# - a program that uses all of them, its exit status their sum; then each
+# error
+MASM_PROGRAM = (r"""bits 64
+%use masm
+global _start
+section .text
+
+; sum of 1..n, with a LOCAL and .WHILE
+sumto PROC uses rbx, n:QWORD
+    LOCAL acc:QWORD, i:DWORD
+    mov acc, 0
+    mov i, 1
+    mov edx, dword ptr n
+    .WHILE i <= edx
+        mov eax, i
+        add acc, rax
+        inc i
+    .ENDW
+    mov rax, acc
+    ret
+sumto ENDP
+
+; max of two signed ints, .IF/.ELSE
+maxs PROC a:DWORD, b:DWORD
+    mov eax, a
+    .IF sdword ptr eax < b
+        mov eax, b
+    .ENDIF
+    ret
+maxs ENDP
+
+; classify: .IF/.ELSEIF chains with && and ||
+klass PROC x:QWORD
+    mov rax, x
+    .IF rax == 0
+        mov eax, 10
+    .ELSEIF (rax > 5 && rax < 10) || rax == 42
+        mov eax, 20
+    .ELSE
+        mov eax, 30
+    .ENDIF
+    ret
+klass ENDP
+
+; seven arguments: the seventh on the stack
+seven PROC a:QWORD, b:QWORD, c:QWORD, d:QWORD, e:QWORD, f:QWORD, g:QWORD
+    mov rax, a
+    add rax, g
+    ret
+seven ENDP
+
+_start:
+    invoke sumto, 10            ; 55
+    mov r12, rax
+    invoke maxs, -5, 3          ; 3
+    add r12, rax
+    invoke klass, 0             ; 10
+    add r12, rax
+    invoke klass, 7             ; 20
+    add r12, rax
+    invoke klass, 42            ; 20
+    add r12, rax
+    invoke klass, 9999          ; 30
+    add r12, rax
+    invoke seven, 1, 2, 3, 4, 5, 6, 100   ; 101
+    add r12, rax
+    mov ecx, 3
+    xor ebx, ebx
+    .REPEAT
+        inc ebx
+    .UNTILCXZ
+    add r12, rbx                ; 3
+    xor ebx, ebx
+    .REPEAT
+        inc ebx
+        .BREAK .IF ebx == 4
+    .UNTIL ebx > 100
+    add r12, rbx                ; 4
+    ; 55+3+10+20+20+30+101+3+4 = 246
+    mov rdi, r12
+    mov eax, 60
+    syscall
+""", 246)
+MASM_ERRORS = [
+    ("extern f\ninvoke f, rsi, rdi\n", "reads a register an earlier argument was loaded into"),
+    ("f PROC\ng PROC\nret\ng ENDP\n", "PROC inside a PROC"),
+    ("f PROC\nret\ng ENDP\n", "ENDP's name is not the PROC's"),
+    (".ENDIF\n", "`.endif' with nothing open"),
+    (".IF eax == 1\nnop\n", ".IF / .WHILE / .REPEAT with no end"),
+    ("g ENDP\n", "ENDP with no PROC open"),
+    (".BREAK\n", "`.break' with nothing open"),
+    ("f PROC\nret\n", "PROC `f' with no ENDP"),
+    ("f PROC\nnop\nLOCAL x:DWORD\nret\nf ENDP\n", "LOCAL needs the PROC's frame"),
+]
+# (name, bits, format, source, objdump's text of it): 32-bit and Win64
+MASM_CODE = [
+    ("stdcall 32", "elf32", """bits 32
+%use masm
+section .text
+f PROC STDCALL a:DWORD, b:DWORD
+mov eax, a
+add eax, b
+ret
+f ENDP
+main:
+invoke f, 1, 2
+""", ["push ebp", "mov ebp,esp", "sub esp,0x0", "mov eax,DWORD PTR [ebp+0x8]", "add eax,DWORD PTR [ebp+0xc]",
+      "leave", "ret 0x8", "push 0x2", "push 0x1", "call 0 <f>"]),
+    ("win64", "win64", """bits 64
+%use masm
+section .text
+f PROC a:QWORD, b:QWORD, c:QWORD, d:QWORD, e:QWORD
+mov rax, a
+add rax, e
+ret
+f ENDP
+main:
+invoke f, 1, 2, 3, 4, 5
+""", ["mov QWORD PTR [rbp+0x10],rcx", "mov QWORD PTR [rbp+0x28],r9", "add rax,QWORD PTR [rbp+0x30]",
+      "sub rsp,0x8", "push 0x5", "mov ecx,0x1", "mov r9d,0x4", "sub rsp,0x20", "add rsp,0x30"]),
+    ("signed and flags", "elf64", """bits 64
+%use masm
+section .text
+.IF sdword ptr eax < ebx
+nop
+.ENDIF
+.IF CARRY? || !ZERO?
+int3
+.ENDIF
+.IF eax & 4
+hlt
+.ENDIF
+""", ["cmp eax,ebx", "jge", "jb", "je", "test eax,0x4", "je"]),
+]
