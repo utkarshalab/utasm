@@ -439,6 +439,11 @@ _start:
     call    fasm_finish
     test    rax, rax
     jnz     .error_in_parser
+    ; a MASM PROC or .IF block left open
+    extern  masm_finish
+    call    masm_finish
+    test    rax, rax
+    jnz     .error_in_parser
 
     ; %error lines were reported as they were reached; no output after them
     cmp     dword [rel error_deferred], 0
