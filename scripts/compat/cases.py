@@ -1908,3 +1908,221 @@ GAS_ERRORS = [
     (".p2align 40", "alignment"),
     (".balign 3", "alignment"),
 ]
+# batch 51: GNU as's macros, repetitions and conditionals
+# (frontend/parser/gas_macro.s), and its rip addressing
+GAS_CASES += [
+    ("macros", r'''.text
+.macro push2 a, b
+    push \a
+    push \b
+.endm
+.macro sum from=0, to=5
+    .long \from
+    .if \to-\from
+    sum "(\from+1)",\to
+    .endif
+.endm
+.macro lbl name
+\name\()_x: .byte 1
+.endm
+.macro req a:req, b=7
+    .byte \a, \b
+.endm
+.macro va first, rest:vararg
+    .byte \first
+    .byte \rest
+.endm
+.macro cnt
+    .byte \@
+.endm
+.macro Mixed Case
+    .byte \Case
+.endm
+f:
+    push2 rax, rbx
+    push2 rcx rdx
+.data
+    sum 0, 3
+    lbl foo
+    req 1
+    req b=2, a=3
+    va 1, 2, 3, 4
+    cnt
+    cnt
+    MIXED 4
+    mixed 5
+.macro early n
+  .if \n == 2
+    .exitm
+  .endif
+  .byte \n
+.endm
+    early 1
+    early 2
+    early 3
+.purgem early
+'''),
+    ("repetitions", r'''.data
+.rept 3
+    .byte 0xAA
+.endr
+.rept 0
+    .byte 0xBB
+.endr
+.irp r, 1, 2, 3
+    .byte \r * 2
+.endr
+.irp r 4 5
+    .byte \r
+.endr
+.irpc c, 123
+    .byte \c
+.endr
+.irp x
+    .byte 9
+.endr
+.irp a, 1, 2
+  .irp b, 3, 4
+    .byte \a\b
+  .endr
+.endr
+.rept 2
+  .rept 2
+    .byte 0x55
+  .endr
+.endr
+'''),
+    ("conditionals", r'''.data
+.if 0
+    .byte 0x10
+.elseif 1
+    .byte 0x11
+.else
+    .byte 0x12
+.endif
+.ifeq 0
+    .byte 0x13
+.endif
+.ifgt 1
+    .byte 0x14
+.endif
+.iflt -1
+    .byte 0x15
+.endif
+.ifge 0
+    .byte 0x16
+.endif
+.ifle 1
+    .byte 0x17
+.endif
+here:
+.ifdef here
+    .byte 0x20
+.endif
+.ifndef nope
+    .byte 0x21
+.endif
+.ifb
+    .byte 0x22
+.endif
+.ifnb x
+    .byte 0x23
+.endif
+.ifc a,a
+    .byte 0x24
+.endif
+.ifnc a,b
+    .byte 0x25
+.endif
+.ifc 'a','a'
+    .byte 0x28
+.endif
+.ifc 'a', a
+    .byte 0x29
+.endif
+.ifc a b,a b
+    .byte 0x2A
+.endif
+.extern ext
+.ifdef ext
+    .byte 0x2B
+.endif
+.ifeqs "x", "x"
+    .byte 0x26
+.endif
+.ifnes "x", "y"
+    .byte 0x27
+.endif
+.if 1
+  .if 0
+    .byte 0x30
+  .else
+    .byte 0x31
+  .endif
+.else
+    .byte 0x32
+.endif
+.if 0
+  .if 1
+    .byte 0x40
+  .endif
+  .byte 0x41
+.endif
+'''),
+    ("nested macros", r'''.macro outer n
+  .rept \n
+    .byte \n
+  .endr
+  .irp v, 7, 8
+    .rept 2
+      .byte \v
+    .endr
+  .endr
+  .macro inner_\n
+    .byte 0x\n\n
+  .endm
+  inner_\n
+.endm
+.data
+outer 2
+outer 3
+inner_2
+'''),
+    ("rip addressing", r'''.text
+.globl f
+f:
+    mov edi, OFFSET FLAT:x
+    mov rax, QWORD PTR x[rip]
+    lea rsi, .LC0[rip]
+    mov eax, DWORD PTR [rip+x+4]
+    lea rax, [rip + x]
+    lea rax, [rip]
+    lea rax, [rip - 16]
+    mov eax, DWORD PTR 8[rbp]
+    movss xmm0, DWORD PTR .LC1[rip]
+    ret
+.section .rodata
+.LC0: .string "hi"
+.LC1: .long 1065353216
+.data
+x: .quad 0, 0
+'''),
+]
+GAS_ERRORS += [
+    (".macro m\n.byte 1", "unexpected end of file in macro `m' definition"),
+    (".endm", "`.endm' with nothing open"),
+    (".endr", "`.endr' with nothing open"),
+    (".endif", "`.endif' with nothing open"),
+    (".else", "`.else' with nothing open"),
+    (".exitm", "`.exitm' with nothing open"),
+    (".data\n.if 1\n.byte 1", "end of file in conditional"),
+    (".macro m a:req\n.endm\nm", "missing value for required parameter `a'"),
+    (".macro m a\n.endm\nm 1, 2", "too many positional arguments"),
+    (".macro m a\n.endm\nm z=1", "no macro parameter named `z'"),
+    (".purgem nope", "macro `nope' not defined"),
+    (".rept 2\n.byte 1", "`.rept' without .endr"),
+    (".macro m a:bogus\n.endm", "bad .macro parameter list"),
+    (".macro r\nr\n.endm\nr", "macros nested too deeply"),
+    ("%macro nm 0\n.rept 2\nnop\n.endr\n%endmacro\nnm", "inside a NASM macro or %rep"),
+    ("mov eax, [rip + rax]", "invalid effective address"),
+]
