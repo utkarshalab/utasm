@@ -633,6 +633,11 @@ code_table:
     code_msg EXIT_GOTOFF_QWORD_ABS,  m_gotoff_qword_abs
     code_msg EXIT_WRT_UNSUPPORTED,   m_wrt_unsupported
     code_msg EXIT_DEST_IS_SOURCE,    m_dest_is_source
+    code_msg EXIT_ORG_BACKWARDS,     m_org_backwards
+    code_msg EXIT_ATT_SYNTAX,        m_att_syntax
+    code_msg EXIT_MERGE_ENTSIZE,     m_merge_entsize
+    code_msg EXIT_SYM_TYPE,          m_sym_type, t_sym_type
+    code_msg EXIT_POPSECTION,        m_popsection
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -804,6 +809,12 @@ m_gotoff_qword: db "ELF64 requires ..gotoff references to be qword", 0
 m_gotoff_qword_abs: db "ELF64 requires ..gotoff references to be qword absolute", 0
 m_wrt_unsupported: db "ELF format does not support this use of WRT", 0
 m_dest_is_source: db "the destination must not be a source register (the CPU faults: #UD)", 0
+m_org_backwards: db ".org would move the location counter backwards", 0
+m_att_syntax:   db "AT&T syntax is not supported: utasm reads Intel syntax", 0
+m_merge_entsize: db "entity size for SHF_MERGE not specified", 0
+m_sym_type:     db "unrecognized symbol type", 0
+t_sym_type:     db "unrecognized symbol type `^'", 0
+m_popsection:   db ".popsection without corresponding .pushsection", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
 t_multi:        db "symbol `^' defined more than once", 0
