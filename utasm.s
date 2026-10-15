@@ -200,6 +200,10 @@ _start:
     extern  diag_init
     call    diag_init
 
+    ; --lsp: the language server instead (tools/lsp/lsp.s; it exits)
+    extern  cli_lsp, lsp_main
+    cmp     byte [rel cli_lsp], 0
+    jne     lsp_main
     test    dword [rbx + ASMCTX_flags], CTX_FLAG_SHOW_HELP
     jnz     .show_help
     test    dword [rbx + ASMCTX_flags], CTX_FLAG_SHOW_VERSION
@@ -807,6 +811,7 @@ print_num:
                    db "  -E                        preprocess only (to stdout, or the -o file)", 10
                    db "  -l file                   write a listing (lines, offsets, bytes)", 10
                    db "  --map file                write a map file (sections, symbols)", 10
+                   db "  --lsp                     a language server on stdin / stdout (diagnostics)", 10
                    db "  -g                        DWARF debug information (line table)", 10
                    db "  -M, -MD, -MF file, -MT t, -MQ t, -MP", 10
                    db "                            Makefile dependencies, as NASM writes them", 10
