@@ -1217,3 +1217,74 @@ def readback(utasm, verbose=False):
                          if len(f) >= 3 and re.match(r"\s+[0-9a-f]+:$", f[0]))
         s.result(line, got == want, "objdump: %s" % got)
     return s
+
+
+def gas_view(path):
+    """an object as GNU as's directives make it: each section with content
+    (or a type or flags of its own) - type, flags, entry size, bytes; its
+    relocations by offset and type; the symbols (GNU's .L ones it drops,
+    utasm keeps under the global label, as NASM keeps locals)"""
+    out, names = [], {}
+    for line in run(["readelf", "-SW", path]).stdout.splitlines():
+        m = re.match(r"^\s+\[\s*(\d+)\]\s+(\S+)\s+(\S+)\s+[0-9a-f]+\s+[0-9a-f]+\s+([0-9a-f]+)"
+                     r"\s+([0-9a-f]+)\s+(\S*)\s+\d+\s+\d+\s+\d+\s*$", line)
+        if not m:
+            continue
+        idx, name, typ, size, es, flg = m.groups()
+        if flg.isdigit():
+            flg = ""
+        names[idx] = name
+        if name in (".symtab", ".strtab", ".shstrtab") or name.startswith((".rela", ".note.GNU")):
+            continue
+        if int(size, 16) == 0 and name in (".text", ".data", ".bss") and flg in ("AX", "WA"):
+            continue                       # (GNU's three, always there)
+        out.append("S %s %s %s es %d size %d" % (name, typ, flg, int(es, 16), int(size, 16)))
+        binf = "%s.%s.bin" % (path, idx)
+        dump = run(["objcopy", "-O", "binary", "--only-section=" + name, path, binf])
+        if typ != "NOBITS" and dump.returncode == 0 and os.path.exists(binf):
+            out.append("D %s %s" % (name, open(binf, "rb").read().hex()))
+    sec = ""
+    for line in run(["readelf", "-rW", path]).stdout.splitlines():
+        if line.startswith("Relocation section"):
+            sec = line.split("'")[1]
+        m = re.match(r"^([0-9a-f]+)\s+[0-9a-f]+\s+(R_\S+)", line.strip())
+        if m:
+            # a branch to another file's symbol: GNU's PLT32, NASM's PC32
+            # (utasm's, as NASM's; "wrt ..plt" asks for PLT32)
+            out.append("R %s %d %s" % (sec, int(m.group(1), 16),
+                                       m.group(2).replace("R_X86_64_PLT32", "R_X86_64_PC32")))
+    for line in run(["readelf", "-sW", path]).stdout.splitlines():
+        f = line.split()
+        if len(f) >= 8 and f[0].rstrip(":").isdigit() and f[3] not in ("FILE", "SECTION") and ".L" not in f[7]:
+            out.append("Y %s %s %s %s %s size %s" % (f[7], f[3], f[4], f[5], names.get(f[6], f[6]), f[2]))
+    return sorted(out)
+
+
+def gas(utasm, verbose=False):
+    """GNU as's directives (frontend/parser/gas.s): the same source, its
+    instructions in Intel syntax, assembled by GNU as and by utasm - the same
+    sections, bytes, relocations and symbols"""
+    s = Suite("GNU as directives", verbose)
+    if not have("as"):
+        return s
+    for name, src in cases.GAS_CASES:
+        with tempdir() as d:
+            open(os.path.join(d, "g.s"), "w").write(".intel_syntax noprefix\n" + src)
+            a = run(["as", "--64", "-o", "g.as.o", "g.s"], cwd=d)
+            if a.returncode:
+                s.result(name, False, "GNU as: " + first_line(a))
+                continue
+            u = run([utasm, "-f", "elf64", "-o", "g.ut.o", "g.s"], cwd=d)
+            if u.returncode:
+                s.result(name, False, "utasm: " + first_line(u))
+                continue
+            va, vu = gas_view(os.path.join(d, "g.as.o")), gas_view(os.path.join(d, "g.ut.o"))
+        diff = [l for l in difflib.unified_diff(va, vu, "as", "utasm", lineterm="", n=0)
+                if l[:1] in "+-" and l[:3] not in ("+++", "---")]
+        s.result(name, not diff, " ".join(diff[:6]))
+    for line, want in cases.GAS_ERRORS:
+        with tempdir() as d:
+            open(os.path.join(d, "e.s"), "w").write(line + "\n")
+            r = run([utasm, "-f", "elf64", "-o", "e.o", "e.s"], cwd=d)
+        s.result(line, r.returncode != 0 and want in (r.stderr or ""), "rc %d: %s" % (r.returncode, first_line(r)))
+    return s
