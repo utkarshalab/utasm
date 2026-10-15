@@ -923,12 +923,12 @@ are read and not written. The misuses are errors with GAS's messages
 
 ### GNU as directives
 
-utasm also reads the directives GNU `as` code is written with. Each one
-does what it does in GNU `as`: the same sections, flags, bytes and symbols
-(the compatibility suites check this against GNU `as` itself). NASM's
-directives keep working beside them in the same file. The instructions are
-utasm's Intel syntax, as everywhere else: `[rel msg]` for an address
-relative to `rip`.
+utasm also reads GNU `as` code in its Intel syntax (`.intel_syntax
+noprefix`): its directives, macros, repetitions and conditionals, and its
+operand forms. Each does what it does in GNU `as`: the same sections, flags,
+bytes and symbols (the compatibility suites check this against GNU `as`
+itself). NASM's directives and macros keep working beside them in the same
+file.
 
 ```asm
     .intel_syntax noprefix
@@ -939,7 +939,7 @@ msg:
     .globl  main
     .type   main, @function
 main:
-    lea     rdi, [rel msg]
+    lea     rdi, msg[rip]
     ...
     ret
     .size   main, . - main
@@ -965,7 +965,15 @@ main:
 | `.comm NAME, SIZE[, ALIGN]`, `.lcomm NAME, SIZE` | a common block; SIZE bytes of `.bss` under a local name |
 | `.code16`, `.code32`, `.code64` | `bits 16` / `32` / `64` |
 | `.ident "TEXT"` | TEXT in the `.comment` section |
-| `.intel_syntax`, `.file`, `.loc`, `.arch` | accepted, nothing else done |
+| `.intel_syntax` | `DWORD PTR`, `OFFSET`, `FLAT:` read as GNU `as` reads them (`ptr`, `flat` and `offset` as `%use masm` has them) |
+| `.file`, `.loc`, `.arch` | accepted, nothing else done |
+
+Addresses relative to `rip` are written as GNU `as` writes them, in 64-bit
+code: `[rip + x]` and `x[rip]` (also `DWORD PTR x[rip + 8]`) are `[rel x]`;
+`[rip + 8]`, `[rip - 16]` and `[rip]` (a number, or an `equ` constant) are
+that displacement from the next instruction, as written. `rip` takes no
+other register (`[rip + rax]` is an error). `8[rbp]`, a displacement before
+the brackets, is `[rbp + 8]`.
 
 In an expression a single `.` is the current address, `$`. A `.name` label
 (`.Lfoo`) is a local label, as in NASM, and is written to the symbol table
@@ -978,6 +986,56 @@ same; `call f wrt ..plt` asks for the PLT one). A directive name followed by
 `:` is a label (`.text:`), and one followed by `equ`, `times`, a `res` or a
 `d` word is a label too, so a structure field named `.size` or `.type`
 keeps working. `.att_syntax` gives an error: utasm reads Intel syntax only.
+
+#### GNU macros, repetitions and conditionals
+
+```asm
+    .macro  save reg, slot=0
+    mov     [rsp + \slot], \reg
+    .endm
+    save    rax, 8                  ; mov [rsp + 8], rax
+    save    rbx                     ; mov [rsp + 0], rbx
+    save    slot=16, reg=rcx        ; named arguments
+
+    .irp    r, rbx, r12, r13
+    push    \r
+    .endr
+
+    .rept   4
+    nop
+    .endr
+```
+
+| Directives | What they do |
+|---|---|
+| `.macro NAME [P[=DEFAULT \| :req \| :vararg] ...]` ... `.endm` | a macro; its parameters separated by commas or blanks. In its body `\P` is the argument's text, `\@` the number of macros run before this one, and `\()` nothing (`\P\()_x` pastes). Its name is matched in any letter case; a macro may be named like an instruction. |
+| `NAME A1, A2` / `NAME A1 A2` / `NAME P2=A2, P1=A1` | a call: arguments by position or by name; a missing one is its default (or empty); a `:req` one must be given; a `:vararg` one takes the rest of the line; `"..."` around an argument is taken off |
+| `.exitm` | the macro being expanded ends here (and a `.rept` / `.irp` inside it) |
+| `.purgem NAME` | the macro forgotten |
+| `.rept N` ... `.endr` | N copies |
+| `.irp S, V1, V2 ...` ... `.endr` | a copy for each value, `\S` that value (no values: one copy, `\S` empty) |
+| `.irpc S, CHARS` ... `.endr` | a copy for each character |
+| `.if E` (`.ifne`), `.ifeq`, `.ifgt`, `.ifge`, `.iflt`, `.ifle E` | E compared with zero (E a number when the line is read) |
+| `.ifdef S`, `.ifndef S` / `.ifnotdef S` | S defined so far (a name only declared `extern` is not) |
+| `.ifb TEXT`, `.ifnb TEXT` | the rest of the line blank (in a macro: an argument left out) |
+| `.ifc A, B`, `.ifnc A, B` | the two texts the same, as written (`'a'` is not `a`) |
+| `.ifeqs "A", "B"`, `.ifnes "A", "B"` | the two strings the same |
+| `.elseif E`, `.else`, `.endif` | the rest of a conditional |
+
+They nest in each other in any way: a macro's body may hold `.rept`, `.if`
+and another `.macro`, and a macro may call itself, ended by an `.if` (more
+than 1024 levels at once: "macros nested too deeply"). A body is taken as
+source text, up to its `.endm` / `.endr`, and an expansion is read as that
+text with its arguments in place; an error in it is reported at the body's
+own line. In a listing (`-l`) the call is one line, with all the bytes the
+expansion made. A conditional's skipped part is not assembled; NASM's `%`
+directives in it are still read. A GNU `.macro`, `.rept` or `.irp`, or an
+`.ifb` / `.ifc`, needs its source text, so it cannot be inside a NASM
+`%macro` or `%rep` (an error); NASM's macros can be used inside GNU ones.
+The errors are GNU's: "unexpected end of file in macro `m' definition",
+"`.endif' with nothing open for it", "end of file in conditional", "missing
+value for required parameter `a'", "too many positional arguments" and the
+like.
 
 ### Structures
 
