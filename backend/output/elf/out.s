@@ -1054,9 +1054,15 @@ elf64_resolve_entry:
     push    r14
     
     mov     r12, rdi ; AsmCtx
-    
+
     mov     rdi, r12               ; symbol_find takes the AsmCtx
     lea     rsi, [rel .str_start]
+    ; FASM's "entry NAME" (frontend/parser/fasm.s) instead
+    extern  fasm_entry_name
+    cmp     qword [rel fasm_entry_name], 0
+    je      .entry_named
+    mov     rsi, [rel fasm_entry_name]
+.entry_named:
     extern  symbol_find
     call    symbol_find
     IF rax, e, EXIT_OK
