@@ -1391,3 +1391,35 @@ def fasm_features(utasm, verbose=False):
         else:
             s.result(name, got == want, "rc %d: %s / %s" % (r.returncode, got, first_line(r)))
     return s
+
+
+def masm_features(utasm, verbose=False):
+    """%use masm's PROC / LOCAL / INVOKE / .IF & co (frontend/parser/masm.s):
+    a program using them all, linked and run; their code in 32-bit and
+    Win64; each error"""
+    s = Suite("masm features", verbose)
+    src, want = cases.MASM_PROGRAM
+    if have("ld"):
+        with tempdir() as d:
+            open(os.path.join(d, "p.s"), "w").write(src)
+            a = run([utasm, "-f", "elf64", "-o", "p.o", "p.s"], cwd=d)
+            l = run(["ld", "-o", "p", "p.o"], cwd=d) if a.returncode == 0 else a
+            r = run([os.path.join(d, "p")], cwd=d) if l.returncode == 0 else l
+        s.result("program", a.returncode == 0 and r.returncode == want,
+                 "rc %d (want %d): %s" % (r.returncode, want, first_line(a) or first_line(l)))
+    for name, fmt, src, want in cases.MASM_CODE:
+        with tempdir() as d:
+            open(os.path.join(d, "c.s"), "w").write(src)
+            a = run([utasm, "-f", fmt, "-o", "c.o", "c.s"], cwd=d)
+            o = run(["objdump", "-d", "-M", "intel", "--no-show-raw-insn", os.path.join(d, "c.o")]).stdout \
+                if a.returncode == 0 else ""
+        text = [re.sub(r"\s+", " ", l.split("\t", 1)[1]).strip() if "\t" in l else "" for l in o.splitlines()]
+        missing = [w for w in want if not any(t.startswith(w) for t in text)]
+        s.result(name, a.returncode == 0 and not missing, "rc %d, missing %s: %s" % (a.returncode, missing, first_line(a)))
+    for src, want in cases.MASM_ERRORS:
+        with tempdir() as d:
+            open(os.path.join(d, "e.s"), "w").write("bits 64\n%use masm\nsection .text\n" + src)
+            r = run([utasm, "-f", "elf64", "-o", "e.o", "e.s"], cwd=d)
+        s.result(src.splitlines()[0], r.returncode != 0 and want in (r.stderr or ""),
+                 "rc %d: %s" % (r.returncode, first_line(r)))
+    return s
