@@ -26,6 +26,9 @@ DEFAULT REL
 ;             (bits 64) - the default
 ;   k8, k7    AMD's 66-prefixed nops (k7: lea forms in bits 32)
 ;   p6        0F 1F /0 multi-byte nops
+;   gas       GNU as's: 0F 1F /0 up to 11 bytes (66 66 2E 0F 1F 84 ...),
+;             never a jump - what a GNU directive's alignment writes in
+;             code (frontend/parser/gas.s)
 ;
 ; padding longer than the mode's threshold (8 for generic, 16 otherwise;
 ; "alignmode MODE, nojmp" never) is jumped over: jmp to its end, then
@@ -43,6 +46,7 @@ DEFAULT REL
 %define SA_K8        3
 %define SA_K7        4
 %define SA_P6        5
+%define SA_GAS       6
 
 [SECTION .data]
 align 4
@@ -77,6 +81,14 @@ sa_p6:       db 8, 0x90, 0x66,0x90, 0x0f,0x1f,0x00, 0x0f,0x1f,0x40,0x00
              db 0x0f,0x1f,0x44,0x00,0x00, 0x66,0x0f,0x1f,0x44,0x00,0x00
              db 0x0f,0x1f,0x80,0x00,0x00,0x00,0x00
              db 0x0f,0x1f,0x84,0x00,0x00,0x00,0x00,0x00
+; GNU as 2.43's in bits 64 (as many 11-byte ones as fit, one for the rest)
+sa_gas:      db 11, 0x90, 0x66,0x90, 0x0f,0x1f,0x00, 0x0f,0x1f,0x40,0x00
+             db 0x0f,0x1f,0x44,0x00,0x00, 0x66,0x0f,0x1f,0x44,0x00,0x00
+             db 0x0f,0x1f,0x80,0x00,0x00,0x00,0x00
+             db 0x0f,0x1f,0x84,0x00,0x00,0x00,0x00,0x00
+             db 0x66,0x0f,0x1f,0x84,0x00,0x00,0x00,0x00,0x00
+             db 0x66,0x2e,0x0f,0x1f,0x84,0x00,0x00,0x00,0x00,0x00
+             db 0x66,0x66,0x2e,0x0f,0x1f,0x84,0x00,0x00,0x00,0x00,0x00
 
 align 8
 ; [mode - 1][bits 16, 32, 64]
@@ -85,6 +97,7 @@ sa_tables:   dq sa_nop, sa_nop, sa_nop
              dq sa_66, sa_66, sa_66
              dq sa_k7_16, sa_k7_32, sa_66
              dq sa_p6_16, sa_p6, sa_p6
+             dq sa_p6_16, sa_p6, sa_gas
 
 ; alignmode's names: 7 bytes, mode, default threshold (dword)
 sa_modes:    db "nop", 0, 0, 0, 0, SA_NOP
@@ -97,6 +110,8 @@ sa_modes:    db "nop", 0, 0, 0, 0, SA_NOP
              dd 16
              db "p6", 0, 0, 0, 0, 0, SA_P6
              dd 16
+             db "gas", 0, 0, 0, 0, SA_GAS
+             dd -1
              db 0
 
 [SECTION .text]
@@ -139,6 +154,22 @@ align_fill_spec:
     ret
 .zero_fill:
     mov     eax, 0x100                     ; 0 elsewhere
+    ret
+
+; ---- align_gas_spec ----------------------
+;
+; align_gas_spec
+; The fill spec of GNU as's code alignment, in the bits now: its long
+; NOPs, never a jump.
+; Output   : rax = fill spec
+;
+global align_gas_spec
+align_gas_spec:
+    movzx   eax, byte [rel asm_bits]
+    shl     eax, 24
+    or      eax, 0x200 | (SA_GAS << 16)
+    mov     rcx, 0xFFFFFFFF00000000        ; (threshold -1)
+    or      rax, rcx
     ret
 
 ; ---- align_fill --------------------------
