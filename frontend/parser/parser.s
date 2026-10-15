@@ -391,7 +391,26 @@ parser_parse_instruction:
             jmp     .get_mnemonic
             ENDIF
         ENDIF
-    
+
+    ; "NAME = EXPR" (GNU as, FASM, MASM): a constant, which a later "NAME =
+    ; ..." sets again (frontend/parser/gas.s gas_assign) - "==" is no such
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    check_err
+    cmp     byte [rdx + TOKEN_kind], TOK_EQUAL
+    jne     .not_assign
+    cmp     word [rdx + TOKEN_len], 1
+    jne     .not_assign
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rdi, rbx
+    mov     rsi, [r12 + TOKEN_value]
+    extern  gas_assign
+    call    gas_assign
+    check_err
+    jmp     .get_mnemonic
+.not_assign:
+
     ; 3. Sync DWARF line info
     mov     rdi, [rbx + PREP_ctx]
     mov     eax, [rbx + PREP_line]
@@ -3634,6 +3653,33 @@ parser_evaluate_factor:
     jne     .not_gas_dot
     mov     al, TOK_DOLLAR
 .not_gas_dot:
+    ; FASM's "defined NAME" / "defined(NAME)": 1 or 0 (frontend/parser/
+    ; fasm.s) - "defined" alone is a name
+    cmp     al, TOK_IDENT
+    jne     .not_defined_op
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [rel str_defined]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .not_defined_kw
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    check_err
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_IDENT
+    je      .defined_op
+    cmp     eax, TOK_LPAREN
+    jne     .not_defined_kw
+.defined_op:
+    mov     rdi, rbx
+    extern  fasm_defined
+    call    fasm_defined
+    check_err
+    xor     eax, eax
+    jmp     .done
+.not_defined_kw:
+    mov     al, TOK_IDENT
+.not_defined_op:
 
     IF al, e, TOK_NUMBER
         ; "1f" / "1b": a numeric label reference, looked up like a symbol
@@ -5349,6 +5395,7 @@ parser_numlabel_name:
 ; * Input  : EDI = 0 for "$", 1 for "$$"; RBX = PrepState
 ; * Output : RAX = OK and RDX = the SYMBOL*, or an error
 ; ;
+global parser_pos_label
 parser_pos_label:
     push    r12
     push    r13
@@ -6976,10 +7023,11 @@ parser_define_label:
         movzx   ecx, word [rax + SECTION_index]
         mov     [rsi + SYMBOL_section], cx
         ENDIF
-    ; in an "absolute" block a label is a plain number
+    ; in an "absolute" block (or a FASM virtual one) a label is a plain
+    ; number
     test    rax, rax
     jz      .not_abs_new
-    cmp     rax, [rel abs_section]
+    cmp     byte [rax + SECTION_type], SEC_ABSOLUTE
     jne     .not_abs_new
     mov     byte [rsi + SYMBOL_kind], SYM_CONSTANT
     or      byte [rsi + SYMBOL_pflags], SYMF_STRUC
@@ -7020,7 +7068,7 @@ parser_define_label:
         ENDIF
     test    rax, rax
     jz      .not_abs_old
-    cmp     rax, [rel abs_section]
+    cmp     byte [rax + SECTION_type], SEC_ABSOLUTE
     jne     .not_abs_old
     mov     byte [rdx + SYMBOL_kind], SYM_CONSTANT
     or      byte [rdx + SYMBOL_pflags], SYMF_STRUC
@@ -7232,6 +7280,14 @@ parser_handle_pseudo_op:
 .gas_renamed:
     mov     r12, rdx
 .not_gas:
+
+    ; FASM's virtual / end virtual / load / store (frontend/parser/fasm.s)
+    call    parser_fasm_word
+    test    eax, eax
+    jz      .not_fasm
+    mov     rax, rdx
+    jmp     .check_handler_result
+.not_fasm:
 
     ; 1. Data Directives (db, dw, dd, dq) - the whole word, not a prefix
     ;    ("dbg" or "dword_table" as a statement word is not db / dw)
@@ -7551,7 +7607,8 @@ parser_handle_pseudo_op:
     mov     byte [rel extern_required], 0
     jmp     .check_handler_result
 .not_required:
-    ; [map ...] in an object file: not a directive (see org)
+    ; [map OPTIONS FILE] in a flat binary: its map file (backend/output/
+    ; map.s); in an object file not a directive (see org)
     mov     rdi, r12
     lea     rsi, [rel str_map]
     call    str_cmp_kw
@@ -7560,6 +7617,8 @@ parser_handle_pseudo_op:
     call    parser_object_out
     test    eax, eax
     jnz     .not_ignored
+    call    parser_map_words
+    jmp     .check_handler_result
 .ignored_list:
     ; [list -] / [list +]: the listing stops and goes on
     mov     rdi, r12
@@ -8935,10 +8994,51 @@ parser_absolute:
     call    parser_evaluate_expression
     test    rax, rax
     jnz     .ret
-    ; "absolute x+7": x's offset as the code is laid out, the jumps before
-    ; it shortened (core/known.s, as for "%if $ - $$"; or that code keeps
-    ; its size); in a flat binary its section's start (org) with it, as
-    ; NASM has it
+    call    parser_abs_place
+    test    rax, rax
+    jnz     .ret
+    push    rdx
+    mov     rax, [rel abs_section]
+    test    rax, rax
+    jnz     .have
+    mov     rdi, [rbx + PREP_ctx]
+    lea     rsi, [rel str_absolute]
+    mov     edx, SEC_CUSTOM
+    call    asm_ctx_create_section
+    test    rax, rax
+    jnz     .error
+    ; not a section of the output: out of the list again
+    mov     rdi, [rbx + PREP_ctx]
+    dec     word [rdi + ASMCTX_seccount]
+    mov     dword [rdx + SECTION_elf_type], SHT_NOBITS
+    mov     byte [rdx + SECTION_type], SEC_ABSOLUTE    ; (its labels numbers)
+    mov     [rel abs_section], rdx
+    mov     rax, rdx
+.have:
+    pop     rdx
+    mov     [rax + SECTION_addr], rdx
+    mov     qword [rax + SECTION_size], 0
+    mov     rdi, [rbx + PREP_ctx]
+    mov     [rdi + ASMCTX_curr_sec], rax
+    xor     eax, eax
+.ret:
+    ret
+.error:
+    pop     rdx
+    ret
+
+;*
+; * [parser_abs_place]
+; * Purpose: The address an "absolute" / FASM "virtual at" block starts at,
+; *   from its expression's value (rdx) and label (r11): "absolute x+7" is
+; *   x's offset as the code is laid out, the jumps before it shortened
+; *   (core/known.s, as for "%if $ - $$"; or that code keeps its size); in
+; *   a flat binary its section's start (org) with it, as NASM has it.
+; * Input  : RBX = PrepState, RDX = the value, R11 = its label (or 0)
+; * Output : RAX = OK, RDX = the address
+; ;
+global parser_abs_place
+parser_abs_place:
     test    r11, r11
     jz      .based
     movzx   ecx, word [r11 + SYMBOL_section]
@@ -8977,33 +9077,7 @@ parser_absolute:
     jne     .based
     add     rdx, [r10 + SECTION_addr]
 .based:
-    push    rdx
-    mov     rax, [rel abs_section]
-    test    rax, rax
-    jnz     .have
-    mov     rdi, [rbx + PREP_ctx]
-    lea     rsi, [rel str_absolute]
-    mov     edx, SEC_CUSTOM
-    call    asm_ctx_create_section
-    test    rax, rax
-    jnz     .error
-    ; not a section of the output: out of the list again
-    mov     rdi, [rbx + PREP_ctx]
-    dec     word [rdi + ASMCTX_seccount]
-    mov     dword [rdx + SECTION_elf_type], SHT_NOBITS
-    mov     [rel abs_section], rdx
-    mov     rax, rdx
-.have:
-    pop     rdx
-    mov     [rax + SECTION_addr], rdx
-    mov     qword [rax + SECTION_size], 0
-    mov     rdi, [rbx + PREP_ctx]
-    mov     [rdi + ASMCTX_curr_sec], rax
     xor     eax, eax
-.ret:
-    ret
-.error:
-    pop     rdx
     ret
 
 ;*
@@ -9136,6 +9210,11 @@ parser_alignmode:
 
 [SECTION .rodata]
 str_absolute:  db "absolute", 0
+str_fasm_virtual: db "virtual", 0
+str_fasm_end:  db "end", 0
+str_fasm_load: db "load", 0
+str_fasm_store: db "store", 0
+str_defined:   db "defined", 0
 str_alignb_d:  db "alignb", 0
 str_alignmode: db "alignmode", 0
 str_nojmp:     db "nojmp", 0
@@ -10164,6 +10243,156 @@ parser_object_out:
     jne     .ret
     inc     eax
 .ret:
+    ret
+
+;*
+; * [parser_fasm_word]
+; * Purpose: FASM's statement words (frontend/parser/fasm.s): "virtual",
+; *   "end virtual", "load", "store" - not when a ':' or a NASM word (equ,
+; *   resb, db, times) follows: a label of that name then.
+; * Input  : RBX = PrepState, R12 = the word (lower case)
+; * Output : EAX = 0: none; 1: done, RDX = OK or an error
+; ;
+parser_fasm_word:
+    mov     rdi, r12
+    lea     rsi, [rel str_fasm_virtual]
+    call    str_cmp
+    test    rax, rax
+    jz      .virtual
+    mov     rdi, r12
+    lea     rsi, [rel str_fasm_end]
+    call    str_cmp
+    test    rax, rax
+    jz      .end
+    mov     rdi, r12
+    lea     rsi, [rel str_fasm_load]
+    call    str_cmp
+    test    rax, rax
+    jz      .load
+    mov     rdi, r12
+    lea     rsi, [rel str_fasm_store]
+    call    str_cmp
+    test    rax, rax
+    jz      .store
+.none:
+    xor     eax, eax
+    ret
+.virtual:
+    call    .guard
+    jne     .none
+    mov     rdi, rbx
+    extern  fasm_virtual
+    call    fasm_virtual
+    jmp     .done
+.end:
+    ; "end virtual" (an "end" alone is no FASM word here)
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .none
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .none
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel str_fasm_virtual]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .none
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rdi, rbx
+    extern  fasm_end_virtual
+    call    fasm_end_virtual
+    jmp     .done
+.load:
+    call    .guard
+    jne     .none
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .none
+    mov     rdi, rbx
+    extern  fasm_load
+    call    fasm_load
+    jmp     .done
+.store:
+    call    .guard
+    jne     .none
+    mov     rdi, rbx
+    extern  fasm_store
+    call    fasm_store
+.done:
+    mov     rdx, rax
+    mov     eax, 1
+    ret
+; .guard: ZF set when the next token lets the word be FASM's
+.guard:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .guard_no
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_COLON
+    je      .guard_no
+    cmp     eax, TOK_NEWLINE
+    je      .guard_newline
+    cmp     eax, TOK_IDENT
+    jne     .guard_yes
+    mov     rdi, [rdx + TOKEN_value]
+    extern  gas_nasm_word
+    call    gas_nasm_word
+    test    eax, eax
+    jnz     .guard_no
+.guard_yes:
+    cmp     eax, eax
+    ret
+.guard_newline:
+    ; ("virtual" alone: at $; "load" / "store" need operands)
+    mov     rdi, r12
+    lea     rsi, [rel str_fasm_virtual]
+    call    str_cmp
+    test    rax, rax
+    ret
+.guard_no:
+    or      eax, 1
+    ret
+
+;*
+; * [parser_map_words]
+; * Purpose: "[map all file.map]": each word an option or the file
+; *   (backend/output/map.s), to the line's end or its ].
+; * Input  : RBX = PrepState
+; * Output : RAX = OK or an error
+; ;
+parser_map_words:
+.next:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .done
+    cmp     eax, TOK_EOF
+    je      .done
+    cmp     eax, TOK_RBRACKET
+    je      .done
+    cmp     eax, TOK_IDENT
+    je      .word
+    cmp     eax, TOK_STRING
+    jne     .bad
+.word:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rdi, [rdx + TOKEN_value]
+    extern  map_option
+    call    map_option
+    jmp     .next
+.done:
+    xor     eax, eax
+.ret:
+    ret
+.bad:
+    mov     eax, EXIT_UNEXPECTED_TOKEN
     ret
 
 ;*
