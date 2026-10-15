@@ -622,3 +622,285 @@ fasm_defined:
     pop     r12
     pop     rbx
     ret
+
+; ============================================================================
+; FASM'S FORMAT, ENTRY AND SEGMENT
+; ============================================================================
+;   format ELF64 executable [N]     an executable, as --standalone: written
+;                                   whole, no linker (the source's name
+;                                   without its extension when no -o)
+;   format ELF64 / ELF / binary     the format -f gives (another one: an
+;                                   error - it is chosen before the source)
+;   entry NAME                      where the executable starts (_start
+;                                   when there is no entry line)
+;   segment readable executable     after a format line: section .text
+;   segment readable writeable      ... .data, "segment readable" .rodata
+
+[SECTION .rodata]
+w_elf64:    db "elf64", 0
+w_elf:      db "elf", 0
+w_binary:   db "binary", 0
+w_exec:     db "executable", 0
+w_readable: db "readable", 0
+w_writeable: db "writeable", 0
+w_writable: db "writable", 0
+w_execute:  db "executable", 0
+t_text:     db 10, "section .text", 10
+t_text_len  equ $ - t_text
+t_data:     db 10, "section .data", 10
+t_data_len  equ $ - t_data
+t_rodata:   db 10, "section .rodata", 10
+t_rodata_len equ $ - t_rodata
+s_segment:  db "segment", 0
+
+[SECTION .bss]
+global fasm_entry_name
+fasm_entry_name: resq 1             ; entry NAME, or 0 (_start)
+fasm_formatted: resb 1              ; a format line was read
+fasm_out:       resb 4096           ; the executable's name (no -o)
+
+[SECTION .text]
+
+extern  prep_push_buffer
+extern  cli_output_given
+extern  elf32_enabled, coff_enabled
+
+; ---- fasm_format --------------------------
+;
+; fasm_format
+; "format ELF64 [executable [N]]", "format ELF", "format binary".
+; Input    : rdi = PrepState (the operands next)
+; Output   : rax = OK or an error
+;
+global fasm_format
+fasm_format:
+    push    rbx
+    push    r12
+    mov     rbx, rdi
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .bad
+    mov     r12, [rdx + TOKEN_value]
+    mov     byte [rel fasm_formatted], 1
+    mov     rax, [rbx + PREP_ctx]
+    ; ELF64
+    mov     rdi, r12
+    lea     rsi, [rel w_elf64]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .not_elf64
+    mov     rax, [rbx + PREP_ctx]
+    cmp     byte [rax + ASMCTX_fmt], FMT_ELF64
+    jne     .other
+    cmp     byte [rel elf32_enabled], 0
+    jne     .other
+    cmp     byte [rel coff_enabled], 0
+    jne     .other
+    ; executable [N]
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .done
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel w_exec]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .done
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rax, [rbx + PREP_ctx]
+    mov     byte [rax + ASMCTX_standalone], 1
+    ; no -o: the source's name without its extension
+    cmp     byte [rel cli_output_given], 0
+    jne     .abi
+    mov     rsi, [rax + ASMCTX_input]
+    lea     rdi, [rel fasm_out]
+    xor     ecx, ecx
+    xor     edx, edx                       ; the last '.' after the last '/'
+.copy:
+    mov     al, [rsi + rcx]
+    mov     [rdi + rcx], al
+    test    al, al
+    jz      .copied
+    cmp     al, '/'
+    jne     .copy_dot
+    xor     edx, edx
+.copy_dot:
+    cmp     al, '.'
+    jne     .copy_next
+    mov     rdx, rcx
+.copy_next:
+    inc     rcx
+    cmp     rcx, 4000
+    jb      .copy
+.copied:
+    test    rdx, rdx
+    jz      .named
+    mov     byte [rdi + rdx], 0
+.named:
+    mov     rax, [rbx + PREP_ctx]
+    mov     [rax + ASMCTX_output], rdi
+.abi:
+    ; [N]: the OS ABI byte (taken)
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_NUMBER
+    jne     .done
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    jmp     .done
+.not_elf64:
+    mov     rdi, r12
+    lea     rsi, [rel w_elf]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .not_elf
+    cmp     byte [rel elf32_enabled], 0
+    je      .other
+    jmp     .done
+.not_elf:
+    mov     rdi, r12
+    lea     rsi, [rel w_binary]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .other
+    mov     rax, [rbx + PREP_ctx]
+    cmp     byte [rax + ASMCTX_fmt], FMT_BIN
+    jne     .other
+.done:
+    xor     eax, eax
+.ret:
+    pop     r12
+    pop     rbx
+    ret
+.other:
+    mov     rdi, r12
+    call    error_set_subject
+    mov     eax, EXIT_FASM_FORMAT
+    jmp     .ret
+.bad:
+    mov     eax, EXIT_UNEXPECTED_TOKEN
+    jmp     .ret
+
+; ---- fasm_entry ---------------------------
+;
+; fasm_entry
+; "entry NAME": the executable starts there.
+; Input    : rdi = PrepState (NAME next)
+; Output   : rax = OK or an error
+;
+global fasm_entry
+fasm_entry:
+    push    rbx
+    mov     rbx, rdi
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .ret
+    mov     eax, EXIT_UNEXPECTED_TOKEN
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .ret
+    mov     rax, [rdx + TOKEN_value]
+    mov     [rel fasm_entry_name], rax
+    xor     eax, eax
+.ret:
+    pop     rbx
+    ret
+
+; ---- fasm_segment -------------------------
+;
+; fasm_segment
+; After a format line, "segment readable executable" (.text), "segment
+; readable writeable" (.data), "segment readable" (.rodata).
+; Input    : rdi = PrepState (the words next)
+; Output   : eax = 0: not FASM's (NASM's segment = section); 1: done, rdx =
+;            OK or an error
+;
+global fasm_segment
+fasm_segment:
+    cmp     byte [rel fasm_formatted], 0
+    jne     .on
+    xor     eax, eax
+    ret
+.on:
+    push    rbx
+    push    r12
+    mov     rbx, rdi
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .none
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .none
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel w_readable]
+    call    str_cmp_kw
+    mov     r12d, 0                        ; 1 exec, 2 write
+    test    rax, rax
+    jz      .words
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel w_writeable]
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .words
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel w_execute]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .none
+.words:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .chosen
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel w_execute]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .not_exec
+    or      r12d, 1
+    jmp     .words
+.not_exec:
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel w_writeable]
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .write
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel w_writable]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .words
+.write:
+    or      r12d, 2
+    jmp     .words
+.chosen:
+    lea     rsi, [rel t_rodata]
+    mov     edx, t_rodata_len
+    test    r12d, 1
+    jz      .not_text
+    lea     rsi, [rel t_text]
+    mov     edx, t_text_len
+    jmp     .push
+.not_text:
+    test    r12d, 2
+    jz      .push
+    lea     rsi, [rel t_data]
+    mov     edx, t_data_len
+.push:
+    mov     rdi, rbx
+    lea     rcx, [rel s_segment]
+    call    prep_push_buffer
+    mov     rdx, rax
+    mov     eax, 1
+    pop     r12
+    pop     rbx
+    ret
+.none:
+    xor     eax, eax
+    pop     r12
+    pop     rbx
+    ret
