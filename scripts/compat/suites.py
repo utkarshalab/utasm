@@ -1431,3 +1431,76 @@ def masm_features(utasm, verbose=False):
         s.result(src.splitlines()[0], r.returncode != 0 and want in (r.stderr or ""),
                  "rc %d: %s" % (r.returncode, first_line(r)))
     return s
+
+
+def lsp_server(utasm, verbose=False):
+    """utasm --lsp (tools/lsp/lsp.s): a client's session - initialize, a
+    document opened (its errors and warnings as diagnostics, an %include
+    beside it found, UTF-8 text), changed, an unknown request, closed,
+    shutdown and exit"""
+    import json, subprocess
+    s = Suite("lsp server", verbose)
+    with tempdir() as d:
+        open(os.path.join(d, "inc.inc"), "w").write("%define VAL 5\n")
+        uri = "file://" + d.replace(" ", "%20") + "/my%20file.s"
+        try:
+            p = subprocess.Popen([utasm, "--lsp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        except OSError as e:
+            s.result("start", False, str(e))
+            return s
+
+        def send(o):
+            b = json.dumps(o).encode()
+            p.stdin.write(b"Content-Length: %d\r\n\r\n" % len(b) + b)
+            p.stdin.flush()
+
+        def recv():
+            h = b""
+            while not h.endswith(b"\r\n\r\n"):
+                c = p.stdout.read(1)
+                if not c:
+                    return None
+                h += c
+            n = int([l for l in h.decode().split("\r\n") if l.lower().startswith("content-length")][0].split(":")[1])
+            return json.loads(p.stdout.read(n))
+
+        def diags(r):
+            return [(x["range"]["start"]["line"], x["severity"], x["message"]) for x in r["params"]["diagnostics"]] \
+                if r and r.get("method") == "textDocument/publishDiagnostics" else None
+
+        try:
+            send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+            r = recv()
+            s.result("initialize", r and r.get("id") == 1 and r["result"]["capabilities"]["textDocumentSync"] == 1,
+                     str(r)[:120])
+            send({"jsonrpc": "2.0", "method": "initialized", "params": {}})
+            text = ('%include "inc.inc"\nsection .text\nmov eax, VAL\nmovv eax, 1\n'
+                    'mov [rip + rax], eax\n; caf\u00e9 "q" \\ x\n')
+            send({"jsonrpc": "2.0", "method": "textDocument/didOpen",
+                  "params": {"textDocument": {"uri": uri, "languageId": "asm", "version": 1, "text": text}}})
+            r = recv()
+            got = diags(r)
+            s.result("errors", r and r["params"]["uri"] == uri and got == [
+                (3, 1, "parser: instruction expected, found `movv'"), (4, 1, "invalid effective address")], str(got))
+            send({"jsonrpc": "2.0", "method": "textDocument/didChange",
+                  "params": {"textDocument": {"uri": uri, "version": 2},
+                             "contentChanges": [{"text": "orphan\ndb 300\n"}]}})
+            got = diags(recv())
+            s.result("warnings", got and [g[:2] for g in got] == [(0, 2), (1, 2)], str(got))
+            send({"jsonrpc": "2.0", "method": "textDocument/didChange",
+                  "params": {"textDocument": {"uri": uri, "version": 3}, "contentChanges": [{"text": "nop\n"}]}})
+            s.result("clean", diags(recv()) == [], "")
+            send({"jsonrpc": "2.0", "id": "x7", "method": "textDocument/hover", "params": {}})
+            r = recv()
+            s.result("unknown request", r and r.get("id") == "x7" and r["error"]["code"] == -32601, str(r)[:120])
+            send({"jsonrpc": "2.0", "method": "textDocument/didClose", "params": {"textDocument": {"uri": uri}}})
+            s.result("close", diags(recv()) == [], "")
+            send({"jsonrpc": "2.0", "id": 2, "method": "shutdown"})
+            r = recv()
+            s.result("shutdown", r and r.get("id") == 2 and "result" in r and r["result"] is None, str(r)[:120])
+            send({"jsonrpc": "2.0", "method": "exit"})
+            s.result("exit", p.wait(timeout=10) == 0, "")
+        except Exception as e:
+            p.kill()
+            s.result("session", False, repr(e)[:160])
+    return s
