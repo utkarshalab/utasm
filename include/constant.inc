@@ -164,6 +164,7 @@
 %define EXIT_MASM_FIELD        146 ; "[rbx].POINT.nope"
 %define EXIT_MASM_ENDS         147 ; "A STRUCT ... B ENDS"
 %define EXIT_MASM_STRUCT_OPEN  148 ; STRUCT with no ENDS
+%define EXIT_FASM_FORMAT       149 ; "format PE" (not the -f format)
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
