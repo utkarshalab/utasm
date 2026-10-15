@@ -3971,12 +3971,9 @@ use_masm_text: db 10
              db "%define __?SECT?__ [segment %00 %1]", 10
              db "[segment %00 %1]", 10
              db "%endmacro", 10
-             db "%imacro ends 0+.nolist", 10
-             db "%define __?masm_ends?__ %00", 10
-             db "%endmacro", 10
              db "%idefine ptr __?masm_ptr?__", 10
              db "%idefine flat __?masm_flat?__", 10
-             db "%idefine offset", 10
+             db "%idefine offset __?masm_offset?__", 10
              db "%imacro end 0+.nolist", 10
              db "%endmacro", 10
              db "%idefine tbyte tword", 10
