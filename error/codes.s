@@ -638,6 +638,16 @@ code_table:
     code_msg EXIT_MERGE_ENTSIZE,     m_merge_entsize
     code_msg EXIT_SYM_TYPE,          m_sym_type, t_sym_type
     code_msg EXIT_POPSECTION,        m_popsection
+    code_msg EXIT_GAS_RAW,           m_gas_raw
+    code_msg EXIT_GAS_NO_ENDM,       m_gas_no_endm, t_gas_no_endm
+    code_msg EXIT_GAS_NO_ENDR,       m_gas_no_endr, t_gas_no_endr
+    code_msg EXIT_GAS_STRAY,         m_gas_stray, t_gas_stray
+    code_msg EXIT_GAS_NO_ENDIF,      m_gas_no_endif
+    code_msg EXIT_GAS_ARG_REQ,       m_gas_arg_req, t_gas_arg_req
+    code_msg EXIT_GAS_ARG_MANY,      m_gas_arg_many
+    code_msg EXIT_GAS_ARG_NAME,      m_gas_arg_name, t_gas_arg_name
+    code_msg EXIT_GAS_NO_MACRO,      m_gas_no_macro, t_gas_no_macro
+    code_msg EXIT_GAS_PARAMS,        m_gas_params
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -815,6 +825,22 @@ m_merge_entsize: db "entity size for SHF_MERGE not specified", 0
 m_sym_type:     db "unrecognized symbol type", 0
 t_sym_type:     db "unrecognized symbol type `^'", 0
 m_popsection:   db ".popsection without corresponding .pushsection", 0
+m_gas_raw:      db "a GNU .macro, .rept, .irp, .ifb or .ifc inside a NASM macro or %rep (its source text is not there)", 0
+m_gas_no_endm:  db "unexpected end of file in a macro definition (no .endm)", 0
+t_gas_no_endm:  db "unexpected end of file in macro `^' definition (no .endm)", 0
+m_gas_no_endr:  db "no .endr for this repetition", 0
+t_gas_no_endr:  db "`^' without .endr", 0
+m_gas_stray:    db "a closing directive with nothing open", 0
+t_gas_stray:    db "`^' with nothing open for it", 0
+m_gas_no_endif: db "end of file in conditional (an .if with no .endif)", 0
+m_gas_arg_req:  db "missing value for a required macro parameter", 0
+t_gas_arg_req:  db "missing value for required parameter `^'", 0
+m_gas_arg_many: db "too many positional arguments", 0
+m_gas_arg_name: db "no macro parameter of that name", 0
+t_gas_arg_name: db "no macro parameter named `^'", 0
+m_gas_no_macro: db "no macro of that name", 0
+t_gas_no_macro: db "macro `^' not defined", 0
+m_gas_params:   db "bad .macro parameter list (NAME, NAME=DEFAULT, NAME:req, NAME:vararg)", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
 t_multi:        db "symbol `^' defined more than once", 0
