@@ -648,6 +648,10 @@ code_table:
     code_msg EXIT_GAS_ARG_NAME,      m_gas_arg_name, t_gas_arg_name
     code_msg EXIT_GAS_NO_MACRO,      m_gas_no_macro, t_gas_no_macro
     code_msg EXIT_GAS_PARAMS,        m_gas_params
+    code_msg EXIT_INPUT_OPEN,        m_input_open, t_input_open
+    code_msg EXIT_VIRTUAL_OPEN,      m_virtual_open
+    code_msg EXIT_LOAD_RANGE,        m_load_range
+    code_msg EXIT_LOAD_LATER,        m_load_later
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -841,6 +845,11 @@ t_gas_arg_name: db "no macro parameter named `^'", 0
 m_gas_no_macro: db "no macro of that name", 0
 t_gas_no_macro: db "macro `^' not defined", 0
 m_gas_params:   db "bad .macro parameter list (NAME, NAME=DEFAULT, NAME:req, NAME:vararg)", 0
+m_input_open:   db "unable to open the input file", 0
+t_input_open:   db "unable to open input file `^'", 0
+m_virtual_open: db "`virtual' with no `end virtual'", 0
+m_load_range:   db "load / store outside the bytes assembled (past the end, another section, or none)", 0
+m_load_later:   db "load / store of bytes not final yet (a relocation or a jump fills them in later)", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
 t_multi:        db "symbol `^' defined more than once", 0
