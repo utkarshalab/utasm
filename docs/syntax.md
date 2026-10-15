@@ -630,7 +630,7 @@ drops what follows the call (`%0` is 0).
 | `smartalign` | `align` pads code with long NOPs; `alignmode` |
 | `fp` | `float32(x)` & co, `Inf`, `NaN`, `QNaN`, `SNaN` |
 | `ifunc` | `ilog2(x)` / `ilog2e(x)` (x a power of two, else an error), `ilog2w(x)` / `ilog2fw(x)` (a warning, then the floor), `ilog2f(x)` (floor), `ilog2c(x)` (ceiling), `ilog2cw(x)` |
-| `masm` | MASM's forms: `name segment` / `ends`, `name proc [far\|near]` / `endp` (`ret` far or near in it), `end`, `dword ptr [x]` and `qword ptr x` (a memory operand, brackets or not), `[flat:rbx]`, `offset x`, `tbyte`; and `default rel` |
+| `masm` | MASM's forms: `name segment` / `ends`, `end`, `dword ptr [x]` and `qword ptr x` (a memory operand, brackets or not), `[flat:rbx]`, `offset x`, `tbyte`; `default rel`; and MASM's `PROC` / `ENDP`, `LOCAL`, `INVOKE`, `.IF` / `.WHILE` / `.REPEAT` (see MASM's procedures below) |
 
 The functions `ifunc` names are built in, as in NASM: `__?ilog2e?__(x)`,
 `__?ilog2w?__`, `__?ilog2f?__`, `__?ilog2c?__` (and `__ilog2e__` & co).
@@ -1079,6 +1079,54 @@ bytes not final yet"). ADDR is a label or `$` of the space being assembled,
 or an address in a virtual block (or a flat binary's first section).
 `load`, `store` and `virtual` followed by `:`, `equ`, `db`, `resb` or
 `times` are still labels of that name.
+
+### MASM's procedures, INVOKE and control flow (`%use masm`)
+
+```asm
+%use masm
+sumto PROC USES rbx, n:QWORD
+    LOCAL acc:QWORD, i:DWORD
+    mov     acc, 0
+    mov     i, 1
+    mov     edx, dword ptr n
+    .WHILE i <= edx
+        mov     eax, i
+        add     acc, rax
+        inc     i
+    .ENDW
+    mov     rax, acc
+    ret                         ; pop rbx / leave / ret
+sumto ENDP
+
+    invoke  sumto, 10           ; mov rdi, 10 / xor eax, eax / call sumto
+    .IF rax > 50 && rax != 99
+        ...
+    .ELSE
+        ...
+    .ENDIF
+```
+
+| Form | What it does |
+|---|---|
+| `NAME PROC [NEAR\|FAR] [C\|STDCALL\|SYSCALL] [PUBLIC] [USES R ...] [, P[:TYPE] ...]` ... `NAME ENDP` | a procedure. With parameters or `LOCAL`s it has a frame (`push rbp` / `mov rbp, rsp` / `sub rsp, SIZE`, the size known at `ENDP`); the `USES` registers are pushed after it. The parameters are copied from their registers into the frame (System V: `rdi rsi rdx rcx r8 r9`, `xmm0`-`xmm7` for `REAL4` / `REAL8`; `-f win64`: `rcx rdx r8 r9` into their home slots) or read where the caller pushed them (past the registers, and in 32-bit code), and each is a typed memory operand by its name (`mov eax, p`, `mov p, 5`; `dword ptr p` casts it). `PUBLIC` makes NAME global. |
+| `ret` in a `PROC` | its epilogue: the `USES` registers popped, `leave`, then `ret` (`retf` in a `FAR` one; `ret N` for a 32-bit `STDCALL` one, N its parameters' bytes) |
+| `LOCAL A:TYPE, B[N]:TYPE ...` | named stack slots in the frame, aligned to their size; right after the `PROC` line |
+| `INVOKE F, A1, A2 ...` | the arguments in their registers (64-bit registers moved, 32-bit ones and `dword` memory into the 32-bit name, bytes and words zero-extended, `addr X` its address with `lea`), the rest pushed last first (the stack 16-aligned at the call; Win64's 32-byte shadow space), `xor eax, eax` (System V's count of vector arguments, for variadic functions), `call F`, the stack put back. An argument read from a register an earlier argument was loaded into is an error. |
+| `.IF C` / `.ELSEIF C` / `.ELSE` / `.ENDIF` | compares and jumps |
+| `.WHILE C` / `.ENDW`, `.REPEAT` / `.UNTIL C`, `.REPEAT` / `.UNTILCXZ` | loops (`.UNTILCXZ`: `loop`) |
+| `.BREAK [.IF C]`, `.CONTINUE [.IF C]` | out of / on with the innermost loop |
+| `.CODE`, `.DATA`, `.DATA?`, `.CONST` | `section .text`, `.data`, `.bss`, `.rodata` |
+| `EXTERNDEF NAME[:TYPE], ...` | `extern NAME`; `PROTO` and `OPTION` lines are taken |
+
+A condition C is `A == B`, `!=`, `<`, `<=`, `>`, `>=` (unsigned; signed when a
+side is written `sbyte` / `sword` / `sdword` / `sqword`, as `sdword ptr eax`),
+`A & B` (`test`), `A` alone (not zero), or a flag: `ZERO?`, `CARRY?`, `SIGN?`,
+`OVERFLOW?`, `PARITY?` - joined with `!`, `&&`, `||` and parentheses, `&&`
+before `||`, both short-circuiting. Two memory operands cannot be compared
+(x86 has no such `cmp`). The code each of these makes is listed on its own
+line in a listing, and an error in it is reported at that line. Its labels are
+`..@mN`. NASM's `masm` package treated `proc` as a label and ignored `USES`;
+utasm does MASM's.
 
 ### Structures
 
