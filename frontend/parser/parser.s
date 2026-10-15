@@ -473,6 +473,21 @@ parser_parse_instruction:
     jmp     .get_mnemonic           ; Get the actual mnemonic or next prefix
 
 .lookup_mnemonic:
+    ; GNU's .macro names (frontend/parser/gas_macro.s), before the
+    ; mnemonics: a macro may be named as an instruction is
+    extern  gm_defined, gas_macro_call
+    cmp     qword [rel gm_defined], 0
+    je      .no_gas_macro
+    mov     rdi, rbx
+    mov     rsi, [r12 + TOKEN_value]
+    call    gas_macro_call
+    test    eax, eax
+    jz      .no_gas_macro
+    mov     rax, rdx
+    test    rax, rax
+    jnz     .error
+    jmp     .pseudo_op_ok
+.no_gas_macro:
     mov     rsi, [r12 + TOKEN_value]
     mov     [rel inst_mnem_text], rsi      ; (parser_check_lock)
     hash_fnv1a_64_ci rsi, r13
@@ -807,6 +822,27 @@ parser_parse_operand:
     mov     rdi, rbx
     call    preprocessor_next_token
     mov     r13, rdx
+
+    ; "OFFSET FLAT:x" (%use masm, GNU's Intel syntax): an address is flat,
+    ; the "flat:" says nothing
+    cmp     byte [r13 + TOKEN_kind], TOK_LABEL
+    je      .flat_word
+    cmp     byte [r13 + TOKEN_kind], TOK_IDENT
+    jne     .not_flat_word
+.flat_word:
+    mov     rsi, [r13 + TOKEN_value]
+    call    parser_seg_override_flat
+    jnz     .not_flat_word
+    cmp     byte [r13 + TOKEN_kind], TOK_LABEL
+    je      .fetch_operand_token           ; ("FLAT:" one token)
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_COLON
+    jne     .not_flat_word
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    jmp     .fetch_operand_token
+.not_flat_word:
 
     ; Branch-distance modifiers, recorded on the operand for the encoder:
     ; "short" forces the rel8 form; "near" and "strict" force rel32, so the
@@ -4125,6 +4161,7 @@ parser_parse_mem_operand:
     mov     [rel mem_addr_width], eax
     mov     byte [rel mem_after_comma], 0
     mov     byte [rel mem_term_pending], 0
+    mov     byte [rel mem_rip_written], 0
     mov     byte [r12 + OPERAND_kind], OP_MEM
     mov     byte [r12 + OPERAND_scale], 1 ; Default scale
     mov     byte [r12 + OPERAND_base],  0xFF ; 0xFF = no base register
@@ -4346,6 +4383,33 @@ parser_parse_mem_operand:
             or      byte [r12 + OPERAND_flags], OP_FLAG_NOSPLIT
             jmp     .loop
             ENDIF
+        mov     al, [r13 + TOKEN_kind]
+        ENDIF
+
+    ; GNU's "[rip + x]" / "x[rip]" (bits 64): relative to x, as [rel x];
+    ; "[rip + 8]", "[rip]": that displacement, from the next instruction,
+    ; as written. rip with another register: NASM's invalid address.
+    IF al, e, TOK_IDENT
+        cmp     byte [rel asm_bits], 64
+        jne     .not_rip_word
+        mov     rdi, [r13 + TOKEN_value]
+        lea     rsi, [rel str_rip]
+        call    str_cmp_kw
+        test    rax, rax
+        jnz     .not_rip_word
+        mov     eax, EXIT_INVALID_ADDR
+        cmp     byte [rel mem_rip_written], 0
+        jne     .error                         ; ([rip + rip])
+        cmp     byte [r12 + OPERAND_base], 0xFF
+        jne     .error                         ; ([rel rip])
+        cmp     byte [r12 + OPERAND_index], 0xFF
+        jne     .error
+        mov     byte [rel mem_rip_written], 1
+        mov     byte [r12 + OPERAND_base], REG_RIP
+        or      byte [r12 + OPERAND_flags], OP_FLAG_REL
+        mov     byte [rel mem_expect_term], 0
+        jmp     .loop
+.not_rip_word:
         mov     al, [r13 + TOKEN_kind]
         ENDIF
 
@@ -4673,6 +4737,25 @@ parser_parse_mem_operand:
     ; numbers, not relocatable addresses).
     ; "[rel 0xaaaa]": a number has no RIP-relative form either - absolute,
     ; with NASM's warning (the same for an equ constant)
+    ; GNU's rip: a label is reached rip-relative, as [rel x]; a number
+    ; ([rip + 8], [rip], an equ constant) is the displacement as written
+    cmp     byte [rel mem_rip_written], 0
+    je      .not_rip_written
+    mov     rax, [r12 + OPERAND_sym]
+    test    rax, rax
+    jz      .rel_done
+    cmp     byte [rax], TAG_SYMBOL
+    jne     .rel_done                      ; a label not defined yet
+    cmp     byte [rax + SYMBOL_kind], SYM_CONSTANT
+    je      .rip_number
+    cmp     byte [rax + SYMBOL_kind], SYM_STRUCT_FIELD
+    je      .rip_number
+    cmp     word [rax + SYMBOL_section], 0xFFF1
+    jne     .rel_done
+.rip_number:
+    mov     qword [r12 + OPERAND_sym], 0
+    jmp     .rel_done
+.not_rip_written:
     test    byte [r12 + OPERAND_flags], OP_FLAG_REL
     jz      .not_rel_number
     cmp     byte [r12 + OPERAND_index], 0xFF
@@ -4860,6 +4943,10 @@ parser_parse_mem_operand:
     mov     [rel mem_terms_n], edx
     test    edx, edx
     jz      .pt_ok
+    ; [rip + rax]: no such address (GNU's rip takes no other register)
+    mov     eax, EXIT_INVALID_ADDR
+    cmp     byte [rel mem_rip_written], 0
+    jne     .error
     ; [rel rax]: NASM's warning, and the address is [rax]
     test    byte [r12 + OPERAND_flags], OP_FLAG_REL
     jz      .pt_placed_rel
@@ -5020,6 +5107,7 @@ mem_scaling:      resb 1                  ; a memory operand is being read
 mem_term_pending: resb 1                  ; mem_term_coef came from the evaluator
 mem_term_reg:     resb 1
 mem_expect_term:  resb 1                  ; a '+' or '[' wants a term
+mem_rip_written:  resb 1                  ; GNU's "rip" in the address
 alignb 4
 mem_term_width:   resd 1                  ; the register just read: its width
 mem_addr_width:   resd 1                  ; the address's registers' width
@@ -5770,6 +5858,7 @@ pos_count:  resq 1                  ; "$" labels made so far
 
 [SECTION .rodata]
 str_rel: db "rel", 0
+str_rip: db "rip", 0
 ; AVX-512 decorators, 8 bytes each (parser_parse_decorator relies on the order)
 deco_names: db "z", 0, 0, 0, 0, 0, 0, 0
             db "1to2", 0, 0, 0, 0, "1to4", 0, 0, 0, 0, "1to8", 0, 0, 0, 0
