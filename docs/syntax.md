@@ -1072,7 +1072,16 @@ sum = 0
 | `defined NAME`, `defined(NAME)` | in an expression: 1 when NAME is a label or a constant defined so far, else 0 (utasm reads the source once: a label defined further on is not defined yet) |
 | `NAME = EXPR` | NAME a constant, set again by a later `NAME = ...` (`x = x + 1`), as in FASM, MASM and GNU `as` (`.set`) |
 
-The bytes `load` and `store` reach must be there and final: not past what
+FASM's lines that choose the output work too: `format ELF64 executable`
+writes an executable (as `--standalone`; named as the source without its
+extension when there is no `-o`), `entry NAME` is where it starts (`_start`
+when there is none), and after a `format` line `segment readable
+executable` / `segment readable writeable` / `segment readable` are
+`.text` / `.data` / `.rodata`. `format ELF64`, `format ELF` and `format
+binary` must be the format `-f` chose (it is chosen before the source is
+read); another one is an error. NASM's `segment .data` stays `section`.
+
+The bytes `load` and `store` reach must be there and final:not past what
 is assembled, not a field a relocation fills in, nor a jump whose
 displacement or size is settled later - those are errors ("load / store of
 bytes not final yet"). ADDR is a label or `$` of the space being assembled,
