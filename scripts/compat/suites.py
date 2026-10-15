@@ -1288,3 +1288,106 @@ def gas(utasm, verbose=False):
             r = run([utasm, "-f", "elf64", "-o", "e.o", "e.s"], cwd=d)
         s.result(line, r.returncode != 0 and want in (r.stderr or ""), "rc %d: %s" % (r.returncode, first_line(r)))
     return s
+
+
+def _json_text(o):
+    """the text line a -X json object stands for"""
+    if o["severity"] == "hint":
+        return "hint: " + o["message"]
+    place = ""
+    if "file" in o:
+        place = "%s:%d:" % (o["file"], o["line"])
+        if "column" in o:
+            place += "%d:" % o["column"]
+        place += " "
+    else:
+        place = "utasm: "
+    msg = o["message"] + (" [%s]" % o["flag"] if "flag" in o else "")
+    if o["severity"] == "note":
+        return place + ("... " if msg.startswith("from macro") else "note: ") + msg
+    return place + o["severity"] + ": " + msg
+
+
+def json_diagnostics(utasm, verbose=False):
+    """-X json (error/json.s): one JSON object for each line utasm writes to
+    stderr - the same messages as the text, field by field"""
+    import json
+    s = Suite("json diagnostics", verbose)
+    for name, src in cases.JSON_CASES:
+        with tempdir() as d:
+            open(os.path.join(d, "j.s"), "w").write(src)
+            t = run([utasm, "-f", "elf64", "-o", "j.o", "j.s"], cwd=d)
+            j = run([utasm, "-X", "json", "-f", "elf64", "-o", "j.o", "j.s"], cwd=d)
+        text = [l for l in (t.stderr or "").splitlines() if l.strip()]
+        try:
+            objs = [json.loads(l) for l in (j.stderr or "").splitlines() if l.strip()]
+        except ValueError as e:
+            s.result(name, False, "not JSON: %s" % e)
+            continue
+        back = [_json_text(o) for o in objs]
+        s.result(name, back == text and t.returncode == j.returncode and bool(text),
+                 "rc %d/%d, %s" % (t.returncode, j.returncode,
+                                   " | ".join(x for x in difflib.unified_diff(text, back, lineterm="", n=0)
+                                              if x[:1] in "+-" and x[:3] not in ("+++", "---"))[:200]))
+    return s
+
+
+def map_files(utasm, verbose=False):
+    """[map ...] (backend/output/map.s): the map file NASM writes for the
+    same flat binary, line for line; and --map on an ELF object"""
+    s = Suite("map files", verbose)
+    for name, src in cases.MAP_CASES:
+        with tempdir() as d:
+            for who in ("n", "u"):
+                os.mkdir(os.path.join(d, who))
+                open(os.path.join(d, who, "m.asm"), "w").write(src)
+            n = run(["nasm", "-f", "bin", "-o", "m.bin", "m.asm"], cwd=os.path.join(d, "n"))
+            u = run([utasm, "-f", "bin", "-o", "m.bin", "m.asm"], cwd=os.path.join(d, "u"))
+            if n.returncode:
+                s.skip()
+                continue
+            if u.returncode:
+                s.result(name, False, "utasm: " + first_line(u))
+                continue
+            maps = sorted(f for f in os.listdir(os.path.join(d, "n")) if f.endswith(".map"))
+            umaps = sorted(f for f in os.listdir(os.path.join(d, "u")) if f.endswith(".map"))
+            if maps != umaps:
+                s.result(name, False, "map files: NASM %s, utasm %s" % (maps, umaps))
+                continue
+            diff = []
+            for m in maps:
+                a = open(os.path.join(d, "n", m)).read().splitlines()
+                b = open(os.path.join(d, "u", m)).read().splitlines()
+                diff += [x for x in difflib.unified_diff(a, b, lineterm="", n=0)
+                         if x[:1] in "+-" and x[:3] not in ("+++", "---")]
+        s.result(name, not diff, " | ".join(diff[:6]))
+    # --map on an object: its sections and symbols at their offsets
+    with tempdir() as d:
+        open(os.path.join(d, "o.s"), "w").write(
+            "global f\nsection .text\nf: nop\ng: ret\nsection .data\nv: dd 1\nK equ 3\n")
+        u = run([utasm, "-f", "elf64", "--map", "o.map", "-o", "o.o", "o.s"], cwd=d)
+        text = open(os.path.join(d, "o.map")).read() if os.path.exists(os.path.join(d, "o.map")) else ""
+    want = ["Source file:  o.s", "Output file:  o.o", "00000003  K",
+            "               0                 0  f", "               1                 1  g",
+            "               0                 0  v"]
+    s.result("--map elf64", u.returncode == 0 and all(w in text.splitlines() for w in want),
+             "rc %d: %s" % (u.returncode, first_line(u) or text[:120].replace("\n", "|")))
+    return s
+
+
+def fasm_features(utasm, verbose=False):
+    """utasm's own (no FASM here to compare with): FASM's virtual / load /
+    store / defined and "NAME = EXPR", the bytes they make, their errors"""
+    s = Suite("fasm features", verbose)
+    for case in cases.FASM_CASES:
+        name, src, want = case[0], case[1], case[2]
+        with tempdir() as d:
+            open(os.path.join(d, "f.s"), "w").write(src)
+            r = run([utasm, "-f", "bin", "-o", "f.bin", "f.s"], cwd=d)
+            got = open(os.path.join(d, "f.bin"), "rb").read().hex() \
+                if r.returncode == 0 and os.path.exists(os.path.join(d, "f.bin")) else None
+        if want is None:
+            s.result(name, r.returncode != 0 and case[3] in (r.stderr or ""), "rc %d: %s" % (r.returncode, first_line(r)))
+        else:
+            s.result(name, got == want, "rc %d: %s / %s" % (r.returncode, got, first_line(r)))
+    return s
