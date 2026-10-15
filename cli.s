@@ -87,6 +87,17 @@ cli_parse:
     test    rax, rax
     jz      .handle_version
 
+    ; --lsp: the language server (tools/lsp/lsp.s)
+    mov     rdi, r14
+    lea     rsi, [rel .flag_lsp]
+    call    str_cmp
+    test    rax, rax
+    jnz     .not_lsp
+    mov     byte [rel cli_lsp], 1
+    xor     eax, eax
+    jmp     .exit
+.not_lsp:
+
     mov     rdi, r14
     lea     rsi, [rel .flag_version_short]
     call    str_cmp
@@ -1366,6 +1377,7 @@ cli_with_suffix:
 cli_parse.flag_help:    db "--help", 0
 cli_parse.flag_help_short: db "-h", 0
 cli_parse.flag_version: db "--version", 0
+cli_parse.flag_lsp:     db "--lsp", 0
 cli_parse.flag_version_short: db "-v", 0
 cli_parse.flag_output:  db "-o", 0
 cli_parse.flag_format:  db "-f", 0
@@ -1445,6 +1457,8 @@ cli_deps:         resb 1                ; CLI_DEPS_* (-MD, -MP)
 cli_prelude_full: resb 1
 cli_output_given: resb 1                ; -o was given
 cli_prelude:      resb CLI_PRELUDE_MAX  ; the -D / -U / -p / --before lines
+global cli_lsp
+cli_lsp:          resb 1             ; --lsp
 
 [SECTION .rodata]
 
