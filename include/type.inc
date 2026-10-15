@@ -145,7 +145,8 @@ struc SECTION
     field group_sig,   8    ; pointer to signature SYMBOL
     field relax_frozen, 1   ; 1 = code here must not move (optimizer/jump.s)
     field implicit,    1    ; 1 = the default .text utasm creates up front
-    field pad1,        1    ; alignment padding
+    field entsize,     1    ; sh_entsize: GNU's '.section .rodata.str1.1,
+                            ; "aMS", @progbits, 1' (0: none)
     field named_at,    4    ; implicit .text: sections there were when the
                             ; source first named it (0 = never)
     ; flat binary placement (section attributes)
