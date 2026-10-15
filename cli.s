@@ -831,6 +831,7 @@ cli_parse.exit:
 ;   -U name, -u             %undef name
 ;   -p file, --include file %include "file" ahead of the source
 ;   --before text           the line "text" ahead of the source
+;   --map file              a map file: sections and symbols (NASM's format)
 ;   --pragma text           %pragma text
 ;   -E, -e                  preprocess only: the expanded source on stdout
 ;                           (or into the -o file)
@@ -842,6 +843,7 @@ cli_parse.exit:
 ;   -w+x, -w-x, -Wx, -Wno-x warning classes on / off ("all": every one);
 ;                           -w+error[=x], -Werror[=x]: warnings are errors
 ;   -X gnu | -X vc          message style: file:line: / file(line) :
+;   -X json                 each message a JSON object (error/json.s)
 ;   -s                      messages on stdout; -Z file: into a file
 ;   -l file                 the listing: lines, offsets and bytes
 ;   -g, -F dwarf            DWARF debug information (ELF objects)
@@ -1036,7 +1038,16 @@ cli_nasm_option:
     call    str_cmp
     mov     ecx, 1
     test    rax, rax
+    jz      .style_set
+    ; -X json: each message a JSON object (error/json.s), placed as gnu's
+    mov     rdi, [rsp]
+    lea     rsi, [rel .s_json]
+    call    str_cmp
+    test    rax, rax
     jnz     .style_bad
+    extern  diag_json
+    mov     byte [rel diag_json], 1
+    xor     ecx, ecx
 .style_set:
     extern  error_style
     mov     [rel error_style], cl
@@ -1114,6 +1125,20 @@ cli_nasm_option:
     call    str_cmp
     test    rax, rax
     jz      .before
+    ; --map FILE: the map file, all of it (backend/output/map.s)
+    mov     rdi, r12
+    lea     rsi, [rel .s_map]
+    call    str_cmp
+    test    rax, rax
+    jnz     .not_map
+    test    r13, r13
+    jz      .missing
+    mov     rdi, r13
+    extern  map_cli
+    call    map_cli
+    mov     eax, 2
+    jmp     .ret
+.not_map:
     mov     rdi, r12
     lea     rsi, [rel .s_long_include]
     call    str_cmp
@@ -1394,7 +1419,9 @@ cli_nasm_option.s_quote_nl:   db 34, 10, 0
 cli_nasm_option.s_empty:      db 0
 cli_nasm_option.s_gnu:        db "gnu", 0
 cli_nasm_option.s_vc:         db "vc", 0
+cli_nasm_option.s_json:       db "json", 0
 cli_nasm_option.s_before:     db "--before", 0
+cli_nasm_option.s_map:        db "--map", 0
 cli_nasm_option.s_long_include: db "--include", 0
 cli_nasm_option.s_pragma:     db "--pragma", 0
 cli_nasm_option.s_no_line:    db "--no-line", 0
