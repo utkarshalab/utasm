@@ -119,7 +119,8 @@ op(map1, 0x98, "cwde", "CBW")
 op(map1, 0x99, "cdq", "CWD")
 for code, name in ((0xA4, "movs"), (0xA5, "movs"), (0xA6, "cmps"), (0xA7, "cmps"),
                    (0xAA, "stos"), (0xAB, "stos"), (0xAC, "lods"), (0xAD, "lods"),
-                   (0xAE, "scas"), (0xAF, "scas")):
+                   (0xAE, "scas"), (0xAF, "scas"),
+                   (0x6C, "ins"), (0x6D, "ins"), (0x6E, "outs"), (0x6F, "outs")):
     op(map1, code, name, "STR", F_BYTE if code % 2 == 0 else 0)
 op(map1, 0xA8, "test", "ALIb", F_BYTE)
 op(map1, 0xA9, "test", "eAXIz")
