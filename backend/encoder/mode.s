@@ -393,7 +393,8 @@ s_seg_elf:      db "ELF", 0
 ; ;
 global amd64_mode_check
 amd64_mode_check:
-    ; segment registers: operands of mov, push and pop only
+    ; segment registers: operands of mov, push and pop only - and of
+    ; Cyrix's rsdc / svdc (their table forms: SREG, M80)
     xor     ecx, ecx
 .seg_op:
     movzx   eax, byte [r12 + INST_nops]
@@ -410,6 +411,10 @@ amd64_mode_check:
     ja      .seg_op
     movzx   edx, word [r12 + INST_op_id]
     cmp     edx, ID_MOV
+    je      .seg_op
+    cmp     edx, 7169                      ; RSDC
+    je      .seg_op
+    cmp     edx, 7176                      ; SVDC
     je      .seg_op
     cmp     edx, ID_PUSH
     je      .seg_stack
