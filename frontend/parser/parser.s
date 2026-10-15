@@ -60,7 +60,6 @@ extern known_note_forward
 extern known_fwd_uses
 extern parser_lookup_mnemonic
 extern parser_check_prefix
-extern parser_define_label
 extern parser_parse_mem_operand
 extern parser_concat_local_name
 extern print_str
@@ -3591,6 +3590,14 @@ parser_evaluate_factor:
 .not_float_fn_ident:
     mov     al, TOK_IDENT
 .not_float_fn:
+    ; GNU's "." alone: the location, $
+    cmp     al, TOK_IDENT
+    jne     .not_gas_dot
+    mov     rcx, [r12 + TOKEN_value]
+    cmp     word [rcx], '.'
+    jne     .not_gas_dot
+    mov     al, TOK_DOLLAR
+.not_gas_dot:
 
     IF al, e, TOK_NUMBER
         ; "1f" / "1b": a numeric label reference, looked up like a symbol
@@ -6828,8 +6835,9 @@ parser_parse_struc:
 
 ;*
 ; * [parser_define_label]
-; * Input: RSI = name string
+; * Input: RBX = PrepState, RSI = name string
 ; ;
+global parser_define_label
 parser_define_label:
     prologue
     push    rbx
@@ -6945,6 +6953,54 @@ parser_define_label:
     pop     rsi
     pop     rbx
     epilogue
+
+;*
+; * [parser_gas_name]
+; * Purpose: A name a GNU directive gives (".set .Lx, 4", ".type f, ...")
+; *   as utasm keeps it: ".x" under the last global label, as a ".x:"
+; *   label is, others as they are.
+; * Input  : RBX = PrepState, RSI = name
+; * Output : RSI = the name kept
+; * Clobbers: rax, rcx, rdx, rdi, r8-r11
+; ;
+global parser_gas_name
+parser_gas_name:
+    cmp     byte [rsi], '.'
+    jne     .ret
+    cmp     byte [rsi + 1], '.'
+    je      .ret
+    push    r14
+    mov     rax, [rbx + PREP_ctx]
+    mov     r14, [rax + ASMCTX_last_global]
+    test    r14, r14
+    jz      .keep
+    mov     rdi, rax
+    call    parser_concat_local_name
+    test    rax, rax
+    jnz     .keep
+    mov     rsi, rdx
+.keep:
+    pop     r14
+.ret:
+    ret
+
+;*
+; * [parser_gas_equ]
+; * Purpose: GNU's ".equ NAME, EXPR" (".set", ".equiv"): NAME defined as
+; *   "NAME equ EXPR" defines it, the expression read from here.
+; * Input  : RBX = PrepState, RSI = name (as parser_gas_name gives it)
+; * Output : RAX = OK or an error
+; ;
+global parser_gas_equ
+parser_gas_equ:
+    mov     byte [rel equ_again], 0
+    call    parser_define_label
+    test    rax, rax
+    jnz     .ret
+    mov     rdi, rbx
+    call    parser_handle_equ
+.ret:
+    ret
 
 ;*
 ; * [parser_concat_local_name]
@@ -7069,6 +7125,24 @@ parser_handle_pseudo_op:
     mov     rax, [rbx + PREP_ctx]
     add     [rax + ASMCTX_mac_exp_id], ecx
 .counted:
+
+    ; GNU as's directives (.globl, .section, .ascii, .p2align ...: gas.s),
+    ; worked there or handed on under NASM's name
+    cmp     byte [r12], '.'
+    jne     .not_gas
+    extern  gas_directive
+    mov     rdi, rbx
+    mov     rsi, r12
+    call    gas_directive
+    test    eax, eax
+    jz      .not_gas
+    cmp     eax, 2
+    je      .gas_renamed
+    mov     rax, rdx
+    jmp     .check_handler_result
+.gas_renamed:
+    mov     r12, rdx
+.not_gas:
 
     ; 1. Data Directives (db, dw, dd, dq) - the whole word, not a prefix
     ;    ("dbg" or "dword_table" as a statement word is not db / dw)
@@ -11701,8 +11775,9 @@ parser_default_section:
 
 ;*
 ; * [parser_handle_section_directive]
-; * Input: None (reads from preprocessor)
+; * Input: RBX = PrepState (reads from preprocessor)
 ; ;
+global parser_handle_section_directive
 parser_handle_section_directive:
     prologue
     push    rbx
@@ -11844,8 +11919,14 @@ parser_handle_section_directive:
         mov     r13, rdx
         ENDIF
 
-    ; Set active section in AsmCtx
+    ; Set active section in AsmCtx (the one left: GNU's .previous)
     mov     rdi, [rbx + PREP_ctx]
+    mov     rax, [rdi + ASMCTX_curr_sec]
+    cmp     rax, r13
+    je      .prev_kept
+    extern  sec_previous
+    mov     [rel sec_previous], rax
+.prev_kept:
     mov     [rdi + ASMCTX_curr_sec], r13
     ; the default .text takes its place among the sections where the
     ; source first names it, as in NASM
@@ -11943,6 +12024,23 @@ parser_handle_section_directive:
 .set_default_align:
     mov     [r13 + SECTION_align], rcx
 .default_align_done:
+
+    ; GNU's '.section NAME, "awx", @nobits' (gas.s): a new section's flags
+    ; and type, in place of its name's
+    extern  gas_sec_set, gas_sec_flags, gas_sec_type, gas_sec_entsize
+    cmp     byte [rel gas_sec_set], 0
+    je      .gas_flags_done
+    mov     byte [rel gas_sec_set], 0
+    cmp     r15, OK
+    je      .gas_flags_done
+    mov     ax, [rel gas_sec_flags]
+    mov     [r13 + SECTION_flags], ax
+    mov     al, [rel gas_sec_entsize]
+    mov     [r13 + SECTION_entsize], al
+    mov     qword [r13 + SECTION_align], 1     ; GNU's (alignment raises it)
+    mov     eax, [rel gas_sec_type]
+    mov     [r13 + SECTION_elf_type], eax
+.gas_flags_done:
 
     ; 3. NASM attributes: progbits, nobits, alloc, exec, write, align=N
     mov     word [rel attr_seen], 0
