@@ -1,6 +1,6 @@
 """The NASM compatibility suites. Each takes the utasm binary and returns a
 common.Suite; scripts/compat/run_all.py runs them all."""
-import collections, concurrent.futures as cf, difflib, hashlib, os, platform, re, struct, zlib
+import collections, subprocess, concurrent.futures as cf, difflib, hashlib, os, platform, re, struct, zlib
 
 from common import Suite, assemble_bin, first_line, have, run, tempdir
 import cases, corpus
@@ -1390,6 +1390,15 @@ def fasm_features(utasm, verbose=False):
             s.result(name, r.returncode != 0 and case[3] in (r.stderr or ""), "rc %d: %s" % (r.returncode, first_line(r)))
         else:
             s.result(name, got == want, "rc %d: %s / %s" % (r.returncode, got, first_line(r)))
+    # format ELF64 executable: written whole, named as the source, run
+    src, out, status = cases.FASM_EXECUTABLE
+    with tempdir() as d:
+        open(os.path.join(d, "hello.asm"), "w").write(src)
+        a = run([utasm, "hello.asm"], cwd=d)
+        exe = os.path.join(d, "hello")
+        r = subprocess.run([exe], capture_output=True) if a.returncode == 0 and os.path.exists(exe) else None
+    s.result("format executable", r is not None and r.stdout == out and r.returncode == status,
+             "rc %d: %s / %s" % (a.returncode, first_line(a), r and (r.returncode, r.stdout)))
     return s
 
 
