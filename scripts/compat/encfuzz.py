@@ -337,7 +337,7 @@ BY_DESIGN_MSG = ("#UD", "impossible combination of address sizes")
 BY_DESIGN = [r"^v(p)?gather\w+ [xy]mm\d+, \w+ \[[^\]]*[xy]mm(1[6-9]|2\d|3[01])\*[^\]]*\], [xy]mm\d+$",
              r"^bnd(ld|st)x (?=.*\*)[^,]*,[^,]*,[^,]*$", r"^vcvtneps2bf16 ymm\d+, (ymm|yword)",
              r"^vget(exp|mant)sh [^,]+, [^,\[]*\[[^\]]*\](, -?\d+)?$", r"^vget(exp|mant)sh [^,]+, [xyz]mm\d+, -?\d+$"]
-KNOWN_GAPS = [r"^rsdc ", r"^svdc "]          # Cyrix 486 SMM: not matched yet
+KNOWN_GAPS = []                              # (rsdc / svdc matched since batch 58)
 
 
 def by_design(text, msg=""):
