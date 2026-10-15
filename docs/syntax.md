@@ -1128,6 +1128,46 @@ line in a listing, and an error in it is reported at that line. Its labels are
 `..@mN`. NASM's `masm` package treated `proc` as a label and ignored `USES`;
 utasm does MASM's.
 
+#### MASM's typed data and structures
+
+```asm
+%use masm
+POINT STRUCT
+    x   DWORD ?
+    y   DWORD 7             ; the default
+    tag BYTE  "ab"
+POINT ENDS
+
+.data
+count   DWORD 10
+arr     DWORD 1, 2, 3, 4
+buf     BYTE  16 DUP (0)
+pt      POINT <5, , >       ; x 5, y and tag their defaults
+.data?
+scratch QWORD 4 DUP (?)
+.code
+    mov     eax, count              ; a memory read: count is a typed variable
+    add     eax, pt.y               ; dword [pt + POINT.y]
+    lea     rbx, pt
+    add     eax, [rbx].POINT.y      ; a field through a register, typed
+    mov     ecx, SIZEOF arr         ; 16 (LENGTHOF arr 4, TYPE arr 4)
+    mov     rdx, OFFSET arr         ; the address
+```
+
+| Form | What it does |
+|---|---|
+| `[NAME] TYPE ITEM, ...` | data: TYPE `BYTE` `WORD` `DWORD` `QWORD` (`SBYTE` ... `SQWORD`), `REAL4` `REAL8` `REAL10`, `TBYTE`, `OWORD`; an ITEM a value, a string (`BYTE`), `?` (zero; reserved in a nobits section), `N DUP (ITEM, ...)`. NAME is a typed variable. |
+| a typed variable | a memory operand of its type by its name (`mov eax, count`, `add count, 1`, `lea rbx, buf`); `OFFSET count` (and INVOKE's `ADDR count`) is its address |
+| `NAME STRUCT` ... `NAME ENDS` | a structure: its lines `FIELD TYPE ITEM` (a NASM `struc`: `NAME.FIELD` the offsets, `NAME_size`); their items the defaults |
+| `NAME T <V, ...>` / `NAME T {V, ...}` | an instance (`istruc T`): the values given, the defaults for those left out or empty; `NAME.FIELD` each field, typed (`pt.y`) |
+| `[REG].T.FIELD` | the field through a register, typed |
+| `SIZEOF X`, `LENGTHOF X`, `TYPE X` | in an expression: the bytes, the elements, an element's bytes - of a typed variable, a structure, a field (`T.F`), a type word, or a NASM `struc` (`X_size`) |
+
+Data written NASM's way (`x dd 5`) is a plain label as before: only MASM's
+`x DWORD 5` makes a typed variable. A name followed by a type word is data
+unless the name is an instruction or a NASM word (`push dword 5`, `istruc
+POINT`, `.IF sdword ...`). `ENDS` with no `STRUCT` open ends a segment.
+
 ### Structures
 
 ```asm
