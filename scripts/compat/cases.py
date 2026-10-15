@@ -2451,3 +2451,39 @@ lea rcx, v
 """, ["mov eax,DWORD PTR [rip+0x0]", "mov ax,WORD PTR [rip+0x0]", "movabs rbx,0x0", "add DWORD PTR [rip+0x0],0x3",
       "lea rcx,[rip+0x0]"]),
 ]
+
+# batch 57: FASM's format / entry / segment - an executable written from
+# the source alone (its output and exit status), and the errors
+FASM_EXECUTABLE = (r"""format ELF64 executable 3
+entry start
+
+segment readable executable
+start:
+    mov eax, 1
+    mov edi, 1
+    lea rsi, [rel msg]
+    mov edx, msg_len
+    syscall
+    mov eax, 60
+    mov edi, [rel code]
+    syscall
+
+segment readable writeable
+code dd 7
+
+segment readable
+msg db "hello, fasm", 10
+msg_len = $ - msg
+""", b"hello, fasm\n", 7)
+FASM_CASES += [
+    ("format other", "format PE64 console\nnop\n", None, "format `PE64': not the output format"),
+    ("format binary", "format binary\nbits 64\nnop\n", "90"),
+    ("nasm segment", "bits 64\nsegment .data\ndb 1\nsection .text\nnop\n", "90" + "00" * 3 + "01"),
+]
+
+# batch 57: Cyrix's rsdc / svdc (a segment register and an 80-bit
+# operand: the mode check took segment registers for mov / push / pop only)
+BIN_PROBES.update({
+    "cyrix_smm": "bits 32\nrsdc es, [ebx]\nrsdc ds, [bx]\nsvdc [eax], es\nsvdc tword [ebx], ss\n"
+                 "bits 16\nrsdc cs, [di+4]\nsvdc [bx], ds\n",
+})
