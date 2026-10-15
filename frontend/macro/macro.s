@@ -3974,22 +3974,6 @@ use_masm_text: db 10
              db "%imacro ends 0+.nolist", 10
              db "%define __?masm_ends?__ %00", 10
              db "%endmacro", 10
-             db "%imacro proc 0-*.nolist", 10
-             db "%00:", 10
-             db "%if %0 == 1", 10
-             db "%ifidni %1,far", 10
-             db "%idefine ret retf", 10
-             db "%else", 10
-             db "%idefine ret retn", 10
-             db "%endif", 10
-             db "%elif %0 > 1", 10
-             db "%idefine ret retn", 10
-             db "%endif", 10
-             db "%endmacro", 10
-             db "%imacro endp 0.nolist", 10
-             db "%define __?masm_endp?__ %00", 10
-             db "%undef ret", 10
-             db "%endmacro", 10
              db "%idefine ptr __?masm_ptr?__", 10
              db "%idefine flat __?masm_flat?__", 10
              db "%idefine offset", 10
@@ -10617,10 +10601,12 @@ prep_handle_use:
     test    rax, rax
     pop     rax
     jnz     .not_masm
-    extern  masm_enabled
+    extern  masm_enabled, masm_hl
     cmp     byte [rel masm_enabled], 0
     jne     .done
     mov     byte [rel masm_enabled], 1
+    ; PROC / ENDP / LOCAL / INVOKE / .IF & co (frontend/parser/masm.s)
+    mov     byte [rel masm_hl], 1
     mov     rdi, rbx
     lea     rsi, [rel use_masm_text]
     mov     edx, use_masm_text_len
