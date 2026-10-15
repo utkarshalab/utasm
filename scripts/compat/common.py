@@ -5,6 +5,11 @@ import os, re, shutil, subprocess, tempfile
 # listed here is reported as "known" and does not fail the run; remove it
 # once utasm matches.
 KNOWN = {
+    # utasm's %use masm does MASM's PROC (frontend/parser/masm.s): USES
+    # saves its registers, a far PROC's ret is retf; NASM's package ignores
+    # both when more than one word follows "proc" ("j proc far uses rbx")
+    "use_masm_proc": "MASM's USES and far kept (NASM's package drops them)",
+    "listing use_masm_proc": "MASM's USES and far kept (NASM's package drops them)",
     # "//" is a comment in utasm (the test suite uses it), so NASM's
     # signed-division operator is not available; %% (signed modulo) is.
     "op_signed_div": "// is a comment in utasm",
