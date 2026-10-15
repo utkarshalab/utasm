@@ -2783,6 +2783,8 @@ elf64_write_shdrs:
     
     movzx   eax, word [rsi + SECTION_flags]
     mov     qword [rsp + SHDR_FLAGS], rax
+    movzx   eax, byte [rsi + SECTION_entsize]
+    mov     qword [rsp + SHDR_ENTSIZE], rax
     
     mov     rax, [rsi + SECTION_addr]
     mov     qword [rsp + SHDR_ADDR], rax
