@@ -392,6 +392,19 @@ parser_parse_instruction:
             ENDIF
         ENDIF
 
+    ; MASM's "NAME PROC ..." / "NAME ENDP" (%use masm: frontend/parser/
+    ; masm.s)
+    extern  masm_label_word
+    mov     rdi, rbx
+    mov     rsi, [r12 + TOKEN_value]
+    call    masm_label_word
+    test    eax, eax
+    jz      .not_masm_label
+    mov     rax, rdx
+    check_err
+    jmp     .get_mnemonic
+.not_masm_label:
+
     ; "NAME = EXPR" (GNU as, FASM, MASM): a constant, which a later "NAME =
     ; ..." sets again (frontend/parser/gas.s gas_assign) - "==" is no such
     mov     rdi, rbx
@@ -492,6 +505,18 @@ parser_parse_instruction:
     jmp     .get_mnemonic           ; Get the actual mnemonic or next prefix
 
 .lookup_mnemonic:
+    ; MASM's ret in a PROC: its epilogue (frontend/parser/masm.s)
+    extern  masm_ret
+    mov     rdi, rbx
+    mov     rsi, [r12 + TOKEN_value]
+    call    masm_ret
+    test    eax, eax
+    jz      .no_masm_ret
+    mov     rax, rdx
+    test    rax, rax
+    jnz     .error
+    jmp     .pseudo_op_ok
+.no_masm_ret:
     ; GNU's .macro names (frontend/parser/gas_macro.s), before the
     ; mnemonics: a macro may be named as an instruction is
     extern  gm_defined, gas_macro_call
@@ -1004,6 +1029,25 @@ parser_parse_operand:
 .take_ptr:
             mov     rdi, rbx
             call    preprocessor_next_token ; consume "ptr"
+            ; MASM's cast over a typed name: "dword ptr n", n a PROC's
+            ; "qword [rbp - 8]" (masm.s) - the ptr's size wins, the other
+            ; dropped
+            cmp     byte [rel masm_mem], 0
+            je      .ptr_cast_done
+            push    rdx
+            mov     rdi, rbx
+            call    preprocessor_peek_token
+            cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+            jne     .ptr_cast_pop
+            mov     rdi, [rdx + TOKEN_value]
+            call    parser_parse_size_specifier_string
+            test    rax, rax
+            jz      .ptr_cast_pop
+            mov     rdi, rbx
+            call    preprocessor_next_token
+.ptr_cast_pop:
+            pop     rdx
+.ptr_cast_done:
             ; "dword ptr" with nothing after it: the label ptr, sized
             push    rdx
             mov     rdi, rbx
@@ -7262,6 +7306,17 @@ parser_handle_pseudo_op:
     mov     rax, [rbx + PREP_ctx]
     add     [rax + ASMCTX_mac_exp_id], ecx
 .counted:
+
+    ; %use masm's LOCAL, INVOKE, .IF & co, .CODE (frontend/parser/masm.s)
+    extern  masm_word
+    mov     rdi, rbx
+    mov     rsi, r12
+    call    masm_word
+    test    eax, eax
+    jz      .not_masm_word
+    mov     rax, rdx
+    jmp     .check_handler_result
+.not_masm_word:
 
     ; GNU as's directives (.globl, .section, .ascii, .p2align ...: gas.s),
     ; worked there or handed on under NASM's name
