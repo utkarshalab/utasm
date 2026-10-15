@@ -13106,7 +13106,8 @@ mdef_greedy:   resb 1              ; ... MACRO_FLAG_GREEDY after a "+"
 mdef_dot:       resb 1              ; prep_parse_count: the count was "N."
 mdef_nolist:    resb 1              ; ... MACRO_FLAG_NOLIST after ".nolist"
 putback_next:  resb TOKEN_SIZE     ; a token queued behind the peek slot
-has_putback_next: resb 1
+global has_putback_next
+has_putback_next: resb 1            ; (frontend/parser/gas_macro.s: raw text)
 interp_cap:    resq 1              ; prep_resolve_interp: its buffer's size
 idn_left_buf:  resb IDN_BUF; %ifidn operands as text (to start with)
 idn_right_buf: resb IDN_BUF
