@@ -149,6 +149,10 @@
 %define EXIT_GAS_ARG_NAME      131 ; "m x=1" with no parameter x
 %define EXIT_GAS_NO_MACRO      132 ; ".purgem m" with no macro m
 %define EXIT_GAS_PARAMS        133 ; ".macro m a:bogus"
+%define EXIT_INPUT_OPEN        134 ; the source file cannot be opened / read
+%define EXIT_VIRTUAL_OPEN      135 ; FASM's "virtual" with no "end virtual"
+%define EXIT_LOAD_RANGE        136 ; load / store outside the bytes made
+%define EXIT_LOAD_LATER        137 ; load / store of bytes filled in later
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
