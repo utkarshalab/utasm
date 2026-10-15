@@ -235,6 +235,70 @@ relax_note:
     pop     rax
     ret
 
+; ---- relax_overlap -----------------------
+;
+; relax_overlap
+; FASM's load / store (frontend/parser/fasm.s): eax = 1 when a record of
+; section rdi can still change bytes in [rsi, rdx) - a jump's (its
+; displacement filled in later, its size), a padding's - also one that
+; starts before them (relax_range_fixed looks at the starts).
+; Clobbers : rcx, r8-r11.
+;
+global relax_overlap
+relax_overlap:
+    lea     rax, [rel relax_vec]
+    cmp     byte [rax + VEC_tag], TAG_VEC
+    jne     .no
+    mov     rcx, [rax + VEC_len]
+    mov     r8, [rax + VEC_data]
+.next:
+    test    rcx, rcx
+    jz      .no
+    dec     rcx
+    imul    r9, rcx, RX_SIZE
+    add     r9, r8
+    cmp     [r9 + RX_sec], rdi
+    jne     .next
+    movzx   eax, byte [r9 + RX_kind]
+    mov     r10, [r9 + RX_pos]
+    cmp     eax, RELAX_FIXED
+    je      .fixed
+    cmp     eax, RELAX_JMP
+    je      .jump
+    cmp     eax, RELAX_JCC
+    je      .jump
+    cmp     eax, RELAX_ALIGN
+    je      .pad
+    cmp     eax, RELAX_PADTO
+    jne     .next
+.pad:
+    mov     r11d, [r9 + RX_aux32]
+    test    r11d, r11d
+    jnz     .pad_len
+    mov     r11d, 1
+.pad_len:
+    add     r11, r10
+    jmp     .cmp
+.fixed:
+    movzx   r11d, byte [r9 + RX_cc]
+    add     r11, r10
+    jmp     .cmp
+.jump:
+    mov     r11, [r9 + RX_end]
+    test    r11, r11
+    jnz     .cmp
+    lea     r11, [r10 + 6]
+.cmp:
+    cmp     r10, rdx
+    jae     .next
+    cmp     r11, rsi
+    jbe     .next
+    mov     eax, 1
+    ret
+.no:
+    xor     eax, eax
+    ret
+
 ; ---- relax_freeze_current ----------------
 ;
 ; relax_freeze_current
