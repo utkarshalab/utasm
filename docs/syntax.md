@@ -29,14 +29,20 @@
 ```asm
 ; single line comment — everything after ; is ignored
 mov rax, 1      ; inline comment — also valid
+mov rax, 2      // to the end of the line, as in C
 
 /* block comment
-   spans multiple lines
-   nests up to 32 levels deep
-   /* nested block comment */
-   still in outer comment
-*/
+   spans multiple lines */
+
+# a line whose first character (after blanks) is "#": GNU's comment line
+# 1 "file.c"    (GCC's line markers are taken as comments too)
 ```
+
+A block comment ends at its first `*/`, as in C and GNU `as` (they do not
+nest). The `#` comment line is x86's: elsewhere on a line `#` is a token
+(stringizing in a macro body), and the AArch64 and RISC-V syntaxes write
+immediates with it. `;` stays NASM's comment, where GNU `as` on x86 takes
+it between two statements.
 
 ---
 
@@ -1036,6 +1042,43 @@ The errors are GNU's: "unexpected end of file in macro `m' definition",
 "`.endif' with nothing open for it", "end of file in conditional", "missing
 value for required parameter `a'", "too many positional arguments" and the
 like.
+
+### FASM's virtual, load and store
+
+```asm
+virtual at 0                ; assembled, written nowhere
+    mov     eax, ebx
+    len = $                 ; 2
+    load    op byte from 0  ; 0x89
+end virtual
+
+msg:    db "hello"
+sum = 0
+%assign i 0
+%rep 5
+    load    b byte from msg + i
+    sum = sum + b           ; a checksum made at assembly time
+%assign i i+1
+%endrep
+    db      sum & 0xFF
+    store   byte 0xAA at msg         ; the bytes patched
+```
+
+| Directive | What it does |
+|---|---|
+| `virtual [at ADDR]` ... `end virtual` | what is between is assembled and laid out from ADDR (from `$` without `at`) in a space of its own that is written nowhere: its labels are plain numbers, its bytes there for `load` (an instruction's length or encoding). Blocks nest. |
+| `load NAME [byte\|word\|dword\|qword] from ADDR` | NAME a constant: the bytes at ADDR of the space being assembled (the section, or the virtual block), little endian; a byte when no size is written |
+| `store [byte\|word\|dword\|qword] VALUE at ADDR` | those bytes made VALUE |
+| `defined NAME`, `defined(NAME)` | in an expression: 1 when NAME is a label or a constant defined so far, else 0 (utasm reads the source once: a label defined further on is not defined yet) |
+| `NAME = EXPR` | NAME a constant, set again by a later `NAME = ...` (`x = x + 1`), as in FASM, MASM and GNU `as` (`.set`) |
+
+The bytes `load` and `store` reach must be there and final: not past what
+is assembled, not a field a relocation fills in, nor a jump whose
+displacement or size is settled later - those are errors ("load / store of
+bytes not final yet"). ADDR is a label or `$` of the space being assembled,
+or an address in a virtual block (or a flat binary's first section).
+`load`, `store` and `virtual` followed by `:`, `equ`, `db`, `resb` or
+`times` are still labels of that name.
 
 ### Structures
 
