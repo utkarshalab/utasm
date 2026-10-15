@@ -47,8 +47,12 @@ DEFAULT REL
 ;   .org N[, F]                   padding up to offset N of the section
 ;   .code16 / .code32 / .code64   bits 16 / 32 / 64
 ;   .ident "TEXT"                 TEXT in .comment, as GNU's
-;   .intel_syntax, .file, .loc, .arch   taken, nothing done
+;   .intel_syntax                 ptr, flat and offset as %use masm's
+;                                 ("DWORD PTR x[rip]", "OFFSET FLAT:x")
+;   .file, .loc, .arch            taken, nothing done
 ;   .att_syntax                   an error: utasm reads Intel syntax
+;   .macro .endm .exitm .purgem .rept .irp .irpc .endr, .if & co, .else,
+;   .elseif, .endif               frontend/parser/gas_macro.s
 ;
 ; "." alone in an expression is $ (parser.s), as GNU writes the location.
 ; A name followed by a NASM word ("equ", "resd", "db", "times") is a label
@@ -76,6 +80,10 @@ extern  global_ctx
 extern  str_cmp
 extern  mem_reserve
 extern  error_set_subject
+extern  prep_push_buffer
+extern  masm_enabled
+extern  gas_macro_define, gas_macro_exit, gas_macro_purge
+extern  gas_repeat, gas_if, gas_else, gas_endif
 
 ; actions
 %define G_RENAME     1          ; arg: the NASM directive's name
@@ -101,6 +109,15 @@ extern  error_set_subject
 %define G_ATT        21
 %define G_OCTA       22
 %define G_IDENT      23
+%define G_INTEL      24
+%define G_MACRO      25             ; frontend/parser/gas_macro.s
+%define G_STRAY      26             ; .endm / .endr out of place
+%define G_EXITM      27
+%define G_PURGEM     28
+%define G_REPT       29             ; arg: 0 .rept, 1 .irp, 2 .irpc
+%define G_IF         30             ; arg: the kind (gas_if)
+%define G_ELSE       31             ; arg: 0 .else, 1 .elseif
+%define G_ENDIF      32
 
 %define PEND_TYPE    1
 %define PEND_SIZE    2
@@ -132,6 +149,15 @@ s_text:     db ".text", 0
 s_data:     db ".data", 0
 s_bss:      db ".bss", 0
 s_comment:  db ".comment", 0
+align 8
+gm_calls:   dq gas_macro_define, gas_stray, gas_macro_exit, gas_macro_purge
+            dq gas_repeat, gas_if, gas_else, gas_endif
+s_intel:    db ".intel_syntax", 0
+intel_text: db 10
+            db "%idefine ptr __?masm_ptr?__", 10
+            db "%idefine flat __?masm_flat?__", 10
+            db "%idefine offset", 10
+intel_text_len equ $ - intel_text
 
 gas_table:
     gas_ent ".globl", G_RENAME, s_global
@@ -185,12 +211,39 @@ gas_table:
     gas_ent ".code16", G_BITS, 16
     gas_ent ".code32", G_BITS, 32
     gas_ent ".code64", G_BITS, 64
-    gas_ent ".intel_syntax", G_IGNORE, 0
+    gas_ent ".intel_syntax", G_INTEL, 0
     gas_ent ".ident", G_IDENT, 0
     gas_ent ".file", G_IGNORE, 0
     gas_ent ".loc", G_IGNORE, 0
     gas_ent ".arch", G_IGNORE, 0
     gas_ent ".att_syntax", G_ATT, 0
+    gas_ent ".macro", G_MACRO, 0
+    gas_ent ".endm", G_STRAY, 0
+    gas_ent ".exitm", G_EXITM, 0
+    gas_ent ".purgem", G_PURGEM, 0
+    gas_ent ".rept", G_REPT, 0
+    gas_ent ".irp", G_REPT, 1
+    gas_ent ".irpc", G_REPT, 2
+    gas_ent ".endr", G_STRAY, 0
+    gas_ent ".if", G_IF, 0
+    gas_ent ".ifne", G_IF, 0
+    gas_ent ".ifeq", G_IF, 1
+    gas_ent ".ifgt", G_IF, 2
+    gas_ent ".ifge", G_IF, 3
+    gas_ent ".iflt", G_IF, 4
+    gas_ent ".ifle", G_IF, 5
+    gas_ent ".ifdef", G_IF, 6
+    gas_ent ".ifndef", G_IF, 7
+    gas_ent ".ifnotdef", G_IF, 7
+    gas_ent ".ifb", G_IF, 8
+    gas_ent ".ifnb", G_IF, 9
+    gas_ent ".ifc", G_IF, 10
+    gas_ent ".ifnc", G_IF, 11
+    gas_ent ".ifeqs", G_IF, 12
+    gas_ent ".ifnes", G_IF, 13
+    gas_ent ".else", G_ELSE, 0
+    gas_ent ".elseif", G_ELSE, 1
+    gas_ent ".endif", G_ENDIF, 0
     db 0
 
 nw_sizes:   db "bwdqtoyz", 0
@@ -324,6 +377,20 @@ gas_directive:
     je      .octa
     cmp     eax, G_IDENT
     je      .ident
+    cmp     eax, G_INTEL
+    je      .intel
+    cmp     eax, G_MACRO
+    jb      .not_gm
+    ; .macro, .rept, .if ... (gas_macro.s): rdi = PrepState, esi = the kind
+    sub     eax, G_MACRO
+    lea     rcx, [rel gm_calls]
+    mov     rcx, [rcx + rax * 8]
+    mov     rdi, rbx
+    mov     esi, r14d
+    call    rcx
+    mov     rdx, rax
+    jmp     .done_rdx
+.not_gm:
     ; G_IGNORE: the rest of the line
     call    .skip_line
     jmp     .done_ok
@@ -997,6 +1064,21 @@ gas_directive:
     mov     [rel asm_bits], r14b
     jmp     .done_ok
 
+.intel:
+    ; GNU's Intel syntax: "DWORD PTR x[rip]", "OFFSET FLAT:x" - ptr, flat
+    ; and offset as %use masm reads them (once; "noprefix" or not)
+    call    .skip_line
+    cmp     byte [rel masm_enabled], 0
+    jne     .done_ok
+    mov     byte [rel masm_enabled], 1
+    mov     rdi, rbx
+    lea     rsi, [rel intel_text]
+    mov     edx, intel_text_len
+    lea     rcx, [rel s_intel]
+    call    prep_push_buffer
+    mov     rdx, rax
+    jmp     .done_rdx
+
 .octa:
     ; numbers, 16 bytes each (the value's sign above its 64 bits)
 .octa_next:
@@ -1124,7 +1206,7 @@ gas_directive:
     pop     rbx
     ret
 
-; .emit: the byte sil into the section. Preserves rsi (and the callee-saved).
+; .emit: the byte sil into the section.Preserves rsi (and the callee-saved).
 .emit:
     push    rsi
     push    rcx
@@ -1424,7 +1506,14 @@ gas_directive:
     pop     rdi
     ret
 
-; gas_nasm_word: rdi a word NASM puts after a label (equ, times, resb ...
+; gas_stray: ".endm" / ".endr" with nothing open (r12 = the word)
+gas_stray:
+    mov     rdi, r12
+    call    error_set_subject
+    mov     eax, EXIT_GAS_STRAY
+    ret
+
+; gas_nasm_word: rdi a word NASM puts after a label(equ, times, resb ...
 ; resz, db ... dz), in any case: eax = 1
 gas_nasm_word:
     movzx   eax, byte [rdi]
