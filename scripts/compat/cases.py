@@ -2126,3 +2126,122 @@ GAS_ERRORS += [
     ("%macro nm 0\n.rept 2\nnop\n.endr\n%endmacro\nnm", "inside a NASM macro or %rep"),
     ("mov eax, [rip + rax]", "invalid effective address"),
 ]
+
+# batch 52: GNU's comments (a "#" first on a line, /* */), and -X json
+GAS_CASES += [
+    # (";" stays NASM's comment: GNU as on x86 takes it between statements)
+    ("comments", r"""# 1 "a.c"
+  # a comment line
+.data
+.byte 1 /* a comment */
+/* a block
+   comment */
+.byte 2
+// to the end of the line
+.byte 3
+"""),
+]
+# (name, source): -X json's objects are the text messages, field by field
+JSON_CASES = [
+    ("errors", "section .text\nmovv eax, 1\nmov [rip + rax], eax\ndb 1 # 2\n"),
+    ("warnings", "orphan\nmov eax, [qword 5]\n"),
+    ("macro note", "%macro m 0\n  movv eax, 1\n%endmacro\nm\n"),
+    ("lexer", "db 1\nmov eax, \x01\n"),
+    ("no place", "%fatal stop\n"),
+    ("quotes", "%error \"a\" \\ b\n"),
+]
+
+# batch 53: map files, as NASM's bin format writes them - (name, source);
+# the map file is m.map
+MAP_CASES = [
+    ("all", """[map all m.map]
+bits 16
+org 0x7c00
+section .text
+start: jmp main
+msg: db "hi", 0
+main: mov ax, msg
+section .data align=16
+val: dw 1
+section .bss
+buf: resb 64
+K equ 5
+"""),
+    ("symbols", """[map all m.map]
+bits 16
+section .data
+b: db 1
+a: db 2
+.loc: db 3
+%macro mm 0
+%%x: db 4
+%endmacro
+mm
+struc st
+.f: resb 1
+endstruc
+section .bss
+z: resb 4
+"""),
+    ("options", """[map brief m.map]
+[map symbols other.map]
+bits 32
+nop
+x: ret
+"""),
+    ("brief", """[map brief m.map]
+bits 64
+section .text
+nop
+section .data
+dd 1
+"""),
+    ("sections", """[map sections m.map]
+bits 64
+section .text
+nop
+section .two follows=.text
+db 1, 2, 3
+section .three vstart=0x1000
+dq 0
+"""),
+    ("vstart", """[map all m.map]
+bits 16
+org 0x100
+section .text
+call far_fn
+ret
+section .far vstart=0x2000 align=16
+far_fn: retf
+section .bss
+stack: resw 32
+top:
+"""),
+]
+
+# batch 53: FASM's virtual / load / store / defined and "NAME = EXPR"
+# (frontend/parser/fasm.s) - (name, source, the flat binary's bytes in hex),
+# or (name, source, None, the error)
+FASM_CASES = [
+    ("virtual load", "bits 64\nvirtual at 0\nmov eax, ebx\nlen = $\nload op byte from 0\n"
+                     "load op2 byte from 1\nend virtual\ndb len, op, op2\n", "0289d8"),
+    ("load store", "bits 64\ndata: db 1, 2, 3, 4\nload w word from data + 1\ndw w\n"
+                   "store byte 0xAA at data\nstore word 0x1234 at data + 2\n", "aa0234120203"),
+    ("store dword qword", "bits 64\nd: dq 0\nstore qword 0x1122334455667788 at d\n"
+                          "load x dword from d + 4\ndd x\n", "887766554433221144332211"),
+    ("virtual nested", "bits 64\nvirtual at 0x100\na: dq 0\nb: dd 0\nvirtual at 0\nc: db 0\n"
+                       "end virtual\nd:\nend virtual\ndw a, b, c, d\n", "000108010000" + "0c01"),
+    ("virtual here", "bits 64\nnop\nvirtual\nv1: db 0, 0\nv2:\nend virtual\ndb v2 - v1\nnop\n", "900290"),
+    ("defined", "bits 64\ndata: db 1\ndb defined data, defined nope, defined(data), defined later\n"
+                "later: db defined later\n", "010100010001"),
+    ("assign", "x = 1\nx = x + 1\nx = x * 3\ndb x\ny = x == 6\ndb y\n", "0601"),
+    ("checksum", "bits 64\nmsg: db 'hello'\nsum = 0\n%assign i 0\n%rep 5\nload b byte from msg + i\n"
+                 "sum = sum + b\n%assign i i+1\n%endrep\ndb sum & 0xFF\n", "68656c6c6f14"),
+    ("names kept", "load equ 5\nstore: db load\nvirtual: db 1\n", "0501"),
+    ("load past the end", "d: db 1\nload x word from d\n", None, "outside the bytes assembled"),
+    ("load later", "load x byte from later\nlater: db 1\n", None, "not final yet"),
+    ("load a jump", "j: jmp far_away\nload x byte from j+1\ntimes 300 nop\nfar_away:\n", None, "not final yet"),
+    ("end virtual alone", "end virtual\n", None, "`end virtual' with nothing open"),
+    ("virtual open", "virtual at 0\ndb 1\n", None, "`virtual' with no `end virtual'"),
+    ("assign a label", "label: nop\nlabel = 5\n", None, "inconsistently redefined"),
+]
