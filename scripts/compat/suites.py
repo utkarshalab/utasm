@@ -1407,6 +1407,14 @@ def masm_features(utasm, verbose=False):
             r = run([os.path.join(d, "p")], cwd=d) if l.returncode == 0 else l
         s.result("program", a.returncode == 0 and r.returncode == want,
                  "rc %d (want %d): %s" % (r.returncode, want, first_line(a) or first_line(l)))
+        src, want = cases.MASM_DATA_PROGRAM
+        with tempdir() as d:
+            open(os.path.join(d, "p.s"), "w").write(src)
+            a = run([utasm, "-f", "elf64", "-o", "p.o", "p.s"], cwd=d)
+            l = run(["ld", "-o", "p", "p.o"], cwd=d) if a.returncode == 0 else a
+            r = run([os.path.join(d, "p")], cwd=d) if l.returncode == 0 else l
+        s.result("data program", a.returncode == 0 and r.returncode == want and not (a.stderr or "").strip(),
+                 "rc %d (want %d): %s" % (r.returncode, want, first_line(a) or first_line(l)))
     for name, fmt, src, want in cases.MASM_CODE:
         with tempdir() as d:
             open(os.path.join(d, "c.s"), "w").write(src)
