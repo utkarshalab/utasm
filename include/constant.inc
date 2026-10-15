@@ -134,6 +134,11 @@
 %define EXIT_GOTOFF_QWORD_ABS  116 ; "[x wrt ..gotoff]" in ELF64
 %define EXIT_WRT_UNSUPPORTED   117 ; "mov rax, [x wrt ..tlsie]" (not RIP-relative) in ELF64
 %define EXIT_DEST_IS_SOURCE    118 ; "vfcmaddcph xmm1, xmm1, xmm2": #UD
+%define EXIT_ORG_BACKWARDS     119 ; GNU's ".org 4" past offset 4
+%define EXIT_ATT_SYNTAX        120 ; GNU's ".att_syntax"
+%define EXIT_MERGE_ENTSIZE     121 ; '.section .rodata.cst8, "aM", @progbits'
+%define EXIT_SYM_TYPE          122 ; ".type f, @nonsense"
+%define EXIT_POPSECTION        123 ; ".popsection" with none pushed
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
