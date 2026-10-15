@@ -659,6 +659,10 @@ code_table:
     code_msg EXIT_INVOKE_CLOBBER,    m_invoke_clobber
     code_msg EXIT_MASM_OPEN,         m_masm_open
     code_msg EXIT_MASM_PROC_OPEN,    m_masm_proc_open, t_masm_proc_open
+    code_msg EXIT_MASM_SIZEOF,       m_masm_sizeof, t_masm_sizeof
+    code_msg EXIT_MASM_FIELD,        m_masm_field, t_masm_field
+    code_msg EXIT_MASM_ENDS,         m_masm_ends
+    code_msg EXIT_MASM_STRUCT_OPEN,  m_masm_struct_open, t_masm_struct_open
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -865,6 +869,13 @@ m_invoke_clobber: db "INVOKE argument reads a register an earlier argument was l
 m_masm_open:    db ".IF / .WHILE / .REPEAT with no end (.ENDIF / .ENDW / .UNTIL)", 0
 m_masm_proc_open: db "PROC with no ENDP", 0
 t_masm_proc_open: db "PROC `^' with no ENDP", 0
+m_masm_sizeof:  db "SIZEOF / LENGTHOF / TYPE of a name that is no type, field or variable MASM declared", 0
+t_masm_sizeof:  db "SIZEOF / LENGTHOF / TYPE of `^': no type, field or variable MASM declared", 0
+m_masm_field:   db "no such structure field", 0
+t_masm_field:   db "no structure field `^'", 0
+m_masm_ends:    db "ENDS's name is not the STRUCT's", 0
+m_masm_struct_open: db "STRUCT with no ENDS", 0
+t_masm_struct_open: db "STRUCT `^' with no ENDS", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
 t_multi:        db "symbol `^' defined more than once", 0
