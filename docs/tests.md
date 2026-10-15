@@ -857,3 +857,11 @@ skipped with a note.
 ---
 
 *UtkarshaLab — Engineering the Foundation of Tomorrow*
+
+## Benchmarks
+
+`scripts/bench/bench.py [utasm] [--scale N] [--runs N] [--only NAME]` times utasm against the other
+assemblers installed (nasm, yasm, GNU as, fasm) on generated workloads, each into an ELF64 object:
+mixed instructions, data tables, a macro-heavy source (NASM's preprocessor: utasm, nasm, yasm), and
+jump-heavy code (relaxation). It prints the best wall time of the runs, lines per second, the peak
+memory, and each assembler's time against utasm's. GNU as reads a translated copy in its Intel syntax.
