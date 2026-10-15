@@ -422,6 +422,9 @@ _start:
     lea     rdi, [rel global_prep]
     extern  parser_finish
     call    parser_finish
+    ; GNU's .type / .size / .hidden ..., on the symbols once all are read
+    extern  gas_finish
+    call    gas_finish
 
     ; %error lines were reported as they were reached; no output after them
     cmp     dword [rel error_deferred], 0
