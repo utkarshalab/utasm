@@ -1861,3 +1861,50 @@ READBACK_CASES = [
     ("vpgatherqd xmm15, dword [xmm24*8+128], xmm14", None, "invalid combination"),
     ("vfmadd132ps xmm1, xmm2", None, "invalid combination"),
 ]
+
+# batch 50: GNU as's directives (frontend/parser/gas.s), the same source by
+# GNU as (".intel_syntax noprefix" first) and by utasm - (name, source)
+GAS_CASES = [
+    ("data", ".data\nd1: .byte 1, 2, 3\n.short 0x1234\n.word 5\n.hword 6\n.value 7\n.2byte 8\n"
+             ".long 0x11223344\n.int 9\n.4byte 10\n.quad -1\n.8byte 11\n.octa 1\n"),
+    ("strings", r'''.section .rodata
+.ascii "ab", "c"
+.asciz "hi\n\t\x41\101\\\""
+.string "x"
+.ascii "\0\12\x7f\e\a\b\f\v\r"
+'''),
+    ("space", ".data\n.zero 3\n.skip 2, 0xAA\n.space 4, 1\n.fill 3, 2, 0x0102\n.fill 2, 8, -1\n.fill 2\n"
+              ".bss\nb: .zero 8\n.skip 16\n"),
+    ("leb128", ".data\n.uleb128 0, 127, 128, 624485\n.sleb128 0, -1, 63, 64, -64, -65, -123456\n"),
+    ("align", ".text\nf: ret\n.p2align 4,,10\ng: nop\n.balign 8\nh: nop\n.align 32\nnop\n.p2align 2\nret\n"
+              ".data\n.byte 1\n.balign 8\n.byte 2\n.p2align 4, 0xCC\n.byte 3\n.balign 4, 0x55, 3\n.byte 4\n"),
+    ("sections", ".section .rodata.str1.1,\"aMS\",@progbits,1\n.asciz \"m\"\n"
+                 ".section .tdata,\"awT\",@progbits\n.long 7\n.section .tbss,\"awT\",@nobits\n.zero 4\n"
+                 ".section .init_array,\"aw\",@init_array\n.quad 0\n"
+                 ".section .note.test,\"a\",@note\n.long 1\n.section .mytext,\"ax\",@progbits\nret\n"
+                 ".section .rodata.cst8,\"aM\",@progbits,8\n.quad 1\n"),
+    ("section stack", ".data\n.long 1\n.pushsection .rodata\n.long 2\n.pushsection .text\nnop\n.popsection\n"
+                      ".long 3\n.popsection\n.long 4\n.text\nret\n.previous\n.long 5\n.previous\nret\n"),
+    ("symbols", ".text\n.globl f\n.type f, @function\nf: ret\n.size f, .-f\n.global g\n.type g, function\n"
+                "g: nop\nret\n.size g, .-g\n.data\n.globl o\n.type o, @object\no: .long 1, 2\n.size o, 8\n"
+                ".weak w\nw: .long 0\n.hidden w\n.globl p\n.protected p\np: .byte 0\n"
+                ".type t, @tls_object\n.section .tdata,\"awT\",@progbits\nt: .long 1\n"),
+    ("constants", ".equ K, 3\n.set V, 1\n.set V, 2\n.equiv E, 4\n.data\n.byte K, V, E\nhere: .long . - here\n"
+                  ".set V, 9\n.byte V\n"),
+    ("common", ".comm cblk, 32, 8\n.comm c2, 4\n.lcomm lbuf, 16\n.data\n.long 1\n"),
+    ("org", ".data\n.byte 1\n.org 8\n.byte 2\n.org 12, 0xEE\n.byte 3\n"),
+    ("relocations", ".extern ext\n.text\n.globl _start\n_start: call ext\njmp ext\n.data\n.quad ext\n.long ext\n"
+                    ".quad _start\n"),
+    ("ignored", ".file \"x.c\"\n.ident \"cc\"\n.text\n.code64\nf: ret\n"),
+]
+# (line, the error)
+GAS_ERRORS = [
+    (".att_syntax", "AT&T syntax"),
+    (".data\n.byte 1, 2\n.org 1", "backwards"),
+    (".section .rodata.cst8,\"aM\",@progbits", "SHF_MERGE"),
+    (".type f, @nonsense\nf:", "unrecognized symbol type `nonsense'"),
+    (".popsection", ".popsection without"),
+    (".equiv E, 1\n.equiv E, 2", "inconsistently redefined"),
+    (".p2align 40", "alignment"),
+    (".balign 3", "alignment"),
+]
