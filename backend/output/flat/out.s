@@ -35,6 +35,7 @@ extern symbol_find
 [SECTION .bss]
 global bin_origin
 bin_origin: resq 1                  ; address of the first byte of the file
+bin_last:   resq 1                  ; the last section placed before the NOBITS ones
 
 [SECTION .text]
 
@@ -62,6 +63,7 @@ binary_layout:
     jz      .done
     mov     r14, [rax + SECTION_addr]      ; the origin (org)
     mov     [rel bin_origin], r14
+    mov     qword [rel bin_last], 0
     xor     r8d, r8d                       ; 1 once a section has been placed
     xor     r15d, r15d                     ; pass 0: contents, pass 1: NOBITS
 .pass:
@@ -97,6 +99,10 @@ binary_layout:
 .empty_at:
     mov     [rdx + SECTION_addr], rax
     mov     r14, rax                       ; (the next one follows from there)
+    test    r15d, r15d
+    jnz     .empty_placed
+    mov     [rel bin_last], rdx            ; (the NOBITS ones after it too)
+.empty_placed:
     test    byte [rdx + SECTION_bin_flags], BIN_VSTART
     jz      .sec
     mov     rax, [rdx + SECTION_vstart]
@@ -154,11 +160,23 @@ binary_layout:
 .no_vstart:
     add     r14, [rdx + SECTION_size]
     mov     r8d, 1
+    test    r15d, r15d
+    jnz     .sec
+    mov     [rel bin_last], rdx
     jmp     .sec
 .pass_done:
     inc     r15d
     cmp     r15d, 2
-    jb      .pass
+    jae     .done
+    ; the NOBITS sections follow the last one with contents where its labels
+    ; end - its vstart= address space, as NASM ("section .far vstart=0x2000"
+    ; then .bss: at 0x2000 + its length)
+    mov     rax, [rel bin_last]
+    test    rax, rax
+    jz      .pass
+    mov     r14, [rax + SECTION_addr]
+    add     r14, [rax + SECTION_size]
+    jmp     .pass
 .done:
     xor     eax, eax
     pop     r15
