@@ -1514,7 +1514,8 @@ gas_stray:
     ret
 
 ; gas_nasm_word: rdi a word NASM puts after a label(equ, times, resb ...
-; resz, db ... dz), in any case: eax = 1
+; resz, db ... dz), in any case: eax = 1. Preserves all but rax, rcx.
+global gas_nasm_word
 gas_nasm_word:
     movzx   eax, byte [rdi]
     or      eax, 0x20
@@ -1565,6 +1566,55 @@ gas_nasm_word:
     ret
 .nw_no:
     xor     eax, eax
+    ret
+
+; ---- gas_assign ---------------------------
+;
+; gas_assign
+; "NAME = EXPR" (GNU's .set, FASM's and MASM's =): NAME the value; set
+; again when it is a constant already ("x = x + 1").
+; Input    : rdi = PrepState (the expression next), rsi = NAME
+; Output   : rax = OK or an error
+;
+global gas_assign
+gas_assign:
+    push    rbx
+    push    r12
+    push    r13
+    mov     rbx, rdi
+    call    parser_gas_name
+    mov     r12, rsi
+    mov     rdi, [rbx + PREP_ctx]
+    call    symbol_find
+    test    rax, rax
+    jnz     .new
+    cmp     word [rdx + SYMBOL_section], SHN_ABS
+    jne     .new                           ; (a label: "inconsistently redefined")
+    mov     r13, rdx
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    test    rax, rax
+    jnz     .ret
+    test    rcx, rcx
+    jnz     .not_number
+    test    r11, r11
+    jz      .number
+    cmp     word [r11 + SYMBOL_section], SHN_ABS
+    jne     .not_number
+.number:
+    mov     [r13 + SYMBOL_value], rdx
+    xor     eax, eax
+    jmp     .ret
+.not_number:
+    mov     eax, EXIT_NOT_SIMPLE
+    jmp     .ret
+.new:
+    mov     rsi, r12
+    call    parser_gas_equ
+.ret:
+    pop     r13
+    pop     r12
+    pop     rbx
     ret
 
 ; ---- gas_finish ---------------------------
