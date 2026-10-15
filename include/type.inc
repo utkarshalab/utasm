@@ -24,7 +24,8 @@ struc TOKEN
     field kind,     1       ; TOK_* value
     field flags,    1       ; TOK_FLAG_* values
     field quote,    1       ; a string's quote, as written (%defstr)
-    field pad0,     4       ; alignment padding
+    field offset,   4       ; where it starts in its lexer's buffer (bytes;
+                            ; GNU's .macro reads the raw text from there)
     field value,    8       ; pointer or integer
     field line,     4       ; source line number (1-based)
     field col,      2       ; source column number (1-based)
@@ -299,7 +300,9 @@ endstruc
 
 struc LEXER
     field tag,      1       ; always TAG_LEXER
-    field pad0,     7       ; alignment padding
+    field nolist,   1       ; 1: a GNU macro's / repetition's text - listed
+                            ; as the line that called it (gas_macro.s)
+    field pad0,     6       ; alignment padding
     field buf,      8       ; buffer start pointer
     field pos,      8       ; current position pointer
     field end,      8       ; buffer end boundary pointer
