@@ -160,6 +160,10 @@
 %define EXIT_INVOKE_CLOBBER    142 ; "invoke f, rsi, rdi": rsi loaded first
 %define EXIT_MASM_OPEN         143 ; .IF / .WHILE / .REPEAT with no end
 %define EXIT_MASM_PROC_OPEN    144 ; PROC with no ENDP
+%define EXIT_MASM_SIZEOF       145 ; "sizeof nope"
+%define EXIT_MASM_FIELD        146 ; "[rbx].POINT.nope"
+%define EXIT_MASM_ENDS         147 ; "A STRUCT ... B ENDS"
+%define EXIT_MASM_STRUCT_OPEN  148 ; STRUCT with no ENDS
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
