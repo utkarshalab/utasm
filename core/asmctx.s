@@ -534,9 +534,10 @@ asm_ctx_align:
 
     mov     rbx, rdi
     mov     r12, rsi               ; r12 = alignment
-    ; an explicit fill from asm_ctx_align_fill applies to this call only
-    movzx   r14d, word [rel asm_align_fill]
-    mov     word [rel asm_align_fill], 0
+    ; an explicit fill from asm_ctx_align_fill / _spec applies to this
+    ; call only
+    mov     r14, [rel asm_align_fill]
+    mov     qword [rel asm_align_fill], 0
     
     ; 1. Get current section
     mov     r13, [rbx + ASMCTX_curr_sec]
@@ -707,13 +708,24 @@ global asm_ctx_align_fill
 asm_ctx_align_fill:
     movzx   eax, dl
     or      eax, 0x100
-    mov     [rel asm_align_fill], ax
+    mov     [rel asm_align_fill], rax
+    jmp     asm_ctx_align
+
+;*
+; * [asm_ctx_align_spec]
+; * Purpose: asm_ctx_align with a fill spec (optimizer/align.s): GNU as's
+; *   long NOPs (align_gas_spec).
+; * Input  : RDI = AsmCtx, RSI = alignment, RDX = fill spec
+; ;
+global asm_ctx_align_spec
+asm_ctx_align_spec:
+    mov     [rel asm_align_fill], rdx
     jmp     asm_ctx_align
 
 [SECTION .bss]
 alignb 8
 sec_hash:       resq SEC_HASH           ; SECTION* by the hash of its name
-asm_align_fill: resw 1             ; 0x100 | fill byte, or 0 for the default
+asm_align_fill: resq 1             ; a fill spec (0x100 | fill byte ...), or 0 for the default
 align_buf:      resb 0x10000       ; smartalign's padding
 [SECTION .text]
 
