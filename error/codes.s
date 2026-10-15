@@ -652,6 +652,13 @@ code_table:
     code_msg EXIT_VIRTUAL_OPEN,      m_virtual_open
     code_msg EXIT_LOAD_RANGE,        m_load_range
     code_msg EXIT_LOAD_LATER,        m_load_later
+    code_msg EXIT_MASM_NESTED,       m_masm_nested
+    code_msg EXIT_MASM_FRAME,        m_masm_frame
+    code_msg EXIT_MASM_STRAY,        m_masm_stray
+    code_msg EXIT_MASM_ENDP,         m_masm_endp
+    code_msg EXIT_INVOKE_CLOBBER,    m_invoke_clobber
+    code_msg EXIT_MASM_OPEN,         m_masm_open
+    code_msg EXIT_MASM_PROC_OPEN,    m_masm_proc_open, t_masm_proc_open
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -850,6 +857,14 @@ t_input_open:   db "unable to open input file `^'", 0
 m_virtual_open: db "`virtual' with no `end virtual'", 0
 m_load_range:   db "load / store outside the bytes assembled (past the end, another section, or none)", 0
 m_load_later:   db "load / store of bytes not final yet (a relocation or a jump fills them in later)", 0
+m_masm_nested:  db "PROC inside a PROC (an ENDP missing?)", 0
+m_masm_frame:   db "LOCAL needs the PROC's frame: put the LOCAL lines right after the PROC line", 0
+m_masm_stray:   db "ENDP with no PROC open", 0
+m_masm_endp:    db "ENDP's name is not the PROC's", 0
+m_invoke_clobber: db "INVOKE argument reads a register an earlier argument was loaded into", 0
+m_masm_open:    db ".IF / .WHILE / .REPEAT with no end (.ENDIF / .ENDW / .UNTIL)", 0
+m_masm_proc_open: db "PROC with no ENDP", 0
+t_masm_proc_open: db "PROC `^' with no ENDP", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
 t_multi:        db "symbol `^' defined more than once", 0
