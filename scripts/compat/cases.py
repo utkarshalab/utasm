@@ -2381,3 +2381,73 @@ hlt
 .ENDIF
 """, ["cmp eax,ebx", "jge", "jb", "je", "test eax,0x4", "je"]),
 ]
+
+# batch 55: MASM's typed data and STRUCT (frontend/parser/masm.s) - a
+# program reading them (its exit status), each error, and the text made
+MASM_DATA_PROGRAM = (r"""bits 64
+%use masm
+global _start
+
+POINT STRUCT
+    x   DWORD ?
+    y   DWORD 7
+    tag BYTE "ab"
+    pad BYTE 3 DUP (?)
+POINT ENDS
+
+.data
+count   DWORD 10
+big     QWORD 1000
+arr     DWORD 1, 2, 3, 4
+buf     BYTE 16 DUP (0)
+msg     BYTE "hi", 0
+pt      POINT <5, , >
+pt2     POINT {}
+.data?
+scratch QWORD 4 DUP (?)
+.code
+_start:
+    mov eax, count              ; 10 (memory, typed)
+    add eax, pt.x               ; +5
+    add eax, pt.y               ; +7 (the default)
+    add eax, pt2.y              ; +7
+    lea rbx, pt
+    add eax, [rbx].POINT.y      ; +7
+    add eax, SIZEOF POINT       ; +13 (4+4+2+3)
+    add eax, LENGTHOF arr       ; +4
+    add eax, SIZEOF arr         ; +16
+    add eax, TYPE big           ; +8
+    add eax, LENGTHOF buf       ; +16
+    movzx ecx, byte ptr pt.tag  ; 'a' = 97
+    add eax, ecx
+    mov rdx, OFFSET arr
+    add eax, [rdx + 8]          ; +3
+    mov scratch, rax            ; (bss, typed)
+    add eax, dword ptr big      ; +1000
+    ; 10+5+7+7+7+13+4+16+8+16+97+3+1000 = 1193 -> & 255 = 169
+    mov edi, eax
+    and edi, 255
+    mov eax, 60
+    syscall
+""", 169)
+MASM_ERRORS += [
+    ("mov eax, sizeof nope\n", "SIZEOF / LENGTHOF / TYPE of `nope'"),
+    ("P STRUCT\nx DWORD ?\nP ENDS\nlea rbx, [rel x]\nmov eax, [rbx].P.nope\n", "no structure field `P.nope'"),
+    ("A STRUCT\nx DWORD ?\nB ENDS\n", "ENDS's name is not the STRUCT's"),
+    ("A STRUCT\nx DWORD ?\n", "STRUCT `A' with no ENDS"),
+]
+MASM_CODE += [
+    ("data", "elf64", """bits 64
+%use masm
+section .data
+v DWORD 5
+w WORD 1, 2
+section .text
+mov eax, v
+mov ax, w
+mov rbx, OFFSET v
+add v, 3
+lea rcx, v
+""", ["mov eax,DWORD PTR [rip+0x0]", "mov ax,WORD PTR [rip+0x0]", "movabs rbx,0x0", "add DWORD PTR [rip+0x0],0x3",
+      "lea rcx,[rip+0x0]"]),
+]
