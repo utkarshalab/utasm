@@ -1264,7 +1264,7 @@ def gas(utasm, verbose=False):
     """GNU as's directives (frontend/parser/gas.s): the same source, its
     instructions in Intel syntax, assembled by GNU as and by utasm - the same
     sections, bytes, relocations and symbols"""
-    s = Suite("GNU as directives", verbose)
+    s = Suite("GNU as", verbose)
     if not have("as"):
         return s
     for name, src in cases.GAS_CASES:
