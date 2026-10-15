@@ -57,6 +57,14 @@ extern symbol_find
 ;   return: rax = error code, rdx = result
 ;   callee saved: rbx, r12-r15, rbp
 
+extern  str_cmp
+
+[SECTION .rodata]
+gas_str_words: db ".ascii", 0, ".asciz", 0, ".string", 0, 0
+
+[SECTION .bss]
+lex_gas_str:    resb 1          ; 1: the line is a GNU string directive's
+
 [SECTION .text]
 
 ; ---- lexer_next_line ---------------------
@@ -373,6 +381,7 @@ lexer_next:
 .emit_newline:
     call    .token_begin
     mov     byte [r12 + TOKEN_kind], TOK_NEWLINE
+    mov     byte [rel lex_gas_str], 0
     ; advance past LF
     inc     qword [rbx + LEXER_pos]
     ; increment line, reset col
@@ -842,6 +851,28 @@ lexer_next:
 
 .lex_ident_not_label:
     mov     byte [r12 + TOKEN_kind], TOK_IDENT
+    ; GNU's .ascii / .asciz / .string: their "..." strings keep \" and \\
+    ; as written, to the end of the line (frontend/parser/gas.s reads the
+    ; escapes) - "\"" does not end one
+    mov     rdi, [r12 + TOKEN_value]
+    cmp     byte [rdi], '.'
+    jne     .ident_out
+    lea     rsi, [rel gas_str_words]
+.ident_gas_word:
+    cmp     byte [rsi], 0
+    je      .ident_out
+    mov     rdi, [r12 + TOKEN_value]
+    call    str_cmp
+    test    rax, rax
+    jz      .ident_gas_str
+.ident_gas_next:
+    inc     rsi
+    cmp     byte [rsi - 1], 0
+    jne     .ident_gas_next
+    jmp     .ident_gas_word
+.ident_gas_str:
+    mov     byte [rel lex_gas_str], 1
+.ident_out:
     xor     rax, rax
     mov     rdx, r12
     jmp     .done
@@ -1441,6 +1472,28 @@ lexer_next:
     ; that ends the line still continues it.
     cmp     byte [rel lex_quote], 0x60
     je      .escape_on
+    ; a GNU string (lex_gas_str): \" and \\ kept, the pair as written
+    cmp     byte [rel lex_gas_str], 0
+    je      .nasm_backslash
+    mov     r11, [rbx + LEXER_pos]
+    lea     rax, [r11 + 1]
+    cmp     rax, [rbx + LEXER_end]
+    jge     .nasm_backslash
+    movzx   eax, byte [r11 + 1]
+    cmp     eax, '"'
+    je      .gas_pair
+    cmp     eax, '\'
+    jne     .nasm_backslash
+.gas_pair:
+    cmp     r10, MAX_LINE - 2
+    jge     .lex_string_too_long
+    mov     byte [r13 + r10], '\'
+    mov     [r13 + r10 + 1], al
+    add     r10, 2
+    add     qword [rbx + LEXER_pos], 2
+    add     word  [rbx + LEXER_col], 2
+    jmp     .lex_string_loop
+.nasm_backslash:
     mov     r11, [rbx + LEXER_pos]
     lea     rax, [r11 + 1]
     cmp     rax, [rbx + LEXER_end]
