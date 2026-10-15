@@ -153,6 +153,13 @@
 %define EXIT_VIRTUAL_OPEN      135 ; FASM's "virtual" with no "end virtual"
 %define EXIT_LOAD_RANGE        136 ; load / store outside the bytes made
 %define EXIT_LOAD_LATER        137 ; load / store of bytes filled in later
+%define EXIT_MASM_NESTED       138 ; a PROC inside a PROC
+%define EXIT_MASM_FRAME        139 ; LOCAL in a PROC with no frame
+%define EXIT_MASM_STRAY        140 ; ENDP with no PROC
+%define EXIT_MASM_ENDP         141 ; "f proc ... g endp"
+%define EXIT_INVOKE_CLOBBER    142 ; "invoke f, rsi, rdi": rsi loaded first
+%define EXIT_MASM_OPEN         143 ; .IF / .WHILE / .REPEAT with no end
+%define EXIT_MASM_PROC_OPEN    144 ; PROC with no ENDP
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
