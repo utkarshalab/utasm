@@ -921,6 +921,64 @@ with the code when jumps are shortened. With `-f bin` and `-f win64` they
 are read and not written. The misuses are errors with GAS's messages
 ("CFI instruction used without previous .cfi_startproc" and the like).
 
+### GNU as directives
+
+utasm also reads the directives GNU `as` code is written with. Each one
+does what it does in GNU `as`: the same sections, flags, bytes and symbols
+(the compatibility suites check this against GNU `as` itself). NASM's
+directives keep working beside them in the same file. The instructions are
+utasm's Intel syntax, as everywhere else: `[rel msg]` for an address
+relative to `rip`.
+
+```asm
+    .intel_syntax noprefix
+    .section .rodata.str1.1, "aMS", @progbits, 1
+msg:
+    .asciz  "hello\n"
+    .text
+    .globl  main
+    .type   main, @function
+main:
+    lea     rdi, [rel msg]
+    ...
+    ret
+    .size   main, . - main
+```
+
+| Directives | What they do |
+|---|---|
+| `.text`, `.data`, `.bss` | `section .text` ... |
+| `.section NAME[, "FLAGS"[, @TYPE[, ENTSIZE]]]` | a section; for a new one, GNU's flag letters `a w x M S T`, its type (`@progbits`, `@nobits`, `@note`, `@init_array`, `@fini_array`, `@preinit_array`) and its entry size (needed with `M`) |
+| `.pushsection NAME ...`, `.popsection`, `.previous` | the section stack; the section used before the last change |
+| `.globl` / `.global`, `.weak`, `.local`, `.extern` | `global`, `weak`, `local`, `extern` |
+| `.hidden`, `.internal`, `.protected` | the symbols' ELF visibility |
+| `.type NAME, @function` / `@object` / `@tls_object` / `@notype` | the ELF symbol type (`@` is optional; the word may also be in quotes) |
+| `.size NAME, EXPR` | the ELF symbol size (`. - main`) |
+| `.byte`; `.short` / `.word` / `.hword` / `.value` / `.2byte`; `.long` / `.int` / `.4byte`; `.quad` / `.8byte`; `.octa` | 1, 2, 4, 8 and 16-byte values |
+| `.ascii`, `.asciz` / `.string` | strings, with GNU's escapes (`\n \t \b \f \v \r \\ \" \x41 \101`); `.asciz` adds a NUL after each |
+| `.zero N`, `.skip N[, F]` / `.space N[, F]` | N bytes of F (reserved in a nobits section) |
+| `.fill R[, S[, V]]` | R values of S bytes, each V (its low 4 bytes, the rest zero, as GNU's) |
+| `.uleb128`, `.sleb128` | LEB128 numbers |
+| `.balign` / `.align N[, F[, MAX]]`, `.p2align K[, F[, MAX]]` | aligned to N bytes / 2^K bytes, with GNU's long NOPs in code and zeros in data unless F is given; no padding when it would take more than MAX bytes (`.p2align 4,,10`) |
+| `.org N[, F]` | padding up to offset N in the section (an error if that is behind) |
+| `.equ NAME, EXPR`, `.set NAME, EXPR`, `.equiv NAME, EXPR` | constants; `.set` may give a name a new value later, `.equiv` gives an error for a name already defined |
+| `.comm NAME, SIZE[, ALIGN]`, `.lcomm NAME, SIZE` | a common block; SIZE bytes of `.bss` under a local name |
+| `.code16`, `.code32`, `.code64` | `bits 16` / `32` / `64` |
+| `.ident "TEXT"` | TEXT in the `.comment` section |
+| `.intel_syntax`, `.file`, `.loc`, `.arch` | accepted, nothing else done |
+
+In an expression a single `.` is the current address, `$`. A `.name` label
+(`.Lfoo`) is a local label, as in NASM, and is written to the symbol table
+under the global label before it (GNU `as` leaves `.L` names out). A name
+GNU `as` takes as external without being declared needs `.extern` (or
+`extern`): utasm gives an error for a name that is not defined, which also
+catches misspellings. A branch to an external name gets an `R_X86_64_PC32`
+relocation, as in NASM (GNU `as` writes `R_X86_64_PLT32`; both link the
+same; `call f wrt ..plt` asks for the PLT one). A directive name followed by
+`:` is a label (`.text:`), and one followed by `equ`, `times`, a `res` or a
+`d` word is a label too, so a structure field named `.size` or `.type`
+keeps working. `.att_syntax` gives an error: utasm reads Intel syntax only.
+
 ### Structures
 
 ```asm
