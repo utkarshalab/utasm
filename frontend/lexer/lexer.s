@@ -2238,6 +2238,10 @@ lexer_next:
     ; copy filename pointer
     mov     rax, [rbx + LEXER_file]
     mov     [r12 + TOKEN_file], rax
+    ; where it starts in the buffer
+    mov     rax, [rbx + LEXER_pos]
+    sub     rax, [rbx + LEXER_buf]
+    mov     [r12 + TOKEN_offset], eax
 
     mov     word [r12 + TOKEN_len], 0
     ret
