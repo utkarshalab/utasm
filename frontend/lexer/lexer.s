@@ -2291,6 +2291,35 @@ lexer_next:
     cmp     rcx, ';'
     je      .skip_line_comment
 
+    ; GNU's "# ..." comment line (x86 only: a "#" first on its line - NASM
+    ; takes none there; GCC's "# 1 \"a.c\"" markers too). Elsewhere on a
+    ; line "#" is a token (stringizing in a macro body); AArch64 and RISC-V
+    ; write immediates so.
+    cmp     rcx, '#'
+    jne     .not_hash_line
+    mov     rax, [rbx + LEXER_ctx]
+    test    rax, rax
+    jz      .not_hash_line
+    cmp     byte [rax + ASMCTX_target], TARGET_AMD64
+    jne     .not_hash_line
+    mov     r11, r10
+.hash_back:
+    cmp     r11, [rbx + LEXER_buf]
+    jbe     .skip_line_comment
+    movzx   eax, byte [r11 - 1]
+    cmp     eax, 10
+    je      .skip_line_comment
+    cmp     eax, ' '
+    je      .hash_prev
+    cmp     eax, 9
+    je      .hash_prev
+    cmp     eax, 13
+    jne     .not_hash_line
+.hash_prev:
+    dec     r11
+    jmp     .hash_back
+.not_hash_line:
+
     ; check for // comment
     cmp     rcx, '/'
     jne     .skip_check_block
