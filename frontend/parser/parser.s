@@ -61,6 +61,7 @@ extern known_fwd_uses
 extern parser_lookup_mnemonic
 extern parser_check_prefix
 extern parser_parse_mem_operand
+extern masm_hl
 extern parser_concat_local_name
 extern print_str
 extern print_num
@@ -861,11 +862,40 @@ parser_parse_operand:
     mov     r12, rdx
     mov     byte [r12 + OPERAND_tag], TAG_OPERAND
     mov     byte [rel opnd_to], 0
+    mov     byte [rel masm_no_var], 0
 
 .fetch_operand_token:
     mov     rdi, rbx
     call    preprocessor_next_token
     mov     r13, rdx
+
+    ; %use masm (frontend/parser/masm.s): OFFSET X is X's address; a typed
+    ; variable ("x DWORD 5") is a memory operand of its type ("mov eax, x")
+    cmp     byte [rel masm_hl], 0
+    je      .masm_done
+    cmp     byte [r13 + TOKEN_kind], TOK_IDENT
+    jne     .masm_done
+    mov     rdi, [r13 + TOKEN_value]
+    lea     rsi, [rel str_masm_offset]
+    call    str_cmp
+    test    rax, rax
+    jnz     .masm_var
+    mov     byte [rel masm_no_var], 1
+    jmp     .fetch_operand_token
+.masm_var:
+    cmp     byte [rel masm_no_var], 0
+    jne     .masm_done
+    mov     rdi, [r13 + TOKEN_value]
+    extern  masm_var_size
+    call    masm_var_size
+    test    eax, eax
+    jz      .masm_done
+    shl     eax, 3                         ; (bits)
+    mov     [r12 + OPERAND_size], al
+    mov     [r12 + OPERAND_xsize], ax
+    mov     byte [rel far_colon], 0
+    jmp     .open_mem
+.masm_done:
 
     ; "OFFSET FLAT:x" (%use masm, GNU's Intel syntax): an address is flat,
     ; the "flat:" says nothing
@@ -971,6 +1001,8 @@ parser_parse_operand:
     ; 1. Memory Operands [base + index*scale + disp]
     IF al, e, TOK_LBRACKET
         call    parser_parse_mem_operand
+        check_err
+        call    parser_masm_field          ; ("[rbx].POINT.y", %use masm)
         check_err
         jmp     .success
         ENDIF
@@ -3689,6 +3721,70 @@ parser_evaluate_factor:
 .not_float_fn_ident:
     mov     al, TOK_IDENT
 .not_float_fn:
+    ; %use masm's OFFSET X in a value: X (its address)
+    cmp     al, TOK_IDENT
+    jne     .not_masm_offset
+    mov     rcx, [r12 + TOKEN_value]
+    cmp     byte [rcx], '_'
+    jne     .not_masm_offset
+    mov     rdi, rcx
+    lea     rsi, [rel str_masm_offset]
+    call    str_cmp
+    test    rax, rax
+    jnz     .not_masm_offset_word
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    check_err
+    mov     r12, rdx
+    mov     al, [r12 + TOKEN_kind]
+    jmp     .not_float_fn
+.not_masm_offset_word:
+    mov     al, TOK_IDENT
+.not_masm_offset:
+    ; %use masm's SIZEOF / LENGTHOF / TYPE X (frontend/parser/masm.s)
+    cmp     byte [rel masm_hl], 0
+    je      .not_size_op
+    cmp     al, TOK_IDENT
+    jne     .not_size_op
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [rel str_sizeof]
+    call    str_cmp_kw
+    xor     esi, esi
+    test    rax, rax
+    jz      .size_op
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [rel str_lengthof]
+    call    str_cmp_kw
+    mov     esi, 1
+    test    rax, rax
+    jz      .size_op
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [rel str_type_op]
+    call    str_cmp_kw
+    mov     esi, 2
+    test    rax, rax
+    jnz     .not_size_kw
+.size_op:
+    push    rsi
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    pop     rsi
+    check_err
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_IDENT
+    je      .size_go
+    cmp     eax, TOK_LPAREN
+    jne     .not_size_kw
+.size_go:
+    mov     rdi, rbx
+    extern  masm_size_op
+    call    masm_size_op
+    check_err
+    xor     eax, eax
+    jmp     .done
+.not_size_kw:
+    mov     al, TOK_IDENT
+.not_size_op:
     ; GNU's "." alone: the location, $
     cmp     al, TOK_IDENT
     jne     .not_gas_dot
@@ -5198,6 +5294,7 @@ mem_term_pending: resb 1                  ; mem_term_coef came from the evaluato
 mem_term_reg:     resb 1
 mem_expect_term:  resb 1                  ; a '+' or '[' wants a term
 mem_rip_written:  resb 1                  ; GNU's "rip" in the address
+masm_no_var:      resb 1                  ; %use masm: OFFSET read (an address)
 alignb 4
 mem_term_width:   resd 1                  ; the register just read: its width
 mem_addr_width:   resd 1                  ; the address's registers' width
@@ -9270,6 +9367,10 @@ str_fasm_end:  db "end", 0
 str_fasm_load: db "load", 0
 str_fasm_store: db "store", 0
 str_defined:   db "defined", 0
+str_masm_offset: db "__?masm_offset?__", 0
+str_sizeof:    db "sizeof", 0
+str_lengthof:  db "lengthof", 0
+str_type_op:   db "type", 0
 str_alignb_d:  db "alignb", 0
 str_alignmode: db "alignmode", 0
 str_nojmp:     db "nojmp", 0
@@ -10409,6 +10510,85 @@ parser_fasm_word:
     ret
 .guard_no:
     or      eax, 1
+    ret
+
+;*
+; * [parser_is_mnemonic]
+; * Purpose: Is the word one of the target's mnemonics? (MASM's "NAME
+; *   TYPE ..." is data, not "push dword 5".)
+; * Input  : RBX = PrepState, RDI = the word
+; * Output : EAX = 1 / 0. Preserves rbx, r12-r15.
+; ;
+global parser_is_mnemonic
+parser_is_mnemonic:
+    push    r13
+    push    r14
+    mov     r14, rdi
+    hash_fnv1a_64_ci r14, r13
+    call    parser_get_arch_tables
+    mov     rdi, r13
+    mov     rsi, rax
+    call    parser_lookup_mnemonic
+    test    rax, rax
+    setnz   al
+    movzx   eax, al
+    pop     r14
+    pop     r13
+    ret
+
+;*
+; * [parser_masm_field]
+; * Purpose: %use masm's "[rbx].POINT.y": after a memory operand, ".T.F" -
+; *   the field's offset added, its size the operand's when none is
+; *   written (frontend/parser/masm.s).
+; * Input  : RBX = PrepState, R12 = the OPERAND
+; * Output : RAX = OK or an error
+; ;
+parser_masm_field:
+    cmp     byte [rel masm_hl], 0
+    je      .ok
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ret
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .ok
+    mov     rsi, [rdx + TOKEN_value]
+    cmp     byte [rsi], '.'
+    jne     .ok
+    cmp     byte [rsi + 1], '.'
+    je      .ok
+    push    rsi
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    pop     rsi
+    inc     rsi                            ; "POINT.y"
+    push    rsi
+    mov     rdi, [rbx + PREP_ctx]
+    call    symbol_find
+    pop     rsi
+    test    rax, rax
+    jnz     .unknown
+    mov     rax, [rdx + SYMBOL_value]
+    add     [r12 + OPERAND_imm], rax
+    cmp     byte [r12 + OPERAND_size], 0
+    jne     .ok
+    mov     rdi, rsi
+    extern  masm_field_size
+    call    masm_field_size
+    test    eax, eax
+    jz      .ok
+    shl     eax, 3                         ; (bits)
+    mov     [r12 + OPERAND_size], al
+    mov     [r12 + OPERAND_xsize], ax
+.ok:
+    xor     eax, eax
+.ret:
+    ret
+.unknown:
+    mov     rdi, rsi
+    call    error_set_subject
+    mov     eax, EXIT_MASM_FIELD
     ret
 
 ;*
