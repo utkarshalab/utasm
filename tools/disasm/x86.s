@@ -3339,12 +3339,19 @@ dx_opG:
 ;   movs BYTE PTR es:[rdi],BYTE PTR ds:[rsi]
 ;   repz cmps BYTE PTR ds:[rsi],BYTE PTR es:[rdi]
 ;   lods al,BYTE PTR ds:[rsi]        scas al,BYTE PTR es:[rdi]
+;   ins BYTE PTR es:[rdi],dx         outs dx,DWORD PTR ds:[rsi]
 ;
 dx_string:
     push    rbx
     movzx   ebx, byte [rel dx_osz]
     movzx   eax, byte [rel dx_op]
-    and     eax, 0xFE                      ; A4/A6/AA/AC/AE family
+    and     eax, 0xFE                      ; A4/A6/AA/AC/AE, 6C/6E family
+    cmp     eax, 0x6E
+    ja      .sized
+    cmp     ebx, 64
+    jne     .sized
+    mov     ebx, 32                        ; (ins / outs: no 64-bit form)
+.sized:
 
     ; rep prefix spelling
     cmp     byte [rel dx_repne], 0
@@ -3371,6 +3378,10 @@ dx_string:
     call    dx_mnemonic
     pop     rax
 
+    cmp     eax, 0x6C
+    je      .ins
+    cmp     eax, 0x6E
+    je      .outs
     cmp     eax, 0xA4
     je      .movs
     cmp     eax, 0xA6
@@ -3403,6 +3414,16 @@ dx_string:
     call    .acc
     call    dx_sep
     call    .ds_rsi
+    jmp     .done
+.ins:
+    call    .es_rdi
+    call    dx_sep
+    call    .dx
+    jmp     .done
+.outs:
+    call    .dx
+    call    dx_sep
+    call    .ds_rsi
 .done:
     pop     rbx
     ret
@@ -3410,6 +3431,10 @@ dx_string:
 .acc:
     mov     edi, ebx
     xor     esi, esi
+    jmp     dx_reg
+.dx:
+    mov     edi, 16
+    mov     esi, 2                         ; (dx)
     jmp     dx_reg
 .es_rdi:
     call    .size
