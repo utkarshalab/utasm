@@ -9366,6 +9366,9 @@ str_fasm_virtual: db "virtual", 0
 str_fasm_end:  db "end", 0
 str_fasm_load: db "load", 0
 str_fasm_store: db "store", 0
+str_fasm_format: db "format", 0
+str_fasm_entry: db "entry", 0
+str_fasm_segment: db "segment", 0
 str_defined:   db "defined", 0
 str_masm_offset: db "__?masm_offset?__", 0
 str_sizeof:    db "sizeof", 0
@@ -10430,8 +10433,51 @@ parser_fasm_word:
     call    str_cmp
     test    rax, rax
     jz      .store
+    mov     rdi, r12
+    lea     rsi, [rel str_fasm_format]
+    call    str_cmp
+    test    rax, rax
+    jz      .format
+    mov     rdi, r12
+    lea     rsi, [rel str_fasm_entry]
+    call    str_cmp
+    test    rax, rax
+    jz      .entry
+    mov     rdi, r12
+    lea     rsi, [rel str_fasm_segment]
+    call    str_cmp
+    test    rax, rax
+    jz      .segment
 .none:
     xor     eax, eax
+    ret
+.format:
+    call    .guard
+    jne     .none
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .none
+    mov     rdi, rbx
+    extern  fasm_format
+    call    fasm_format
+    jmp     .done
+.entry:
+    call    .guard
+    jne     .none
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .none
+    mov     rdi, rbx
+    extern  fasm_entry
+    call    fasm_entry
+    jmp     .done
+.segment:
+    ; (NASM's "segment .data" stays section's)
+    mov     rdi, rbx
+    extern  fasm_segment
+    call    fasm_segment
     ret
 .virtual:
     call    .guard
