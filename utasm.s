@@ -402,8 +402,30 @@ _start:
     jmp     .check_enc
 
 .call_amd64:
+    ; a GNU .loc waiting: its row is this instruction's (debug/line.s)
+    extern  line_pending, line_insn
+    cmp     byte [rel line_pending], 0
+    je      .amd64_encode
+    push    rdi
+    push    rsi
+    call    line_insn
+    pop     rsi
+    pop     rdi
+    test    rax, rax
+    jnz     .check_enc
+.amd64_encode:
     extern  amd64_encode_tracked
     call    amd64_encode_tracked
+    ; a jump GNU as relaxes ends its frag (debug/line.s)
+    extern  line_active, line_insn_done
+    cmp     byte [rel line_active], 0
+    je      .check_enc
+    push    rax
+    push    rax
+    mov     rdi, r12
+    call    line_insn_done
+    pop     rax
+    pop     rax
     jmp     .check_enc
 .call_aarch64:
     call    aarch64_encode_instruction
