@@ -19,12 +19,22 @@ extern arena_alloc
 ; SYMBOL TABLE (Hash Table Implementation)
 ; ============================================================================
 ; Manages the registration and lookup of labels, constants, and macros.
-; Implements a high-performance FNV-1a 64-bit hash table with linear probing.
+; Implements a high-performance FNV-1a 64-bit hash table with quadratic probing.
 ; ============================================================================
+
+; The hash starts at SYM_HASH0 slots and doubles whenever it is half full,
+; up to MAX_SYMBOL. Its address space is reserved at the full size, but
+; every name hashes to a random slot: at the full size from the start, the
+; few hundred predefined macros alone touched as many pages, most of an
+; empty source's time.
+%define SYM_HASH0       (1 << 14)
+
+extern undef_name
 
 [SECTION .bss]
 global sym_defseq
 sym_defseq:     resd 1              ; symbols defined so far (SYMBOL_defseq)
+sym_hmask:      resq 1              ; the hash's slots, less one
 
 [SECTION .text]
 
@@ -50,6 +60,7 @@ symbol_init:
     call    mem_reserve                    ; zeroed: every bucket empty
     check_err
     mov     [rbx + ASMCTX_symhash], rdx
+    mov     qword [rel sym_hmask], SYM_HASH0 - 1
 
     xor     rax, rax
     pop     rbx
@@ -158,40 +169,24 @@ symbol_add:
     inc     dword [rel sym_defseq]
     mov     eax, [rel sym_defseq]
     mov     [r13 + SYMBOL_defseq], eax
-
-    ; 3. Index in Hash Table (Quadratic Probing)
     mov     rsi, [r13 + SYMBOL_name]
     call    symbol_hash
-    mov     r10, rax
-    and     r10, (MAX_SYMBOL - 1)  ; base hash
-    
-    mov     r11, [rbx + ASMCTX_symhash]
-    mov     rcx, 0                 ; i = 0
-.probe:
-    cmp     rcx, MAX_SYMBOL
-    jge     .error_limit
-    
-    ; pos = (hash + (i*i + i)/2) % MAX_SYMBOL
-    mov     rax, rcx
-    imul    rax, rcx
-    add     rax, rcx
-    shr     rax, 1
-    add     rax, r10
-    and     rax, (MAX_SYMBOL - 1)
-    
-    lea     rdx, [r11 + rax * 8]
-    cmp     qword [rdx], 0
-    je      .found_slot
-    
-    inc     rcx
-    jmp     .probe
+    mov     [r13 + SYMBOL_hash], eax
 
-.error_limit:
-    mov     rax, EXIT_SYMBOL_RANGE
-    jmp     .done
-
-.found_slot:
-    mov     [rdx], r13             ; Store pointer to symbol in bucket
+    ; 3. Index in Hash Table (Quadratic Probing), twice the size first
+    ;    when this one would fill more than half of it
+    mov     eax, [rbx + ASMCTX_symcount]
+    lea     rax, [rax * 2 + 1]
+    cmp     rax, [rel sym_hmask]
+    jbe     .room
+    cmp     qword [rel sym_hmask], MAX_SYMBOL - 1
+    jae     .room
+    call    symbol_grow
+.room:
+    mov     rdi, r13
+    call    symbol_insert
+    test    rax, rax
+    jnz     .done                  ; EXIT_SYMBOL_RANGE
 
     ; 4. Increment count
     inc     dword [rbx + ASMCTX_symcount]
@@ -203,6 +198,74 @@ symbol_add:
     pop     r12
     pop     rbx
     epilogue
+
+; ---- symbol_insert ----------------------
+; rbx = AsmCtx, rdi = a symbol of the linear table (SYMBOL_hash set) -> its
+; slot in the hash, the first empty one of its probe sequence. rax =
+; EXIT_OK, or EXIT_SYMBOL_RANGE with every slot taken.
+; Clobbers rcx, rdx, r10, r11
+symbol_insert:
+    mov     edx, [rdi + SYMBOL_hash]
+    mov     r10, [rel sym_hmask]
+    mov     r11, [rbx + ASMCTX_symhash]
+    xor     ecx, ecx               ; i = 0
+.probe:
+    cmp     rcx, r10
+    ja      .full
+    ; pos = (hash + (i*i + i)/2) & mask
+    mov     rax, rcx
+    imul    rax, rcx
+    add     rax, rcx
+    shr     rax, 1
+    add     rax, rdx
+    and     rax, r10
+    cmp     qword [r11 + rax * 8], 0
+    je      .slot
+    inc     rcx
+    jmp     .probe
+.slot:
+    mov     [r11 + rax * 8], rdi
+    xor     eax, eax
+    ret
+.full:
+    mov     eax, EXIT_SYMBOL_RANGE
+    ret
+
+; ---- symbol_grow ------------------------
+; rbx = AsmCtx: the hash at twice its size, every symbol of the linear
+; table put in it again - none is ever taken out of that, so nothing is
+; copied. An %undef'd entry (named undef_name) is left out: nothing finds
+; it, and the hundreds %clear makes would all share one probe sequence.
+; Clobbers rax, rcx, rdx, rdi, r10, r11
+symbol_grow:
+    push    r12
+    push    r13
+    mov     rdi, [rbx + ASMCTX_symhash]
+    mov     rcx, [rel sym_hmask]
+    inc     rcx
+    xor     eax, eax
+    rep stosq
+    mov     rax, [rel sym_hmask]
+    lea     rax, [rax * 2 + 1]
+    mov     [rel sym_hmask], rax
+    mov     r12, [rbx + ASMCTX_symtab]
+    mov     r13d, [rbx + ASMCTX_symcount]
+.next:
+    test    r13d, r13d
+    jz      .done
+    lea     rax, [rel undef_name]
+    cmp     [r12 + SYMBOL_name], rax
+    je      .skip
+    mov     rdi, r12
+    call    symbol_insert          ; (half full at most: always a slot)
+.skip:
+    add     r12, SYMBOL_SIZE
+    dec     r13d
+    jmp     .next
+.done:
+    pop     r13
+    pop     r12
+    ret
 
 ; ---- symbol_find ------------------------
 global symbol_find
@@ -218,25 +281,26 @@ symbol_find:
 
     call    symbol_hash
     mov     r10, rax
-    and     r10, (MAX_SYMBOL - 1)
     
     mov     r11, [rbx + ASMCTX_symhash]
     mov     rcx, 0                 ; i = 0 (iteration counter)
 .probe:
-    cmp     rcx, MAX_SYMBOL
-    jge     .not_found
+    cmp     rcx, [rel sym_hmask]
+    ja      .not_found             ; every slot looked at
     
-    ; pos = (hash + (i*i + i)/2) % MAX_SYMBOL
+    ; pos = (hash + (i*i + i)/2) & mask (the hash's size now)
     mov     rax, rcx
     imul    rax, rcx               ; i*i
     add     rax, rcx               ; i*i + i
     shr     rax, 1                 ; (i*i + i)/2
     add     rax, r10               ; hash + ...
-    and     rax, (MAX_SYMBOL - 1)  ; modulo size
+    and     rax, [rel sym_hmask]
     
     mov     rdx, [r11 + rax * 8]
     test    rdx, rdx
     jz      .not_found
+    cmp     [rdx + SYMBOL_hash], r10d
+    jne     .other                 ; another name
     
     ; Compare names. str_cmp scratches CL/DL, and RCX is the probe counter,
     ; so it has to be saved or a collision sends the probe to a random slot.
@@ -251,10 +315,9 @@ symbol_find:
 
     test    rax, rax
     jz      .found
-    
+.other:
     inc     rcx
     jmp     .probe
-    jmp     .not_found
 
 .found:
     ; rdx already points to the symbol
