@@ -520,6 +520,9 @@ elf32_convert:
     je      .t_same
     cmp     eax, 3                         ; GOT32
     je      .t_same
+    cmp     eax, 43                        ; GOT32X (amd64_gas_got: GNU's
+    je      .t_same                        ; syntax, an instruction the
+                                           ; linker may relax): the same
     cmp     eax, 26                        ; GOTPC32
     je      .t_gotpc
     cmp     eax, 25                        ; GOTOFF64 (a 32-bit field here)
