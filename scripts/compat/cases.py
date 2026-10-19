@@ -1899,7 +1899,6 @@ GAS_CASES = [
 ]
 # (line, the error)
 GAS_ERRORS = [
-    (".att_syntax", "AT&T syntax"),
     (".data\n.byte 1, 2\n.org 1", "backwards"),
     (".section .rodata.cst8,\"aM\",@progbits", "SHF_MERGE"),
     (".type f, @nonsense\nf:", "unrecognized symbol type `nonsense'"),
@@ -2487,3 +2486,306 @@ BIN_PROBES.update({
     "cyrix_smm": "bits 32\nrsdc es, [ebx]\nrsdc ds, [bx]\nsvdc [eax], es\nsvdc tword [ebx], ss\n"
                  "bits 16\nrsdc cs, [di+4]\nsvdc [bx], ds\n",
 })
+
+# batch 59: NASM's optimistic sizing - a sign-extended imm8 for a value not
+# worked out yet in pass 1, kept when it fits (and grown when not); Cyrix's
+# smint / rdm / bb0_reset (0f 38 / 0f 3a alone); push byte of a label
+BIN_PROBES.update({
+    "optimistic_add": "bits 32\ns1:\nadd eax, s2 - s1\ntimes 124 nop\ns2:\n",
+    "optimistic_reg": "bits 32\ns1:\nadd ecx, s2 - s1\ntimes 124 nop\ns2:\n",
+    "optimistic_push": "bits 32\ns1:\npush s2 - s1\ntimes 125 nop\ns2:\n",
+    "optimistic_imul": "bits 32\ns1:\nimul ecx, edx, s2 - s1\ntimes 124 nop\ns2:\n",
+    "optimistic_grows": "bits 32\nc1:\npush c2 - c1\ntimes 125 nop\nc2:\npush c3 - c2\n"
+                        "times 200 nop\nc3:\nadd eax, c4 - c3\ntimes 126 nop\nc4:\n",
+    "optimistic_expr": "bits 64\ns1:\nsub rsp, (s2 - s1) / 2\ntimes 200 nop\ns2:\n",
+    "optimistic_strict": "bits 32\ns1:\nadd eax, strict dword s2 - s1\ntimes 124 nop\ns2:\n",
+    "cyrix_smint": "bits 32\nsmint\nrdm\nbb0_reset\nbits 16\nsmint\n",
+})
+ELF_PROBES.update({
+    "push_byte_label": "bits 32\nextern ext\npush byte ext\npush ext\n",
+})
+REJECT_CASES += [
+    ("smint in 64-bit", "bin", "bits 64\nsmint\n"),
+    ("rdshr in 64-bit", "bin", "bits 64\nrdshr eax\n"),
+    ("svdc in 64-bit", "bin", "bits 64\nsvdc [rax], ds\n"),
+    ("cpu_read in 64-bit", "bin", "bits 64\ncpu_read\n"),
+]
+
+# AT&T syntax (frontend/parser/att.s, --att): each line assembled by GNU as and
+# by utasm --att - the same .text bytes and relocation types (suites.att)
+ATT_LINES_64 = r'''
+fsub %st, %st(1)
+fsub %st(1), %st
+fsubr %st, %st(1)
+fsubp %st, %st(1)
+fsubp
+fsubrp
+fdiv %st, %st(2)
+fdivp
+fdivrp %st, %st(3)
+fadd %st, %st(1)
+faddp
+fsubs (%rax)
+fsubl (%rax)
+fisubs (%rax)
+fisubl (%rax)
+fildll (%rax)
+fildq (%rax)
+fistpll (%rax)
+fldt (%rax)
+fstpt (%rax)
+flds 4(%rsp)
+fnstsw %ax
+fcmovb %st(1), %st
+rep
+lock
+rep; movsb
+repz ret
+lock incl (%rax)
+lock cmpxchgq %rcx, 8(%rdi)
+rep stosq
+rep movsl %ds:(%rsi), %es:(%rdi)
+rep stos %rax, %es:(%rdi)
+movsb %fs:(%rsi), %es:(%rdi)
+lods %ds:(%rsi), %eax
+cmps %es:(%rdi), %ds:(%rsi)
+xlat %fs:(%rbx)
+movsl
+cmpsb (%rdi), (%rsi)
+stosl %eax, %es:(%rdi)
+shll %eax
+shll (%rax)
+sarw $3, %ax
+shrq %cl, %rdx
+shldl %cl, %eax, %ebx
+shld $3, %eax, %ebx
+movq %rax, %rbx
+movq %xmm0, %rax
+movq (%rax), %xmm1
+movq $5, %rax
+movq $-1, %rax
+movq $0x100000000, %rax
+movq $foo, %rax
+movabsq $5, %rax
+movabs 0x1234, %eax
+movabs foo, %rax
+movl $foo, %eax
+movl foo, %eax
+movl %fs:0x28, %eax
+movq %fs:0, %rax
+inb (%dx), %al
+outw %ax, (%dx)
+inl $0x60, %eax
+enter $16, $0
+lcall *8(%rbx)
+jmp *%rax
+call *(%rax,%rcx,8)
+jmpq *8(%rax)
+call *foo(,%rax,8)
+lret
+lretq
+lret $8
+retq
+cltq
+cqto
+cwtl
+cltd
+movslq %eax, %rbx
+movzbl (%rax), %ecx
+movsbw %al, %cx
+movzwq %ax, %rbx
+movswl -2(%rbp), %eax
+pushq $5
+pushw $5
+pushq (%rax)
+push 8(%rip)
+popw (%rax)
+nopw 0x0(%rax,%rax,1)
+nopl (%rax)
+leaq foo(%rip), %rax
+leaq 8(%rip), %rax
+leaq -16(%rbp,%rcx,8), %rdi
+leaq (,%rcx,4), %rdx
+movl foo@GOTPCREL(%rip), %eax
+movq foo@GOTPCREL(%rip), %rax
+call foo@PLT
+jmp foo@PLT
+movq %fs:foo@TPOFF, %rax
+leaq foo@TLSGD(%rip), %rdi
+imul $5, %eax, %ebx
+imulq $1000, (%rax), %rcx
+cvtsi2sdl (%rax), %xmm0
+cvtsi2sdq %rax, %xmm0
+cvttsd2siq (%rax), %rbx
+vcvtpd2psx (%rax), %xmm0
+vcvtpd2psy (%rax), %xmm0
+vaddps {rn-sae}, %zmm2, %zmm1, %zmm0
+vaddps (%rax){1to16}, %zmm1, %zmm0{%k1}{z}
+vmovdqu64 %zmm1, -64(%rsp){%k2}
+vpaddd %ymm1, %ymm2, %ymm3
+vfmadd231ps (%rdi,%rax,4), %ymm1, %ymm0
+xchg %eax, %ebx
+testb $1, (%rax)
+bt $3, %eax
+btl $3, (%rax)
+setl %al
+cmovll %eax, %ebx
+iretq
+sysretq
+swapgs
+movl $017, %eax
+movl $0x1f, %eax
+movl $0b101, %eax
+addl $(3 << 4) | 1, %eax
+movl -4(%rbp), %eax # comment
+addq $8, %rsp ; addq $8, %rsp
+movw %ds, %ax
+movq %cr0, %rax
+'''
+ATT_LINES_32 = r'''
+pushl $5
+pushl (%eax)
+movl 8(%ebp), %eax
+leal (%eax,%ebx,2), %ecx
+calll *%eax
+ljmp $0x10, $0x1000
+lcall $8, $foo
+lcall *8(%ebx)
+movzwl (%esi), %eax
+movsbl %al, %edx
+fildll (%esp)
+pushfl
+popal
+inb $0x60, %al
+call foo@PLT
+movl foo@GOT(%ebx), %eax
+leal foo@GOTOFF(%ebx), %eax
+movl %gs:foo@NTPOFF, %eax
+'''
+# whole sources, compared section by section (suites.gas's gas_view)
+ATT_FILES = [
+    ("function", r'''	.file	"f.c"
+	.text
+	.p2align 4
+	.globl	f
+	.type	f, @function
+f:
+.LFB0:
+	.cfi_startproc
+	testl	%edi, %edi
+	jle	.L4
+	pushq	%rbx
+	.cfi_def_cfa_offset 16
+	.cfi_offset 3, -16
+	movl	%edi, %ebx
+	call	g@PLT
+	addl	%ebx, %eax
+	popq	%rbx
+	.cfi_def_cfa_offset 8
+	ret
+	.p2align 4,,10
+	.p2align 3
+.L4:
+	xorl	%eax, %eax
+	ret
+	.cfi_endproc
+.LFE0:
+	.size	f, .-f
+	.section	.note.GNU-stack,"",@progbits
+'''),
+    ("data and locals", r'''	.text
+	.globl	main
+	.type	main, @function
+main:
+	leaq	.LC0(%rip), %rdi
+	leaq	jb(%rip), %rsi
+	movsd	.LC1(%rip), %xmm0
+	call	puts@PLT
+	call	main
+	xorl	%eax, %eax
+	ret
+	.size	main, .-main
+	.section	.rodata.str1.1,"aMS",@progbits,1
+.LC0:
+	.string	"hello"
+	.section	.rodata.cst8,"aM",@progbits,8
+	.align 8
+.LC1:
+	.long	0
+	.long	1073741824
+	.local	jb
+	.comm	jb,200,32
+	.comm	shared,8,8
+'''),
+    ("jump table", r'''	.text
+	.globl	sw
+	.type	sw, @function
+sw:
+	cmpl	$3, %edi
+	ja	.L1
+	leaq	.L3(%rip), %rdx
+	movslq	(%rdx,%rdi,4), %rax
+	addq	%rdx, %rax
+	jmp	*%rax
+	.section	.rodata
+	.align 4
+.L3:
+	.long	.L6-.L3
+	.long	.L5-.L3
+	.long	.L4-.L3
+	.long	.L2-.L3
+	.text
+.L6:	movl $1, %eax
+	ret
+.L5:	movl $2, %eax
+	ret
+.L4:	movl $3, %eax
+	ret
+.L2:	movl $4, %eax
+	ret
+.L1:	xorl %eax, %eax
+	ret
+	.size	sw, .-sw
+'''),
+    ("numeric labels", "f:\n1: decl %eax\njnz 1b\njmp 2f\nnop\n2: ret\n"),
+    ("tls", "\t.text\n\tmovl %fs:x@tpoff, %eax\n\tmovq x@gottpoff(%rip), %rax\n\t.section .tbss,\"awT\",@nobits\n\t.globl x\nx:\t.zero 4\n"),
+]
+# a C program, compiled by GCC to AT&T assembly (when gcc is there)
+ATT_C = r'''
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <setjmp.h>
+#include <stdarg.h>
+__thread int tls_counter = 3;
+static jmp_buf jb;
+int dispatch(int op, int a, int b) {
+    switch (op) {
+    case 0: return a + b; case 1: return a - b; case 2: return a * b; case 3: return b ? a / b : 0;
+    case 4: return a & b; case 5: return a | b; case 6: return a ^ b; case 7: return a << (b & 31);
+    case 8: return a >> (b & 31); case 9: return a % (b ? b : 1); default: return -1;
+    }
+}
+long double ldsum(int n, ...) { va_list ap; va_start(ap, n); long double s = 0; for (int i = 0; i < n; i++) s += va_arg(ap, double); va_end(ap); return s; }
+void vec_add(float *restrict a, const float *restrict b, int n) { for (int i = 0; i < n; i++) a[i] += b[i] * 2.5f; }
+static void jumper(int x) { if (x > 2) longjmp(jb, x); }
+static int cmp(const void *a, const void *b) { return *(const int*)a - *(const int*)b; }
+int main(int argc, char **argv) {
+    int acc = 0, v[16];
+    for (int i = 0; i < 40; i++) acc += dispatch(i % 11, i + 7, i % 5 + 1);
+    for (int i = 0; i < 16; i++) v[i] = (i * 7919) % 101;
+    qsort(v, 16, sizeof v[0], cmp);
+    float a[37], b[37]; for (int i = 0; i < 37; i++) { a[i] = i; b[i] = 37 - i; }
+    vec_add(a, b, 37);
+    double fs = 0; for (int i = 0; i < 37; i++) fs += a[i];
+    int r = setjmp(jb); if (r == 0) jumper(argc + 4);
+    tls_counter += r;
+    printf("%d %.1f %d %d %d %Lf\n", acc, fs, r, tls_counter, v[3], ldsum(3, 1.5, 2.25, 3.0));
+    return 0;
+}
+'''
+ATT_C_OPTIONS = [["-O0"], ["-O2"], ["-O3"], ["-Os"], ["-O2", "-fPIC"]]
+ATT_ERRORS = [
+    ("movl %eax %ebx", "AT&T syntax"),
+    ("movl $5, %eax)", "AT&T syntax"),
+]
