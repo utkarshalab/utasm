@@ -291,41 +291,53 @@ arena_alloc_struct:
 ;
 global arena_alloc_string
 arena_alloc_string:
-    push    rbx
-    push    r12
-    push    r13
+    ; arena_alloc's work in line (every identifier and number token comes
+    ; here): length + 1 in 8s, from the arena's free pointer
+    cmp     byte [rdi + ARENA_tag], TAG_ARENA
+    jne     .bad_arena
+    lea     rcx, [rdx + 8]
+    and     rcx, ~7
+    mov     rax, [rdi + ARENA_ptr]
+    add     rcx, rax
+    jc      .out_of_memory
+    cmp     rcx, [rdi + ARENA_end]
+    ja      .out_of_memory
+    mov     [rdi + ARENA_ptr], rcx
 
-    mov     rbx, rdi               ; save arena pointer
-    mov     r12, rsi               ; save source string pointer
-    mov     r13, rdx               ; save string length
-
-    ; allocate length + 1 for null terminator
-    mov     rsi, r13
-    add     rsi, 1
-    call    arena_alloc
-    test    rax, rax
-    jnz     .fail
-
-    ; copy string bytes
-    mov     rdi, rdx               ; destination = allocated block
-    mov     rsi, r12               ; source = original string
-    mov     rcx, r13               ; count = length
+    ; copy string bytes: a loop for a token's few, which rep movsb's start
+    ; costs more than
+    mov     rdi, rax               ; destination = allocated block
+    mov     rcx, rdx               ; count = length
+    mov     rdx, rax               ; the result
+    cmp     rcx, 32
+    jae     .long
+    test    rcx, rcx
+    jz      .terminate
+.short:
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    dec     rcx
+    jnz     .short
+    jmp     .terminate
+.long:
     rep movsb
 
-    ; write null terminator
+.terminate:
+    ; write null terminator (the rest of the block is zero already)
     mov     byte [rdi], 0
-
-    ; rdx already points to allocated block from arena_alloc
-    xor     rax, rax               ; rax = EXIT_OK
-    pop     r13
-    pop     r12
-    pop     rbx
+    xor     eax, eax               ; rax = EXIT_OK
     ret
 
-.fail:
-    pop     r13
-    pop     r12
-    pop     rbx
+.out_of_memory:
+    mov     eax, EXIT_OOM
+    xor     edx, edx
+    ret
+
+.bad_arena:
+    mov     eax, EXIT_INTERNAL
+    xor     edx, edx
     ret
 
 ; ---- arena_reset -------------------------
