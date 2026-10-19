@@ -2784,7 +2784,7 @@ int main(int argc, char **argv) {
     return 0;
 }
 '''
-ATT_C_OPTIONS = [["-O0"], ["-O2"], ["-O3"], ["-Os"], ["-O2", "-fPIC"]]
+ATT_C_OPTIONS = [["-O0"], ["-O2"], ["-O3"], ["-Os"], ["-O2", "-fPIC"], ["-O3", "-march=x86-64-v3"]]
 ATT_ERRORS = [
     ("movl %eax %ebx", "AT&T syntax"),
     ("movl $5, %eax)", "AT&T syntax"),
