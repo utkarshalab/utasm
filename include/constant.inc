@@ -180,6 +180,7 @@
 %define EXIT_LINE_VIEW_MISMATCH 162 ; "view 0" where the address did not move
 %define EXIT_LINE_VIEW_MOVED   163 ; a view the shortened jumps would change
 %define EXIT_LINE_DUP          164 ; .loc rows and a .debug_line written too
+%define EXIT_GAS_BASE64        165 ; .base64 "a!b"
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
@@ -474,8 +475,6 @@
                                            ; an absolute block: in .symtab under -g
 %define SYMF_USED              0x40        ; a relocation names it (an extern no
                                            ; relocation names stays out of .symtab)
-%define SYML_AFTER_PAD         0x01        ; SYMBOL_lflags: a label defined after padding
-                                           ; empty when read (it follows the padding)
 %define SYMF_NAMED             0x80        ; GNU's syntax: a relocation names it as itself,
                                            ; in a merge section (backend/output/elf/out.s)
 %define SYM_SET                0x0E        ; mutable variable defined via %assign or SET
