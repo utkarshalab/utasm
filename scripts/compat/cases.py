@@ -2803,3 +2803,23 @@ REJECT_CASES += [
     ("cpu ia64 popcnt", "bin", "bits 32\ncpu ia64\npopcnt eax, ebx\n"),
     ("cpu unknown", "bin", "cpu sparcv9\nnop\n"),
 ]
+
+# batch 62: the levels of an instruction's forms (encoder.s amd64_cpu_forms)
+BIN_PROBES.update({
+    "cpu_forms_ok": "bits 16\ncpu 8086\nmov ax, 1\nshl ax, 1\npush ax\nmov al, [bx]\nfld dword [bx]\n"
+                    "push word [eax]\njmp far word [bx]\ncpu 186\npush 5\nimul ax, bx, 3\nshl ax, 4\n"
+                    "cpu default\nbits 32\ncpu 286\nmov ax, 1\npush word [eax]\nfld qword [ebx]\ninc word [bx]\n",
+})
+REJECT_CASES += [
+    ("cpu 286 eax", "bin", "bits 32\ncpu 286\nmov eax, 1\n"),
+    ("cpu 286 o32 in bits 16", "bin", "bits 16\ncpu 286\nmov eax, 1\n"),
+    ("cpu 286 dword memory", "bin", "bits 32\ncpu 286\ninc dword [bx]\n"),
+    ("cpu 286 push imm 32", "bin", "bits 32\ncpu 286\npush 5\n"),
+    ("cpu 286 far 16:32", "bin", "bits 32\ncpu 286\njmp far [bx]\n"),
+    ("cpu 8086 push imm", "bin", "bits 16\ncpu 8086\npush 5\n"),
+    ("cpu 8086 shift by 4", "bin", "bits 16\ncpu 8086\nshl ax, 4\n"),
+    ("cpu 8086 imul imm", "bin", "bits 16\ncpu 8086\nimul ax, bx, 3\n"),
+    ("bits 32 under cpu 286", "bin", "cpu 286\nbits 32\nnop\n"),
+    ("use32 under cpu 286", "bin", "cpu 286\nuse32\nnop\n"),
+    ("bits 64 under cpu p6", "bin", "cpu p6\nbits 64\nnop\n"),
+]
