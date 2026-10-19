@@ -643,6 +643,27 @@ str_to_int:
     ; otherwise a trailing radix letter is a suffix (ffh, 777q, 1010b,
     ; 100d). Underscores are ignored.
 .radix:
+    ; the common case first: decimal digits only, 19 at most (never past
+    ; 64 bits); anything else - a radix, '_', a 20th digit - is read below
+    xor     ecx, ecx
+.plain:
+    movzx   eax, byte [rdi + rcx]
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .plain_end
+    cmp     ecx, 19
+    jae     .general
+    imul    rbx, rbx, 10
+    add     rbx, rax
+    inc     ecx
+    jmp     .plain
+.plain_end:
+    test    ecx, ecx
+    jz      .general
+    cmp     byte [rdi + rcx], 0
+    je      .apply_sign
+.general:
+    xor     ebx, ebx
     push    rdi
     call    str_len
     pop     rdi
@@ -1512,28 +1533,25 @@ str_is_hex_digit:
 ; ---- str_is_ident_char ------------------
 global str_is_ident_char
 str_is_ident_char:
-    push    rdi
-    call    str_is_alnum
-    test    rax, rax
-    jnz     .yes_pop
-    pop     rdi
-    cmp     dil, '_'
-    je      .yes
-    cmp     dil, '.'
-    je      .yes
-    cmp     dil, '@'                   ; NASM: ..@x, and names with @ in them
-    je      .yes
-    cmp     dil, '$'
-    je      .yes
-    cmp     dil, '?'                   ; NASM: __?float32?__, a?b
-    je      .yes
-    xor     rax, rax
+    movzx   eax, dil
+    movzx   eax, byte [str_ident_chars + rax]
     ret
-.yes_pop:
-    pop     rdi
-.yes:
-    mov     rax, 1
-    ret
+
+[SECTION .rodata]
+; 1 for a character a name goes on with: a-z A-Z 0-9 _ . and NASM's @
+; (..@x, names with @ in them), $ and ? (__?float32?__, a?b)
+global str_ident_chars
+str_ident_chars:
+    %assign i 0
+    %rep 256
+    %if (i >= 'a' && i <= 'z') || (i >= 'A' && i <= 'Z') || (i >= '0' && i <= '9') || i == '_' || i == '.' || i == '@' || i == '$' || i == '?'
+        db 1
+    %else
+        db 0
+    %endif
+    %assign i i+1
+    %endrep
+[SECTION .text]
 
 ; ---- str_int_to_str ---------------------
 ; Wrapper for int_to_str with base 10.
