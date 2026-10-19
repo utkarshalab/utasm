@@ -669,6 +669,16 @@ code_table:
     code_msg EXIT_CPU_UNKNOWN,       m_cpu_unknown, t_cpu_unknown
     code_msg EXIT_BITS32_CPU,        m_bits32_cpu
     code_msg EXIT_BITS64_CPU,        m_bits64_cpu
+    code_msg EXIT_LINE_FILE_NUM,     m_line_file_num
+    code_msg EXIT_LINE_UNASSIGNED,   m_line_unassigned, t_line_unassigned
+    code_msg EXIT_LINE_FILE_SLOT,    m_line_file_slot, t_line_file_slot
+    code_msg EXIT_LINE_FILE_BIG,     m_line_file_big, t_line_file_big
+    code_msg EXIT_LINE_STMT,         m_line_stmt
+    code_msg EXIT_LINE_VIEW_NUM,     m_line_view_num
+    code_msg EXIT_LINE_LOC_WORD,     m_line_loc_word, t_line_loc_word
+    code_msg EXIT_LINE_VIEW_MISMATCH, m_line_view_mismatch
+    code_msg EXIT_LINE_VIEW_MOVED,   m_line_view_moved, t_line_view_moved
+    code_msg EXIT_LINE_DUP,          m_line_dup
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -890,6 +900,21 @@ m_cpu_unknown:  db "unknown CPU type or flag", 0
 t_cpu_unknown:  db "unknown CPU type or flag '^'", 0
 m_bits32_cpu:   db "cannot specify 32-bit segment on processor below a 386", 0
 m_bits64_cpu:   db "cannot specify 64-bit segment on processor below an x86-64", 0
+m_line_file_num: db "file number less than one", 0
+m_line_unassigned: db "unassigned file number", 0
+t_line_unassigned: db "unassigned file number ^", 0
+m_line_file_slot: db "file table slot is already occupied by a different file", 0
+t_line_file_slot: db "file table slot ^ is already occupied by a different file", 0
+m_line_file_big: db "file number is too big", 0
+t_line_file_big: db "file number ^ is too big", 0
+m_line_stmt:    db "is_stmt value not 0 or 1", 0
+m_line_view_num: db "numeric view can only be asserted to zero", 0
+m_line_loc_word: db "unknown .loc sub-directive", 0
+t_line_loc_word: db "unknown .loc sub-directive `^'", 0
+m_line_view_mismatch: db "view number mismatch", 0
+m_line_view_moved: db "a view number changed when jumps were shortened", 0
+t_line_view_moved: db "view number `^' changed when jumps were shortened", 0
+m_line_dup:     db "duplicate .debug_line sections", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
 t_multi:        db "symbol `^' defined more than once", 0
