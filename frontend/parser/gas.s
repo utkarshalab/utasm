@@ -50,7 +50,7 @@ DEFAULT REL
 ;   .intel_syntax                 ptr, flat and offset as %use masm's
 ;                                 ("DWORD PTR x[rip]", "OFFSET FLAT:x")
 ;   .file, .loc, .arch            taken, nothing done
-;   .att_syntax                   an error: utasm reads Intel syntax
+;   .att_syntax [noprefix]        AT&T syntax from here (frontend/parser/att.s)
 ;   .macro .endm .exitm .purgem .rept .irp .irpc .endr, .if & co, .else,
 ;   .elseif, .endif               frontend/parser/gas_macro.s
 ;
@@ -78,6 +78,7 @@ extern  lst_mark
 extern  asm_bits
 extern  global_ctx
 extern  str_cmp
+extern  str_cmp_kw
 extern  mem_reserve
 extern  error_set_subject
 extern  prep_push_buffer
@@ -153,6 +154,7 @@ align 8
 gm_calls:   dq gas_macro_define, gas_stray, gas_macro_exit, gas_macro_purge
             dq gas_repeat, gas_if, gas_else, gas_endif
 s_intel:    db ".intel_syntax", 0
+s_noprefix: db "noprefix", 0
 intel_text: db 10
             db "%idefine ptr __?masm_ptr?__", 10
             db "%idefine flat __?masm_flat?__", 10
@@ -213,7 +215,7 @@ gas_table:
     gas_ent ".code64", G_BITS, 64
     gas_ent ".intel_syntax", G_INTEL, 0
     gas_ent ".ident", G_IDENT, 0
-    gas_ent ".file", G_IGNORE, 0
+    gas_ent ".file", G_IGNORE, 1
     gas_ent ".loc", G_IGNORE, 0
     gas_ent ".arch", G_IGNORE, 0
     gas_ent ".att_syntax", G_ATT, 0
@@ -270,6 +272,10 @@ sec_types:
 [SECTION .bss]
 alignb 8
 gas_tok:        resb TOKEN_SIZE     ; a token handed back (the section's name)
+gas_minus:      resb TOKEN_SIZE     ; a "-" in it, to put back
+alignb 8
+global gas_file_name
+gas_file_name:  resq 1              ; .file "NAME": the FILE symbol's name
 pend:           resq 1              ; the pending .type / .size / visibilities
 pend_n:         resq 1
 secstack:       resq SECSTACK_MAX   ; .pushsection's sections
@@ -391,7 +397,19 @@ gas_directive:
     mov     rdx, rax
     jmp     .done_rdx
 .not_gm:
-    ; G_IGNORE: the rest of the line
+    ; G_IGNORE: the rest of the line - .file "NAME" names the object's
+    ; FILE symbol, as GNU as (".file 1 ..." is DWARF's: taken, unused)
+    cmp     r14d, 1
+    jne     .ignored
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .ignored
+    cmp     byte [rdx + TOKEN_kind], TOK_STRING
+    jne     .ignored
+    mov     rax, [rdx + TOKEN_value]
+    mov     [rel gas_file_name], rax
+.ignored:
     call    .skip_line
     jmp     .done_ok
 
@@ -433,6 +451,85 @@ gas_directive:
     lea     rdi, [rel gas_tok]
     mov     rsi, rdx
     copy_token
+.sec_glue:
+    ; ".note.GNU-stack": a name with "-" in it lexes as pieces - those
+    ; written together are one name, read here (the section directive
+    ; joins them too, but took the flags and @TYPE after them as NASM's:
+    ; ',"",@progbits' left a label "progbits")
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .err
+    cmp     byte [rdx + TOKEN_kind], TOK_MINUS
+    jne     .sec_glued
+    mov     eax, [rdx + TOKEN_line]
+    cmp     eax, [rel gas_tok + TOKEN_line]
+    jne     .sec_glued
+    movzx   eax, word [rel gas_tok + TOKEN_col]
+    movzx   ecx, word [rel gas_tok + TOKEN_len]
+    add     eax, ecx
+    cmp     ax, [rdx + TOKEN_col]
+    jne     .sec_glued
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the "-"
+    lea     rdi, [rel gas_minus]
+    mov     rsi, rdx
+    copy_token
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .err
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_IDENT
+    je      .sec_piece_at
+    cmp     eax, TOK_NUMBER
+    jne     .sec_unminus
+.sec_piece_at:
+    mov     eax, [rdx + TOKEN_line]
+    cmp     eax, [rel gas_minus + TOKEN_line]
+    jne     .sec_unminus
+    movzx   eax, word [rel gas_minus + TOKEN_col]
+    inc     eax
+    cmp     ax, [rdx + TOKEN_col]
+    jne     .sec_unminus
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the piece
+    test    rax, rax
+    jnz     .err
+    ; the name so far, "-", the piece
+    push    rdx
+    mov     rdi, [rdx + TOKEN_value]
+    extern  str_len
+    call    str_len
+    movzx   ecx, word [rel gas_tok + TOKEN_len]
+    lea     rsi, [rcx + rax + 2]
+    push    rax
+    mov     rdi, [rbx + PREP_arena]
+    extern  arena_alloc
+    call    arena_alloc
+    pop     r8                             ; the piece's length
+    pop     r9                             ; its token
+    test    rax, rax
+    jnz     .err
+    mov     rdi, rdx
+    mov     rsi, [rel gas_tok + TOKEN_value]
+    movzx   ecx, word [rel gas_tok + TOKEN_len]
+    rep movsb
+    mov     byte [rdi], '-'
+    inc     rdi
+    mov     rsi, [r9 + TOKEN_value]
+    mov     rcx, r8
+    rep movsb
+    mov     byte [rdi], 0
+    mov     [rel gas_tok + TOKEN_value], rdx
+    sub     rdi, rdx
+    mov     [rel gas_tok + TOKEN_len], di
+    jmp     .sec_glue
+.sec_unminus:
+    mov     rdi, rbx
+    lea     rsi, [rel gas_minus]
+    call    preprocessor_unread_token
+.sec_glued:
     mov     byte [rel gas_sec_set], 0
     mov     byte [rel gas_sec_entsize], 0
     mov     word [rel gas_sec_flags], 0
@@ -776,9 +873,23 @@ gas_directive:
     jnz     .err_rdx
     mov     r14, rdx
 .align_go:
-    ; more padding than MAX: none (GNU's)
+    ; more padding than MAX: none (GNU's). In code, once jumps are made
+    ; short: MAX goes with the fill spec (its bits 10-15: MAX + 1), the
+    ; padding worked out as the code moves (core/asmctx.s, jump.s rx_cap);
+    ; elsewhere - or MAX past 62 - as the code stands when it is read
     test    r14, r14
     jz      .align_do
+    cmp     r15, -1
+    jne     .align_now
+    cmp     r14, 62
+    ja      .align_now
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_curr_sec]
+    test    rax, rax
+    jz      .align_now
+    test    word [rax + SECTION_flags], SHF_EXECINSTR
+    jnz     .align_do
+.align_now:
     mov     rax, [rbx + PREP_ctx]
     mov     rax, [rax + ASMCTX_curr_sec]
     test    rax, rax
@@ -812,6 +923,14 @@ gas_directive:
     jmp     .align_listed
 .align_nops:
     call    align_gas_spec
+    test    r14, r14
+    jz      .align_spec
+    cmp     r14, 62
+    ja      .align_spec
+    lea     rcx, [r14 + 1]
+    shl     ecx, 10
+    or      rax, rcx                       ; MAX + 1 in bits 10-15
+.align_spec:
     mov     rdx, rax
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, r13
@@ -898,18 +1017,18 @@ gas_directive:
     jmp     .done_ok
 
 .size:
-    ; NAME, EXPR (".-f": the location less f, now)
+    ; NAME, EXPR: worked out once jumps are made short (".-f" now would
+    ; freeze the function's code; parser_size_late)
     call    .name
     jnz     .err_rdx
     mov     r13, rdx
     call    .comma
     jnz     .bad
-    call    .const
-    jnz     .err_rdx
-    mov     edi, PEND_SIZE
     mov     rsi, r13
-    call    .pend_add
-    jmp     .done_ok
+    extern  parser_size_late
+    call    parser_size_late
+    mov     rdx, rax
+    jmp     .done_rdx
 
 .vis:
     ; NAME[, NAME ...] (r14: the visibility)
@@ -949,7 +1068,7 @@ gas_directive:
     mov     rsi, r13
     call    symbol_find
     test    rax, rax
-    jz      .comm_fill
+    jz      .comm_found
     sub     rsp, SYMBOL_SIZE
     mov     rdi, rsp
     xor     eax, eax
@@ -963,6 +1082,23 @@ gas_directive:
     add     rsp, SYMBOL_SIZE
     test    rax, rax
     jnz     .err
+    jmp     .comm_fill
+.comm_found:
+    ; ".local x" before it: x is SIZE bytes of .bss, local - GCC's static
+    ; data that is all zeros ("static jmp_buf jb"), as GNU as has it; a
+    ; common symbol would be merged with another file's x
+    cmp     word [rdx + SYMBOL_section], 0
+    jne     .comm_fill
+    cmp     byte [rdx + SYMBOL_vis], VIS_LOCAL
+    jne     .comm_fill
+    cmp     byte [rdx + SYMBOL_kind], SYM_EXTERN
+    je      .comm_fill
+    cmp     byte [rdx + SYMBOL_kind], SYM_COMMON
+    je      .comm_fill
+    test    r15, r15
+    jnz     .lcomm_go
+    mov     r15d, 1
+    jmp     .lcomm_go
 .comm_fill:
     mov     byte [rdx + SYMBOL_kind], SYM_COMMON
     mov     byte [rdx + SYMBOL_vis], VIS_GLOBAL
@@ -1067,6 +1203,9 @@ gas_directive:
 .intel:
     ; GNU's Intel syntax: "DWORD PTR x[rip]", "OFFSET FLAT:x" - ptr, flat
     ; and offset as %use masm reads them (once; "noprefix" or not)
+    extern  att_on, gas_names
+    mov     byte [rel att_on], 0
+    mov     byte [rel gas_names], 1
     call    .skip_line
     cmp     byte [rel masm_enabled], 0
     jne     .done_ok
@@ -1177,9 +1316,27 @@ gas_directive:
     jmp     .done_rdx
 
 .att:
+    ; AT&T syntax from here (frontend/parser/att.s); "noprefix": registers
+    ; without their %
+    extern  att_on, att_noprefix, gas_names
+    mov     byte [rel att_on], 1
+    mov     byte [rel gas_names], 1
+    mov     byte [rel att_noprefix], 0
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .att_rest
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .att_rest
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel s_noprefix]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .att_rest
+    mov     byte [rel att_noprefix], 1
+.att_rest:
     call    .skip_line
-    mov     edx, EXIT_ATT_SYNTAX
-    jmp     .done_rdx
+    jmp     .done_ok
 
 .none:
     xor     eax, eax
