@@ -66,6 +66,8 @@ gas_str_words: db ".ascii", 0, ".asciz", 0, ".string", 0, 0
 
 [SECTION .bss]
 lex_gas_str:    resb 1          ; 1: the line is a GNU string directive's
+global lexer_mark_lone
+lexer_mark_lone: resb 1         ; 1: TOK_FLAG_LONE on newlines (-E, prep_dump)
 
 [SECTION .text]
 
@@ -116,6 +118,7 @@ lexer_init:
 
     ; write tag
     mov     byte [rdi + LEXER_tag], TAG_LEXER
+    mov     byte [rdi + LEXER_pushed], 0
 
     ; store buffer pointer and end pointer
     mov     [rdi + LEXER_buf], rsi
@@ -388,6 +391,17 @@ lexer_next:
 .emit_eof:
     call    .token_begin
     mov     byte [r12 + TOKEN_kind], TOK_EOF
+    cmp     byte [rel lexer_mark_lone], 0
+    je      .eof_marked
+    ; -E: a last line with no newline after it, of nothing but blanks or a
+    ; comment, is written too
+    call    .line_blank
+    test    eax, eax
+    jz      .eof_marked
+    test    edx, edx
+    jz      .eof_marked
+    or      byte [r12 + TOKEN_flags], TOK_FLAG_LONE
+.eof_marked:
     xor     rax, rax
     mov     rdx, r12
     jmp     .done
@@ -397,6 +411,17 @@ lexer_next:
     call    .token_begin
     mov     byte [r12 + TOKEN_kind], TOK_NEWLINE
     mov     byte [rel lex_gas_str], 0
+    cmp     byte [rel lexer_mark_lone], 0
+    je      .newline_marked
+    cmp     byte [rbx + LEXER_pushed], 0
+    jne     .newline_marked
+    ; -E: a line of nothing but blanks or a comment is written (NASM's
+    ; empty line); a directive's is not
+    call    .line_blank
+    test    eax, eax
+    jz      .newline_marked
+    or      byte [r12 + TOKEN_flags], TOK_FLAG_LONE
+.newline_marked:
     ; advance past LF
     inc     qword [rbx + LEXER_pos]
     ; increment line, reset col
@@ -2297,8 +2322,56 @@ lexer_next:
     mov     rax, [rbx + LEXER_pos]
     sub     rax, [rbx + LEXER_buf]
     mov     [r12 + TOKEN_offset], eax
+    ; a blank before it (-E, %str)
+    jz      .begin_flat
+    add     rax, [rbx + LEXER_buf]
+    movzx   eax, byte [rax - 1]
+    cmp     eax, ' '
+    je      .begin_space
+    cmp     eax, 9
+    jne     .begin_flat
+.begin_space:
+    mov     byte [r12 + TOKEN_flags], TOK_FLAG_SPACE
+.begin_flat:
 
     mov     word [r12 + TOKEN_len], 0
+    ret
+
+;
+; .line_blank (internal): eax = 1 when the line the lexer is at the end of
+; holds nothing but blanks or a comment (its first character not a blank
+; is none or ";"), edx = how many characters it has. Clobbers rcx, rsi
+;
+.line_blank:
+    mov     rcx, [rbx + LEXER_pos]
+    xor     eax, eax
+    xor     edx, edx
+.blank_back:
+    cmp     rcx, [rbx + LEXER_buf]
+    jbe     .blank_start
+    dec     rcx
+    movzx   esi, byte [rcx]
+    cmp     esi, 10
+    je      .blank_start
+    inc     edx
+    cmp     esi, ' '
+    je      .blank_back
+    cmp     esi, 9
+    je      .blank_back
+    cmp     esi, 13
+    je      .blank_back
+    mov     eax, esi
+    jmp     .blank_back
+.blank_start:
+    test    eax, eax
+    jz      .blank_yes
+    cmp     eax, ';'
+    jne     .blank_no
+.blank_yes:
+    mov     eax, 1
+    ret
+.blank_no:
+    xor     eax, eax
     ret
 
 ;
