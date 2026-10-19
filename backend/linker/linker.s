@@ -66,6 +66,12 @@ linker_run:
     call    dwarf_generate
     check_err
 
+    ; 0.3 GNU's .file / .loc: .debug_line, from the code as it now is
+    extern  line_build
+    mov     rdi, rbx
+    call    line_build
+    check_err
+
     ; 0.5 A standalone executable or a flat binary: sections get their
     ;     addresses now, so the relocations below resolve against them
     IF byte [rbx + ASMCTX_standalone], e, 1
