@@ -696,6 +696,23 @@ known_second_pass:
     inc     r15
     jmp     .ppd
 .ppds_done:
+    ; the line table's views padding decides (debug/line.s), as the code is
+    ; laid out: GNU as works them out then
+    extern  line_views_unsure, line_views_records
+    cmp     byte [rel line_views_unsure], 0
+    je      .views_done
+    cmp     byte [rel defer_laid], 0
+    jne     .views_laid
+    call    known_layout
+    mov     byte [rel defer_laid], 1
+.views_laid:
+    mov     rdi, r13
+    mov     rsi, r14
+    mov     rdx, KNOWN_OUT_CAP - 65536
+    call    line_views_records
+    mov     r14, rax
+    add     r15, rdx
+.views_done:
     test    r15, r15
     jnz     .exec
     cmp     byte [rel known_guessed], 0
