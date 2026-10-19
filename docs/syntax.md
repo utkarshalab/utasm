@@ -470,9 +470,22 @@ every label is placed, and written in place. When an instruction uses one,
 utasm reads the source a second time knowing it, so the instruction gets
 the form NASM gives it: `push dword (table_end - table) / 4` is `6A ib`,
 `add rsp, frame_end - frame` takes an imm8. The second pass checks each
-value once the code is laid out; one that measures its own instruction
-(`s: push dword (e - s)`) keeps the long form, where NASM converges on the
-short one. Where the value is needed when the line is read - the count of
+value once the code is laid out. A value that measures its own instruction
+starts short, as in NASM's first pass: in an instruction with a
+sign-extended imm8 form (the ALU group, `imul`, `push`) the first reading
+lays it out with that form, so
+
+```asm
+s:  add eax, e - s          ; 83 C0 7F: 3 + 124 = 127 fits a signed byte
+    times 124 nop
+e:
+```
+
+gets the short form NASM gives it. A value that turns out not to fit
+(`times 200 nop` there) is given the long form and the layout is worked out
+again. `strict` and `-O0` keep the long form from the start. A displacement
+(`lea eax, [eax + e - s]`) is not guessed: it starts as a disp32, as NASM's
+first pass takes it. Where the value is needed when the line is read - the count of
 `times` or `resb` - the first reading goes on without it and the second
 one knows it; a name that is never defined is an error there.
 
@@ -981,17 +994,83 @@ that displacement from the next instruction, as written. `rip` takes no
 other register (`[rip + rax]` is an error). `8[rbp]`, a displacement before
 the brackets, is `[rbp + 8]`.
 
-In an expression a single `.` is the current address, `$`. A `.name` label
-(`.Lfoo`) is a local label, as in NASM, and is written to the symbol table
-under the global label before it (GNU `as` leaves `.L` names out). A name
-GNU `as` takes as external without being declared needs `.extern` (or
-`extern`): utasm gives an error for a name that is not defined, which also
-catches misspellings. A branch to an external name gets an `R_X86_64_PC32`
-relocation, as in NASM (GNU `as` writes `R_X86_64_PLT32`; both link the
-same; `call f wrt ..plt` asks for the PLT one). A directive name followed by
-`:` is a label (`.text:`), and one followed by `equ`, `times`, a `res` or a
-`d` word is a label too, so a structure field named `.size` or `.type`
-keeps working. `.att_syntax` gives an error: utasm reads Intel syntax only.
+In an expression a single `.` is the current address, `$`. Once GNU's
+syntax is chosen (`.intel_syntax`, `.att_syntax` or `--att`) names follow
+GNU `as`, so that a compiler's output comes out as the object GNU `as`
+makes of it:
+
+- a `.name` (`.L3`, `.LC0`) is a name of its own, not local to the label
+  before it; `.L` names are left out of the symbol table, except in a
+  section the linker merges (`.rodata.str1.1`, `.rodata.cst8`), where the
+  relocations name them;
+- a name used and never defined is an external (in an object file);
+- a `call`, `jmp` or `jcc` to a global or external name is
+  `R_X86_64_PLT32`, and keeps its relocation even within its section
+  (another object may define the name first);
+- a load through the GOT is the relaxable `R_X86_64_GOTPCRELX` /
+  `R_X86_64_REX_GOTPCRELX` (`R_386_GOT32X`), and a GOT or TLS relocation
+  names `_GLOBAL_OFFSET_TABLE_`;
+- `.size f, .-f` is worked out once jumps are made short (taken when read,
+  it froze the function's code); `.p2align 4,,10` pads nothing where more
+  than 10 bytes are needed, also after jumps are made short;
+- `.local x` then `.comm x, N, A` is N bytes of `.bss`, local; `.file
+  "x.c"` names the object's FILE symbol.
+
+NASM's own sources keep NASM's rules: undefined names are errors, `.loop`
+is local to the label before it. A directive name followed by `:` is a
+label (`.text:`), and one followed by `equ`, `times`, a `res` or a `d` word
+is a label too, so a structure field named `.size` or `.type` keeps
+working.
+
+### AT&T syntax (`.att_syntax`, `--att`)
+
+GNU `as`'s own syntax, read as GNU `as` reads it - from `.att_syntax` on,
+or from the start with `--att` (GCC writes no directive for it). Each
+statement is translated into utasm's syntax and read from there (numbered
+as the line that made it), so the encoder and the diagnostics are the same:
+
+```asm
+movl $5, -4(%rbp,%rcx,4)     ; mov dword [rbp + rcx*4 + (-4)], 5
+leaq .LC0(%rip), %rdi        ; lea rdi, [rel .LC0]
+call puts@PLT                ; call puts wrt ..plt
+movq %fs:0x28, %rax          ; mov rax, [fs:0x28]
+jmp *%rax                    ; jmp rax
+ljmp $0x10, $start           ; jmp 0x10:start
+```
+
+- Operands: `%reg` (`%st(1)`), `$imm`, memory `seg:disp(base, index,
+  scale)`, `*` before an indirect branch's operand; they are written source
+  first, the order reversed (`enter` keeps its order). AVX-512's `{%k1}`,
+  `{z}`, `{1to16}` and `{rn-sae}` go where they are written.
+- Mnemonics: the instruction's own name (`setl`, `cmovl`, `fabs`), else
+  with GNU's size suffix taken off - `b w l q` (`x y`: a 128- / 256-bit
+  memory operand), x87's `s l t` for floats and `s l ll q` for integers -
+  which gives the memory operand its size; and GNU's names: `movzbl`,
+  `movslq`, `cltq`, `cqto`, `cwtl`, `movabs`, `lret`, `ljmp`, `lcall`,
+  `movsl`, `stosq` and the rest. `push` / `pop` of memory without a suffix
+  take the stack's width.
+- As GNU `as` does: `fsub`, `fsubr`, `fdiv`, `fdivr` with `%st(i)` the
+  destination, and `fsubp` ... without operands, are the other one of the
+  pair (the SysV x87 mnemonics); a shift by no count shifts by 1; `movq`
+  between general registers or with memory is `mov`, and `movq $imm` to a
+  64-bit register is the sign-extended imm32 (`48 C7 /0`); a string
+  instruction's operands only name it, a segment other than its own a
+  prefix; a prefix (`rep`, `lock`, `data16`, `cs` ... `rex64`) is its byte,
+  alone on its line too (`rep; ret`).
+- `;` ends a statement and `#` starts a comment anywhere; `%` first on a
+  line is still a directive (`%define`, `%include`). Numbers are GNU's:
+  `017` is octal. `sym@PLT` (`@GOTPCREL`, `@GOT`, `@GOTOFF`, `@GOTPC`,
+  `@TPOFF`, `@NTPOFF`, `@GOTTPOFF`, `@INDNTPOFF`, `@TLSGD`, `@TLSLD`,
+  `@DTPOFF`) is `sym wrt ..plt` and so on.
+
+`.intel_syntax` turns it off again. GCC's AT&T output (`gcc -S`) assembles
+to the object GNU `as` makes of it, section by section and relocation by
+relocation, at `-O0` to `-O3`, `-Os` and `-fPIC`
+(`scripts/compat/suites.py`, `att`). `.att_syntax noprefix` takes
+registers without their `%` (a name that is a register is then the
+register). Not yet: `-g` output (GNU `as` builds `.debug_line` from `.loc`,
+and `.loc ... view .LVU3` defines the view numbers the debug sections
+use).
 
 #### GNU macros, repetitions and conditionals
 
