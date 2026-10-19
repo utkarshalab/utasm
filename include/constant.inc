@@ -170,6 +170,16 @@
 %define EXIT_CPU_UNKNOWN       152 ; "cpu nonsense"
 %define EXIT_BITS32_CPU        153 ; "bits 32" under "cpu 286"
 %define EXIT_BITS64_CPU        154 ; "bits 64" under "cpu p6"
+%define EXIT_LINE_FILE_NUM     155 ; ".file -1" (debug/line.s)
+%define EXIT_LINE_UNASSIGNED   156 ; ".loc 9 ..." with no ".file 9"
+%define EXIT_LINE_FILE_SLOT    157 ; ".file 1" twice, other files
+%define EXIT_LINE_FILE_BIG     158 ; ".file 99999999"
+%define EXIT_LINE_STMT         159 ; "is_stmt 2"
+%define EXIT_LINE_VIEW_NUM     160 ; "view 3"
+%define EXIT_LINE_LOC_WORD     161 ; ".loc 1 2 nonsense"
+%define EXIT_LINE_VIEW_MISMATCH 162 ; "view 0" where the address did not move
+%define EXIT_LINE_VIEW_MOVED   163 ; a view the shortened jumps would change
+%define EXIT_LINE_DUP          164 ; .loc rows and a .debug_line written too
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
@@ -464,6 +474,10 @@
                                            ; an absolute block: in .symtab under -g
 %define SYMF_USED              0x40        ; a relocation names it (an extern no
                                            ; relocation names stays out of .symtab)
+%define SYML_AFTER_PAD         0x01        ; SYMBOL_lflags: a label defined after padding
+                                           ; empty when read (it follows the padding)
+%define SYMF_NAMED             0x80        ; GNU's syntax: a relocation names it as itself,
+                                           ; in a merge section (backend/output/elf/out.s)
 %define SYM_SET                0x0E        ; mutable variable defined via %assign or SET
 %define SYM_EQU                0x0F        ; immutable assembler constant defined via EQU
 %define SYM_IFUNC              0x10        ; ELF indirect function symbol
