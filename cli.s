@@ -168,6 +168,19 @@ cli_parse:
     test    rax, rax
     jz      .handle_standalone
 
+    ; --att: AT&T syntax from the start, as GNU as reads (frontend/parser/
+    ; att.s; .intel_syntax turns it off)
+    mov     rdi, r14
+    lea     rsi, [rel .flag_att]
+    call    str_cmp
+    test    rax, rax
+    jnz     .not_att
+    extern  att_on, gas_names
+    mov     byte [rel att_on], 1
+    mov     byte [rel gas_names], 1
+    jmp     .next_arg
+.not_att:
+
     ; --noexecstack / --execstack / --cet: note sections in an ELF object
     ; (backend/output/elf/notes.s)
     extern  elf_gnu_stack, elf_cet
@@ -1387,6 +1400,7 @@ cli_parse.flag_arch_long: db "--arch", 0
 cli_parse.flag_arch_compat: db "-arch", 0
 cli_parse.flag_standalone: db "--standalone", 0
 cli_parse.flag_noexecstack: db "--noexecstack", 0
+cli_parse.flag_att: db "--att", 0
 cli_parse.flag_execstack: db "--execstack", 0
 cli_parse.flag_cet: db "--cet", 0
 cli_parse.flag_verbose_long: db "--verbose", 0
