@@ -135,7 +135,7 @@
 %define EXIT_WRT_UNSUPPORTED   117 ; "mov rax, [x wrt ..tlsie]" (not RIP-relative) in ELF64
 %define EXIT_DEST_IS_SOURCE    118 ; "vfcmaddcph xmm1, xmm1, xmm2": #UD
 %define EXIT_ORG_BACKWARDS     119 ; GNU's ".org 4" past offset 4
-%define EXIT_ATT_SYNTAX        120 ; GNU's ".att_syntax"
+%define EXIT_ATT_SYNTAX        120 ; an AT&T statement not read (att.s)
 %define EXIT_MERGE_ENTSIZE     121 ; '.section .rodata.cst8, "aM", @progbits'
 %define EXIT_SYM_TYPE          122 ; ".type f, @nonsense"
 %define EXIT_POPSECTION        123 ; ".popsection" with none pushed
@@ -165,6 +165,7 @@
 %define EXIT_MASM_ENDS         147 ; "A STRUCT ... B ENDS"
 %define EXIT_MASM_STRUCT_OPEN  148 ; STRUCT with no ENDS
 %define EXIT_FASM_FORMAT       149 ; "format PE" (not the -f format)
+%define EXIT_KNOWN_RERUN       150 ; the second pass could not be started
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
@@ -568,6 +569,8 @@
                                            ; not its section's symbol
 %define RELOC_FLAG_SECTION     0x02        ; against the section named by RELOC_sym
                                            ; (its section symbol): debug info
+%define RELOC_FLAG_BRANCH      0x04        ; a call / jmp / jcc's displacement (GNU's
+                                           ; syntax: PLT32 to a global, as GNU as)
 ; A relocation whose symbol name starts with this byte wants the symbol's
 ; offset in its section ("later - $$"), not its address: it is written in
 ; place once the symbol is defined, never left in an object.
