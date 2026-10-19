@@ -855,6 +855,7 @@ gm_hash:
 
 ; gm_find: the macro named rsi/rcx (any case): rax = it or 0, rdx = the
 ; slot that points at it
+global gm_find
 gm_find:
     push    r12
     push    r13
