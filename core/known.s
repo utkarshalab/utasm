@@ -127,6 +127,8 @@ retry_file:     resq 1              ; ... where
 retry_line:     resd 1
 global known_active
 known_active:   resb 1              ; this is pass 2
+global known_guessed
+known_guessed:  resb 1              ; pass 1 took a form only pass 2 can confirm
 defer_laid:     resb 1              ; pass 1 laid the code out (exec, always)
 
 [SECTION .rodata]
@@ -527,6 +529,8 @@ known_second_pass:
     jne     .work
     cmp     byte [rel ppd_need], 0
     jne     .work
+    cmp     byte [rel known_guessed], 0
+    jne     .work
 .quick_ret:
     xor     eax, eax
     ret
@@ -694,6 +698,8 @@ known_second_pass:
 .ppds_done:
     test    r15, r15
     jnz     .exec
+    cmp     byte [rel known_guessed], 0
+    jne     .exec                          ; (a form only pass 2 confirms)
     cmp     byte [rel defer_laid], 0
     jne     .exec
     cmp     qword [rel retry_code], 0
@@ -702,6 +708,12 @@ known_second_pass:
     mov     rdi, r13
     mov     rsi, r14
     call    known_exec
+    ; (it failed) this pass's code stands - unless it took a form only the
+    ; second pass can confirm (dispatch.s: a byte immediate for a value not
+    ; worked out yet), which is not to be written
+    cmp     byte [rel known_guessed], 0
+    je      .ret
+    mov     qword [rel retry_code], EXIT_KNOWN_RERUN
 .ret:
     ; no second pass after all: an error kept for one is this pass's
     mov     rax, [rel retry_code]
