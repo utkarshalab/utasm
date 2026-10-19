@@ -49,6 +49,10 @@ linker_run:
     extern  relax_padto_check
     call    relax_padto_check
     check_err
+    ; GNU's .size directives, from the code as it now is
+    extern  parser_sizes
+    call    parser_sizes
+    check_err
 
     ; 0.1.cfi_ directives: .eh_frame, from the code as it now is
     extern  cfi_build
