@@ -73,6 +73,7 @@ cfi_depth:      resq 1
 cfi_stack:      resq CFI_STACK
 cfi_cies:       resb CFI_CIES * CC_SIZE ; the CIEs written
 cfi_ncies:      resq 1
+cfi_lead_skip:  resq 1              ; leading rule bytes the FDE's CIE has
 cfi_last:       resq 1              ; the last START record (its FDE ends
                                     ; the section: padded to 8)
 cfi_cur:        resq 1              ; the START record of the FDE open
@@ -245,7 +246,11 @@ cfi_directive:
 ;*
 ; * [cfi_remap]
 ; * Purpose: Section RDI is being rewritten (jumps shortened): its
-; *          records' offsets move with the code (relax_map_offset).
+; *          records' offsets move with the code (relax_map_offset). An
+; *          FDE's end is before padding that grew from none there - the
+; *          next function's alignment (GCC writes .cfi_endproc after its
+; *          last instruction); a rule is after it, as .cfi_startproc is
+; *          (GCC's ".p2align 4 / .L5: / .cfi_restore_state").
 ; ;
 global cfi_remap
 cfi_remap:
@@ -261,7 +266,14 @@ cfi_remap:
     cmp     [rbx + CR_SEC], r12
     jne     .next
     mov     rdi, [rbx + CR_OFF]
+    cmp     byte [rbx + CR_KIND], CFI_END
+    jne     .after
+    extern  relax_map_offset_before
+    call    relax_map_offset_before
+    jmp     .mapped
+.after:
     call    relax_map_offset
+.mapped:
     mov     [rbx + CR_OFF], rax
 .next:
     add     rbx, CR_SIZE
@@ -456,9 +468,10 @@ cfi_put32:
     mov     [rax + rdi], esi
     ret
 
-; cfi_pad: DW_CFA_nop up to a multiple of rsi bytes from offset rdi (the
-; entry's start), then its length (the entry less its length field) at
-; rdi. GAS pads CIEs and FDEs to 4, the last FDE to the address size.
+; cfi_pad: DW_CFA_nop up to a multiple of rsi bytes in the section, then
+; the entry's length (less its length field) at rdi, its start. GAS pads
+; CIEs and FDEs to 4, the last FDE to the address size - of the section's
+; offset, not the entry's (an FDE at 0x6c ends at 0x90, not 0x94).
 cfi_pad:
     push    r12
     push    r13
@@ -466,7 +479,6 @@ cfi_pad:
     lea     r13, [rsi - 1]
 .pad:
     call    cfi_size
-    sub     rax, r12
     test    rax, r13
     jz      .padded
     xor     esi, esi                       ; DW_CFA_nop
@@ -576,17 +588,17 @@ cfi_leading:
     ret
 
 ; ---- cfi_cie_for: rbx = a START record whose leading rules cfi_lead
-;      has: the CIE with them and its signal flag, written now when no
-;      earlier FDE's is: rax = its offset ----
+;      has: the CIE for them and its signal flag - as GNU as, the first
+;      one written whose rules begin the FDE's (the plain CIE begins any:
+;      the FDE keeps the rest, cfi_lead_skip bytes on), else a new one
+;      with them all: rax = its offset ----
 cfi_cie_for:
     push    r12
     push    r13
     push    r14
     movzx   r12d, byte [rbx + CR_FLAGS]
     and     r12d, CFIF_SIGNAL
-    ; one written already?
-    cmp     qword [rel cfi_lead_len], 0xFF
-    je      .write
+    mov     qword [rel cfi_lead_skip], 0
     lea     r13, [rel cfi_cies]
     mov     r14, [rel cfi_ncies]
 .find:
@@ -595,12 +607,23 @@ cfi_cie_for:
     cmp     [r13 + CC_FLAGS], r12b
     jne     .find_next
     movzx   ecx, byte [r13 + CC_LEN]
+    cmp     qword [rel cfi_lead_len], 0xFF
+    jne     .find_prefix
+    test    ecx, ecx                       ; (too many to compare: the
+    jnz     .find_next                     ; plain CIE only)
+    jmp     .found
+.find_prefix:
     cmp     rcx, [rel cfi_lead_len]
-    jne     .find_next
+    ja      .find_next
+    mov     [rel cfi_lead_skip], rcx
+    test    ecx, ecx
+    jz      .found                         ; (no rules: begins any; repe
+                                           ; cmpsb of none sets no flags)
     lea     rsi, [r13 + CC_RULES]
     lea     rdi, [rel cfi_lead]
     repe    cmpsb
     jne     .find_next
+.found:
     mov     rax, [r13 + CC_OFF]
     jmp     .ret
 .find_next:
@@ -608,6 +631,13 @@ cfi_cie_for:
     dec     r14
     jmp     .find
 .write:
+    ; (a new CIE takes the leading rules: none left for the FDE)
+    mov     rax, [rel cfi_lead_len]
+    cmp     rax, 0xFF
+    jne     .write_skip
+    xor     eax, eax                       ; (too many: all in the FDE)
+.write_skip:
+    mov     [rel cfi_lead_skip], rax
     call    cfi_size
     mov     r13, rax                       ; its offset
     xor     esi, esi
@@ -741,10 +771,9 @@ cfi_fde_open:
     call    cfi_u32                        ; the length, at its end
     xor     esi, esi
     call    cfi_uleb                       ; no augmentation data
-    ; leading rules no CIE could take (too many): here
-    cmp     qword [rel cfi_lead_len], 0xFF
-    jne     .opened
-    xor     ecx, ecx
+    ; leading rules its CIE does not have (past the CIE's own, or all when
+    ; too many): here
+    mov     rcx, [rel cfi_lead_skip]
 .lead_byte:
     cmp     rcx, [rel cfi_lead_n]
     jae     .opened
