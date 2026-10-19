@@ -232,7 +232,8 @@ struc MACROEXP
     field parent,   8       ; parent MacroExpansion pointer
     field params,   8       ; array of pointers to each argument's first token
     field body,     8       ; current body position token pointer
-    field line,     4       ; invocation line number
+    field line,     4       ; a %define's, a multi-line macro's: the line
+                            ; it was called on (and call_file), or 0 (-E)
     field lst_depth, 4      ; macro / %rep expansions open, this one included
     field arglens,  8       ; per-argument token counts (dword array)
     field pend_ptr, 8       ; next token of the argument being substituted
@@ -240,12 +241,15 @@ struc MACROEXP
     field exp_id,   4       ; id used by %%locals (shared with %rep bodies)
     field pcap,     4       ; entries of params[] and arglens[] (they grow)
     field nolist,   1       ; in a .nolist macro's expansion (or this is one)
-    field pad2,     3
+    field lead,     1       ; 0x80 | TOK_FLAG_SPACE: a %define's name's blank,
+                            ; for the first token it gives (-E, %str)
+    field pad2,     2
     field lst_first, 8      ; the innermost of those expansions (lst_depth)
     field lst_second, 8     ; ... and the one around it, or 0
     field label00,  8       ; %00: the label written before the call, or 0
     field greedy_at, 4      ; arguments from which a comma no longer ends one
     field pad3,     4
+    field call_file, 8      ; (line's file)
 endstruc
 
 ; ============================================================================
@@ -305,7 +309,10 @@ struc LEXER
                             ; as the line that called it (gas_macro.s)
     field intel,    1       ; 1: utasm's own syntax even under .att_syntax
                             ; (text frontend/parser/att.s and masm.s make)
-    field pad0,     5       ; alignment padding
+    field pushed,   1       ; 1: text utasm reads as if included (a %use
+                            ; package, the command line's): -E writes no
+                            ; empty line of it
+    field pad0,     4       ; alignment padding
     field buf,      8       ; buffer start pointer
     field pos,      8       ; current position pointer
     field end,      8       ; buffer end boundary pointer
