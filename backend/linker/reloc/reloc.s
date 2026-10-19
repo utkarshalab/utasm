@@ -16,6 +16,7 @@
 ; --- External Symbols ---
 extern  mem_zero
 extern  symbol_find
+extern  symbol_add
 extern  arena_alloc
 
 %define RELOC_DELETED_TYPE 0xFFFFFFFF   ; a relocation written in place
@@ -373,14 +374,57 @@ reloc_resolve_all:
     mov     rdi, rbx
     call    symbol_find
     test    rax, rax
-    jnz     .undef
+    jnz     .undef_gas
     cmp     word [rdx + SYMBOL_section], 0
     jne     .check_local
     cmp     byte [rdx + SYMBOL_kind], SYM_EXTERN
     je      .check_next
     cmp     byte [rdx + SYMBOL_kind], SYM_COMMON
     je      .check_next
-    jmp     .undef
+    ; ".globl x" and no x: in GNU's syntax an external, as GNU as has it
+    call    .gas_extern_ok
+    jne     .undef
+    mov     byte [rdx + SYMBOL_kind], SYM_EXTERN
+    or      byte [rdx + SYMBOL_pflags], SYMF_USED
+    jmp     .check_next
+.undef_gas:
+    ; a name never defined: GNU's syntax (.intel_syntax, .att_syntax,
+    ; --att) takes it for an external, as GNU as does - in an object file
+    call    .gas_extern_ok
+    jne     .undef
+    sub     rsp, SYMBOL_SIZE
+    mov     rdi, rsp
+    xor     eax, eax
+    mov     ecx, SYMBOL_SIZE / 8
+    rep stosq
+    mov     byte [rsp + SYMBOL_tag], TAG_SYMBOL
+    mov     byte [rsp + SYMBOL_kind], SYM_EXTERN
+    mov     byte [rsp + SYMBOL_vis], VIS_GLOBAL
+    mov     byte [rsp + SYMBOL_pflags], SYMF_USED
+    mov     rax, [r13 + RELOC_sym]
+    mov     [rsp + SYMBOL_name], rax
+    mov     rdi, rbx
+    mov     rsi, rsp
+    call    symbol_add
+    add     rsp, SYMBOL_SIZE
+    test    rax, rax
+    jnz     .undef
+    jmp     .check_next
+; .gas_extern_ok: ZF = 1 when an undefined name is an external here (GNU's
+; syntax, an object file). Preserves all but the flags.
+.gas_extern_ok:
+    extern  gas_names
+    cmp     byte [rel gas_names], 0
+    je      .gx_no
+    cmp     byte [rbx + ASMCTX_fmt], FMT_BIN
+    je      .gx_no
+    cmp     byte [rbx + ASMCTX_standalone], 0
+    jne     .gx_no
+    cmp     al, al                         ; ZF = 1
+    ret
+.gx_no:
+    cmp     byte [rel gas_names], 2        ; ZF = 0 (it is 0 or 1)
+    ret
 
 .check_local:
     ; A constant used before its "equ" ("mov ecx, len"): its value, written
@@ -477,6 +521,13 @@ reloc_resolve_all:
     movzx   eax, word [rdx + SYMBOL_section]
     cmp     eax, [r8 + SECTION_index]
     jne     .check_next
+    ; GNU's syntax: to a global the relocation stays, as GNU as writes it
+    ; (the symbol may be defined elsewhere first: "call f" is PLT32 to f)
+    cmp     byte [rel gas_names], 0
+    je      .pcrel_here
+    cmp     byte [rdx + SYMBOL_vis], VIS_LOCAL
+    jne     .check_next
+.pcrel_here:
     ; S + A - P, written in the code
     mov     rax, [rdx + SYMBOL_value]
     add     rax, [r13 + RELOC_addend]
