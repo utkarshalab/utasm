@@ -587,7 +587,24 @@ parser_parse_instruction:
     jz      .try_pseudo_op
     
     mov     [r15 + INST_op_id], ax
-    jmp     .parse_operands
+    ; "cpu 386": an instruction of a later level (x86_cpu_level, the
+    ; lowest of its forms') is NASM's "no instruction for this cpu level"
+    extern  cpu_num, x86_cpu_level, x86_cpu_maxid
+    movzx   ecx, byte [rel cpu_num]
+    test    ecx, ecx
+    jz      .parse_operands
+    mov     rdx, [rbx + PREP_ctx]
+    cmp     byte [rdx + ASMCTX_target], TARGET_AMD64
+    jne     .parse_operands
+    movzx   eax, ax
+    cmp     eax, [rel x86_cpu_maxid]
+    ja      .parse_operands
+    lea     rdx, [rel x86_cpu_level]
+    movzx   edx, byte [rdx + rax]
+    cmp     edx, ecx
+    jbe     .parse_operands
+    mov     rax, EXIT_CPU_LEVEL
+    jmp     .error
 
 .try_pseudo_op:
     ; Check for db, dw, dd, dq, resb, etc.
@@ -8274,12 +8291,26 @@ parser_handle_pseudo_op:
     cmp     eax, TOK_IDENT
     jne     .cpu_skip
     mov     r13, [rdx + TOKEN_value]
+    ; "x86-64", "ia-64": three tokens
+    lea     rsi, [rel str_cpu_x86]
+    mov     r14d, 11
+    mov     rdi, r13
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .cpu_dash
+    lea     rsi, [rel str_cpu_ia]
+    mov     r14d, 10
+    mov     rdi, r13
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .cpu_dash
     mov     rdi, r13
     call    parser_cpu_num
-    lea     r14, [rel cpu_words]
+    push    rax                            ; (1: a level - "default" an
+    lea     r14, [rel cpu_words]           ; option too)
 .cpu_find:
     cmp     byte [r14], 0
-    je      .cpu_other
+    je      .cpu_find_end
     mov     rdi, r13
     mov     rsi, r14
     call    str_cmp_kw
@@ -8287,18 +8318,58 @@ parser_handle_pseudo_op:
     jz      .cpu_found
     add     r14, 12
     jmp     .cpu_find
+.cpu_find_end:
+    pop     rax
+    test    eax, eax
+    jnz     .cpu_other                     ; a level
+    jmp     .cpu_unknown
 .cpu_found:
+    add     rsp, 8
     mov     al, [rel cpu_latevex]
     and     al, [r14 + 10]                 ; the bits it clears
     or      al, [r14 + 11]                 ; ... and sets
     mov     [rel cpu_latevex], al
     jmp     .cpu_skip
+.cpu_dash:
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the word
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_MINUS
+    jne     .cpu_unknown_now
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; "-"
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_NUMBER
+    jne     .cpu_unknown_now
+    mov     rax, [rdx + TOKEN_value]
+    cmp     dword [rax], '64'
+    jne     .cpu_unknown_now
+    extern  cpu_num
+    mov     [rel cpu_num], r14b
+    and     byte [rel cpu_latevex], ~CPUF_8086 & 0xFF
+    jmp     .cpu_skip
+.cpu_unknown:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+.cpu_unknown_now:
+    ; NASM's "unknown CPU type or flag"
+    mov     rdi, r13
+    extern  error_set_subject
+    call    error_set_subject
+    call    parser_skip_to_eol
+    mov     rax, EXIT_CPU_UNKNOWN
+    jmp     .check_handler_result
 .cpu_level:
     ; "cpu 8086": pop cs is an instruction there; any other level not
     mov     rdi, [rdx + TOKEN_value]
+    mov     r13, rdi
     push    rdi
     call    parser_cpu_num
     pop     rdi
+    test    eax, eax
+    jz      .cpu_unknown
     lea     rsi, [rel str_8086]
     call    str_cmp
     test    rax, rax
@@ -11178,11 +11249,13 @@ parser_fasm_word:
 ;*
 ; * [parser_cpu_num]
 ; * Purpose: The level a "cpu" word names, for the encoder's obsolete
-; *   warnings (cpu_num: 1 8086, 2 186, 3 286, 4 386, 5 486, 6 586 /
-; *   pentium, 7 686 / p6 / ppro / pentiumpro / p2 / pentiumii, 0 latest /
-; *   any / all / default, 0x80 a later one); a word that is no level (an
-; *   option: evex, latevex ...) changes nothing.
-; * Input  : RDI = the word. Preserves rbx, r12-r15.
+; *   warnings and its level check (cpu_num: NASM's levels, 1 8086 ... 7
+; *   P6, 8 Katmai, 9 Willamette, 10 Prescott, 11 x86-64, 12 Nehalem, 13
+; *   Westmere, 14 Sandy Bridge, 15 future - IA-64 Prescott's; 0 any /
+; *   all / default).
+; * Input  : RDI = the word. Output: EAX = 1 when it names one (cpu_num
+; *   set), else 0 (an option: evex, latevex ... or none). Preserves rbx,
+; *   r12-r15.
 ; ;
 parser_cpu_num:
     push    r12
@@ -11191,7 +11264,7 @@ parser_cpu_num:
     lea     r13, [rel cpu_levels]
 .cn_entry:
     cmp     byte [r13], 0
-    je      .cn_later
+    je      .cn_none
     mov     rdi, r12
     mov     rsi, r13
     call    str_cmp_kw
@@ -11208,30 +11281,10 @@ parser_cpu_num:
     mov     al, [rcx]
     extern  cpu_num
     mov     [rel cpu_num], al
+    mov     eax, 1
     jmp     .cn_ret
-.cn_later:
-    ; a processor's name after the P6 (p3, p4, x64, sandybridge ...): a
-    ; number or a word other than the options
-    movzx   eax, byte [r12]
-    sub     eax, '0'
-    cmp     eax, 9
-    jbe     .cn_set_later
-    lea     r13, [rel cpu_options]
-.cn_opt:
-    cmp     byte [r13], 0
-    je      .cn_set_later
-    mov     rdi, r12
-    mov     rsi, r13
-    call    str_cmp_kw
-    test    rax, rax
-    jz      .cn_ret
-.cn_opt_skip:
-    inc     r13
-    cmp     byte [r13 - 1], 0
-    jne     .cn_opt_skip
-    jmp     .cn_opt
-.cn_set_later:
-    mov     byte [rel cpu_num], 0x80
+.cn_none:
+    xor     eax, eax
 .cn_ret:
     pop     r13
     pop     r12
@@ -14098,14 +14151,17 @@ gas_wrt_words:
     db WRT_DTPOFF, "dtpoff", 0, 0
 cpu_levels:
     db "8086", 0, 1, "186", 0, 2, "286", 0, 3, "386", 0, 4, "486", 0, 5
-    db "586", 0, 6, "pentium", 0, 6, "686", 0, 7, "p6", 0, 7, "ppro", 0, 7
-    db "pentiumpro", 0, 7, "p2", 0, 7, "pentiumii", 0, 7
-    db "latest", 0, 0, "any", 0, 0, "all", 0, 0, "default", 0, 0
+    db "586", 0, 6, "pentium", 0, 6, "pentiummmx", 0, 6, "686", 0, 7
+    db "p6", 0, 7, "ppro", 0, 7, "pentiumpro", 0, 7, "p2", 0, 7
+    db "pentiumii", 0, 7, "p3", 0, 8, "katmai", 0, 8, "p4", 0, 9
+    db "willamette", 0, 9, "prescott", 0, 10, "x64", 0, 11, "nehalem", 0, 12
+    db "westmere", 0, 13, "sandybridge", 0, 14, "ivybridge", 0, 15
+    ; (IA-64's x86 mode: Prescott's level, as NASM 3 has it)
+    db "ia64", 0, 10, "itanium", 0, 10, "itanic", 0, 10, "merced", 0, 10
+    db "any", 0, 0, "all", 0, 0, "default", 0, 0
     db 0
-; ... and the words that are options, no level
-cpu_options:
-    db "latevex", 0, "nolatevex", 0, "vex", 0, "novex", 0, "evex", 0
-    db "noevex", 0, "fpu", 0, "nofpu", 0, 0
+str_cpu_x86:   db "x86", 0             ; "x86-64"
+str_cpu_ia:    db "ia", 0              ; "ia-64"
 ; words that make the name before them a label without its colon
 stmt_words:    db "db", 0, "dw", 0, "dd", 0, "dq", 0, "dt", 0, "resb", 0, "resw", 0
                db "resd", 0, "resq", 0, "rest", 0, "times", 0, "incbin", 0
