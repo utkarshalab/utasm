@@ -8400,6 +8400,10 @@ parser_handle_pseudo_op:
     add     r13, 8
     jmp     .use_word
 .use_hit:
+    movzx   edx, byte [r13 + 7]
+    call    parser_bits_cpu
+    test    eax, eax
+    jnz     .check_handler_result
     mov     al, [r13 + 7]
     mov     [rel asm_bits], al
     xor     eax, eax
@@ -9667,9 +9671,35 @@ parser_handle_bits:
     mov     rax, EXIT_INVALID_OPERAND
     ret
 .ok:
+    call    parser_bits_cpu
+    test    eax, eax
+    jnz     .ret
     mov     [rel asm_bits], dl
     xor     eax, eax
 .ret:
+    ret
+
+; parser_bits_cpu: "bits 32" under a "cpu" below 386, "bits 64" below x86-64
+; (cpu_num): NASM's "cannot specify 32-bit / 64-bit segment on processor
+; below ..." - edx = the bits -> eax = 0 or the error. Preserves edx.
+parser_bits_cpu:
+    xor     eax, eax
+    movzx   ecx, byte [rel cpu_num]
+    test    ecx, ecx
+    jz      .bc_ret
+    cmp     edx, 32
+    jne     .bc_64
+    cmp     ecx, 4
+    jae     .bc_ret
+    mov     eax, EXIT_BITS32_CPU
+    ret
+.bc_64:
+    cmp     edx, 64
+    jne     .bc_ret
+    cmp     ecx, 11
+    jae     .bc_ret
+    mov     eax, EXIT_BITS64_CPU
+.bc_ret:
     ret
 
 [SECTION .data]
