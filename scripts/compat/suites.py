@@ -491,6 +491,13 @@ def command_line(utasm, verbose=False):
                 ru = run([utasm] + args, cwd=d)
                 return name, rn.stdout if rn.returncode == 0 else None, \
                     ru.stdout if ru.returncode == 0 else None, ru
+            if kind == "ppt":
+                # -E: the text NASM's -E writes, byte for byte
+                rn = run(["nasm", "-E"] + args + ["-o", "n.txt"], cwd=d)
+                ru = run([utasm, "-E"] + args + ["-o", "u.txt"], cwd=d)
+                a = open(os.path.join(d, "n.txt"), "rb").read() if rn.returncode == 0 else None
+                b = open(os.path.join(d, "u.txt"), "rb").read() if ru.returncode == 0 else None
+                return name, a, b, ru
             # -E: the preprocessed text must assemble to NASM's binary
             src = args[-1]
             rn = run(["nasm"] + args + ["-o", "n.bin"], cwd=d)
