@@ -2847,13 +2847,17 @@ expr_scalar:
 
 ;*
 ; * [parser_eval_level]
-; * Purpose: One binary-operator level of NASM's precedence, lowest first:
+; * Purpose: The binary operators of NASM's precedence from a level up,
+; *   lowest first:
 ; *     0 ||    1 ^^    2 &&    3 = == != <> < <= > >= <=>
 ; *     4 |     5 ^     6 &     7 << >> <<< >>>
 ; *   then + - (parser_evaluate_additive), * / % %% (parser_evaluate_term)
 ; *   and the unary operators (parser_evaluate_factor). Left-associative.
-; *   A value that went through an operator here is a plain number; one
-; *   that did not keeps its symbol for the caller.
+; *   By precedence climbing: the operand + - reads, then each operator of
+; *   the level or above with its right side read from the level above
+; *   the operator's (one frame and one table look-up a token, not one a
+; *   level). A value that went through an operator here is a plain
+; *   number; one that did not keeps its symbol for the caller.
 ; * Input  : RDI = PrepState, ESI = level
 ; * Output : RAX = OK or an error, RDX = value, RCX / R11 = symbol info
 ; ;
@@ -2868,8 +2872,12 @@ parser_eval_level:
     mov     rbx, rdi
     mov     eax, esi
     mov     [rsp], rax
+    cmp     byte [rel eval_ops_ready], 0
+    jne     .ready
+    call    eval_ops_build
+.ready:
     mov     rdi, rbx
-    call    parser_eval_next
+    call    parser_evaluate_additive
     test    rax, rax
     jnz     .ret
     mov     r12, rdx               ; running value
@@ -2883,25 +2891,20 @@ parser_eval_level:
     test    rax, rax
     jnz     .ret
     movzx   eax, byte [rdx + TOKEN_kind]
-    mov     rcx, [rsp]
-    shl     rcx, 4
-    lea     r8, [rel eval_level_ops]
-    add     r8, rcx
-.find:
-    movzx   ecx, byte [r8]
+    lea     r8, [rel eval_op_by_kind]
+    movzx   ecx, byte [r8 + rax * 2]       ; its level + 1 (0: no operator)
     test    ecx, ecx
     jz      .no_op
-    cmp     eax, ecx
-    je      .found
-    add     r8, 2
-    jmp     .find
-.found:
-    movzx   r15d, byte [r8 + 1]    ; the operation
+    dec     ecx
+    cmp     rcx, [rsp]
+    jb      .no_op                         ; (a lower level's: the caller's)
+    mov     [rsp + 24], rcx
+    movzx   r15d, byte [r8 + rax * 2 + 1]  ; the operation
     mov     rdi, rbx
     call    preprocessor_next_token
     mov     rdi, rbx
-    mov     rsi, [rsp]
-    call    parser_eval_next
+    mov     rsi, [rsp + 24]
+    call    parser_eval_next               ; its right side: the level above
     test    rax, rax
     jnz     .ret
     ; NASM: a label is an address, not a scalar, for these operators
@@ -3047,6 +3050,51 @@ parser_eval_next:
     jae     parser_evaluate_additive
     inc     esi
     jmp     parser_eval_level
+
+; eval_op_by_kind from eval_level_ops: a token kind's (level + 1, operation)
+eval_ops_build:
+    push    rax
+    push    rcx
+    push    rdx
+    push    rsi
+    lea     rsi, [rel eval_level_ops]
+    lea     rdx, [rel eval_op_by_kind]
+    xor     ecx, ecx                       ; the level
+.level:
+    mov     rax, rcx
+    shl     rax, 4
+    add     rax, rsi
+.pair:
+    push    rcx
+    movzx   ecx, byte [rax]
+    test    ecx, ecx
+    pop     rcx
+    jz      .next
+    push    rdi
+    movzx   edi, byte [rax]
+    mov     [rdx + rdi * 2], cl
+    inc     byte [rdx + rdi * 2]
+    push    rcx
+    mov     cl, [rax + 1]
+    mov     [rdx + rdi * 2 + 1], cl
+    pop     rcx
+    pop     rdi
+    add     rax, 2
+    jmp     .pair
+.next:
+    inc     ecx
+    cmp     ecx, EVAL_LAST_LEVEL
+    jbe     .level
+    mov     byte [rel eval_ops_ready], 1
+    pop     rsi
+    pop     rdx
+    pop     rcx
+    pop     rax
+    ret
+
+[SECTION .bss]
+eval_op_by_kind:    resb 512
+eval_ops_ready:     resb 1
 
 
 [SECTION .rodata]
@@ -6068,11 +6116,37 @@ str_abs: db "abs", 0
 ;*
 ; * [parser_is_register]
 ; * Input: RSI = String, RDI = Table Pointer
+; * Output: RAX = the entry's value (the first with that hash), or ERR
+; * Every operand word is looked up: the first table asked (the target's)
+; * is indexed by hash then, as parser_lookup_mnemonic's; another walked.
 ; ;
 global parser_is_register
 parser_is_register:
     prologue
     hash_fnv1a_64_ci rsi, r8
+    cmp     rdi, [rel reg_idx_of]
+    jne     .other
+.probe:
+    mov     rax, r8
+    mov     rcx, [rel reg_idx_slots]
+.slot:
+    and     rax, [rel reg_idx_mask]
+    mov     rdx, [rcx + rax * 8]
+    test    rdx, rdx
+    jz      .not_found
+    cmp     [rdx], r8
+    je      .slot_hit
+    inc     rax
+    jmp     .slot
+.slot_hit:
+    mov     rdi, rdx
+    jmp     .found
+.other:
+    cmp     qword [rel reg_idx_of], 0
+    jne     .loop                          ; (another table: the walk)
+    call    reg_index_build
+    cmp     rdi, [rel reg_idx_of]
+    je      .probe
 .loop:
     mov     rax, [rdi]
     test    rax, rax
@@ -6089,6 +6163,77 @@ parser_is_register:
 .not_found:
     mov     rax, ERR
     epilogue
+
+; reg_index_build: index the register table RDI (16-byte entries, a zero
+; hash last) by hash into reg_idx_slots - its first entry of a hash kept.
+; No memory: reg_idx_of -1, the walk. Preserves every register.
+reg_index_build:
+    push    rax
+    push    rcx
+    push    rdx
+    push    rsi
+    push    rdi
+    push    r8
+    push    r9
+    push    r10
+    push    r11
+    xor     ecx, ecx
+.count:
+    cmp     qword [rdi + rcx * 8], 0
+    je      .counted
+    add     rcx, 2
+    jmp     .count
+.counted:
+    mov     eax, 64
+.size:
+    cmp     rax, rcx                       ; (rcx = entries * 2)
+    jae     .sized
+    shl     rax, 1
+    jmp     .size
+.sized:
+    lea     rdx, [rax - 1]
+    mov     [rel reg_idx_mask], rdx
+    lea     rsi, [rax * 8]
+    extern  mem_reserve
+    call    mem_reserve
+    test    rax, rax
+    jnz     .no_index
+    mov     [rel reg_idx_slots], rdx
+    mov     r8, rdx
+    mov     rsi, [rsp + 32]                ; the table (pushed fifth)
+    mov     [rel reg_idx_of], rsi
+.entry:
+    mov     r9, [rsi]
+    test    r9, r9
+    jz      .ret
+    mov     rax, r9
+.place:
+    and     rax, [rel reg_idx_mask]
+    mov     r10, [r8 + rax * 8]
+    test    r10, r10
+    jz      .put
+    cmp     [r10], r9
+    je      .placed                        ; the first entry of a name stays
+    inc     rax
+    jmp     .place
+.put:
+    mov     [r8 + rax * 8], rsi
+.placed:
+    add     rsi, 16
+    jmp     .entry
+.no_index:
+    mov     qword [rel reg_idx_of], -1
+.ret:
+    pop     r11
+    pop     r10
+    pop     r9
+    pop     r8
+    pop     rdi
+    pop     rsi
+    pop     rdx
+    pop     rcx
+    pop     rax
+    ret
 
 ;*
 ; * [parser_lookup_mnemonic]
@@ -6216,6 +6361,9 @@ alignb 8
 mnc_idx_of:     resq 1                  ; the table indexed (parser_lookup_mnemonic)
 mnc_idx_slots:  resq 1                  ; its entries by hash
 mnc_idx_mask:   resq 1
+reg_idx_of:     resq 1                  ; the table indexed (parser_is_register)
+reg_idx_slots:  resq 1                  ; its entries by hash
+reg_idx_mask:   resq 1
 [SECTION .text]
 
 ; parser_check_size: a memory operand with no size where nothing else gives
@@ -6518,14 +6666,25 @@ parser_check_prefix:
     push    r13
     mov     r12, rsi
     lea     r13, [rel prefix_words]
+    test    r12, r12
+    jz      .none
+    ; only a word with a prefix's first letter is compared (every
+    ; mnemonic comes here)
+    movzx   eax, byte [r12]
+    or      eax, 0x20
 .word:
     cmp     byte [r13], 0
     je      .none
+    cmp     al, [r13]
+    jne     .next
     mov     rdi, r12
     mov     rsi, r13
     call    str_cmp_kw
     test    rax, rax
     jz      .hit
+    movzx   eax, byte [r12]
+    or      eax, 0x20
+.next:
     add     r13, 10
     jmp     .word
 .hit:
@@ -6534,6 +6693,8 @@ parser_check_prefix:
 .none:
     xor     eax, eax
 .ret:
+    mov     rdi, r12
+    mov     rsi, r13
     pop     r13
     pop     r12
     ret
@@ -13566,10 +13727,24 @@ msg_size_spec_bracket: db "Size specifier expected '[' but got kind: ", 0
 
 [SECTION .text]
 global parser_parse_size_specifier_string
+%define SIZE_WORD_LETTERS 0x349400a            ; b d o q t w y z (a = bit 0)
 parser_parse_size_specifier_string:
     prologue
     push    rbx                     ; Preserve rbx
     mov     rbx, rdi                ; rbx = input string
+
+    ; 0. Only a word starting as a size word does (b d o q t w y z): every
+    ;    operand comes here
+    test    rbx, rbx
+    jz      .not_size
+    movzx   eax, byte [rbx]
+    or      eax, 0x20
+    sub     eax, 'a'
+    cmp     eax, 25
+    ja      .not_size
+    mov     esi, SIZE_WORD_LETTERS
+    bt      esi, eax
+    jnc     .not_size
 
     ; 1. Check "byte" -> 8
     mov     rdi, rbx
@@ -13633,6 +13808,9 @@ parser_parse_size_specifier_string:
     jz      .is_zword
 
     ; Not a size specifier
+.not_size:
+    mov     rdi, rbx
+    lea     rsi, [rel str_zword]
     xor     rax, rax
     jmp     .done
 
