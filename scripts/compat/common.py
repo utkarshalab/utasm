@@ -15,9 +15,6 @@ KNOWN = {
     "op_signed_div": "// is a comment in utasm",
     # NASM 2.16.03 gives 0/0/1 for <=>; its manual (and utasm) say -1/0/1.
     "op_cmp3": "NASM's <=> disagrees with its own manual",
-# a value that measures its own instruction: NASM converges on the short
-    # form; utasm keeps the long one (correct, the value of that layout)
-    "expr self_add": "add eax, (e - s) * 30 over itself: 05 id (NASM: 83 /0 ib)",
     # NASM writes a meaningless number for a negated address in an object
     "scalar -l1 back elf64": "NASM's value for -label in an object",
     "scalar 2 - l1 back elf64": "NASM's value for n - label in an object",
