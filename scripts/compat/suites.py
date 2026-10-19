@@ -1226,6 +1226,16 @@ def readback(utasm, verbose=False):
     return s
 
 
+def _elf_section(path, index):
+    """the bytes of section INDEX of an ELF64 object"""
+    import struct
+    b = open(path, "rb").read()
+    shoff, = struct.unpack_from("<Q", b, 0x28)
+    shentsize, = struct.unpack_from("<H", b, 0x3A)
+    h = struct.unpack_from("<IIQQQQIIQQ", b, shoff + index * shentsize)
+    return b[h[4]:h[4] + h[5]]
+
+
 def gas_view(path):
     """an object as GNU as's directives make it: each section with content
     (or a type or flags of its own) - type, flags, entry size, bytes; its
@@ -1246,10 +1256,8 @@ def gas_view(path):
         if int(size, 16) == 0 and name in (".text", ".data", ".bss") and flg in ("AX", "WA"):
             continue                       # (GNU's three, always there)
         out.append("S %s %s %s es %d size %d" % (name, typ, flg, int(es, 16), int(size, 16)))
-        binf = "%s.%s.bin" % (path, idx)
-        dump = run(["objcopy", "-O", "binary", "--only-section=" + name, path, binf])
-        if typ != "NOBITS" and dump.returncode == 0 and os.path.exists(binf):
-            out.append("D %s %s" % (name, open(binf, "rb").read().hex()))
+        if typ != "NOBITS":
+            out.append("D %s %s" % (name, _elf_section(path, int(idx)).hex()))
     sec = ""
     for line in run(["readelf", "-rW", path]).stdout.splitlines():
         if line.startswith("Relocation section"):
@@ -1258,8 +1266,11 @@ def gas_view(path):
         if m:
             # a branch to another file's symbol: GNU's PLT32, NASM's PC32
             # (utasm's, as NASM's; "wrt ..plt" asks for PLT32)
-            out.append("R %s %d %s" % (sec, int(m.group(1), 16),
-                                       m.group(2).replace("R_X86_64_PLT32", "R_X86_64_PC32")))
+            rec = "R %s %d %s" % (sec, int(m.group(1), 16),
+                                  m.group(2).replace("R_X86_64_PLT32", "R_X86_64_PC32"))
+            if sec.startswith(".rela.debug"):
+                rec += " " + " ".join(line.split()[4:])     # the debug data's: symbol + addend
+            out.append(rec)
     for line in run(["readelf", "-sW", path]).stdout.splitlines():
         f = line.split()
         if len(f) >= 8 and f[0].rstrip(":").isdigit() and f[3] not in ("FILE", "SECTION") and ".L" not in f[7]:
@@ -1341,12 +1352,17 @@ def att(utasm, verbose=False):
                 s.result("line " + text, ok, detail)
 
     def whole(name, src, opts=(), att=True):
+        # -g: GCC asks for its DWARF version (--gdwarf-5; -gdwarf-4)
+        dwarf = []
+        for o in opts or ():
+            if o == "-g" or o.startswith("-gdwarf-"):
+                dwarf = ["--gdwarf-" + (o[8:] if o.startswith("-gdwarf-") else "5")]
         with tempdir() as d:
             open(os.path.join(d, "f.s"), "w").write(src)
-            a = run(["as", "--64", "-o", "f.as.o", "f.s"], cwd=d)
+            a = run(["as", "--64"] + dwarf + ["-o", "f.as.o", "f.s"], cwd=d)
             if a.returncode:
                 return False, "GNU as: " + first_line(a), None
-            u = run([utasm] + (["--att"] if att else []) + ["-f", "elf64", "-o", "f.ut.o", "f.s"], cwd=d)
+            u = run([utasm] + (["--att"] if att else []) + dwarf + ["-f", "elf64", "-o", "f.ut.o", "f.s"], cwd=d)
             if u.returncode:
                 return False, "utasm: " + first_line(u), None
             va, vu = gas_view(os.path.join(d, "f.as.o")), gas_view(os.path.join(d, "f.ut.o"))
