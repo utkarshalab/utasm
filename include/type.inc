@@ -123,7 +123,8 @@ struc SYMBOL
     field file,     8       ; definition filename pointer
     field defseq,   4       ; when it was defined (sym_defseq): COFF writes
                             ; the symbols in that order, as NASM does
-    field pad3,     4
+    field hash,     4       ; the name's hash, low half (symbol_add): the
+                            ; hash grows without hashing every name again
 endstruc
 
 ; ============================================================================
