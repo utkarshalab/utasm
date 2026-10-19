@@ -1290,6 +1290,92 @@ def gas(utasm, verbose=False):
     return s
 
 
+
+def _att_text(o):
+    """an object's .text bytes and its relocation types"""
+    if run(["objcopy", "-O", "binary", "-j", ".text", o, o + ".bin"]).returncode:
+        return None
+    b = open(o + ".bin", "rb").read().hex()
+    rel = [x.split()[1] for x in run(["objdump", "-r", o]).stdout.splitlines()
+           if x[:1] in "0123456789abcdef" and len(x.split()) >= 3 and x.split()[1].startswith("R_")]
+    return b + (" " + ",".join(rel) if rel else "")
+
+
+def att(utasm, verbose=False):
+    """AT&T syntax (frontend/parser/att.s, --att): each line, and whole
+    sources, assembled by GNU as and by utasm - the same bytes, relocations
+    and symbols; a C program GCC compiles at several levels, the same object
+    as GNU as makes of it, run"""
+    s = Suite("AT&T syntax", verbose)
+    if not have("as"):
+        return s
+
+    def line(case):
+        bits, text = case
+        with tempdir() as d:
+            code = {"32": ".code32\n", "64": ""}[bits]
+            open(os.path.join(d, "a.s"), "w").write(".text\n" + code + text + "\n")
+            g = run(["as", "--32" if bits == "32" else "--64", "-o", "a.g", "a.s"], cwd=d)
+            if g.returncode:
+                return text, None, "GNU as: " + first_line(g)
+            u = run([utasm, "--att", "-f", "elf32" if bits == "32" else "elf64", "-o", "a.u", "a.s"], cwd=d)
+            if u.returncode:
+                return text, False, "utasm: " + first_line(u)
+            want, got = _att_text(os.path.join(d, "a.g")), _att_text(os.path.join(d, "a.u"))
+            return text, want == got, "as %s | utasm %s" % (want, got)
+
+    lines = [("64", l) for l in cases.ATT_LINES_64.strip().splitlines()] + \
+            [("32", l) for l in cases.ATT_LINES_32.strip().splitlines()]
+    with cf.ThreadPoolExecutor(JOBS) as ex:
+        for text, ok, detail in ex.map(line, lines):
+            if ok is None:
+                s.result("line " + text, False, detail)
+            else:
+                s.result("line " + text, ok, detail)
+
+    def whole(name, src, opts=()):
+        with tempdir() as d:
+            open(os.path.join(d, "f.s"), "w").write(src)
+            a = run(["as", "--64", "-o", "f.as.o", "f.s"], cwd=d)
+            if a.returncode:
+                return False, "GNU as: " + first_line(a), None
+            u = run([utasm, "--att", "-f", "elf64", "-o", "f.ut.o", "f.s"], cwd=d)
+            if u.returncode:
+                return False, "utasm: " + first_line(u), None
+            va, vu = gas_view(os.path.join(d, "f.as.o")), gas_view(os.path.join(d, "f.ut.o"))
+            diff = [l for l in difflib.unified_diff(va, vu, "as", "utasm", lineterm="", n=0)
+                    if l[:1] in "+-" and l[:3] not in ("+++", "---")]
+            ran = None
+            if opts is not None and have("gcc") and not diff and "main" in src:
+                outs = []
+                for o in ("f.as.o", "f.ut.o"):
+                    l = run(["gcc"] + list(opts) + ["-o", o + ".x", o], cwd=d)
+                    outs.append(run([os.path.join(d, o + ".x"), "x"], cwd=d).stdout if not l.returncode else "link: " + first_line(l))
+                ran = outs[0] == outs[1]
+            return not diff and ran is not False, " ".join(diff[:6]) or ("ran differently" if ran is False else ""), ran
+
+    for name, src in cases.ATT_FILES:
+        ok, detail, _ = whole(name, src, None)
+        s.result("file " + name, ok, detail)
+    if have("gcc"):
+        for opts in cases.ATT_C_OPTIONS:
+            with tempdir() as d:
+                open(os.path.join(d, "p.c"), "w").write(cases.ATT_C)
+                c = run(["gcc"] + opts + ["-S", "-o", "p.s", "p.c"], cwd=d)
+                src = open(os.path.join(d, "p.s")).read() if not c.returncode else None
+            if src is None:
+                s.result("gcc " + " ".join(opts), False, "gcc: " + first_line(c))
+                continue
+            ok, detail, _ = whole("gcc", src, opts)
+            s.result("gcc " + " ".join(opts), ok, detail)
+    for text, want in cases.ATT_ERRORS:
+        with tempdir() as d:
+            open(os.path.join(d, "e.s"), "w").write(text + "\n")
+            r = run([utasm, "--att", "-f", "elf64", "-o", "e.o", "e.s"], cwd=d)
+        s.result("error " + text, r.returncode != 0 and want in (r.stderr or ""), "rc %d: %s" % (r.returncode, first_line(r)))
+    return s
+
+
 def _json_text(o):
     """the text line a -X json object stands for"""
     if o["severity"] == "hint":
