@@ -1415,16 +1415,59 @@ elf64_mark_used:
     mov     rsi, [rax + RELOC_sym]
     test    rsi, rsi
     jz      .reloc
+    push    rax
     mov     rdi, r12
     call    symbol_find
+    pop     rdi                            ; the relocation
     test    rax, rax
     jnz     .reloc
     or      byte [rdx + SYMBOL_pflags], SYMF_USED
+    ; GNU's syntax: one in a section the linker merges, named as itself
+    ; (elf64_reloc_keeps), is in .symtab, as GNU as writes it
+    cmp     byte [rel gas_names], 0
+    je      .reloc
+    call    elf64_sym_merge
+    jne     .reloc
+    call    elf64_reloc_keeps
+    jne     .reloc
+    or      byte [rdx + SYMBOL_pflags], SYMF_NAMED
     jmp     .reloc
 .done:
     pop     r14
     pop     r13
     pop     rbx
+    ret
+
+; ---- elf64_reloc_keeps (internal) --------
+; ZF = 1 when relocation rdi names a symbol in a section the linker merges
+; as itself: GNU as does when it is PC-relative, a GOT one, or has an
+; addend of its own (adjust_reloc_syms, tc_i386_fix_adjustable); else the
+; section's symbol and the offset. Preserves all but the flags.
+elf64_reloc_keeps:
+    cmp     qword [rdi + RELOC_addend], 0
+    jne     .keeps
+    push    rax
+    mov     eax, [rdi + RELOC_type]
+    cmp     eax, R_X86_64_PC32
+    je      .keeps_pop
+    cmp     eax, R_X86_64_PLT32
+    je      .keeps_pop
+    cmp     eax, R_X86_64_PC16
+    je      .keeps_pop
+    cmp     eax, R_X86_64_PC8
+    je      .keeps_pop
+    cmp     eax, R_X86_64_PC64
+    je      .keeps_pop
+    cmp     eax, R_X86_64_GOTPCREL
+    je      .keeps_pop
+    cmp     eax, R_X86_64_GOTPCRELX
+    je      .keeps_pop
+    cmp     eax, R_X86_64_REX_GOTPCRELX
+.keeps_pop:
+    pop     rax
+    ret
+.keeps:
+    cmp     eax, eax
     ret
 
 ; ---- elf64_secsym_base (internal) --------
@@ -1718,13 +1761,10 @@ elf64_symbol_is_emitted:
     extern  gas_names
     cmp     byte [rel gas_names], 0
     je      .not_dot_l
-    ; ... except in a section the linker merges (.rodata.str1.1, .cst8):
-    ; relocations name the symbol there, as GNU as writes them
-    push    rdx
-    mov     rdx, r8
-    call    elf64_sym_merge
-    pop     rdx
-    jne     .skip
+    ; ... except one a relocation names as itself, in a section the linker
+    ; merges (.rodata.str1.1, .cst8: elf64_mark_used), as GNU as writes it
+    test    byte [r8 + SYMBOL_pflags], SYMF_NAMED
+    jz      .skip
     jmp     .emit
 .not_dot_l:
     cmp     dword [rax], 'L@he'
@@ -2717,10 +2757,18 @@ elf64_write_rela:
         cmp     byte [rdx + SYMBOL_vis], VIS_LOCAL
         jne     .sym_ready
         ; GNU's syntax: one in a section the linker merges stays the
-        ; symbol (it moves with its piece), as GNU as writes it
+        ; symbol (it moves with its piece) when the reference is
+        ; PC-relative or has an addend of its own, as GNU as writes it
+        ; (adjust_reloc_syms, tc_i386_fix_adjustable); else, as any local
+        ; label, the section's symbol: ".long .LASF3" is .debug_str + 0x1c
         cmp     byte [rel gas_names], 0
         je      .by_section
         call    elf64_sym_merge
+        jne     .by_section
+        push    rdi
+        mov     rdi, r15
+        call    elf64_reloc_keeps
+        pop     rdi
         je      .sym_ready
 .by_section:
         movzx   r8d, word [rdx + SYMBOL_section]
