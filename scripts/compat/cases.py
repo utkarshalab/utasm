@@ -2785,7 +2785,10 @@ int main(int argc, char **argv) {
     return 0;
 }
 '''
-ATT_C_OPTIONS = [["-O0"], ["-O2"], ["-O3"], ["-Os"], ["-O2", "-fPIC"], ["-O3", "-march=x86-64-v3"]]
+ATT_C_OPTIONS = [["-O0"], ["-O2"], ["-O3"], ["-Os"], ["-O2", "-fPIC"], ["-O3", "-march=x86-64-v3"],
+                 # batch 64: GCC's -g - .file / .loc, the line table, views
+                 ["-O0", "-g"], ["-O2", "-g"], ["-O3", "-g"], ["-Os", "-g"], ["-O2", "-g", "-fPIC"],
+                 ["-O2", "-gdwarf-4"], ["-O3", "-g", "-march=x86-64-v3"]]
 ATT_ERRORS = [
     ("movl %eax %ebx", "AT&T syntax"),
     ("movl $5, %eax)", "AT&T syntax"),
@@ -2870,3 +2873,128 @@ CLI_CASES += [
 ELF_PROBES.update({
     "bracket_pragma": "[pragma output gprefix _]\n[pragma elf lprefix L.]\nglobal f\nf: ret\nloc: nop\n",
 })
+
+# batch 64: GNU's .file N / .loc - the line table GNU as makes of them
+# (debug/line.s), byte for byte: DWARF 5 (.file 0) and 3, every .loc
+# option, views (.LVUn, 0, -0), several code sections, a .loc in data
+# used by the next instruction, long steps; a .debug_info of the source's
+# (GNU as makes its own without one: not done)
+ATT_FILES += [
+    ("loc dwarf 5", r"""	.text
+	.file 0 "/build" "src/m.c" md5 0x0123456789abcdef0123456789abcdef
+	.file 1 "src/m.c" md5 0x0123456789abcdef0123456789abcdef
+	.file 2 "/usr/include/x.h"
+	.globl	f
+	.type	f, @function
+f:
+	.loc 1 3 1 view -0
+	.loc 1 4 5 prologue_end view .LVU1
+	pushq	%rbp
+	.loc 2 10 2 is_stmt 0 discriminator 3 view .LVU2
+	movl	%edi, %eax
+	.loc 2 11 1 isa 1 basic_block
+	addl	$1, %eax
+	testl	%eax, %eax
+	jle	.L2
+	.loc 1 300 7 is_stmt 1
+	.space	300, 0x90
+	.loc 1 20 1 epilogue_begin view .LVU3
+	popq	%rbp
+	.loc 1 2000 1
+.L2:
+	ret
+	.p2align 4
+	.loc 1 21 1 view -0
+	nop
+	.section	.text.cold,"ax",@progbits
+	.loc 1 7 1 view .LVU4
+	ud2
+	.section	.rodata
+	.loc 1 8 1
+	.text
+	nop
+	.section	.debug_info,"",@progbits
+	.long	.Ldebug_line0
+	.byte	.LVU1, .LVU2, .LVU3
+	.uleb128 .LVU4
+	.section	.debug_line,"",@progbits
+.Ldebug_line0:
+"""),
+    ("loc dwarf 3", r"""	.text
+	.file 1 "a.c"
+	.file 2 "inc/b.h"
+	.file 3 "/abs/dir/c.h"
+f:
+	.loc 1 1 0
+	nop
+	.loc 2 5 3
+	.loc 3 6 3
+	nop
+	jmp	f
+	.loc 1 9
+	ret
+	.section	.debug_info,"",@progbits
+	.long	0
+"""),
+    ("loc no rows", r"""	.text
+	.file 0 "/b" "e.c"
+	.file 1 "e.c"
+	.data
+	.long	1
+	.section	.debug_info,"",@progbits
+	.long	.Ldebug_line0
+	.section	.debug_line,"",@progbits
+.Ldebug_line0:
+"""),
+]
+ATT_ERRORS += [
+    (".loc 3 1", "unassigned file number 3"),
+    ('.file 1 "a.c"\n.loc 1 1 bogus', "unknown .loc sub-directive `bogus'"),
+    ('.file 1 "a.c"\n.loc 1 1 is_stmt 2', "is_stmt value not 0 or 1"),
+    ('.file 1 "a.c"\n.file 1 "b.c"', "file table slot 1 is already occupied"),
+    ('.file 1 "a.c"\n.loc 1 1 view 5', "numeric view can only be asserted to zero"),
+    ('.file 1 "a.c"\n.loc 1 1 view .LVU1\n.loc 1 2 view 0\nnop', "view number mismatch"),
+    ('.file 1 "a.c"\n.loc 1 1\nnop\n.section .debug_line\n.byte 1', "duplicate .debug_line sections"),
+]
+
+# batch 64: a view only padding decides (worked out in the second pass,
+# core/known.s), a row and a label just before padding that grows (they
+# stay before it), a jump shortened under them
+ATT_FILES += [
+    ("loc view after padding", r"""	.text
+	.file 0 "/b" "v.c"
+	.file 1 "v.c"
+f:
+	.loc 1 2 1 view -0
+	testl	%edi, %edi
+	jle	.L9
+	.loc 1 3 1 view .LVU1
+	addl	$1, %eax
+	addl	$1, %eax
+	addl	$1, %eax
+	addl	$1, %eax
+	addl	$1, %eax
+.L9:
+	.loc 1 4 1 view .LVU2
+	ret
+.LVL8:
+	.loc 1 4 1 view .LVU3
+	.p2align 4
+	.p2align 4,,10
+	.p2align 3
+.L7:
+	.loc 1 5 9 is_stmt 1 view .LVU4
+	.loc 1 5 14 is_stmt 0 view .LVU5
+	movq	16(%rax), %rax
+	jmp	.L9
+	.section	.debug_info,"",@progbits
+	.long	.Ldebug_line0
+	.byte	.LVU3, .LVU4, .LVU5
+	.uleb128 .LVU4
+	.uleb128 .LVU5
+	.uleb128 .LVL8-f
+	.quad	.LVL8-f
+	.section	.debug_line,"",@progbits
+.Ldebug_line0:
+"""),
+]
