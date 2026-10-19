@@ -1897,6 +1897,34 @@ GAS_CASES = [
     ("relocations", ".extern ext\n.text\n.globl _start\n_start: call ext\njmp ext\n.data\n.quad ext\n.long ext\n"
                     ".quad _start\n"),
     ("ignored", ".file \"x.c\"\n.ident \"cc\"\n.text\n.code64\nf: ret\n"),
+    # GCC's: an offset before a RIP-relative name ("40+x(%rip)")
+    ("rip offset", ".text\nmov rax, QWORD PTR x[rip+40]\nlea rcx, 8+x[rip]\nmov eax, DWORD PTR 40+x[rip]\n"
+                   ".att_syntax\nmovq 40+x(%rip), %rax\n.data\nx: .zero 64\n"),
+    ("base64", ".data\n.base64 \"aGVsbG8=\"\n.base64 \"AAEC\"\n.byte 9\n"),
+    # .lcomm / .local+.comm: after the .bss data written, wherever they are
+    ("local commons", ".data\n.long 1\n.bss\n.zero 2\n.lcomm lb, 16\n.local lc\n.comm lc, 4, 4\n"
+                      ".bss\nafter: .zero 3\n"),
+    # GNU as's relaxation: jumps grow from short, never back; a backward
+    # one too; across an alignment the stretch stops
+    ("gnu relaxation", ".text\nf: jmp 1f\n.p2align 4\n1: je f\njne 2f\n.fill 130,1,0x90\n2: jmp f\n"
+                       ".L2: jmp .L2\nje 3f\n.balign 8\n3: ret\n.p2align 4,,10\n.p2align 3\ng: jne f\n"),
+    # padding after data starts with a plain nop
+    ("nops after data", ".text\nret\n.byte 1\n.p2align 3\nnop\n.p2align 4\nret\n"),
+    # a jmp / jcc to a global of the section: resolved; a call, a weak
+    # one, @PLT: the linker's
+    ("jumps to globals", ".text\n.globl f\n.type f,@function\nf: ret\n.weak w\nw: ret\ng: jmp f\njne f\n"
+                         "jmp w\ncall f\njmp h\n.att_syntax\njmp f@PLT\n.globl h\nh: ret\n"),
+    # GCC's ".set f.localalias, f": moves with f, its type and size
+    ("set alias", ".text\n.globl f\n.type f,@function\ng: jmp 1f\nnop\n1: ret\n.p2align 4\nf: jne g\nret\n"
+                  ".size f, .-f\n.set f.la, f\n.set g2, g+1\ncall f.la\njmp f.la\n"),
+    # a segment the address uses anyway is left out; a string
+    # instruction's es:[rdi] never takes one
+    ("default segments", ".text\nmovzx eax, BYTE PTR ds:0\nmov eax, ss:[rbp]\nmov eax, ds:[rbp]\n"
+                         "mov eax, ss:[rsp+4]\nmov eax, ss:[r13]\nmov eax, ds:[rip+5]\n"
+                         "movsb es:[rdi], fs:[rsi]\ncmpsb [rsi], es:[rdi]\nstosb es:[rdi]\nmov eax, es:[rdi]\n"),
+    # GCC's indirect call: "[QWORD PTR 80[rax]]"
+    ("bracketed ptr", ".text\ncall [QWORD PTR 80[rax]]\njmp [QWORD PTR 8[rsp]]\nmov [DWORD PTR 4[rbx]], 7\n"
+                      "call [QWORD PTR f[rip]]\nf: ret\n"),
 ]
 # (line, the error)
 GAS_ERRORS = [
@@ -1907,6 +1935,7 @@ GAS_ERRORS = [
     (".equiv E, 1\n.equiv E, 2", "inconsistently redefined"),
     (".p2align 40", "alignment"),
     (".balign 3", "alignment"),
+    (".data\n.base64 \"aGV$sbG8=\"", "invalid character found inside .base64 string"),
 ]
 # batch 51: GNU as's macros, repetitions and conditionals
 # (frontend/parser/gas_macro.s), and its rip addressing
