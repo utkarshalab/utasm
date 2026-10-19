@@ -69,6 +69,11 @@ only64:
 only_legacy:
     dw 1584, 1535, 1585, 1536, 1116, 1117, 1000, 1003, 1002, 1001, 1289
     dw 1050, 1034, 1358, 1354, 6536
+    ; Cyrix's system and SMM instructions (no Cyrix CPU has 64-bit mode):
+    ; bb0_reset bb1_reset cpu_read cpu_write dmint rdm rdshr rsdc rsldt
+    ; rsts smint smintold svdc svldt svts wrshr
+    dw 7554, 7003, 7012, 7013, 7014, 7555, 7159, 7169, 7170, 7171, 7556
+    dw 7175, 7176, 7177, 7178, 7488
     dw 0
 ; fixed one-byte instructions with an operand size: id, opcode, size
 ; (0 = the mode's default width)
@@ -896,7 +901,8 @@ amd64_imm_canon:
 [SECTION .rodata]
 ; the instructions with a sign-extended imm8 form: adc, add, and, cmp, imul,
 ; or, push, sbb, sub, xor
-imm_sb_ids:     dw 1004, 1006, 1028, 1075, 1276, 1442, 1583, 1628, 1676, 2157, 0
+global imm_sb_ids
+imm_sb_ids:     dw 1004,1006, 1028, 1075, 1276, 1442, 1583, 1628, 1676, 2157, 0
 s_imm_wvalue:   db "word value exceeds bounds", 0
 s_imm_dvalue:   db "dword value exceeds bounds", 0
 s_imm_sdvalue:  db "signed dword value exceeds bounds", 0
@@ -910,6 +916,7 @@ moffs64:        resb 1                  ; "mov rax, [qword x]": A1 with 64 bits
 ; at the value)
 global amd64_imm_sb
 amd64_imm_sb:   resb 1
+push_sym_short: resb 1              ; .push_sym: the 6A form, an 8-bit field
 [SECTION .text]
 
 ;*
@@ -1837,18 +1844,46 @@ amd64_mode_special:
     jmp     .done
 
 .push_sym:
+    ; "push byte x", or in pass 1 a value not worked out yet
+    ; (amd64_imm_guess): 6A with an 8-bit relocated field
+    cmp     byte [r14 + OPERAND_size], 8
+    je      .push_sym_byte
+    push    rdi
+    push    rsi
+    push    rdx
+    mov     rdi, r14
+    mov     rsi, [r14 + OPERAND_sym]
+    movzx   edx, byte [r14 + OPERAND_pcrel]
+    extern  amd64_imm_guess
+    call    amd64_imm_guess
+    pop     rdx
+    pop     rsi
+    pop     rdi
+    test    eax, eax
+    jnz     .push_sym_byte
     ; a label: 68 with a relocated field of the mode's width
+    mov     byte [rel push_sym_short], 0
     call    amd64_mode_default
     mov     r15d, eax
     mov     al, [r14 + OPERAND_size]
     test    al, al
     jz      .push_sym_width
     movzx   r15d, al
+    jmp     .push_sym_width
+.push_sym_byte:
+    call    amd64_mode_default             ; (the mode's width: 66 in bits 16 for none)
+    mov     r15d, eax
+    call    .osz
+    mov     al, 0x6A
+    call    amd64_emit_byte
+    mov     byte [rel push_sym_short], 1
+    jmp     .push_sym_named
 .push_sym_width:
     mov     eax, r15d
     call    .osz
     mov     al, 0x68
     call    amd64_emit_byte
+.push_sym_named:
     mov     rsi, [r14 + OPERAND_sym]
     test    rsi, rsi
     jz      .fail
@@ -1857,6 +1892,9 @@ amd64_mode_special:
     mov     rsi, [rsi + SYMBOL_name]
 .push_sym_name:
     xor     edx, edx
+    mov     al, 14                         ; R_X86_64_8
+    cmp     byte [rel push_sym_short], 0
+    jne     .push_sym_rel
     mov     al, R_X86_64_32
     cmp     r15d, 16
     jne     .push_sym_rel
@@ -1877,6 +1915,13 @@ amd64_mode_special:
     sub     rax, [rsi + SYMBOL_value]
 .push_sym_addend:
     mov     [rcx + RELOC_addend], rax
+    cmp     byte [rel push_sym_short], 0
+    je      .push_sym_field
+    mov     byte [rel push_sym_short], 0
+    xor     eax, eax
+    call    amd64_emit_byte
+    jmp     .done
+.push_sym_field:
     xor     edi, edi
     cmp     r15d, 16
     je      .push_imm16
