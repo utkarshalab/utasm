@@ -49,7 +49,9 @@ DEFAULT REL
 ;   .ident "TEXT"                 TEXT in .comment, as GNU's
 ;   .intel_syntax                 ptr, flat and offset as %use masm's
 ;                                 ("DWORD PTR x[rip]", "OFFSET FLAT:x")
-;   .file, .loc, .arch            taken, nothing done
+;   .file "NAME"                  the object's FILE symbol
+;   .file N ..., .loc N L ...     the line table (debug/line.s)
+;   .arch                         taken, nothing done
 ;   .att_syntax [noprefix]        AT&T syntax from here (frontend/parser/att.s)
 ;   .macro .endm .exitm .purgem .rept .irp .irpc .endr, .if & co, .else,
 ;   .elseif, .endif               frontend/parser/gas_macro.s
@@ -231,7 +233,7 @@ gas_table:
     gas_ent ".intel_syntax", G_INTEL, 0
     gas_ent ".ident", G_IDENT, 0
     gas_ent ".file", G_IGNORE, 1
-    gas_ent ".loc", G_IGNORE, 0
+    gas_ent ".loc", G_IGNORE, 2
     gas_ent ".arch", G_IGNORE, 0
     gas_ent ".att_syntax", G_ATT, 0
     gas_ent ".macro", G_MACRO, 0
@@ -291,6 +293,7 @@ gas_minus:      resb TOKEN_SIZE     ; a "-" in it, to put back
 alignb 8
 global gas_file_name
 gas_file_name:  resq 1              ; .file "NAME": the FILE symbol's name
+align_from:     resq 1              ; an alignment's start (debug/line.s)
 pend:           resq 1              ; the pending .type / .size / visibilities
 pend_n:         resq 1
 secstack:       resq SECSTACK_MAX   ; .pushsection's sections
@@ -412,14 +415,36 @@ gas_directive:
     mov     rdx, rax
     jmp     .done_rdx
 .not_gm:
+    ; .loc: a row of the line table (debug/line.s)
+    cmp     r14d, 2
+    jne     .not_loc
+    mov     rdi, rbx
+    extern  line_loc
+    call    line_loc
+    jmp     .line_done
+.not_loc:
     ; G_IGNORE: the rest of the line - .file "NAME" names the object's
-    ; FILE symbol, as GNU as (".file 1 ..." is DWARF's: taken, unused)
+    ; FILE symbol, as GNU as; ".file 1 ..." is the line table's
     cmp     r14d, 1
     jne     .ignored
     mov     rdi, rbx
     call    preprocessor_peek_token
     test    rax, rax
     jnz     .ignored
+    cmp     byte [rdx + TOKEN_kind], TOK_NUMBER
+    jne     .file_name
+    mov     rdi, rbx
+    extern  line_file
+    call    line_file
+.line_done:
+    test    rax, rax
+    jz      .ignored
+    push    rax
+    call    .skip_line
+    pop     rdx
+    mov     eax, 1
+    jmp     .ret
+.file_name:
     cmp     byte [rdx + TOKEN_kind], TOK_STRING
     jne     .ignored
     mov     rax, [rdx + TOKEN_value]
@@ -808,10 +833,35 @@ gas_directive:
     jmp     .fill_rep
 
 .leb:
-    ; numbers, each LEB128 (r14: 1 signed)
+    ; numbers, each LEB128 (r14: 1 signed). One that measures code ("b - a"
+    ; of labels jumps lie between, as GCC's -g writes them) comes from the
+    ; code laid out: the second pass has it (core/known.s), this one writes
+    ; a byte for it
 .leb_next:
-    call    .const
-    jnz     .err_rdx
+    extern  expr_late_diff, known_active, known_guessed
+    mov     byte [rel expr_late_diff], 1
+    mov     rdi, rbx
+    call    parser_evaluate_expression
+    mov     byte [rel expr_late_diff], 0
+    test    rax, rax
+    jnz     .leb_err
+    test    rcx, rcx
+    jnz     .leb_late
+    test    r11, r11
+    jz      .leb_value
+    cmp     word [r11 + SYMBOL_section], SHN_ABS
+    je      .leb_value
+.leb_not:
+    mov     eax, EXIT_NOT_SIMPLE
+.leb_err:
+    mov     rdx, rax
+    jmp     .err_rdx
+.leb_late:
+    cmp     byte [rel known_active], 0
+    jne     .leb_not                       ; (pass 2 has no value for it)
+    mov     byte [rel known_guessed], 1
+    xor     edx, edx
+.leb_value:
     mov     rax, rdx
 .leb_byte:
     mov     ecx, eax
@@ -851,6 +901,14 @@ gas_directive:
 
 .align:
     ; N[, FILL[, MAX]] (r14: 1 p2align, N the power of two)
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_curr_sec]
+    xor     ecx, ecx
+    test    rax, rax
+    jz      .align_at
+    mov     rcx, [rax + SECTION_size]
+.align_at:
+    mov     [rel align_from], rcx          ; where it starts
     call    .const
     jnz     .err_rdx
     mov     r13, rdx
@@ -914,7 +972,7 @@ gas_directive:
     lea     rdx, [r13 - 1]
     and     rcx, rdx                       ; the padding
     cmp     rcx, r14
-    ja      .done_ok
+    ja      .align_frag
 .align_do:
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, r13
@@ -953,6 +1011,16 @@ gas_directive:
 .align_listed:
     mov     edi, 2
     call    lst_mark
+.align_frag:
+    ; GNU as's frag ends where the padding starts (debug/line.s)
+    mov     rsi, [rel align_from]
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_curr_sec]
+    test    rax, rax
+    jz      .done_ok
+    mov     rdx, [rax + SECTION_size]
+    extern  line_frag
+    call    line_frag
     jmp     .done_ok
 .align_bad:
     mov     edx, EXIT_ALIGN_ERROR
