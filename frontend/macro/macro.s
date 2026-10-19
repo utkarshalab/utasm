@@ -101,6 +101,31 @@ global preprocessor_next_token
 global prep_internal_next
 global prep_handle_directive
 preprocessor_next_token:
+    ; The fast path: a token peeked is taken without a frame (r8 - r11 kept,
+    ; as the slow path's peek branch keeps them)
+    cmp     byte [rdi + PREP_has_peek], TRUE
+    jne     .slow
+    call    prep_token_slot                ; rdx = its slot
+    mov     byte [rdi + PREP_has_peek], FALSE
+    movdqu  xmm0, [rdi + PREP_peek]
+    movdqu  xmm1, [rdi + PREP_peek + 16]
+    movdqu  [rdx], xmm0
+    movdqu  [rdx + 16], xmm1
+    ; a token queued behind the one just taken moves up
+    cmp     byte [rel has_putback_next], TRUE
+    jne     .fast_taken
+    movdqu  xmm0, [rel putback_next]
+    movdqu  xmm1, [rel putback_next + 16]
+    movdqu  [rdi + PREP_peek], xmm0
+    movdqu  [rdi + PREP_peek + 16], xmm1
+    mov     byte [rdi + PREP_has_peek], TRUE
+    mov     byte [rel has_putback_next], FALSE
+.fast_taken:
+    xor     ecx, ecx
+    xor     eax, eax
+    jmp     prep_rec_note                  ; (an expression being recorded)
+
+.slow:
     push    rbp
     mov     rbp, rsp
     push    rbx
@@ -564,6 +589,12 @@ preprocessor_putback_token:
 ; ---- preprocessor_peek_token ------------
 global preprocessor_peek_token
 preprocessor_peek_token:
+    cmp     byte [rdi + PREP_has_peek], TRUE
+    jne     .slow
+    lea     rdx, [rdi + PREP_peek]         ; (peeked already)
+    xor     eax, eax
+    ret
+.slow:
     push    rbp
     mov     rbp, rsp
     push    rbx
@@ -4203,6 +4234,7 @@ str_nolist:   db ".nolist", 0
 msg_space:    db " ", 0
 ; "0".."9" for the %N references of a function-like %define
 def_digits:   db "0", 0, "1", 0, "2", 0, "3", 0, "4", 0, "5", 0, "6", 0, "7", 0, "8", 0, "9", 0
+global undef_name                   ; (symbol_grow leaves these out)
 undef_name:   db 0                  ; the name of an %undef'd entry
 dir_if:     db "if", 0
 dir_ifdef:  db "ifdef", 0
