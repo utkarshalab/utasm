@@ -667,6 +667,8 @@ code_table:
     code_msg EXIT_KNOWN_RERUN,       m_known_rerun
     code_msg EXIT_CPU_LEVEL,         m_cpu_level
     code_msg EXIT_CPU_UNKNOWN,       m_cpu_unknown, t_cpu_unknown
+    code_msg EXIT_BITS32_CPU,        m_bits32_cpu
+    code_msg EXIT_BITS64_CPU,        m_bits64_cpu
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -886,6 +888,8 @@ m_known_rerun:  db "the second pass could not be started (running /proc/self/exe
 m_cpu_level:    db "no instruction for this cpu level", 0
 m_cpu_unknown:  db "unknown CPU type or flag", 0
 t_cpu_unknown:  db "unknown CPU type or flag '^'", 0
+m_bits32_cpu:   db "cannot specify 32-bit segment on processor below a 386", 0
+m_bits64_cpu:   db "cannot specify 64-bit segment on processor below an x86-64", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
 t_multi:        db "symbol `^' defined more than once", 0
