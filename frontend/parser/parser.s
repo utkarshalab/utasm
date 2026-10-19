@@ -1798,7 +1798,41 @@ parser_evaluate_additive:
         cmp     eax, 2
         je      .offset_undef
         pop     rdi
-        jmp     .not_offset                ; both defined: a number now
+        ; both defined: a number now - but in GNU's syntax "b - a" of code
+        ; in data (or a LEB128) is worked out as GNU as does, once the jumps
+        ; are relaxed: a distance too, so nothing keeps its size for it
+        ; (GCC's -g: ".quad .LFE1-.LFB1", ".uleb128 .LVL3-.LVL2")
+        cmp     byte [rel gas_names], 0
+        je      .not_offset
+        cmp     byte [rel expr_deferring], 0
+        jne     .not_offset                ; (one kept, being worked out)
+        mov     al, [rel expr_in_data]
+        or      al, [rel expr_late_diff]
+        jz      .not_offset
+        test    r15, r15
+        jz      .not_offset
+        test    r11, r11
+        jz      .not_offset
+        cmp     byte [r15 + SYMBOL_kind], SYM_LABEL
+        jne     .not_offset
+        cmp     byte [r11 + SYMBOL_kind], SYM_LABEL
+        jne     .not_offset
+        movzx   eax, word [r15 + SYMBOL_section]
+        cmp     ax, [r11 + SYMBOL_section]
+        jne     .not_offset
+        test    eax, eax
+        jz      .not_offset
+        cmp     eax, 0xFF00
+        jae     .not_offset
+        mov     rdx, [rbx + PREP_ctx]
+        movzx   r8d, word [rdx + ASMCTX_seccount]
+        cmp     eax, r8d
+        ja      .not_offset
+        mov     rdx, [rdx + ASMCTX_sections]
+        mov     rdx, [rdx + rax*8 - 8]     ; the index is 1-based
+        test    word [rdx + SECTION_flags], SHF_EXECINSTR
+        jz      .not_offset
+        jmp     .offset_names
 .offset_undef:
         pop     rdi
 .offset_names:
@@ -7812,6 +7846,7 @@ parser_define_label:
         mov     [rsi + SYMBOL_value], rcx
         movzx   ecx, word [rax + SECTION_index]
         mov     [rsi + SYMBOL_section], cx
+        call    .after_pad
         ENDIF
     ; in an "absolute" block (or a FASM virtual one) a label is a plain
     ; number
@@ -7832,11 +7867,34 @@ parser_define_label:
     call    symbol_add
     check_err_to .error
     mov     [rbx + ASMCTX_last_symbol], rdx    ; Store for potential equ override
-    
+
     add     rsp, SYMBOL_SIZE
     pop     rsi
     pop     rbx
     epilogue
+
+; .after_pad: the label rsi (at the end of section rax) follows padding
+; that was empty when read - an align, a times K-($-$$) just before it -
+; and so stays after it as it grows (a label before one stays before it).
+; Keeps all but the flags
+.after_pad:
+    push    rax
+    push    rdi
+    push    rsi
+    push    rcx
+    mov     rdi, rax
+    mov     rsi, [rax + SECTION_size]
+    extern  relax_after_pad
+    call    relax_after_pad
+    pop     rcx
+    pop     rsi
+    pop     rdi
+    test    eax, eax
+    jz      .after_pad_no
+    or      byte [rsi + SYMBOL_lflags], SYML_AFTER_PAD
+.after_pad_no:
+    pop     rax
+    ret
 
 .define_existing:
     mov     byte [rdx + SYMBOL_kind], SYM_LABEL
@@ -7855,6 +7913,10 @@ parser_define_label:
         mov     [rdx + SYMBOL_value], rcx
         movzx   ecx, word [rax + SECTION_index]
         mov     [rdx + SYMBOL_section], cx
+        push    rsi
+        mov     rsi, rdx
+        call    .after_pad
+        pop     rsi
         ENDIF
     test    rax, rax
     jz      .not_abs_old
@@ -8833,6 +8895,14 @@ parser_data_string:
     mov     eax, EXIT_INVALID_EXPR
     jmp     .ret
 .string:
+    ; GNU's syntax: "name" in .byte / .long / .quad is a symbol's name, as
+    ; GNU as reads it (GCC 16's -masm=intel quotes them: .quad "jb",
+    ; .long "x"@dtpoff) - .ascii and the like are its strings
+    cmp     byte [rel gas_names], 0
+    je      .string_bytes
+    cmp     byte [r12 + TOKEN_quote], '"'
+    je      .not
+.string_bytes:
     mov     r14, [r12 + TOKEN_value]
     movzx   r13d, word [r12 + TOKEN_len]
     test    byte [r12 + TOKEN_flags], TOK_FLAG_COUNTED
@@ -9757,6 +9827,8 @@ expr_level:    dd 0                ; parser_evaluate_expression's nesting
 expr_lost:     db 0                ; a label not defined yet went into arithmetic
 expr_pp:       db 0                ; in a preprocessor expression (parser_evaluate_pp)
 expr_deferring: db 0               ; parser_deferred_value is working one out
+global expr_late_diff
+expr_late_diff: db 0               ; a GNU LEB128: "b - a" of code worked out late
 ds_utf_cap:    dq DS_UTF_SIZE
 global asm_bits
 asm_bits:       db 64               ; bits 16 / 32 / 64
