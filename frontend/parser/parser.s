@@ -949,6 +949,7 @@ parser_parse_operand:
     mov     r12, rdx
     mov     byte [r12 + OPERAND_tag], TAG_OPERAND
     mov     byte [rel opnd_to], 0
+    mov     byte [rel opnd_wrap], 0
     mov     byte [rel masm_no_var], 0
 
 .fetch_operand_token:
@@ -1087,6 +1088,26 @@ parser_parse_operand:
 
     ; 1. Memory Operands [base + index*scale + disp]
     IF al, e, TOK_LBRACKET
+        ; GNU's Intel syntax: "call [QWORD PTR 80[rax]]" (GCC's indirect
+        ; call) - the sized operand inside, its bracket closed after it
+        extern  att_on, gas_names
+        cmp     byte [rel gas_names], 0
+        je      .not_wrapped
+        cmp     byte [rel att_on], 0
+        jne     .not_wrapped
+        cmp     byte [rel opnd_wrap], 0
+        jne     .not_wrapped
+        mov     rdi, rbx
+        call    preprocessor_peek_token
+        cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+        jne     .not_wrapped
+        mov     rdi, [rdx + TOKEN_value]
+        call    parser_parse_size_specifier_string
+        test    rax, rax
+        jz      .not_wrapped
+        mov     byte [rel opnd_wrap], 1
+        jmp     .fetch_operand_token
+.not_wrapped:
         call    parser_parse_mem_operand
         check_err
         call    parser_masm_field          ; ("[rbx].POINT.y", %use masm)
@@ -1542,6 +1563,17 @@ parser_parse_operand:
     ja      .no_to
     mov     byte [r12 + OPERAND_is_high], 2
 .no_to:
+    ; "[QWORD PTR x]": the wrapping bracket's close
+    cmp     byte [rel opnd_wrap], 0
+    je      .unwrapped
+    mov     byte [rel opnd_wrap], 0
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    check_err
+    mov     rax, EXIT_INVALID_EXPR
+    cmp     byte [rdx + TOKEN_kind], TOK_RBRACKET
+    jne     .error
+.unwrapped:
     mov     rdx, r12
     mov     rax, OK
     pop     r13
@@ -6092,6 +6124,9 @@ parser_sizes:
     mov     [rdx + SYMBOL_size], rcx
     jmp     .s_next
 .s_done:
+    ; GNU's aliases (".set f.localalias, f"): their labels' types and sizes
+    extern  gas_alias_finish
+    call    gas_alias_finish
     ; GNU's syntax and a GOT or TLS relocation: _GLOBAL_OFFSET_TABLE_, as
     ; GNU as has it (undefined, global)
     extern  gas_got_wanted
@@ -7873,10 +7908,10 @@ parser_define_label:
     pop     rbx
     epilogue
 
-; .after_pad: the label rsi (at the end of section rax) follows padding
-; that was empty when read - an align, a times K-($-$$) just before it -
-; and so stays after it as it grows (a label before one stays before it).
-; Keeps all but the flags
+; .after_pad: the label rsi (at the end of section rax): its padding rank -
+; the paddings empty when read just before it (an align, a times
+; K-($-$$)), which it stays after as they grow; one noted after it stays
+; after it. Keeps all but the flags
 .after_pad:
     push    rax
     push    rdi
@@ -7884,15 +7919,12 @@ parser_define_label:
     push    rcx
     mov     rdi, rax
     mov     rsi, [rax + SECTION_size]
-    extern  relax_after_pad
-    call    relax_after_pad
+    extern  relax_pad_rank
+    call    relax_pad_rank
     pop     rcx
     pop     rsi
     pop     rdi
-    test    eax, eax
-    jz      .after_pad_no
-    or      byte [rsi + SYMBOL_lflags], SYML_AFTER_PAD
-.after_pad_no:
+    mov     [rsi + SYMBOL_lflags], al
     pop     rax
     ret
 
@@ -9720,6 +9752,7 @@ float_fn_val:  resq 1
 ds_utf:        resb DS_UTF_SIZE    ; __utf16__ / __utf32__ text
 far_colon:     resb 1              ; a far pointer's colon came with its segment
 opnd_to:       resb 1              ; "to" before this operand's st register
+opnd_wrap:     resb 1              ; "[QWORD PTR x]": a bracket around the sized operand (GNU's Intel syntax)
 alignb 8
 inst_ring:     resb INST_RING * INST_SIZE   ; parser_parse_instruction's INSTs
 opnd_ring:     resb OPERAND_RING * OPERAND_SIZE ; parser_parse_operand's
