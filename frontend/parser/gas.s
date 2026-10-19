@@ -125,6 +125,7 @@ extern  gas_repeat, gas_if, gas_else, gas_endif
 %define PEND_TYPE    1
 %define PEND_SIZE    2
 %define PEND_VIS     3
+%define PEND_ALIAS   4          ; value: the label's name (gas_alias_finish)
 %define PEND_CAP     (1 << 16)
 %define SECSTACK_MAX 64
 
@@ -207,6 +208,7 @@ gas_table:
     gas_ent ".ascii", G_ASCII, 0
     gas_ent ".asciz", G_ASCII, 1
     gas_ent ".string", G_ASCII, 1
+    gas_ent ".base64", G_ASCII, 2
     gas_ent ".zero", G_SPACE, 0
     gas_ent ".skip", G_SPACE, 0
     gas_ent ".space", G_SPACE, 0
@@ -294,6 +296,9 @@ alignb 8
 global gas_file_name
 gas_file_name:  resq 1              ; .file "NAME": the FILE symbol's name
 align_from:     resq 1              ; an alignment's start (debug/line.s)
+LCOMM_MAX equ 65536
+lcomm_tab:      resb 32 * LCOMM_MAX ; the .lcomm blocks: name, size, align,
+lcomm_n:        resq 1              ; section (lcomm_place)
 pend:           resq 1              ; the pending .type / .size / visibilities
 pend_n:         resq 1
 secstack:       resq SECSTACK_MAX   ; .pushsection's sections
@@ -357,6 +362,8 @@ gas_directive:
 .is_gas:
     movzx   eax, byte [r13 + 16]
     mov     r14, [r13 + 17]                ; its argument
+    call    .last_data
+    movzx   eax, byte [r13 + 16]
     cmp     eax, G_RENAME
     je      .rename
     cmp     eax, G_SECNAME
@@ -720,6 +727,8 @@ gas_directive:
     jnz     .ascii_len
     mov     r13, -1                        ; (to its NUL)
 .ascii_len:
+    cmp     r14, 2
+    je      .base64
     cmp     byte [r15 + TOKEN_quote], '"'
     jne     .ascii_raw
     call    .emit_escaped
@@ -751,6 +760,68 @@ gas_directive:
     call    .comma
     jz      .ascii_next
     jmp     .done_ok
+
+.base64:
+    ; GNU's .base64 "...": the bytes its base64 text stands for, "=" at the
+    ; end padding it, as GNU as decodes them (GCC 16 writes long strings so)
+    xor     eax, eax                       ; the bits read
+    xor     ecx, ecx                       ; how many
+.b64_char:
+    test    r13, r13
+    jz      .ascii_comma
+    movzx   edx, byte [rsi]
+    cmp     r13, -1
+    je      .b64_nul
+    dec     r13
+    jmp     .b64_have
+.b64_nul:
+    test    edx, edx
+    jz      .ascii_comma
+.b64_have:
+    inc     rsi
+    cmp     edx, '='
+    je      .ascii_comma
+    lea     r8d, [rdx - 'A']
+    cmp     r8d, 25
+    jbe     .b64_value
+    lea     r8d, [rdx - 'a']
+    cmp     r8d, 25
+    ja      .b64_digit
+    add     r8d, 26
+    jmp     .b64_value
+.b64_digit:
+    lea     r8d, [rdx - '0']
+    cmp     r8d, 9
+    ja      .b64_sign
+    add     r8d, 52
+    jmp     .b64_value
+.b64_sign:
+    mov     r8d, 62
+    cmp     edx, '+'
+    je      .b64_value
+    mov     r8d, 63
+    cmp     edx, '/'
+    jne     .b64_bad
+.b64_value:
+    shl     eax, 6
+    or      eax, r8d
+    add     ecx, 6
+    cmp     ecx, 8
+    jb      .b64_char
+    sub     ecx, 8
+    push    rsi
+    mov     esi, eax
+    shr     esi, cl                        ; the byte the top 8 bits make
+    call    .emit
+    pop     rsi
+    mov     edx, 1
+    shl     edx, cl
+    dec     edx
+    and     eax, edx                       ; the bits left
+    jmp     .b64_char
+.b64_bad:
+    mov     edx, EXIT_GAS_BASE64
+    jmp     .err_rdx
 
 .space:
     ; N[, FILL]
@@ -1004,6 +1075,13 @@ gas_directive:
     shl     ecx, 10
     or      rax, rcx                       ; MAX + 1 in bits 10-15
 .align_spec:
+    ; after data, not an instruction: a plain nop first
+    mov     rcx, [rbx + PREP_ctx]
+    mov     rcx, [rcx + ASMCTX_curr_sec]
+    cmp     byte [rcx + SECTION_gas_last], 0
+    je      .align_lead_done
+    or      rax, 1
+.align_lead_done:
     mov     rdx, rax
     mov     rdi, [rbx + PREP_ctx]
     mov     rsi, r13
@@ -1057,11 +1135,55 @@ gas_directive:
     mov     [r15 + SYMBOL_value], rdx
     jmp     .done_ok
 .equ_new:
+    ; the value written as a name: ".set f.localalias, f" (GCC's) is f's
+    ; alias - it moves with f's code (its padding rank) and takes its type
+    ; and size (GNU as's copy_symbol_attributes; gas_alias_finish)
+    xor     r15d, r15d
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .equ_set
+    mov     rsi, [rdx + TOKEN_value]
+    call    parser_gas_name
+    mov     r15, rsi
+.equ_set:
     mov     rsi, r13
     call    parser_gas_equ
     test    rax, rax
     jnz     .err
+    test    r15, r15
+    jz      .done_ok
+    call    .alias
     jmp     .done_ok
+
+; .alias: r13 = the name .set / .equ defined, r15 = the name its value
+; was written as: a label of the same section, its alias
+.alias:
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, r15
+    call    symbol_find
+    test    rax, rax
+    jnz     .alias_ret
+    cmp     byte [rdx + SYMBOL_kind], SYM_LABEL
+    jne     .alias_ret
+    push    rdx
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, r13
+    call    symbol_find
+    pop     rcx                            ; the label
+    test    rax, rax
+    jnz     .alias_ret
+    movzx   eax, word [rcx + SYMBOL_section]
+    cmp     ax, [rdx + SYMBOL_section]
+    jne     .alias_ret
+    mov     al, [rcx + SYMBOL_lflags]
+    mov     [rdx + SYMBOL_lflags], al
+    mov     edi, PEND_ALIAS
+    mov     rsi, r13
+    mov     rdx, r15
+    call    .pend_add
+.alias_ret:
+    ret
 .equ_twice:
     mov     rdi, r13
     call    error_set_subject
@@ -1220,29 +1342,26 @@ gas_directive:
     call    parser_handle_section_directive
     test    rax, rax
     jnz     .lcomm_back
-    cmp     r15, 1
-    jbe     .lcomm_label
-    mov     rdi, [rbx + PREP_ctx]
-    mov     rsi, r15
-    xor     edx, edx
-    call    asm_ctx_align
-.lcomm_label:
-    mov     rsi, r13
-    call    parser_define_label
-    test    rax, rax
-    jnz     .lcomm_back
+    ; GNU as puts it after what is written into .bss (its subsection 1:
+    ; bss_alloc), "x: .zero 8" there later or not: noted, and placed once
+    ; the source is read (gas_finish)
+    mov     rax, [rel lcomm_n]
+    cmp     rax, LCOMM_MAX
+    jae     .lcomm_full
+    shl     rax, 5
+    lea     rcx, [rel lcomm_tab]
+    add     rcx, rax
+    mov     [rcx], r13
+    mov     [rcx + 8], r14
+    mov     [rcx + 16], r15
     mov     rax, [rbx + PREP_ctx]
     mov     rax, [rax + ASMCTX_curr_sec]
-    add     [rax + SECTION_size], r14
-    mov     rdi, [rbx + PREP_ctx]
-    mov     rsi, r13
-    call    symbol_find
-    test    rax, rax
-    jnz     .lcomm_typed
-    mov     byte [rdx + SYMBOL_etype], ETYPE_OBJECT
-    mov     [rdx + SYMBOL_size], r14
-.lcomm_typed:
+    mov     [rcx + 24], rax
+    inc     qword [rel lcomm_n]
     xor     eax, eax
+    jmp     .lcomm_back
+.lcomm_full:
+    mov     eax, EXIT_SYMBOL_RANGE
 .lcomm_back:
     pop     qword [rel sec_previous]
     pop     rcx
@@ -1444,6 +1563,46 @@ gas_directive:
     pop     r13
     pop     r12
     pop     rbx
+    ret
+
+; .last_data: data in a code section (eax = the kind, r14 its argument):
+; GNU as notes the last statement was no instruction (md_cons_align,
+; tc-i386's last_insn) - an alignment then pads with a plain nop first
+; (the alignment's frag takes it: frag_var, TC_FRAG_INIT)
+.last_data:
+    mov     rcx, [rbx + PREP_ctx]
+    mov     rcx, [rcx + ASMCTX_curr_sec]
+    test    rcx, rcx
+    jz      .ld_ret
+    test    word [rcx + SECTION_flags], SHF_EXECINSTR
+    jz      .ld_ret
+    cmp     eax, G_SPACE
+    je      .ld_data
+    cmp     eax, G_FILL
+    je      .ld_data
+    cmp     eax, G_ASCII
+    je      .ld_data
+    cmp     eax, G_LEB
+    je      .ld_data
+    cmp     eax, G_OCTA
+    je      .ld_data
+    cmp     eax, G_RENAME
+    jne     .ld_ret
+    lea     rdx, [rel s_db]
+    cmp     r14, rdx
+    je      .ld_data
+    lea     rdx, [rel s_dw]
+    cmp     r14, rdx
+    je      .ld_data
+    lea     rdx, [rel s_dd]
+    cmp     r14, rdx
+    je      .ld_data
+    lea     rdx, [rel s_dq]
+    cmp     r14, rdx
+    jne     .ld_ret
+.ld_data:
+    mov     byte [rcx + SECTION_gas_last], 1
+.ld_ret:
     ret
 
 ; .emit: the byte sil into the section.Preserves rsi (and the callee-saved).
@@ -1863,6 +2022,81 @@ gas_assign:
     pop     rbx
     ret
 
+;*
+; * [gas_insn_done]
+; * Purpose: GNU's syntax: an instruction was written - the last statement
+; *          was one (tc-i386's last_insn).
+; ;
+global gas_insn_done
+gas_insn_done:
+    lea     rax, [rel global_ctx]
+    mov     rax, [rax + ASMCTX_curr_sec]
+    test    rax, rax
+    jz      .ret
+    mov     byte [rax + SECTION_gas_last], 0
+.ret:
+    ret
+
+; ---- lcomm_place (internal) -------------
+; The .lcomm (.local + .comm) blocks, in the order they came, after what
+; the source wrote into .bss: aligned, the label at the start (a data
+; object of its size), as GNU as lays its subsection 1 out after the
+; first. Preserves rbx, r12-r15.
+lcomm_place:
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    lea     r15, [rel global_ctx]
+    push    qword [r15 + ASMCTX_curr_sec]
+    sub     rsp, 8
+    xor     r12d, r12d
+.block:
+    cmp     r12, [rel lcomm_n]
+    jae     .placed
+    mov     r13, r12
+    shl     r13, 5
+    lea     rax, [rel lcomm_tab]
+    add     r13, rax
+    inc     r12
+    mov     rax, [r13 + 24]
+    mov     [r15 + ASMCTX_curr_sec], rax
+    cmp     qword [r13 + 16], 1
+    jbe     .label
+    mov     rdi, r15
+    mov     rsi, [r13 + 16]
+    xor     edx, edx
+    call    asm_ctx_align
+.label:
+    extern  global_prep
+    lea     rbx, [rel global_prep]
+    mov     rsi, [r13]
+    call    parser_define_label
+    test    rax, rax
+    jnz     .block                         ; (defined already: reported)
+    mov     rax, [r15 + ASMCTX_curr_sec]
+    mov     rcx, [r13 + 8]
+    add     [rax + SECTION_size], rcx
+    mov     rdi, r15
+    mov     rsi, [r13]
+    call    symbol_find
+    test    rax, rax
+    jnz     .block
+    mov     byte [rdx + SYMBOL_etype], ETYPE_OBJECT
+    mov     rcx, [r13 + 8]
+    mov     [rdx + SYMBOL_size], rcx
+    jmp     .block
+.placed:
+    add     rsp, 8
+    pop     qword [r15 + ASMCTX_curr_sec]
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    ret
+
 ; ---- gas_finish ---------------------------
 ;
 ; gas_finish
@@ -1874,6 +2108,7 @@ global gas_finish
 gas_finish:
     push    rbx
     push    r12
+    call    lcomm_place
     xor     r12d, r12d
 .next:
     cmp     r12, [rel pend_n]
@@ -1881,6 +2116,8 @@ gas_finish:
     imul    rbx, r12, 24
     add     rbx, [rel pend]
     inc     r12
+    cmp     qword [rbx], PEND_ALIAS
+    je      .next                          ; (once sizes are known)
     lea     rdi, [rel global_ctx]
     mov     rsi, [rbx + 8]
     call    symbol_find
@@ -1900,6 +2137,53 @@ gas_finish:
     mov     [rdx + SYMBOL_eother], al
     jmp     .next
 .done:
+    pop     r12
+    pop     rbx
+    ret
+
+; ---- gas_alias_finish -------------------------------------------------
+;
+; gas_alias_finish: an alias (".set f.localalias, f") takes its label's
+; type and size, unless it has its own - once the sizes are worked out
+; (parser_sizes, after jumps are sized). Preserves rbx, r12-r15.
+;
+global gas_alias_finish
+gas_alias_finish:
+    push    rbx
+    push    r12
+    push    r13
+    xor     r12d, r12d
+.a_next:
+    cmp     r12, [rel pend_n]
+    jae     .a_done
+    imul    rbx, r12, 24
+    add     rbx, [rel pend]
+    inc     r12
+    cmp     qword [rbx], PEND_ALIAS
+    jne     .a_next
+    lea     rdi, [rel global_ctx]
+    mov     rsi, [rbx + 16]
+    call    symbol_find
+    test    rax, rax
+    jnz     .a_next
+    mov     r13, rdx                       ; the label
+    lea     rdi, [rel global_ctx]
+    mov     rsi, [rbx + 8]
+    call    symbol_find
+    test    rax, rax
+    jnz     .a_next
+    cmp     byte [rdx + SYMBOL_etype], 0
+    jne     .a_size
+    mov     al, [r13 + SYMBOL_etype]
+    mov     [rdx + SYMBOL_etype], al
+.a_size:
+    cmp     qword [rdx + SYMBOL_size], 0
+    jne     .a_next
+    mov     rax, [r13 + SYMBOL_size]
+    mov     [rdx + SYMBOL_size], rax
+    jmp     .a_next
+.a_done:
+    pop     r13
     pop     r12
     pop     rbx
     ret
