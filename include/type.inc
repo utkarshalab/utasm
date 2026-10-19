@@ -112,7 +112,8 @@ struc SYMBOL
     field eother,   1       ; ELF visibility: default, internal, hidden,
                             ; protected
     field pflags,   1       ; SYMF_*: how the preprocessor made it
-    field pad0,     2       ; alignment padding
+    field lflags,   1       ; SYML_*: a label's place
+    field pad0,     1       ; alignment padding
     field name,     8       ; pointer to name string
     field value,    8       ; address or constant value
     field size,     8       ; size in bytes
