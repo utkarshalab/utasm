@@ -971,6 +971,10 @@ def tuple_n8(tup, L, wide, b16, msz):
             "m128": 16, "dup": 8 if L == 0 else vl, "t1s": msz or elem, "t1s8": 1, "t1s16": 2,
             "t1f32": 4, "t1f64": 8, "t2": 2 * elem, "t4": 4 * elem, "t8": 8 * elem}.get(tup)
 
+CYRIX_NOLONG = {"bb0_reset", "bb1_reset", "cpu_read", "cpu_write", "dmint", "rdm",
+                "rdshr", "rsdc", "rsldt", "rsts", "smint", "smintold", "svdc",
+                "svldt", "svts", "wrshr"}
+
 def nasm_form(name, ops, enc, flags=()):
     """The forms (form() argument tuples) of one insns.dat line; [] when
     this encoder cannot express it."""
@@ -1050,7 +1054,9 @@ def nasm_form(name, ops, enc, flags=()):
     if not codes:
         return []
     if encn == ENC_LEGACY:
-        if codes[0] == 0x0F and len(codes) > 1 and codes[1] in (0x38, 0x3A):
+        # 0f 38 / 0f 3a escape to the three-byte maps - with an opcode after
+        # them: SMINT is 0f 38 alone, an opcode of the 0f map
+        if codes[0] == 0x0F and len(codes) > 2 and codes[1] in (0x38, 0x3A):
             mp, rest = {0x38: "38", 0x3A: "3a"}[codes[1]], codes[2:]
         elif codes[0] == 0x0F:
             mp, rest = "0f", codes[1:]
@@ -1135,9 +1141,14 @@ def nasm_form(name, ops, enc, flags=()):
     xo = 0                                       # the mode needs (FM_FIXIMM)
     if osz in ("o16", "o32") and not fl & F_OSZ:
         xo = 1 if osz == "o16" else 2            # 66 by the mode, not always
-    if encn != ENC_LEGACY and (asz or mustrep or "NOLONG" in flags):
+    # not in 64-bit mode: NOLONG, and Cyrix's system and SMM instructions -
+    # no Cyrix CPU has it, and there their opcodes are others' (0f 38 the
+    # three-byte map's escape, 0f 78 vmread). NASM 3 rejects them; VIA's
+    # PadLock and the Cyrix MMX forms (CYRIX too) stay.
+    nolong = "NOLONG" in flags or name.lower() in CYRIX_NOLONG
+    if encn != ENC_LEGACY and (asz or mustrep or nolong):
         return []
-    xo |= asz << 2 | ("NOLONG" in flags) << 4 | ("LONG" in flags) << 5 | mustrep << 6
+    xo |= asz << 2 | nolong << 4 | ("LONG" in flags) << 5 | mustrep << 6
     if xo and fiximm is not None:
         return []                                # (the byte holds one of them)
     # EVEX: broadcast element size and the disp8*N scale
