@@ -2077,6 +2077,9 @@ amd64_encode_instruction:
 .osize:
     call    amd64_obsolete                 ; (the instruction is encoded)
     call    amd64_gas_got
+    call    amd64_cpu_forms
+    test    eax, eax
+    jnz     .done
     ; o16 / o32 / o64: the operation size's prefix (mode.s)
     cmp     byte [r12 + INST_osize], 0
     je      .done
@@ -2113,6 +2116,226 @@ amd64_encode_instruction:
     jnz     .count_ret
     call    amd64_encode_branch_short
 .count_ret:
+    ret
+
+;*
+; * [amd64_cpu_forms]
+; * Purpose: Under "cpu 8086" / 186 / 286 (cpu_num), NASM's levels of an
+; *   instruction's forms (the parser checked its mnemonic's lowest): a
+; *   form of 32-bit operands is 386 - a 32- or 64-bit general register,
+; *   in 16-bit code a 66 prefix, in 32-bit code push / pop of memory or
+; *   an immediate not of a word (the address size counts for nothing, as
+; *   in NASM); and under 8086, push of an immediate, imul with one
+; *   and a shift or rotate by a count other than 1 are 186.
+; * Input : R12 = INST, RBX = AsmCtx (the instruction just encoded)
+; * Output: EAX = 0, or EXIT_CPU_LEVEL. Preserves rbx, r12, r13.
+; ;
+amd64_cpu_forms:
+    movzx   ecx, byte [rel cpu_num]
+    test    ecx, ecx
+    jz      .cf_ok
+    cmp     ecx, 4
+    jae     .cf_ok                         ; 386 on: every such form there
+    ; a 32- or 64-bit general register
+    movzx   r8d, byte [r12 + INST_nops]
+    xor     edx, edx
+.cf_op:
+    cmp     edx, r8d
+    jae     .cf_regs_done
+    imul    eax, edx, OPERAND_SIZE
+    lea     rsi, [r12 + INST_op0 + rax]
+    inc     edx
+    cmp     byte [rsi + OPERAND_kind], OP_REG
+    jne     .cf_op
+    cmp     byte [rsi + OPERAND_reg], 16
+    jae     .cf_op                         ; (not a general one)
+    cmp     byte [rsi + OPERAND_size], 32
+    jae     .cf_level
+    jmp     .cf_op
+.cf_regs_done:
+    movzx   eax, word [r12 + INST_op_id]
+    cmp     byte [rel asm_bits], 16
+    jne     .cf_wide
+    ; 16-bit code: a 66 / 67 among its prefixes
+    mov     r9, [rbx + ASMCTX_curr_sec]
+    test    r9, r9
+    jz      .cf_186
+    mov     rsi, [r9 + SECTION_data]
+    test    rsi, rsi
+    jz      .cf_186
+    mov     rdi, [r9 + SECTION_size]
+    mov     r10d, [rbx + ASMCTX_inst_len]
+    mov     r11, rdi
+    sub     r11, r10                       ; its first byte
+.cf_pfx:
+    cmp     r11, rdi
+    jae     .cf_186
+    movzx   r10d, byte [rsi + r11]
+    inc     r11
+    cmp     r10d, 0x66
+    je      .cf_level
+    cmp     r10d, 0x67
+    je      .cf_pfx                        ; (the address size: NASM's level
+                                           ; leaves it out)
+    cmp     r10d, 0xF0
+    je      .cf_pfx
+    cmp     r10d, 0xF2
+    je      .cf_pfx
+    cmp     r10d, 0xF3
+    je      .cf_pfx
+    cmp     r10d, 0x2E
+    je      .cf_pfx
+    cmp     r10d, 0x3E
+    je      .cf_pfx
+    cmp     r10d, 0x26
+    je      .cf_pfx
+    cmp     r10d, 0x36
+    je      .cf_pfx
+    cmp     r10d, 0x64
+    je      .cf_pfx
+    cmp     r10d, 0x65
+    je      .cf_pfx
+    jmp     .cf_186
+.cf_wide:
+    ; 32-bit code: a 32-bit (or wider) memory operand is a 386 form - but
+    ; x87's (D8-DF: fld dword is the 8087's)
+    xor     edx, edx
+.cf_mem:
+    cmp     edx, r8d
+    jae     .cf_mem_done
+    imul    r9d, edx, OPERAND_SIZE
+    lea     rsi, [r12 + INST_op0 + r9]
+    inc     edx
+    cmp     byte [rsi + OPERAND_kind], OP_MEM
+    jne     .cf_mem
+    ; jmp / call far [m]: m16:32 (word: m16:16, 8086's)
+    test    byte [rsi + OPERAND_flags], OP_FLAG_FAR
+    jz      .cf_mem_size
+    cmp     byte [rsi + OPERAND_size], 16
+    jne     .cf_level
+    jmp     .cf_mem
+.cf_mem_size:
+    cmp     byte [rsi + OPERAND_size], 32
+    jb      .cf_mem
+    call    .cf_opcode
+    sub     r10d, 0xD8
+    cmp     r10d, 7
+    jbe     .cf_mem_done
+    jmp     .cf_level
+.cf_mem_done:
+    movzx   eax, word [r12 + INST_op_id]
+    ; push / pop of memory or an immediate is 32-bit
+    cmp     eax, 1583                      ; PUSH
+    je      .cf_stack
+    cmp     eax, 1534                      ; POP
+    jne     .cf_186
+.cf_stack:
+    cmp     byte [r12 + INST_nops], 1
+    jne     .cf_186
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_REG
+    je      .cf_186
+    cmp     byte [r12 + INST_op0 + OPERAND_size], 16
+    jne     .cf_level                      ; (push word [eax]: 8086's)
+.cf_186:
+    cmp     ecx, 2
+    jae     .cf_ok
+    ; 8086: the 186's forms
+    cmp     eax, 1583                      ; push imm
+    jne     .cf_not_push
+    movzx   edx, byte [r12 + INST_op0 + OPERAND_kind]
+    cmp     edx, OP_IMM
+    je      .cf_level
+    cmp     edx, OP_SYMBOL
+    je      .cf_level
+    jmp     .cf_ok
+.cf_not_push:
+    cmp     eax, 1276                      ; imul r, r/m, imm / imul r, imm
+    jne     .cf_not_imul
+    cmp     byte [r12 + INST_nops], 2
+    jb      .cf_ok
+    movzx   edx, byte [r12 + INST_nops]
+    dec     edx
+    imul    edx, edx, OPERAND_SIZE
+    movzx   edx, byte [r12 + INST_op0 + rdx + OPERAND_kind]
+    cmp     edx, OP_IMM
+    je      .cf_level
+    cmp     edx, OP_SYMBOL
+    je      .cf_level
+    jmp     .cf_ok
+.cf_not_imul:
+    lea     rsi, [rel cf_shift_ids]
+.cf_shift:
+    movzx   edx, word [rsi]
+    test    edx, edx
+    jz      .cf_ok
+    add     rsi, 2
+    cmp     edx, eax
+    jne     .cf_shift
+    cmp     byte [r12 + INST_nops], 2
+    jne     .cf_ok
+    cmp     byte [r12 + INST_op1 + OPERAND_kind], OP_IMM
+    jne     .cf_ok
+    cmp     qword [r12 + INST_op1 + OPERAND_imm], 1
+    jne     .cf_level
+.cf_ok:
+    xor     eax, eax
+    ret
+.cf_level:
+    mov     eax, EXIT_CPU_LEVEL
+    ret
+; .cf_opcode: r10d = the instruction's first byte past its prefixes (0
+; when there are no bytes). Preserves rax, rcx, rdx, rsi, r8.
+.cf_opcode:
+    push    rsi
+    push    rdi
+    push    r11
+    xor     r10d, r10d
+    mov     r9, [rbx + ASMCTX_curr_sec]
+    test    r9, r9
+    jz      .co_ret
+    mov     rsi, [r9 + SECTION_data]
+    test    rsi, rsi
+    jz      .co_ret
+    mov     rdi, [r9 + SECTION_size]
+    mov     r11d, [rbx + ASMCTX_inst_len]
+    neg     r11
+    add     r11, rdi
+.co_byte:
+    cmp     r11, rdi
+    jae     .co_none
+    movzx   r10d, byte [rsi + r11]
+    inc     r11
+    cmp     r10d, 0x66
+    je      .co_byte
+    cmp     r10d, 0x67
+    je      .co_byte
+    cmp     r10d, 0xF0
+    je      .co_byte
+    cmp     r10d, 0xF2
+    je      .co_byte
+    cmp     r10d, 0xF3
+    je      .co_byte
+    cmp     r10d, 0x2E
+    je      .co_byte
+    cmp     r10d, 0x3E
+    je      .co_byte
+    cmp     r10d, 0x26
+    je      .co_byte
+    cmp     r10d, 0x36
+    je      .co_byte
+    cmp     r10d, 0x64
+    je      .co_byte
+    cmp     r10d, 0x65
+    je      .co_byte
+    cmp     r10d, 0x9B                     ; (wait: fstsw's)
+    je      .co_byte
+    jmp     .co_ret
+.co_none:
+    xor     r10d, r10d
+.co_ret:
+    pop     r11
+    pop     rdi
+    pop     rsi
     ret
 
 ;*
@@ -7804,6 +8027,8 @@ s_disp8_bounds: db "byte data exceeds bounds", 0
 s_obs_removed:  db "instruction obsolete and removed from the target CPU", 0
 s_obs_valid:    db "instruction obsolete but valid on the target CPU", 0
 s_obs_nop:      db "instruction never implemented and is a noop on the target CPU", 0
+; amd64_cpu_forms: shl shr sal sar rol ror rcl rcr
+cf_shift_ids:   dw 1647, 1650, 1624, 1625, 1612, 1613, 1590, 1593, 0
 ; amd64_obsolete: mnemonic ID, the level it was valid at (cpu_num's: 3 286,
 ; 4 386, 5 486, 6 pentium, 7 p6; 0xFF none of them)
 obsolete_ids:
