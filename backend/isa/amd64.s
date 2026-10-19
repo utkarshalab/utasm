@@ -1919,6 +1919,7 @@ mnc_tb_x64:
     mnc_ent "aadd", 0, 7000
     mnc_ent "aand", 0, 7001
     mnc_ent "axor", 0, 7002
+    mnc_ent "bb0_reset", 0, 7554
     mnc_ent "bb1_reset", 0, 7003
     mnc_ent "blcfill", 0, 7004
     mnc_ent "blci", 0, 7005
@@ -2081,9 +2082,9 @@ mnc_tb_x64:
     mnc_ent "pfpnacc", 0, 7132
     mnc_ent "pfrcpit1", 0, 7133
     mnc_ent "pfrcpit2", 0, 7134
-    mnc_ent "pfrcpv", 0, 7135
+    mnc_ent "pfrcpv", 0, 7557
     mnc_ent "pfrsqit1", 0, 7136
-    mnc_ent "pfrsqrtv", 0, 7137
+    mnc_ent "pfrsqrtv", 0, 7558
     mnc_ent "pfsub", 0, 7138
     mnc_ent "pfsubr", 0, 7139
     mnc_ent "pi2fw", 0, 7140
@@ -2104,6 +2105,7 @@ mnc_tb_x64:
     mnc_ent "pswapd", 0, 7155
     mnc_ent "pushaw", 0, 7156
     mnc_ent "pvalidate", 0, 7157
+    mnc_ent "rdm", 0, 7555
     mnc_ent "rdmsrlist", 0, 7158
     mnc_ent "rdshr", 0, 7159
     mnc_ent "retd", 0, 7160
@@ -2122,6 +2124,7 @@ mnc_tb_x64:
     mnc_ent "scasq", 0, 7534
     mnc_ent "slwpcb", 0, 7173
     mnc_ent "smi", 0, 7174
+    mnc_ent "smint", 0, 7556
     mnc_ent "smintold", 0, 7175
     mnc_ent "svdc", 0, 7176
     mnc_ent "svldt", 0, 7177
