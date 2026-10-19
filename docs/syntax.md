@@ -1038,17 +1038,19 @@ main:
 | `.size NAME, EXPR` | the ELF symbol size (`. - main`) |
 | `.byte`; `.short` / `.word` / `.hword` / `.value` / `.2byte`; `.long` / `.int` / `.4byte`; `.quad` / `.8byte`; `.octa` | 1, 2, 4, 8 and 16-byte values |
 | `.ascii`, `.asciz` / `.string` | strings, with GNU's escapes (`\n \t \b \f \v \r \\ \" \x41 \101`); `.asciz` adds a NUL after each |
+| `.base64 "STR"[, "STR" ...]` | the bytes each base64 string encodes (GCC's for a large initializer; "invalid character found inside .base64 string" otherwise) |
 | `.zero N`, `.skip N[, F]` / `.space N[, F]` | N bytes of F (reserved in a nobits section) |
 | `.fill R[, S[, V]]` | R values of S bytes, each V (its low 4 bytes, the rest zero, as GNU's) |
 | `.uleb128`, `.sleb128` | LEB128 numbers |
 | `.balign` / `.align N[, F[, MAX]]`, `.p2align K[, F[, MAX]]` | aligned to N bytes / 2^K bytes, with GNU's long NOPs in code and zeros in data unless F is given; no padding when it would take more than MAX bytes (`.p2align 4,,10`) |
 | `.org N[, F]` | padding up to offset N in the section (an error if that is behind) |
-| `.equ NAME, EXPR`, `.set NAME, EXPR`, `.equiv NAME, EXPR` | constants; `.set` may give a name a new value later, `.equiv` gives an error for a name already defined |
-| `.comm NAME, SIZE[, ALIGN]`, `.lcomm NAME, SIZE` | a common block; SIZE bytes of `.bss` under a local name |
+| `.equ NAME, EXPR`, `.set NAME, EXPR`, `.equiv NAME, EXPR` | constants; `.set` may give a name a new value later, `.equiv` gives an error for a name already defined; set to a label (`.set f.localalias, f`, GCC's) the name is that label's alias: it moves with the label's code and takes its type and size |
+| `.comm NAME, SIZE[, ALIGN]`, `.lcomm NAME, SIZE` | a common block; SIZE bytes of `.bss` under a local name, placed after all the `.bss` data the source writes, as GNU `as` places its local commons |
 | `.code16`, `.code32`, `.code64` | `bits 16` / `32` / `64` |
 | `.ident "TEXT"` | TEXT in the `.comment` section |
 | `.intel_syntax` | `DWORD PTR`, `OFFSET`, `FLAT:` read as GNU `as` reads them (`ptr`, `flat` and `offset` as `%use masm` has them) |
-| `.file`, `.loc`, `.arch` | accepted, nothing else done |
+| `.file`, `.loc` | the line table (`.debug_line`, see above) |
+| `.arch` | accepted, nothing else done |
 
 Addresses relative to `rip` are written as GNU `as` writes them, in 64-bit
 code: `[rip + x]` and `x[rip]` (also `DWORD PTR x[rip + 8]`) are `[rel x]`;
@@ -1067,9 +1069,18 @@ makes of it:
   section the linker merges (`.rodata.str1.1`, `.rodata.cst8`), where the
   relocations name them;
 - a name used and never defined is an external (in an object file);
-- a `call`, `jmp` or `jcc` to a global or external name is
-  `R_X86_64_PLT32`, and keeps its relocation even within its section
-  (another object may define the name first);
+- a `call` to a global or external name is `R_X86_64_PLT32`, and keeps
+  its relocation even within its section (another object may define the
+  name first); a `jmp` or `jcc` to a global of its own section is resolved
+  there, as GNU `as` resolves it - unless the name is weak or written
+  `f@PLT`;
+- jumps are sized as GNU `as` sizes them: each starts short and grows
+  only when its target is out of reach (never shrinks back), alignment
+  padding is worked out again after each change, and a jump's reach
+  across an alignment counts the padding as it was - so every jump comes
+  out the size GNU `as` gives it, not NASM's choice;
+- alignment padding in code after data (`.byte`, `.ascii`, `.zero` ...)
+  starts with a one-byte `nop`, as GNU `as` pads it;
 - a load through the GOT is the relaxable `R_X86_64_GOTPCRELX` /
   `R_X86_64_REX_GOTPCRELX` (`R_386_GOT32X`), and a GOT or TLS relocation
   names `_GLOBAL_OFFSET_TABLE_`;
@@ -1081,15 +1092,19 @@ makes of it:
 - a double-quoted name is the name (GCC 16 quotes every one under
   `-masm=intel`: `"main":`, `.globl "main"`, `call "puts"@PLT`,
   `"cmp"[rip]`), and `sym@PLT` (`@GOTPCREL` ... as in AT&T syntax) is `sym
-  wrt ..plt`.
+  wrt ..plt`;
+- a segment the address uses anyway (`ds:` with most bases, `ss:` with
+  `rbp` or `rsp`) is left out: `BYTE PTR ds:0` is `[0]`, `ss:[rbp]` is
+  `[rbp]`; `ds:[rbp]` and `ss:[rax]` keep theirs.
 
 In GNU's Intel syntax also: `st(1)` is `st1` and `st` alone `st0`;
 `XMMWORD PTR`, `YMMWORD PTR`, `ZMMWORD PTR` and `MMWORD PTR` are `oword`,
 `yword`, `zword` and `qword`; `movabs` is `mov` (GCC's, for an immediate
 past 32 bits); `data16` / `data32` and `addr16` / `addr32` are the raw
 `66` / `67` prefixes (`osp`, `asp`), `rex64` alone its `48` - GCC's TLS
-sequence. GCC's `-masm=intel` output assembles to the object GNU `as`
-makes of it as its AT&T output does.
+sequence. A sized operand may be written in brackets (`call [QWORD PTR
+80[rax]]`, GCC's indirect call). GCC's `-masm=intel` output assembles to
+the object GNU `as` makes of it as its AT&T output does.
 
 NASM's own sources keep NASM's rules: undefined names are errors, `.loop`
 is local to the label before it. A directive name followed by `:` is a
@@ -1143,9 +1158,16 @@ to the object GNU `as` makes of it, section by section and relocation by
 relocation, at `-O0` to `-O3`, `-Os` and `-fPIC`
 (`scripts/compat/suites.py`, `att`). `.att_syntax noprefix` takes
 registers without their `%` (a name that is a register is then the
-register). Not yet: `-g` output (GNU `as` builds `.debug_line` from `.loc`,
-and `.loc ... view .LVU3` defines the view numbers the debug sections
-use).
+register). `-g` output too: the line table comes from `.loc` (see Line
+tables above). Over NASM's own C sources compiled by GCC (`-O0` to `-O3`,
+`-Os`, `-fPIC`, `-g`, `-gdwarf-4`, `-masm=intel`) every section, symbol
+and relocation is GNU `as`'s, but for one thing: GNU `as` sometimes
+restarts `.debug_line`'s address with `DW_LNE_set_address` where its
+internal fragments happen to break (the same addresses either way).
+
+A string instruction's `es:[rdi]` operand never takes a prefix (es is its
+own; a `26` there overrode the other operand's segment):
+`movsb es:[rdi], fs:[rsi]` is `64 a4`.
 
 #### GNU macros, repetitions and conditionals
 
