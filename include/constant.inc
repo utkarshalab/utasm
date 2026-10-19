@@ -366,6 +366,10 @@
 ; Token flags (TOKEN_flags)
 %define TOK_FLAG_INTERP        0x01        ; text contains %[NAME], resolve at expansion
 %define TOK_FLAG_COUNTED       0x02        ; string: TOKEN_len is its byte count (NULs included)
+%define TOK_FLAG_SPACE         0x04        ; a blank (space, tab) before it on its line: -E and
+                                           ; %str write one there, as NASM keeps the source's
+%define TOK_FLAG_LONE          0x08        ; a newline ending a line of nothing but blanks or a
+                                           ; comment (-E writes it; lexer_mark_lone)
 
 ; floating-point formats (lib/float.s)
 %define FLT_HALF               1           ; binary16, dw
