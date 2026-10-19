@@ -1445,6 +1445,12 @@ elf64_secsym_base:
 elf64_file_name:
     xor     edx, edx
     mov     rax, [r12 + ASMCTX_input]
+    ; GNU's .file "NAME" names it (frontend/parser/gas.s)
+    extern  gas_file_name
+    cmp     qword [rel gas_file_name], 0
+    je      .named
+    mov     rax, [rel gas_file_name]
+.named:
     test    rax, rax
     jz      .ret
     cmp     byte [r12 + ASMCTX_standalone], 0
@@ -1610,6 +1616,36 @@ elf64_prepare_strtab:
 ; Each utasm SYMBOL maps to one Sym64 entry (24 bytes).
 ; Input  : r12 = AsmCtx, r13 = fd
 ;
+; elf64_sym_merge: ZF = 1 when the symbol rdx lies in a section the linker
+; merges (SHF_MERGE: .rodata.str1.1, .rodata.cst8). Preserves all but the
+; flags.
+elf64_sym_merge:
+    extern  global_ctx, gas_names
+    push    rax
+    push    rcx
+    movzx   eax, word [rdx + SYMBOL_section]
+    test    eax, eax
+    jz      .sm_no
+    cmp     eax, 0xFF00
+    jae     .sm_no
+    lea     rcx, [rel global_ctx]
+    cmp     ax, [rcx + ASMCTX_seccount]
+    ja      .sm_no
+    dec     eax
+    mov     rcx, [rcx + ASMCTX_sections]
+    mov     rcx, [rcx + rax * 8]
+    test    word [rcx + SECTION_flags], SHF_MERGE
+    jz      .sm_no
+    cmp     eax, eax                       ; ZF = 1
+    pop     rcx
+    pop     rax
+    ret
+.sm_no:
+    or      eax, 1                         ; ZF = 0
+    pop     rcx
+    pop     rax
+    ret
+
 ;*
 ; * [elf64_symbol_is_emitted]
 ; * Purpose: Decide whether a symbol belongs in .symtab at all.
@@ -1670,6 +1706,27 @@ elf64_symbol_is_emitted:
     mov     rax, [r8 + SYMBOL_name]
     test    rax, rax
     jz      .emit
+    ; GNU's numeric labels ("1:", L@num.N.K) and, in its syntax, its local
+    ; ones (.L3, .LC0): GNU as writes none of them
+    cmp     dword [rax], 'L@nu'
+    jne     .not_num
+    cmp     word [rax + 4], 'm.'
+    je      .skip
+.not_num:
+    cmp     word [rax], '.L'
+    jne     .not_dot_l
+    extern  gas_names
+    cmp     byte [rel gas_names], 0
+    je      .not_dot_l
+    ; ... except in a section the linker merges (.rodata.str1.1, .cst8):
+    ; relocations name the symbol there, as GNU as writes them
+    push    rdx
+    mov     rdx, r8
+    call    elf64_sym_merge
+    pop     rdx
+    jne     .skip
+    jmp     .emit
+.not_dot_l:
     cmp     dword [rax], 'L@he'
     jne     .emit
     cmp     word [rax + 4], 're'
@@ -2639,6 +2696,19 @@ elf64_write_rela:
     pop     rcx
     xor     r9d, r9d                       ; added to the addend
     IF rax, e, EXIT_OK
+        ; GNU's syntax: a call / jmp / jcc to a symbol other files may
+        ; define is PLT32, as GNU as writes it (the linker makes it a
+        ; direct call when the symbol is found locally)
+        cmp     byte [rel gas_names], 0
+        je      .not_plt
+        test    byte [r15 + RELOC_flags], RELOC_FLAG_BRANCH
+        jz      .not_plt
+        cmp     dword [r15 + RELOC_type], R_X86_64_PC32
+        jne     .not_plt
+        cmp     byte [rdx + SYMBOL_vis], VIS_LOCAL
+        je      .not_plt
+        mov     dword [r15 + RELOC_type], R_X86_64_PLT32
+.not_plt:
         mov     eax, [rdx + SYMBOL_elf_idx]
         ; a local label: against its section's symbol, its offset added
         ; to the addend, as NASM writes it (unless "wrt ..sym")
@@ -2646,6 +2716,13 @@ elf64_write_rela:
         jnz     .sym_ready
         cmp     byte [rdx + SYMBOL_vis], VIS_LOCAL
         jne     .sym_ready
+        ; GNU's syntax: one in a section the linker merges stays the
+        ; symbol (it moves with its piece), as GNU as writes it
+        cmp     byte [rel gas_names], 0
+        je      .by_section
+        call    elf64_sym_merge
+        je      .sym_ready
+.by_section:
         movzx   r8d, word [rdx + SYMBOL_section]
         test    r8d, r8d
         jz      .sym_ready
