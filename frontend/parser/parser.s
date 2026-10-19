@@ -88,6 +88,7 @@ parser_parse_instruction:
     and     rsp, -16
     mov     rbx, rdi               ; RBX = PrepState
     extern  reloc_wrt
+    extern  gas_names
     mov     byte [rel reloc_wrt], 0    ; no "wrt ..name" pending
 
     ; the statement's INST: one of INST_RING, used in turn and cleared (it
@@ -230,6 +231,27 @@ parser_parse_instruction:
 .no_enc_prefix_brace:
     mov     al, [r12 + TOKEN_kind]
 .no_enc_prefix:
+
+    ; GNU's syntax: "name": - a quoted name's label (GCC 16, -masm=intel)
+    cmp     al, TOK_STRING
+    jne     .not_quoted_label
+    cmp     byte [rel gas_names], 0
+    je      .not_quoted_label
+    cmp     byte [r12 + TOKEN_quote], '"'
+    jne     .not_quoted_label
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    check_err
+    cmp     byte [rdx + TOKEN_kind], TOK_COLON
+    jne     .quoted_word
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; ":"
+    mov     byte [r12 + TOKEN_kind], TOK_LABEL
+    mov     al, TOK_LABEL
+    jmp     .not_quoted_label
+.quoted_word:
+    mov     al, TOK_STRING
+.not_quoted_label:
 
     IF al, e, TOK_LABEL
         ; Global Label: rsi = name
@@ -1491,6 +1513,52 @@ parser_parse_operand:
 ; ;
 parser_parse_reg_info:
     prologue
+    ; GNU's syntax: "st(1)" is st1 and "st" alone st0, as GNU as writes
+    ; them in its Intel syntax
+    cmp     byte [rel gas_names], 0
+    je      .not_gas_st
+    movzx   eax, word [rsi]
+    or      eax, 0x2020
+    cmp     ax, 'st'
+    jne     .not_gas_st
+    cmp     byte [rsi + 2], 0
+    jne     .not_gas_st
+    push    rdi
+    mov     dword [rel gas_st_name], 'st0'
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .gas_st_named
+    cmp     byte [rdx + TOKEN_kind], TOK_LPAREN
+    jne     .gas_st_named
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; "("
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; N
+    cmp     byte [rdx + TOKEN_kind], TOK_NUMBER
+    jne     .gas_st_bad
+    mov     rax, [rdx + TOKEN_value]
+    movzx   ecx, byte [rax]
+    cmp     byte [rax + 1], 0
+    jne     .gas_st_bad
+    sub     ecx, '0'
+    cmp     ecx, 7
+    ja      .gas_st_bad
+    add     ecx, '0'
+    mov     [rel gas_st_name + 2], cl
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; ")"
+    cmp     byte [rdx + TOKEN_kind], TOK_RPAREN
+    jne     .gas_st_bad
+.gas_st_named:
+    pop     rdi
+    lea     rsi, [rel gas_st_name]
+    jmp     .not_gas_st
+.gas_st_bad:
+    pop     rdi
+    mov     rax, ERR
+    epilogue
+.not_gas_st:
     push    rdi
     call    parser_is_register
     pop     rdi
@@ -3849,6 +3917,13 @@ parser_evaluate_factor:
 .not_size_kw:
     mov     al, TOK_IDENT
 .not_size_op:
+    ; GNU's syntax: "name" (GCC 16's -masm=intel quotes every name) and
+    ; name@PLT, "name"@GOTPCREL ... (parser_gas_symbol)
+    extern  gas_names
+    cmp     byte [rel gas_names], 0
+    je      .not_gas_symbol
+    call    parser_gas_symbol
+.not_gas_symbol:
     ; GNU's "." alone: the location, $
     cmp     al, TOK_IDENT
     jne     .not_gas_dot
@@ -5639,6 +5714,131 @@ parser_pos_label:
     ret
 
 ;*
+; * [parser_gas_symbol]
+; * Purpose: GNU's syntax (gas_names): a symbol as GNU as writes one.
+; *   "name" quoted (GCC 16's -masm=intel quotes every name: "main":,
+; *   call "puts"@PLT, "cmp"[rip]) is the name; name@PLT (@GOTPCREL, @GOT,
+; *   @GOTOFF, @GOTPC, @TPOFF, @NTPOFF, @GOTTPOFF, @INDNTPOFF, @TLSGD,
+; *   @TLSLD, @DTPOFF), or "name"@PLT, is the name, the relocation the one
+; *   "wrt ..plt" asks for (reloc_wrt). The token is made an identifier
+; *   of the name. A single-quoted one stays a character.
+; * Input  : RBX = PrepState, R12 = the token
+; * Output : AL = its kind now. Preserves rbx, r12-r15.
+; ;
+global parser_gas_symbol
+parser_gas_symbol:
+    movzx   eax, byte [r12 + TOKEN_kind]
+    cmp     byte [rel gas_names], 0
+    je      .gs_ret
+    cmp     eax, TOK_STRING
+    jne     .gs_ident
+    cmp     byte [r12 + TOKEN_quote], '"'
+    jne     .gs_ret
+    mov     byte [r12 + TOKEN_kind], TOK_IDENT
+    mov     rdi, [r12 + TOKEN_value]
+    call    str_len
+    mov     [r12 + TOKEN_len], ax
+    ; "name"@SUFFIX
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .gs_named
+    cmp     byte [rdx + TOKEN_kind], TOK_AT
+    jne     .gs_named
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; "@"
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .gs_named
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .gs_named
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rsi, [rdx + TOKEN_value]
+    call    .gs_suffix
+    test    eax, eax
+    jz      .gs_named
+    mov     [rel reloc_wrt], al
+    jmp     .gs_named
+.gs_ident:
+    cmp     eax, TOK_IDENT
+    jne     .gs_ret
+    ; name@SUFFIX, the "@" not first
+    mov     rsi, [r12 + TOKEN_value]
+    mov     ecx, 1
+    cmp     byte [rsi], 0
+    je      .gs_named
+.gs_scan:
+    movzx   eax, byte [rsi + rcx]
+    test    eax, eax
+    jz      .gs_named
+    cmp     eax, '@'
+    je      .gs_at
+    inc     ecx
+    jmp     .gs_scan
+.gs_at:
+    push    rcx
+    push    rsi
+    lea     rsi, [rsi + rcx + 1]
+    call    .gs_suffix
+    pop     rsi
+    pop     rcx
+    test    eax, eax
+    jz      .gs_named                      ; (not one: a name with @ in it)
+    mov     [rel reloc_wrt], al
+    ; the name before it
+    push    rcx
+    push    rsi
+    lea     rsi, [rcx + 1]
+    mov     rdi, [rbx + PREP_arena]
+    call    arena_alloc
+    pop     rsi
+    pop     rcx
+    test    rax, rax
+    jnz     .gs_named
+    mov     [r12 + TOKEN_value], rdx
+    mov     [r12 + TOKEN_len], cx
+    mov     rdi, rdx
+    rep     movsb
+    mov     byte [rdi], 0
+.gs_named:
+    mov     eax, TOK_IDENT
+.gs_ret:
+    ret
+; .gs_suffix: rsi = a relocation's name after "@" -> eax = its WRT_* (0:
+; none of them)
+.gs_suffix:
+    push    r12
+    mov     r12, rsi
+    lea     r8, [rel gas_wrt_words]
+.gs_word:
+    movzx   eax, byte [r8]
+    test    eax, eax
+    jz      .gs_none
+    push    r8
+    mov     rdi, r12
+    lea     rsi, [r8 + 1]
+    call    str_cmp_kw
+    pop     r8
+    test    rax, rax
+    jz      .gs_hit
+    lea     r8, [r8 + 1]
+.gs_skip:
+    inc     r8
+    cmp     byte [r8 - 1], 0
+    jne     .gs_skip
+    jmp     .gs_word
+.gs_hit:
+    movzx   eax, byte [r8]
+    pop     r12
+    ret
+.gs_none:
+    xor     eax, eax
+    pop     r12
+    ret
+
+;*
 ; * [parser_size_late]
 ; * Purpose: GNU's ".size NAME, EXPR" (frontend/parser/gas.s): EXPR kept
 ; *   and worked out once jumps are made short (parser_sizes, after
@@ -5656,11 +5856,29 @@ parser_size_late:
     push    r14
     push    r15
     mov     r12, rsi                       ; NAME
-    xor     edi, edi
-    call    parser_pos_label               ; "." here
+    ; "." here: a hidden label "L@here.eN" - an end, which relaxation keeps
+    ; before padding that grows from none there (the next function's
+    ; alignment: GCC writes .size after .cfi_endproc)
+    mov     rdi, [rbx + PREP_arena]
+    mov     rsi, 32
+    call    arena_alloc
     test    rax, rax
     jnz     .ret
-    mov     r13, [rdx + SYMBOL_name]
+    mov     r13, rdx
+    mov     rdi, r13
+    lea     rsi, [rel pos_end_prefix]
+    call    str_concat
+    lea     rdi, [rel numlbl_digits]
+    mov     rsi, [rel pos_count]
+    inc     qword [rel pos_count]
+    call    str_int_to_str
+    mov     rdi, r13
+    lea     rsi, [rel numlbl_digits]
+    call    str_concat
+    mov     rsi, r13
+    call    parser_define_label
+    test    rax, rax
+    jnz     .ret
     call    prep_rec_begin
     test    rax, rax
     jnz     .ret
@@ -6305,6 +6523,7 @@ deco_names: db "z", 0, 0, 0, 0, 0, 0, 0
 deco_dash:  db "-", 0
 numlbl_prefix: db "L@num.", 0
 pos_prefix: db "L@here.", 0
+pos_end_prefix: db "L@here.e", 0       ; an end's (parser_size_late)
 numlbl_dot: db ".", 0
 ; segment registers in REG_CS..REG_SS order, 4 bytes each
 seg_names:  db "cs", 0, 0, "ds", 0, 0, "es", 0, 0, "fs", 0, 0, "gs", 0, 0, "ss", 0, 0
@@ -12460,6 +12679,7 @@ res_mul:       resq 1                  ; (taken by parser_handle_res)
 expr_in_data:  resb 1                  ; a data directive is being read
 alignb 8
 size_list:     resq 1                  ; parser_size_late: {NAME, record}
+gas_st_name:   resb 4                  ; "stN" (parser_parse_reg_info)
 size_n:        resq 1
 [SECTION .text]
 
@@ -13386,6 +13606,15 @@ parser_handle_visibility:
     xor     r14d, r14d             ; the declared ELF type
     xor     r15d, r15d             ; bit 8: typed, bit 9: weak; low byte:
                                    ; visibility
+    ; GNU's syntax: ".globl \"main\"" (GCC 16's quoted names)
+    cmp     byte [r13 + TOKEN_kind], TOK_STRING
+    jne     .not_quoted
+    cmp     byte [rel gas_names], 0
+    je      .not_quoted
+    cmp     byte [r13 + TOKEN_quote], '"'
+    jne     .not_quoted
+    mov     byte [r13 + TOKEN_kind], TOK_IDENT
+.not_quoted:
     cmp     byte [r13 + TOKEN_kind], TOK_LABEL
     je      .typed                 ; "f:function": the colon made a label
     IF byte [r13 + TOKEN_kind], ne, TOK_IDENT
@@ -13860,6 +14089,13 @@ cpu_words:
     db 0
 ; parser_cpu_num: a level's name, its number (cpu_num)
 s_got_name: db "_GLOBAL_OFFSET_TABLE_", 0
+; parser_gas_symbol: GNU's sym@NAME - WRT_*, then NAME
+gas_wrt_words:
+    db WRT_PLT, "plt", 0, WRT_GOTPCREL, "gotpcrel", 0, WRT_GOTOFF, "gotoff", 0
+    db WRT_GOTPC, "gotpc", 0, WRT_TLSIE, "gottpoff", 0, WRT_TLSIE, "gotntpoff", 0
+    db WRT_TLSIE, "indntpoff", 0, WRT_GOT, "got", 0, WRT_TPOFF, "tpoff", 0
+    db WRT_TPOFF, "ntpoff", 0, WRT_TLSGD, "tlsgd", 0, WRT_TLSLD, "tlsld", 0
+    db WRT_DTPOFF, "dtpoff", 0, 0
 cpu_levels:
     db "8086", 0, 1, "186", 0, 2, "286", 0, 3, "386", 0, 4, "486", 0, 5
     db "586", 0, 6, "pentium", 0, 6, "686", 0, 7, "p6", 0, 7, "ppro", 0, 7
