@@ -1288,6 +1288,12 @@ def nasm_allowed(name, encn):
 # hand-written encoders' (stubs for these) - bit 15 of x86_enc_index
 NASM_LEGACY_SEEN = set()
 NASM_SEEN = set()
+# NASM's CPU levels (x86/iflags.ph's order), as "cpu" names them
+# (frontend/parser/parser.s cpu_levels: the same numbers)
+CPU_LEVELS = {"8086": 1, "186": 2, "286": 3, "386": 4, "486": 5, "PENT": 6, "P6": 7,
+              "KATMAI": 8, "WILLAMETTE": 9, "PRESCOTT": 10, "X86_64": 11, "NEHALEM": 12,
+              "WESTMERE": 13, "SANDYBRIDGE": 14, "FUTURE": 15, "IA64": 16}
+CPU_LEVEL = {}
 
 def nasm_forms():
     lines = []
@@ -1320,6 +1326,10 @@ def nasm_forms():
     for name, ops, enc, flags in lines:
         flags = flags.split(",")
         NASM_SEEN.add(name)
+        # its CPU level: the lowest any of its forms has (x86_cpu_level)
+        lv = [CPU_LEVELS[f] for f in flags if f in CPU_LEVELS]
+        if lv:
+            CPU_LEVEL[name] = min(lv + [CPU_LEVEL.get(name, 99)])
         if not re.search(r"\b(vex|evex|xop)\.", enc):
             NASM_LEGACY_SEEN.add(name)
         for args, n8 in nasm_form(name, ops, enc, flags):
@@ -1413,6 +1423,18 @@ def render():
             "; all there are (dispatch.s: none fitting is an error)", "x86_enc_index:"]
     for i in range(0, maxid + 1, 16):
         out.append("    dw " + ", ".join(str(index.get(j, 0)) for j in range(i, min(i + 16, maxid + 1))))
+    # mnemonic ID -> the lowest CPU level of its forms (0: none given):
+    # "cpu 386" and cpuid is "no instruction for this cpu level"
+    lvmax = max(ids.values())
+    lvl = [0] * (lvmax + 1)
+    for n, mid in ids.items():
+        if n in CPU_LEVEL:
+            lvl[mid] = CPU_LEVEL[n] if not lvl[mid] else min(lvl[mid], CPU_LEVEL[n])
+    out += ["", "; mnemonic ID -> the lowest CPU level of its forms (NASM's: 1 8086 ... 7 P6,",
+            "; 8 KATMAI ... 15 FUTURE, 16 IA64; 0 none given)", "global x86_cpu_level, x86_cpu_maxid",
+            "x86_cpu_maxid: dd %d" % lvmax, "x86_cpu_level:"]
+    for i in range(0, lvmax + 1, 32):
+        out.append("    db " + ", ".join(str(v) for v in lvl[i:i + 32]))
     out += ["", "global x86_enc_maxid", "x86_enc_maxid: dd %d        ; highest mnemonic ID in the index" % maxid, "",
             "; forms, 16 bytes each", "x86_enc_table:"]
     for mid, f in table:
