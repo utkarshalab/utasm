@@ -181,7 +181,39 @@ parser_parse_instruction:
     mov     rax, EXIT_BRACKET_UNKNOWN
     jmp     .done
 .bracket_ok:
-    
+    ; "[pragma ...]" (what -E writes for a %pragma): what %pragma does
+    cmp     qword [rsp + 16], 1
+    jne     .not_pragma
+    cmp     byte [r12 + TOKEN_kind], TOK_IDENT
+    jne     .not_pragma
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [rel str_pragma]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .not_pragma
+    extern  prep_handle_pragma, pragma_bracket
+    mov     byte [rel pragma_bracket], 1
+    call    prep_handle_pragma
+    mov     byte [rel pragma_bracket], 0
+.pragma_rest:
+    ; its "]" and the rest of the line
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    check_err
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_EOF
+    je      .pragma_eof
+    cmp     eax, TOK_NEWLINE
+    jne     .pragma_rest
+    mov     qword [rsp + 16], 0     ; the next line: no [ ] of its own yet
+    mov     qword [rsp + 24], 0
+    jmp     .get_mnemonic
+.pragma_eof:
+    xor     rax, rax
+    xor     rdx, rdx                ; RDX=0 signals EOF to main loop
+    jmp     .done
+.not_pragma:
+
     mov     al, [r12 + TOKEN_kind]
     IF al, e, TOK_EOF
         xor     rax, rax
@@ -14290,6 +14322,7 @@ bracket_words: db "absolute", 0, "bits", 0, "common", 0, "cpu", 0, "debug", 0
                db "org", 0, "map", 0, "osabi", 0, "gprefix", 0, "gpostfix", 0
                db "lprefix", 0, "lpostfix", 0, "dollarhex", 0, 0
 str_map:       db "map", 0
+str_pragma:    db "pragma", 0
 str_text:      db ".text", 0
 str_db:        db "db", 0
 str_data:      db ".data", 0
