@@ -1344,9 +1344,12 @@ registers, r8-r15, `sil`/`dil`, `[rax]`, RIP-relative addressing outside
 `cpu LEVEL` takes NASM's levels: an instruction none of whose forms is of
 the level or below is "no instruction for this cpu level" (`cpu 386` and
 `cpuid`, `cpu 486` and `cmovz`, `cpu p6` and `movaps`); `cpu any` or `cpu
-default` lifts it, an unknown name is an error. The check is the
-mnemonic's - NASM's also tells forms apart (`push 5` is 186, `shl eax, 3`
-386). Under the instruction's own level an obsolete one is "obsolete but
+default` lifts it, an unknown name is an error. Forms are told apart as
+NASM tells them: a 32-bit form is 386 (a 32-bit register, `66` in 16-bit
+code, a dword memory operand or `push` of an immediate in 32-bit code, a
+`jmp far [m]` to a 16:32 pointer; not the address size, and not x87's
+`fld dword`), and `push 5`, `imul ax, bx, 3` and `shl ax, 4` are 186.
+Under the instruction's own level an obsolete one is "obsolete but
 valid" (`cpu 486` and `smintold`), else "obsolete and removed".
 
 ---
