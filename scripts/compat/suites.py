@@ -1333,13 +1333,13 @@ def att(utasm, verbose=False):
             else:
                 s.result("line " + text, ok, detail)
 
-    def whole(name, src, opts=()):
+    def whole(name, src, opts=(), att=True):
         with tempdir() as d:
             open(os.path.join(d, "f.s"), "w").write(src)
             a = run(["as", "--64", "-o", "f.as.o", "f.s"], cwd=d)
             if a.returncode:
                 return False, "GNU as: " + first_line(a), None
-            u = run([utasm, "--att", "-f", "elf64", "-o", "f.ut.o", "f.s"], cwd=d)
+            u = run([utasm] + (["--att"] if att else []) + ["-f", "elf64", "-o", "f.ut.o", "f.s"], cwd=d)
             if u.returncode:
                 return False, "utasm: " + first_line(u), None
             va, vu = gas_view(os.path.join(d, "f.as.o")), gas_view(os.path.join(d, "f.ut.o"))
@@ -1358,16 +1358,20 @@ def att(utasm, verbose=False):
         ok, detail, _ = whole(name, src, None)
         s.result("file " + name, ok, detail)
     if have("gcc"):
+        # and its Intel syntax (-masm=intel: .intel_syntax, GCC 16's quoted
+        # names) the same way
         for opts in cases.ATT_C_OPTIONS:
-            with tempdir() as d:
-                open(os.path.join(d, "p.c"), "w").write(cases.ATT_C)
-                c = run(["gcc"] + opts + ["-S", "-o", "p.s", "p.c"], cwd=d)
-                src = open(os.path.join(d, "p.s")).read() if not c.returncode else None
-            if src is None:
-                s.result("gcc " + " ".join(opts), False, "gcc: " + first_line(c))
-                continue
-            ok, detail, _ = whole("gcc", src, opts)
-            s.result("gcc " + " ".join(opts), ok, detail)
+            for att, mflag in ((True, []), (False, ["-masm=intel"])):
+                label = "gcc " + " ".join(opts + mflag)
+                with tempdir() as d:
+                    open(os.path.join(d, "p.c"), "w").write(cases.ATT_C)
+                    c = run(["gcc"] + opts + mflag + ["-S", "-o", "p.s", "p.c"], cwd=d)
+                    src = open(os.path.join(d, "p.s")).read() if not c.returncode else None
+                if src is None:
+                    s.result(label, False, "gcc: " + first_line(c))
+                    continue
+                ok, detail, _ = whole("gcc", src, opts, att)
+                s.result(label, ok, detail)
     for text, want in cases.ATT_ERRORS:
         with tempdir() as d:
             open(os.path.join(d, "e.s"), "w").write(text + "\n")
