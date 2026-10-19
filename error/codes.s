@@ -665,6 +665,8 @@ code_table:
     code_msg EXIT_MASM_STRUCT_OPEN,  m_masm_struct_open, t_masm_struct_open
     code_msg EXIT_FASM_FORMAT,       m_fasm_format, t_fasm_format
     code_msg EXIT_KNOWN_RERUN,       m_known_rerun
+    code_msg EXIT_CPU_LEVEL,         m_cpu_level
+    code_msg EXIT_CPU_UNKNOWN,       m_cpu_unknown, t_cpu_unknown
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -881,6 +883,9 @@ t_masm_struct_open: db "STRUCT `^' with no ENDS", 0
 m_fasm_format:  db "format: not the output format -f chose (ELF64 [executable], ELF, binary)", 0
 t_fasm_format:  db "format `^': not the output format -f chose (ELF64 [executable], ELF, binary)", 0
 m_known_rerun:  db "the second pass could not be started (running /proc/self/exe failed)", 0
+m_cpu_level:    db "no instruction for this cpu level", 0
+m_cpu_unknown:  db "unknown CPU type or flag", 0
+t_cpu_unknown:  db "unknown CPU type or flag '^'", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
 t_multi:        db "symbol `^' defined more than once", 0
