@@ -460,7 +460,13 @@ amd64_encode_instruction:
     ; relocation (R_X86_64_8, PC8 for "byte (bar - $$)"), as NASM
     mov     byte [rel imm_ph_byte], 0
     cmp     byte [rdi + OPERAND_size], 8
-    jne     .ph_width
+    je      .ph_byte
+    mov     rsi, [rel imm_ph_sym]
+    movzx   edx, byte [rel imm_ph_pcrel]
+    call    amd64_imm_guess
+    test    eax, eax
+    jz      .ph_width
+.ph_byte:
     mov     qword [rdi + OPERAND_imm], IMM_PLACEHOLDER & 0x7F
     mov     byte [rel imm_ph_byte], 1
 .ph_width:
@@ -2069,6 +2075,8 @@ amd64_encode_instruction:
 .mode_encoded:
     xor     eax, eax
 .osize:
+    call    amd64_obsolete                 ; (the instruction is encoded)
+    call    amd64_gas_got
     ; o16 / o32 / o64: the operation size's prefix (mode.s)
     cmp     byte [r12 + INST_osize], 0
     je      .done
@@ -2105,6 +2113,255 @@ amd64_encode_instruction:
     jnz     .count_ret
     call    amd64_encode_branch_short
 .count_ret:
+    ret
+
+;*
+; * [amd64_gas_got]
+; * Purpose: GNU's syntax (gas_names), the instruction just encoded: its
+; *   GOT relocations as GNU as writes them - the relaxable ones where the
+; *   linker may turn the GOT load into a direct one (GOTPCRELX, its REX
+; *   form, R_386_GOT32X): a mov load (8B), call / jmp (FF /2, /4), test
+; *   (85) or a binary operation into a register ((op & C7) = 03). A GOT
+; *   or TLS relocation also has GNU as name _GLOBAL_OFFSET_TABLE_
+; *   (gas_got_wanted; parser_sizes adds it). Preserves rax, rbx, r12, r13.
+; * Input : R12 = INST, RBX = AsmCtx
+; ;
+amd64_gas_got:
+    extern  gas_names
+    cmp     byte [rel gas_names], 0
+    jne     .gg_go
+    ret
+.gg_go:
+    push    rax
+    push    r14
+    push    r15
+    mov     r14, [rbx + ASMCTX_curr_sec]
+    test    r14, r14
+    jz      .gg_ret
+    mov     r15, [r14 + SECTION_size]
+    mov     eax, [rbx + ASMCTX_inst_len]
+    sub     r15, rax                       ; the instruction's start
+    mov     ecx, [rbx + ASMCTX_nrelocs]
+.gg_rel:
+    test    ecx, ecx
+    jz      .gg_ret
+    dec     ecx
+    imul    rdx, rcx, RELOC_SIZE
+    add     rdx, [rbx + ASMCTX_relocs]
+    cmp     [rdx + RELOC_section], r14
+    jne     .gg_ret
+    cmp     [rdx + RELOC_offset], r15
+    jb      .gg_ret                        ; an earlier instruction's
+    mov     eax, [rdx + RELOC_type]
+    ; GOT and TLS (GOT32, GOTPCREL, DTPMOD64 ... TPOFF32, GOTOFF64,
+    ; GOTPC32, GOT64): GNU as names the GOT
+    cmp     eax, R_X86_64_GOT32
+    je      .gg_named
+    cmp     eax, R_X86_64_GOTPCREL
+    je      .gg_named
+    cmp     eax, 16
+    jb      .gg_rel
+    cmp     eax, 27
+    ja      .gg_rel
+    cmp     eax, 24                        ; (PC64)
+    je      .gg_rel
+.gg_named:
+    mov     byte [rel gas_got_wanted], 1
+    ; relaxable?
+    cmp     eax, R_X86_64_GOTPCREL
+    je      .gg_relax
+    cmp     eax, R_X86_64_GOT32
+    jne     .gg_rel
+    extern  elf32_enabled
+    cmp     byte [rel elf32_enabled], 0
+    je      .gg_rel
+.gg_relax:
+    push    rcx
+    call    .gg_opcode                     ; ZF = 1: relaxable, r8d = REX
+    pop     rcx
+    jne     .gg_rel
+    mov     eax, [rdx + RELOC_type]
+    cmp     eax, R_X86_64_GOT32
+    jne     .gg_x64
+    mov     dword [rdx + RELOC_type], 43   ; R_386_GOT32X (elf32.s)
+    jmp     .gg_rel
+.gg_x64:
+    mov     dword [rdx + RELOC_type], 41   ; R_X86_64_GOTPCRELX
+    test    r8d, r8d
+    jz      .gg_rel
+    mov     dword [rdx + RELOC_type], 42   ; R_X86_64_REX_GOTPCRELX
+    jmp     .gg_rel
+.gg_ret:
+    pop     r15
+    pop     r14
+    pop     rax
+    ret
+; .gg_opcode: the instruction at r15 in r14's bytes - ZF = 1 when its
+; opcode is one the linker relaxes, r8d = 1 with a REX prefix
+.gg_opcode:
+    xor     r8d, r8d
+    mov     rsi, [r14 + SECTION_data]
+    test    rsi, rsi
+    jz      .gg_no
+    mov     rcx, r15
+.gg_pfx:
+    movzx   eax, byte [rsi + rcx]
+    inc     rcx
+    cmp     eax, 0x66
+    je      .gg_pfx
+    cmp     eax, 0x67
+    je      .gg_pfx
+    cmp     eax, 0xF0
+    je      .gg_pfx
+    cmp     eax, 0xF2
+    je      .gg_pfx
+    cmp     eax, 0xF3
+    je      .gg_pfx
+    cmp     eax, 0x2E
+    je      .gg_pfx
+    cmp     eax, 0x3E
+    je      .gg_pfx
+    cmp     eax, 0x26
+    je      .gg_pfx
+    cmp     eax, 0x64
+    je      .gg_pfx
+    cmp     eax, 0x65
+    je      .gg_pfx
+    cmp     eax, 0x36
+    je      .gg_pfx
+    cmp     byte [rel asm_bits], 64
+    jne     .gg_op
+    mov     edi, eax
+    and     edi, 0xF0
+    cmp     edi, 0x40
+    jne     .gg_op
+    mov     r8d, 1                         ; REX
+    movzx   eax, byte [rsi + rcx]
+    inc     rcx
+.gg_op:
+    cmp     eax, 0x8B
+    je      .gg_yes
+    cmp     eax, 0x85
+    je      .gg_yes
+    cmp     eax, 0xFF
+    je      .gg_ff
+    mov     edi, eax
+    and     edi, 0xC7
+    cmp     edi, 0x03
+    je      .gg_yes
+.gg_no:
+    or      eax, 1                         ; ZF = 0
+    ret
+.gg_ff:
+    movzx   eax, byte [rsi + rcx]          ; ModRM: /2 call, /4 jmp
+    shr     eax, 3
+    and     eax, 7
+    cmp     eax, 2
+    je      .gg_yes
+    cmp     eax, 4
+    jne     .gg_no
+.gg_yes:
+    cmp     eax, eax                       ; ZF = 1
+    ret
+
+;*
+; * [amd64_obsolete]
+; * Purpose: NASM 3's warnings for the instructions no CPU of today has:
+; *   "obsolete and removed from the target CPU", or "obsolete but valid"
+; *   under "cpu" naming the instruction's own level (cpu_num): Cyrix's
+; *   system and SMM set, AMD's TBM (bextr's imm form only), loadall,
+; *   loadall286, cmpxchg486, ibts, xbts, umov. Preserves rax, rbx, r12,
+; *   r13.
+; * Input : R12 = INST
+; ;
+amd64_obsolete:
+    push    rax
+    movzx   eax, word [r12 + INST_op_id]
+    lea     rsi, [rel obsolete_ids]
+.ob_next:
+    movzx   ecx, word [rsi]
+    test    ecx, ecx
+    jz      .ob_ret
+    cmp     ecx, eax
+    je      .ob_hit
+    add     rsi, 3
+    jmp     .ob_next
+.ob_hit:
+    cmp     eax, 1035                      ; BEXTR: TBM's form, an imm last
+    jne     .ob_warn
+    cmp     byte [r12 + INST_nops], 3
+    jne     .ob_ret
+    cmp     byte [r12 + INST_op0 + 2 * OPERAND_SIZE + OPERAND_kind], OP_IMM
+    jne     .ob_ret
+.ob_warn:
+    movzx   ecx, byte [rsi + 2]            ; its level
+    mov     edi, WC_OBSOLETE_REMOVED
+    lea     rsi, [rel s_obs_removed]
+    cmp     cl, [rel cpu_num]
+    jne     .ob_say
+    mov     edi, WC_OBSOLETE_VALID
+    lea     rsi, [rel s_obs_valid]
+.ob_say:
+    call    amd64_warn_class
+.ob_ret:
+    pop     rax
+    ret
+
+;*
+; * [amd64_imm_guess]
+; * Purpose: Pass 1 and a distance or an expression not worked out yet
+; *   ("add eax, b - a", b further on) in an instruction with the
+; *   sign-extended imm8 form (the ALU group, imul, push): that form, as
+; *   NASM's first pass takes it. The code is laid out with it and pass 2
+; *   is given the value (core/known.s), which keeps the short form when it
+; *   is a signed byte - 127 over "times 124 nop" and the instruction, where
+; *   laid out long it measured 129 and stayed long. One that is not makes
+; *   the code grow there, and known_verify runs again. Pass 1's bytes are
+; *   never written (known_guessed). Not under "strict" or -O0, for a
+; *   PC-relative value, or in an 8-bit operation (one size either way).
+; * Input : RDI = the operand (its flags), RSI = the name in it, EDX = 1
+; *         for a PC-relative value, R12 = INST, RBX = AsmCtx
+; * Output: EAX = 1 to take the imm8 form. Preserves everything else.
+; ;
+global amd64_imm_guess
+amd64_imm_guess:
+    push    rcx
+    push    rdx
+    xor     eax, eax
+    extern  known_active, known_guessed, imm_sb_ids
+    cmp     byte [rel known_active], 0
+    jne     .ret
+    cmp     byte [rbx + ASMCTX_opt], OPT_NONE
+    je      .ret
+    test    byte [rdi + OPERAND_flags], OP_FLAG_STRICT
+    jnz     .ret
+    test    edx, edx
+    jnz     .ret
+    cmp     byte [r12 + INST_op0 + OPERAND_size], 8
+    je      .ret
+    mov     rcx, rsi
+    test    rcx, rcx
+    jz      .ret
+    cmp     byte [rcx], RELOC_OFFSET_MARK
+    je      .marked
+    cmp     byte [rcx], RELOC_EXPR_MARK
+    jne     .ret
+.marked:
+    movzx   ecx, word [r12 + INST_op_id]
+    lea     rdx, [rel imm_sb_ids]
+.id:
+    cmp     word [rdx], 0
+    je      .ret
+    cmp     [rdx], cx
+    je      .take
+    add     rdx, 2
+    jmp     .id
+.take:
+    mov     byte [rel known_guessed], 1
+    mov     eax, 1
+.ret:
+    pop     rdx
+    pop     rcx
     ret
 
 ;*
@@ -2192,6 +2449,11 @@ imm_ph_active:  resb 1
 imm_ph_wide:    resb 1              ; a 64-bit operation
 imm_ph_pcrel:   resb 1              ; PC-relative (OPERAND_pcrel)
 imm_ph_byte:    resb 1              ; "byte foo": a 1-byte placeholder
+global cpu_num
+global gas_got_wanted
+gas_got_wanted: resb 1              ; a GOT / TLS relocation (amd64_gas_got)
+cpu_num:        resb 1              ; "cpu" named: 1 8086 ... 7 p6, 0x80 a later
+                                    ; one, 0 none (amd64_obsolete)
 [SECTION .text]
 
 ;*
@@ -2226,6 +2488,8 @@ amd64_branch_fits_rel8:
     extern  reloc_wrt
     cmp     byte [rel reloc_wrt], 0
     jne     .ret
+    call    amd64_gas_global
+    je      .ret                           ; GNU's syntax: a global's relocation
     mov     rcx, [rbx + ASMCTX_curr_sec]
     test    rcx, rcx
     jz      .ret
@@ -2242,6 +2506,22 @@ amd64_branch_fits_rel8:
     jg      .ret
     mov     eax, 1
 .ret:
+    ret
+
+; amd64_gas_global: ZF = 1 when, in GNU's syntax (gas_names), the label
+; rsi (a SYMBOL*) is not a local one: GNU as leaves a branch to it its
+; relocation (PLT32 - another object may define it first) where NASM
+; resolves it in the section. Preserves all but the flags.
+amd64_gas_global:
+    extern  gas_names
+    cmp     byte [rel gas_names], 0
+    je      .gg_no
+    cmp     byte [rsi + SYMBOL_vis], VIS_LOCAL
+    je      .gg_no
+    cmp     al, al                         ; ZF = 1
+    ret
+.gg_no:
+    cmp     byte [rel gas_names], 2        ; ZF = 0 (it is 0 or 1)
     ret
 
 ;*
@@ -5215,6 +5495,11 @@ amd64_emit_branch_disp:
     jne     .relocate
     cmp     byte [rel reloc_wrt], 0
     jne     .relocate              ; "wrt ..plt": its relocation, as asked
+    push    rsi
+    mov     rsi, r15
+    call    amd64_gas_global
+    pop     rsi
+    je      .relocate              ; GNU's syntax: a global keeps its relocation
 
     mov     r8, [rbx + ASMCTX_curr_sec]
     test    r8, r8
@@ -5258,6 +5543,12 @@ amd64_emit_branch_disp:
     call    amd64_emit_reloc
     test    rax, rax
     jnz     .done                  ; propagate a real relocation failure
+    ; a branch's (the ELF writer: PLT32 to a global in GNU's syntax)
+    mov     ecx, [rbx + ASMCTX_nrelocs]
+    dec     ecx
+    imul    rcx, rcx, RELOC_SIZE
+    add     rcx, [rbx + ASMCTX_relocs]
+    or      byte [rcx + RELOC_flags], RELOC_FLAG_BRANCH
 
     ; the offset after a forward label goes into the relocation's addend
     mov     rax, [rel amd64_branch_off]
@@ -7513,4 +7804,72 @@ s_disp8_bounds: db "byte data exceeds bounds", 0
 s_obs_removed:  db "instruction obsolete and removed from the target CPU", 0
 s_obs_valid:    db "instruction obsolete but valid on the target CPU", 0
 s_obs_nop:      db "instruction never implemented and is a noop on the target CPU", 0
+; amd64_obsolete: mnemonic ID, the level it was valid at (cpu_num's: 3 286,
+; 4 386, 5 486, 6 pentium, 7 p6; 0xFF none of them)
+obsolete_ids:
+    dw 7554
+    db 6                                   ; bb0_reset
+    dw 7003
+    db 6                                   ; bb1_reset
+    dw 7012
+    db 6                                   ; cpu_read
+    dw 7013
+    db 6                                   ; cpu_write
+    dw 7014
+    db 7                                   ; dmint
+    dw 7555
+    db 7                                   ; rdm
+    dw 7159
+    db 7                                   ; rdshr
+    dw 7488
+    db 7                                   ; wrshr
+    dw 7556
+    db 7                                   ; smint
+    dw 7175
+    db 5                                   ; smintold
+    dw 7169
+    db 5                                   ; rsdc
+    dw 7170
+    db 5                                   ; rsldt
+    dw 7171
+    db 5                                   ; rsts
+    dw 7176
+    db 5                                   ; svdc
+    dw 7177
+    db 5                                   ; svldt
+    dw 7178
+    db 5                                   ; svts
+    dw 7011
+    db 5                                   ; cmpxchg486
+    dw 7089
+    db 4                                   ; ibts
+    dw 7489
+    db 4                                   ; xbts
+    dw 7185
+    db 4                                   ; umov
+    dw 7111
+    db 4                                   ; loadall
+    dw 7112
+    db 3                                   ; loadall286
+    dw 1035
+    db 0xFF                                ; bextr (TBM)
+    dw 7004
+    db 0xFF                                ; blcfill
+    dw 7005
+    db 0xFF                                ; blci
+    dw 7006
+    db 0xFF                                ; blcic
+    dw 7007
+    db 0xFF                                ; blcmsk
+    dw 7008
+    db 0xFF                                ; blcs
+    dw 7009
+    db 0xFF                                ; blsfill
+    dw 7010
+    db 0xFF                                ; blsic
+    dw 7179
+    db 0xFF                                ; t1mskc
+    dw 7180
+    db 0xFF                                ; tzmsk
+    dw 0
 [SECTION .text]
