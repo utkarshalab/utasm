@@ -1305,10 +1305,12 @@ bits 16                         ; 16-bit mode (bootloader/real mode)
 use16 / use32 / use64           ; the same
 
 ; [GEN2] → cpu generic / cpu x86_64_v3 etc
-cpu generic                     ; x86-64 baseline (SSE2 only)
-cpu x86_64_v3                   ; AVX2 + FMA + POPCNT + BMI2
-cpu skylake                     ; Intel Skylake
-cpu znver3                      ; AMD Zen 3
+cpu 386                         ; NASM's levels: 8086 186 286 386 486
+cpu p6                          ;   586 / pentium, 686 / p6 / ppro / p2,
+cpu x86-64                      ;   p3 / katmai, p4 / willamette, prescott,
+cpu sandybridge                 ;   x64 / x86-64, nehalem, westmere,
+cpu default                     ;   sandybridge, ivybridge; any / default
+cpu latevex                     ; and its options: latevex, (no)vex, (no)evex
 
 ; [GEN2] → fmt elf64 / fmt pe / fmt flat / fmt upk
 ; output format set via CLI (-f flag):
@@ -1338,6 +1340,14 @@ that exist only there are available. What a mode does not have - 64-bit
 registers, r8-r15, `sil`/`dil`, `[rax]`, RIP-relative addressing outside
 64-bit mode; 16-bit addressing in it - is an error. `-f bin` starts in
 `bits 64` (NASM's starts in `bits 16`), `-f elf32` in `bits 32`.
+
+`cpu LEVEL` takes NASM's levels: an instruction none of whose forms is of
+the level or below is "no instruction for this cpu level" (`cpu 386` and
+`cpuid`, `cpu 486` and `cmovz`, `cpu p6` and `movaps`); `cpu any` or `cpu
+default` lifts it, an unknown name is an error. The check is the
+mnemonic's - NASM's also tells forms apart (`push 5` is 186, `shl eax, 3`
+386). Under the instruction's own level an obsolete one is "obsolete but
+valid" (`cpu 486` and `smintold`), else "obsolete and removed".
 
 ---
 
