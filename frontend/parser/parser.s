@@ -10,6 +10,7 @@
 %include "include/macro.inc"
 %include "include/type.inc"
 
+%define SIZE_LATE_CAP  (1 << 20)        ; .size directives kept (parser_size_late)
 DEFAULT REL
 %include "include/elf.inc"
 %include "include/arch/aarch64.inc"
@@ -433,9 +434,24 @@ parser_parse_instruction:
     movzx   eax, ax
     mov     [rdi + ASMCTX_debug_col], eax
     
+    ; AT&T syntax (.att_syntax, --att): the statement, its prefixes too, in
+    ; utasm's syntax, read next (frontend/parser/att.s)
+    extern  att_on, att_statement
+    cmp     byte [rel att_on], 0
+    je      .not_att
+    mov     rdi, rbx
+    mov     rsi, r12
+    call    att_statement
+    test    eax, eax
+    jz      .not_att
+    mov     rax, rdx
+    check_err
+    jmp     .get_mnemonic
+.not_att:
+
     ; 4. Lookup Mnemonic
     mov     rsi, [r12 + TOKEN_value]
-    
+
     ; Check for prefixes (A71)
     call    parser_check_prefix
     test    rax, rax
@@ -5623,6 +5639,191 @@ parser_pos_label:
     ret
 
 ;*
+; * [parser_size_late]
+; * Purpose: GNU's ".size NAME, EXPR" (frontend/parser/gas.s): EXPR kept
+; *   and worked out once jumps are made short (parser_sizes, after
+; *   relax_run). ".-f" taken when it is read froze the code it spans -
+; *   GCC writes one after every function, so no jump in any was made
+; *   short. "." in it is where the directive is: a hidden label
+; *   (parser_pos_label), which moves with the code.
+; * Input  : RBX = PrepState, RSI = NAME (the expression is read next)
+; * Output : RAX = OK or an error
+; ;
+global parser_size_late
+parser_size_late:
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    mov     r12, rsi                       ; NAME
+    xor     edi, edi
+    call    parser_pos_label               ; "." here
+    test    rax, rax
+    jnz     .ret
+    mov     r13, [rdx + SYMBOL_name]
+    call    prep_rec_begin
+    test    rax, rax
+    jnz     .ret
+.tok:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .drop
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .read
+    cmp     eax, TOK_EOF
+    je      .read
+    cmp     eax, TOK_COMMENT
+    je      .read
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .drop
+    jmp     .tok
+.read:
+    call    prep_rec_end                   ; rdx = tokens, rcx = how many
+    test    rax, rax
+    jnz     .too_long
+    test    rcx, rcx
+    jz      .empty
+    movzx   r14d, byte [rel expr_in_data]
+    mov     byte [rel expr_in_data], 1     ; (a record not handed on)
+    mov     rdi, rbx
+    mov     rsi, rdx
+    mov     rdx, rcx
+    call    parser_defer_record
+    mov     [rel expr_in_data], r14b
+    test    rax, rax
+    jnz     .ret
+    mov     r14, rdx                       ; the record
+    ; "." is the hidden label
+    mov     rdi, r13
+    call    str_len
+    mov     r15, rax
+    mov     rsi, [r14 + 16]                ; its tokens
+    mov     ecx, [r14 + 24]                ; (with its newline)
+.dot:
+    test    ecx, ecx
+    jz      .keep
+    cmp     byte [rsi + TOKEN_kind], TOK_IDENT
+    jne     .dot_next
+    mov     rax, [rsi + TOKEN_value]
+    cmp     word [rax], '.'
+    jne     .dot_next
+    mov     [rsi + TOKEN_value], r13
+    mov     [rsi + TOKEN_len], r15w
+.dot_next:
+    add     rsi, TOKEN_SIZE
+    dec     ecx
+    jmp     .dot
+.keep:
+    mov     rax, [rel size_list]
+    test    rax, rax
+    jnz     .have
+    mov     rsi, SIZE_LATE_CAP * 16
+    extern  mem_reserve
+    call    mem_reserve
+    test    rax, rax
+    jnz     .ret
+    mov     [rel size_list], rdx
+    mov     rax, rdx
+.have:
+    mov     rcx, [rel size_n]
+    cmp     rcx, SIZE_LATE_CAP
+    jae     .full
+    shl     rcx, 4
+    mov     [rax + rcx], r12
+    mov     [rax + rcx + 8], r14
+    inc     qword [rel size_n]
+.full:
+    xor     eax, eax
+.ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    ret
+.drop:
+    push    rax
+    extern  prep_rec_drop
+    call    prep_rec_drop
+    pop     rax
+    jmp     .ret
+.too_long:
+    call    prep_rec_drop
+    mov     eax, EXIT_EXPR_TOO_DEEP
+    jmp     .ret
+.empty:
+    call    prep_rec_drop
+    mov     eax, EXIT_UNEXPECTED_TOKEN
+    jmp     .ret
+
+;*
+; * [parser_sizes]
+; * Purpose: The sizes parser_size_late kept, from the code as it is once
+; *   jumps are made short (backend/linker/linker.s, after relax_run).
+; * Output : RAX = OK or an error
+; ;
+global parser_sizes
+parser_sizes:
+    push    r12
+    push    r13
+    xor     r12d, r12d
+.s_next:
+    cmp     r12, [rel size_n]
+    jae     .s_done
+    mov     r13, r12
+    shl     r13, 4
+    add     r13, [rel size_list]
+    inc     r12
+    mov     rdi, [r13 + 8]
+    call    parser_deferred_value
+    test    rax, rax
+    jnz     .s_ret
+    push    rdx
+    lea     rdi, [rel global_ctx]
+    mov     rsi, [r13]
+    call    symbol_find
+    pop     rcx
+    test    rax, rax
+    jnz     .s_next                        ; (no such name: no size)
+    mov     [rdx + SYMBOL_size], rcx
+    jmp     .s_next
+.s_done:
+    ; GNU's syntax and a GOT or TLS relocation: _GLOBAL_OFFSET_TABLE_, as
+    ; GNU as has it (undefined, global)
+    extern  gas_got_wanted
+    cmp     byte [rel gas_got_wanted], 0
+    je      .s_ok
+    lea     rdi, [rel global_ctx]
+    lea     rsi, [rel s_got_name]
+    call    symbol_find
+    test    rax, rax
+    jz      .s_ok
+    sub     rsp, SYMBOL_SIZE
+    mov     rdi, rsp
+    xor     eax, eax
+    mov     ecx, SYMBOL_SIZE / 8
+    rep stosq
+    mov     byte [rsp + SYMBOL_tag], TAG_SYMBOL
+    mov     byte [rsp + SYMBOL_kind], SYM_EXTERN
+    mov     byte [rsp + SYMBOL_vis], VIS_GLOBAL
+    mov     byte [rsp + SYMBOL_pflags], SYMF_USED
+    lea     rax, [rel s_got_name]
+    mov     [rsp + SYMBOL_name], rax
+    lea     rdi, [rel global_ctx]
+    mov     rsi, rsp
+    call    symbol_add
+    add     rsp, SYMBOL_SIZE
+.s_ok:
+    xor     eax, eax
+.s_ret:
+    pop     r13
+    pop     r12
+    ret
+
+;*
 ; * [parser_is_statement_word]
 ; * Purpose: Is this word an instruction or a data directive? Used to take
 ; *          "msg db 'hi'" / "top nop" as a label without its colon.
@@ -6112,6 +6313,25 @@ seg_prefix_bytes: db 0x2E, 0x3E, 0x26, 0x64, 0x65, 0x36
 str_abs: db "abs", 0
 
 [SECTION .text]
+
+;*
+; * [parser_is_reg_name]
+; * Purpose: Is the word one of the target's registers? (AT&T's noprefix:
+; *   frontend/parser/att.s)
+; * Input  : RDI = the word
+; * Output : EAX = 1 / 0. Preserves rbx, r12-r15.
+; ;
+global parser_is_reg_name
+parser_is_reg_name:
+    push    rdi
+    call    parser_get_arch_tables
+    pop     rsi
+    mov     rdi, rdx                       ; the register table
+    call    parser_is_register
+    cmp     rax, ERR
+    setne   al
+    movzx   eax, al
+    ret
 
 ;*
 ; * [parser_is_register]
@@ -7445,8 +7665,18 @@ parser_gas_equ:
 ; * [parser_concat_local_name]
 ; * Input: R14 = global name, RSI = local name
 ; * Output: RDX = concatenated name in arena
+; * In GNU's syntax (.intel_syntax, .att_syntax, --att) a "." name is a
+; * name of its own, as GNU as has it (.L3, .LC0 - GCC's), not local to the
+; * label before it: RDX = RSI.
 ; ;
 parser_concat_local_name:
+    extern  gas_names
+    cmp     byte [rel gas_names], 0
+    je      .nasm_local
+    mov     rdx, rsi
+    xor     eax, eax
+    ret
+.nasm_local:
     prologue
     push    rbx
     push    r12
@@ -7825,6 +8055,8 @@ parser_handle_pseudo_op:
     cmp     eax, TOK_IDENT
     jne     .cpu_skip
     mov     r13, [rdx + TOKEN_value]
+    mov     rdi, r13
+    call    parser_cpu_num
     lea     r14, [rel cpu_words]
 .cpu_find:
     cmp     byte [r14], 0
@@ -7845,6 +8077,9 @@ parser_handle_pseudo_op:
 .cpu_level:
     ; "cpu 8086": pop cs is an instruction there; any other level not
     mov     rdi, [rdx + TOKEN_value]
+    push    rdi
+    call    parser_cpu_num
+    pop     rdi
     lea     rsi, [rel str_8086]
     call    str_cmp
     test    rax, rax
@@ -9230,6 +9465,8 @@ ignored_words:db "warning", 0, 0, 0
 stmt_bracketed: resb 1              ; the statement is in [ ]
 extern_required: resb 1             ; parser_handle_extern for "required"
 sect_sep:       resb 1              ; a section name's joining character ('-' ',')
+alignb 8
+sect_sep_tok:   resb TOKEN_SIZE     ; ... its token, to put back
 alignb 2
 opnd_kw_size:   resw 1              ; "qword gs:[x]": the size written
 global sectalign_off
@@ -10720,6 +10957,68 @@ parser_fasm_word:
     ret
 
 ;*
+; * [parser_cpu_num]
+; * Purpose: The level a "cpu" word names, for the encoder's obsolete
+; *   warnings (cpu_num: 1 8086, 2 186, 3 286, 4 386, 5 486, 6 586 /
+; *   pentium, 7 686 / p6 / ppro / pentiumpro / p2 / pentiumii, 0 latest /
+; *   any / all / default, 0x80 a later one); a word that is no level (an
+; *   option: evex, latevex ...) changes nothing.
+; * Input  : RDI = the word. Preserves rbx, r12-r15.
+; ;
+parser_cpu_num:
+    push    r12
+    push    r13
+    mov     r12, rdi
+    lea     r13, [rel cpu_levels]
+.cn_entry:
+    cmp     byte [r13], 0
+    je      .cn_later
+    mov     rdi, r12
+    mov     rsi, r13
+    call    str_cmp_kw
+    mov     rcx, r13
+.cn_skip:
+    inc     rcx
+    cmp     byte [rcx - 1], 0
+    jne     .cn_skip
+    test    rax, rax
+    jz      .cn_hit
+    lea     r13, [rcx + 1]
+    jmp     .cn_entry
+.cn_hit:
+    mov     al, [rcx]
+    extern  cpu_num
+    mov     [rel cpu_num], al
+    jmp     .cn_ret
+.cn_later:
+    ; a processor's name after the P6 (p3, p4, x64, sandybridge ...): a
+    ; number or a word other than the options
+    movzx   eax, byte [r12]
+    sub     eax, '0'
+    cmp     eax, 9
+    jbe     .cn_set_later
+    lea     r13, [rel cpu_options]
+.cn_opt:
+    cmp     byte [r13], 0
+    je      .cn_set_later
+    mov     rdi, r12
+    mov     rsi, r13
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .cn_ret
+.cn_opt_skip:
+    inc     r13
+    cmp     byte [r13 - 1], 0
+    jne     .cn_opt_skip
+    jmp     .cn_opt
+.cn_set_later:
+    mov     byte [rel cpu_num], 0x80
+.cn_ret:
+    pop     r13
+    pop     r12
+    ret
+
+;*
 ; * [parser_is_mnemonic]
 ; * Purpose: Is the word one of the target's mnemonics? (MASM's "NAME
 ; *   TYPE ..." is data, not "push dword 5".)
@@ -12159,6 +12458,9 @@ alignb 8
 times_res_mul: resq 1                  ; "times N resb K": N, for the resb
 res_mul:       resq 1                  ; (taken by parser_handle_res)
 expr_in_data:  resb 1                  ; a data directive is being read
+alignb 8
+size_list:     resq 1                  ; parser_size_late: {NAME, record}
+size_n:        resq 1
 [SECTION .text]
 
 ;*
@@ -12606,7 +12908,14 @@ parser_handle_section_directive:
     jne     .name_done
     mov     rdi, rbx
     call    preprocessor_next_token        ; the '-' / ','
-    mov     r13, rdx
+    ; a copy of it, to put back: the peek below may reuse its slot (after
+    ; ".note.GNU-stack" it did, and the "," of ',"",@progbits' came back
+    ; as something else - a stray label "progbits")
+    lea     rdi, [rel sect_sep_tok]
+    mov     rsi, rdx
+    mov     ecx, TOKEN_SIZE / 8
+    rep movsq
+    lea     r13, [rel sect_sep_tok]
     ; the next piece right after it ("a,b"; in "a, \"awx\"" a list goes on)
     mov     rdi, rbx
     call    preprocessor_peek_token
@@ -13549,6 +13858,18 @@ cpu_words:
     db "evex", 0, 0, 0, 0, 0, 0, ~CPUF_NOEVEX & 0xFF, 0
     db "noevex", 0, 0, 0, 0, 0xFF, CPUF_NOEVEX
     db 0
+; parser_cpu_num: a level's name, its number (cpu_num)
+s_got_name: db "_GLOBAL_OFFSET_TABLE_", 0
+cpu_levels:
+    db "8086", 0, 1, "186", 0, 2, "286", 0, 3, "386", 0, 4, "486", 0, 5
+    db "586", 0, 6, "pentium", 0, 6, "686", 0, 7, "p6", 0, 7, "ppro", 0, 7
+    db "pentiumpro", 0, 7, "p2", 0, 7, "pentiumii", 0, 7
+    db "latest", 0, 0, "any", 0, 0, "all", 0, 0, "default", 0, 0
+    db 0
+; ... and the words that are options, no level
+cpu_options:
+    db "latevex", 0, "nolatevex", 0, "vex", 0, "novex", 0, "evex", 0
+    db "noevex", 0, "fpu", 0, "nofpu", 0, 0
 ; words that make the name before them a label without its colon
 stmt_words:    db "db", 0, "dw", 0, "dd", 0, "dq", 0, "dt", 0, "resb", 0, "resw", 0
                db "resd", 0, "resq", 0, "rest", 0, "times", 0, "incbin", 0
