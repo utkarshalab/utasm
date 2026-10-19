@@ -20,6 +20,7 @@ extern mem_copy
 extern mem_zero
 extern str_is_hex_digit
 extern str_is_ident_char
+extern str_ident_chars
 extern str_utf8_decode
 extern str_len
 extern str_int_to_str
@@ -756,23 +757,29 @@ lexer_next:
     call    .token_begin
     mov     r13, [rbx + LEXER_pos]     ; start of identifier
 
-    ; scan while ident chars
+    ; scan while ident chars (str_is_ident_char's table), the position in
+    ; a register: one column a byte
 .lex_ident_loop:
     mov     r10, [rbx + LEXER_pos]
+.lex_ident_scan:
+    cmp     r10, [rbx + LEXER_end]
+    jge     .lex_ident_at
+    movzx   edi, byte [r10]
+    cmp     byte [str_ident_chars + rdi], 0
+    je      .lex_ident_at
+    inc     r10
+    jmp     .lex_ident_scan
+.lex_ident_at:
+    mov     rax, r10
+    sub     rax, [rbx + LEXER_pos]
+    add     [rbx + LEXER_col], ax
+    mov     [rbx + LEXER_pos], r10
     cmp     r10, [rbx + LEXER_end]
     jge     .lex_ident_done
-    movzx   rdi, byte [r10]
-
     ; UTF-8 check
-    cmp     rdi, 128
+    cmp     byte [r10], 128
     jae     .lex_ident_utf8
-
-    call    str_is_ident_char
-    cmp     rax, TRUE
-    jne     .lex_ident_done
-    inc     qword [rbx + LEXER_pos]
-    inc     word  [rbx + LEXER_col]
-    jmp     .lex_ident_loop
+    jmp     .lex_ident_done
 
 .lex_ident_utf8:
     mov     rdi, [rbx + LEXER_pos]
@@ -1193,81 +1200,44 @@ lexer_next:
     xor     r14, r14                   ; r14 = float flag (0=int, 1=float)
     xor     r15, r15                   ; end of digits, when a suffix follows
 
+; what a byte is in a number (lexer_num_class)
+%define NUM_DIGIT   1                  ; a digit, a radix letter, _
+%define NUM_FLOAT   2                  ; . p P
+%define NUM_SUFFIX  3                  ; u U l L
+%define NUM_SIGN    4                  ; + -
 .lex_number_loop:
+    ; the run of digits and radix letters (hex digits, x b o h q y t, _)
+    ; scanned with the position in a register (lexer_num_class)
     mov     r10, [rbx + LEXER_pos]
+    lea     rdi, [rel lexer_num_class]
+.lex_number_scan:
+    cmp     r10, [rbx + LEXER_end]
+    jge     .lex_number_at
+    movzx   eax, byte [r10]
+    movzx   eax, byte [rdi + rax]
+    cmp     eax, NUM_DIGIT
+    jne     .lex_number_at
+    inc     r10
+    jmp     .lex_number_scan
+.lex_number_at:
+    mov     rcx, r10
+    sub     rcx, [rbx + LEXER_pos]
+    add     [rbx + LEXER_col], cx
+    mov     [rbx + LEXER_pos], r10
     cmp     r10, [rbx + LEXER_end]
     jge     .lex_number_done
-    movzx   rdi, byte [r10]
 
-    ; accept hex digits
-    call    str_is_hex_digit
-    cmp     rax, TRUE
-    je      .lex_number_advance
-
-    ; accept prefixes and scientific markers
-    movzx   rdi, byte [r10]
-    cmp     rdi, 'x'
-    je      .lex_number_advance
-    cmp     rdi, 'X'
-    je      .lex_number_advance
-    cmp     rdi, 'b'
-    je      .lex_number_advance
-    cmp     rdi, 'B'
-    je      .lex_number_advance
-    cmp     rdi, 'o'
-    je      .lex_number_advance
-    cmp     rdi, 'O'
-    je      .lex_number_advance
-    ; NASM's other radix letters (ffh, 777q, 1010y, 0t100) and 1_000
-    cmp     rdi, 'h'
-    je      .lex_number_advance
-    cmp     rdi, 'H'
-    je      .lex_number_advance
-    cmp     rdi, 'q'
-    je      .lex_number_advance
-    cmp     rdi, 'Q'
-    je      .lex_number_advance
-    cmp     rdi, 'y'
-    je      .lex_number_advance
-    cmp     rdi, 'Y'
-    je      .lex_number_advance
-    cmp     rdi, 't'
-    je      .lex_number_advance
-    cmp     rdi, 'T'
-    je      .lex_number_advance
-    cmp     rdi, '_'
-    je      .lex_number_advance
-    
-    ; Float markers
-    cmp     rdi, '.'
+    ; float markers (. p P; e E are hex digits - "1e3" is read after)
+    cmp     eax, NUM_FLOAT
     je      .is_float
-    cmp     rdi, 'e'
-    je      .is_float
-    cmp     rdi, 'E'
-    je      .is_float
-    cmp     rdi, 'p'
-    je      .is_float
-    cmp     rdi, 'P'
-    je      .is_float
-    
     ; signs can appear after e/p, and only there: otherwise "4+8" would lex
     ; as a single number token
     ; integer size suffixes (1ULL, 32u, 5L) are consumed but are not part
     ; of the numeric text handed to str_to_int
-    cmp     rdi, 'u'
+    cmp     eax, NUM_SUFFIX
     je      .lex_number_suffix
-    cmp     rdi, 'U'
-    je      .lex_number_suffix
-    cmp     rdi, 'l'
-    je      .lex_number_suffix
-    cmp     rdi, 'L'
-    je      .lex_number_suffix
-
-    cmp     rdi, '+'
+    cmp     eax, NUM_SIGN
     je      .lex_number_sign
-    cmp     rdi, '-'
-    je      .lex_number_sign
-
     jmp     .lex_number_done
 
 .lex_number_sign:
@@ -2615,6 +2585,24 @@ msg_unterminated_brace:
 ; ============================================================================
 
 global lexer_char_props
+; what a byte is in a number (.lex_number_loop: NUM_*)
+lexer_num_class:
+    %assign i 0
+    %rep 256
+    %if (i >= '0' && i <= '9') || (i >= 'a' && i <= 'f') || (i >= 'A' && i <= 'F') || i == 'x' || i == 'X' || i == 'o' || i == 'O' || i == 'h' || i == 'H' || i == 'q' || i == 'Q' || i == 'y' || i == 'Y' || i == 't' || i == 'T' || i == '_'
+        db NUM_DIGIT
+    %elif i == '.' || i == 'p' || i == 'P'
+        db NUM_FLOAT
+    %elif i == 'u' || i == 'U' || i == 'l' || i == 'L'
+        db NUM_SUFFIX
+    %elif i == '+' || i == '-'
+        db NUM_SIGN
+    %else
+        db 0
+    %endif
+    %assign i i+1
+    %endrep
+
 lexer_char_props:
     %assign i 0
     %rep 256
