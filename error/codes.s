@@ -664,6 +664,7 @@ code_table:
     code_msg EXIT_MASM_ENDS,         m_masm_ends
     code_msg EXIT_MASM_STRUCT_OPEN,  m_masm_struct_open, t_masm_struct_open
     code_msg EXIT_FASM_FORMAT,       m_fasm_format, t_fasm_format
+    code_msg EXIT_KNOWN_RERUN,       m_known_rerun
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -836,7 +837,7 @@ m_gotoff_qword_abs: db "ELF64 requires ..gotoff references to be qword absolute"
 m_wrt_unsupported: db "ELF format does not support this use of WRT", 0
 m_dest_is_source: db "the destination must not be a source register (the CPU faults: #UD)", 0
 m_org_backwards: db ".org would move the location counter backwards", 0
-m_att_syntax:   db "AT&T syntax is not supported: utasm reads Intel syntax", 0
+m_att_syntax:   db "AT&T syntax: an instruction or operand not read (operands are %reg, $imm, disp(base, index, scale), *target)", 0
 m_merge_entsize: db "entity size for SHF_MERGE not specified", 0
 m_sym_type:     db "unrecognized symbol type", 0
 t_sym_type:     db "unrecognized symbol type `^'", 0
@@ -879,6 +880,7 @@ m_masm_struct_open: db "STRUCT with no ENDS", 0
 t_masm_struct_open: db "STRUCT `^' with no ENDS", 0
 m_fasm_format:  db "format: not the output format -f chose (ELF64 [executable], ELF, binary)", 0
 t_fasm_format:  db "format `^': not the output format -f chose (ELF64 [executable], ELF, binary)", 0
+m_known_rerun:  db "the second pass could not be started (running /proc/self/exe failed)", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
 t_multi:        db "symbol `^' defined more than once", 0
