@@ -303,7 +303,9 @@ struc LEXER
     field tag,      1       ; always TAG_LEXER
     field nolist,   1       ; 1: a GNU macro's / repetition's text - listed
                             ; as the line that called it (gas_macro.s)
-    field pad0,     6       ; alignment padding
+    field intel,    1       ; 1: utasm's own syntax even under .att_syntax
+                            ; (text frontend/parser/att.s and masm.s make)
+    field pad0,     5       ; alignment padding
     field buf,      8       ; buffer start pointer
     field pos,      8       ; current position pointer
     field end,      8       ; buffer end boundary pointer
