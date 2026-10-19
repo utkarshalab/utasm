@@ -166,6 +166,8 @@
 %define EXIT_MASM_STRUCT_OPEN  148 ; STRUCT with no ENDS
 %define EXIT_FASM_FORMAT       149 ; "format PE" (not the -f format)
 %define EXIT_KNOWN_RERUN       150 ; the second pass could not be started
+%define EXIT_CPU_LEVEL         151 ; an instruction past the "cpu" level
+%define EXIT_CPU_UNKNOWN       152 ; "cpu nonsense"
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
