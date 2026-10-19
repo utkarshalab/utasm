@@ -529,7 +529,8 @@ DIAG_CASES = [
 
 # the command line: NASM's options, each run with NASM and with utasm on
 # the same files. (name, arguments, what is compared: "bin" the flat
-# binary, "deps" the -M output, "pp" -E output assembled again)
+# binary, "deps" the -M output, "pp" -E output assembled again, "ppt" the
+# -E text itself)
 CLI_FILES = {
     "main.s": 'bits 64\n%include "defs.inc"\n%ifdef FAST\nmov eax, VAL\n%else\nnop\n%endif\n'
               'incbin "data.bin"\nmsg: db "hi", 0\n',
@@ -2823,3 +2824,49 @@ REJECT_CASES += [
     ("use32 under cpu 286", "bin", "cpu 286\nuse32\nnop\n"),
     ("bits 64 under cpu p6", "bin", "cpu p6\nbits 64\nnop\n"),
 ]
+
+# batch 63: -E writes what NASM's -E writes ("ppt": the text itself, byte
+# for byte): %line markers, the source's blanks, [bits ...] for NASM's
+# directive macros, [pragma ...]; %require (NASM 3)
+CLI_FILES.update({
+    "lines.s": "nop\n%define A 1\nnop\n%macro m 0\nnop\n%endmacro\nnop\n\n\nm\nnop\n%if 0\nhlt\n%endif\n"
+               "nop\n%rep 2\nint3\n%endrep\nnop\n%assign b 3\n  db  b ,  1\n  ; a comment\n\t\n",
+    "paste.s": "\t%define foo xyzzy\n%define bar 1e+10\n%define xyzzy1e 15\n%macro dx 2\n%assign\txx %1%2\n"
+               "\tdw xx\n%endmacro\n\tdx foo, bar\n%macro df 2\n\tdd %1e+%2\n%endmacro\n\tdf 1, 36\n"
+               "%define N 1e%++%+ 5\n\tdd N, 1e+5\n",
+    "strs.s": "%define what(&x,i,n)\t%str(i+1),\"/\",%str(n),\"=\", x, `\\n`\n"
+              "\tdb %map(what:(%mapi,%mapn),foo,bar)\n\tdb \"a'b\", 'x\"y', `t\\t`\n",
+    "dirs.s": "\tbits 64\nsection .text\nglobal a, b\nextern c,d\nuse32\nuserel\ncpu 686\n",
+    "nolist.s": "%macro m 1.nolist\n db %1\n db %1+1\n%endmacro\nm 3\nm 4\n%macro n 1\n%rep 2\n db %1\n"
+                "%endrep\n%endmacro\nn 5\n%define D db\nD 6\n",
+    "prag.s": "nop\n%pragma output gprefix _\n%pragma preproc sane_empty_expansion\n%pragma asm foo bar\n"
+              "%pragma\nnop\n",
+    "noeol.s": "db 1\n  ",
+    "noeol2.s": "db 1",
+    "pi.inc": "db 7\n",
+    "req.s": "%require \"pi.inc\"\n%require \"pi.inc\"\n%include \"pi.inc\"\ndb 1\n",
+    # another name for a file read: not again (NASM's -E reads it again, its
+    # assembly does not)
+    "reqdot.s": "%require \"pi.inc\"\n%require \"./pi.inc\"\ndb 1\n",
+    "reqself.s": "%require 'reqself.s'\ndb 1\n",
+})
+CLI_CASES += [
+    ("-E markers", ["lines.s"], "ppt"),
+    ("-E pasting", ["paste.s"], "ppt"),
+    ("-E strings", ["strs.s"], "ppt"),
+    ("-E directive macros", ["dirs.s"], "ppt"),
+    ("-E .nolist lines", ["nolist.s"], "ppt"),
+    ("-E %pragma", ["prag.s"], "ppt"),
+    ("-E no newline at the end", ["noeol.s"], "ppt"),
+    ("-E no newline at the end 2", ["noeol2.s"], "ppt"),
+    ("-E %require", ["req.s"], "ppt"),
+    ("%require", ["-f", "bin", "req.s"], "bin"),
+    ("%require under another name", ["-f", "bin", "reqdot.s"], "bin"),
+    ("%require of the source", ["-f", "bin", "reqself.s"], "bin"),
+    ("-E %require of the source", ["reqself.s"], "ppt"),
+    ("-E again: %require", ["-f", "bin", "req.s"], "pp"),
+    ("-E again: directive macros", ["-f", "bin", "nolist.s"], "pp"),
+]
+ELF_PROBES.update({
+    "bracket_pragma": "[pragma output gprefix _]\n[pragma elf lprefix L.]\nglobal f\nf: ret\nloc: nop\n",
+})
