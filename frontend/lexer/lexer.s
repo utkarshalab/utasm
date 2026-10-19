@@ -14,6 +14,7 @@
 DEFAULT REL
 
 extern arena_alloc
+extern att_on                   ; frontend/parser/att.s: AT&T syntax on
 extern arena_alloc_string
 extern error_emit
 extern mem_copy
@@ -231,6 +232,11 @@ lexer_next:
 
     cmp     rcx, '%'               ; directive
     jne     .not_percent
+    call    .att_active
+    jne     .pct_nasm
+    call    .att_register              ; "%eax", "%st", "%fs": a name
+    je      .lex_att_reg
+.pct_nasm:
     mov     r10, [rbx + LEXER_pos]
     lea     r11, [r10 + 1]
     cmp     r11, [rbx + LEXER_end]
@@ -269,6 +275,14 @@ lexer_next:
     je      .lex_ctx_local
     jmp     .lex_directive
 .not_percent:
+
+    ; AT&T: "$" before an immediate is a token of its own ($10 is ten, not
+    ; NASM's hex), ";" ends a statement as a line does
+    cmp     rcx, '$'
+    je      .att_dollar
+    cmp     rcx, ';'
+    je      .att_separator
+.not_att_char:
 
     ; a non-ASCII byte starts a UTF-8 identifier (or is malformed UTF-8)
     cmp     rcx, 0x80
@@ -591,6 +605,77 @@ lexer_next:
     call    .token_begin
     mov     byte [r12 + TOKEN_kind], TOK_DOLLAR
     jmp     .advance_single
+
+; ---- AT&T syntax (frontend/parser/att.s) --
+.att_dollar:
+    call    .att_active
+    jne     .not_att_char
+    jmp     .dollar_alone
+.att_separator:
+    ; (skip_ignored took ";" for a comment when not AT&T)
+    call    .token_begin
+    mov     byte [r12 + TOKEN_kind], TOK_NEWLINE
+    mov     byte [rel lex_gas_str], 0
+    jmp     .advance_single
+.lex_att_reg:
+    ; the name with its "%": the translation knows a register by it
+    call    .token_begin
+    mov     r13, [rbx + LEXER_pos]
+    inc     qword [rbx + LEXER_pos]
+    inc     word  [rbx + LEXER_col]
+    jmp     .lex_ident_loop
+
+; .att_active: ZF = 1 when this text is read as AT&T (.att_syntax or --att,
+; and not text utasm made in its own syntax). Preserves all but the flags.
+.att_active:
+    cmp     byte [rel att_on], 0
+    je      .att_off
+    cmp     byte [rbx + LEXER_intel], 0
+    ret
+.att_off:
+    cmp     byte [rel att_on], 1
+    ret
+
+; .att_register: ZF = 1 when the "%" at LEXER_pos starts a register: a
+; letter after it, and not the first thing on its line (a directive there:
+; %define, %include). Preserves all but the flags.
+.att_register:
+    push    rax
+    push    r10
+    mov     r10, [rbx + LEXER_pos]
+    lea     rax, [r10 + 1]
+    cmp     rax, [rbx + LEXER_end]
+    jae     .attr_no
+    movzx   eax, byte [r10 + 1]
+    or      eax, 0x20
+    sub     eax, 'a'
+    cmp     eax, 25
+    ja      .attr_no
+.attr_back:
+    cmp     r10, [rbx + LEXER_buf]
+    jbe     .attr_no                       ; the buffer's start: a directive
+    movzx   eax, byte [r10 - 1]
+    cmp     eax, 10
+    je      .attr_no
+    cmp     eax, ' '
+    je      .attr_blank
+    cmp     eax, 9
+    je      .attr_blank
+    cmp     eax, 13
+    jne     .attr_yes
+.attr_blank:
+    dec     r10
+    jmp     .attr_back
+.attr_yes:
+    xor     eax, eax                       ; ZF = 1
+    pop     r10
+    pop     rax
+    ret
+.attr_no:
+    or      eax, 1                         ; ZF = 0
+    pop     r10
+    pop     rax
+    ret
 
 .advance_single:
     inc     qword [rbx + LEXER_pos]
@@ -2257,9 +2342,18 @@ lexer_next:
     jmp     .skip_loop
 .not_continuation:
 
-    ; check for ; comment
+    ; check for ; comment (AT&T: a statement's end; # a comment anywhere)
     cmp     rcx, ';'
+    jne     .not_semicolon
+    call    .att_active
+    je      .skip_done
+    jmp     .skip_line_comment
+.not_semicolon:
+    cmp     rcx, '#'
+    jne     .not_att_hash
+    call    .att_active
     je      .skip_line_comment
+.not_att_hash:
 
     ; GNU's "# ..." comment line (x86 only: a "#" first on its line - NASM
     ; takes none there; GCC's "# 1 \"a.c\"" markers too). Elsewhere on a
