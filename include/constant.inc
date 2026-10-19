@@ -168,6 +168,8 @@
 %define EXIT_KNOWN_RERUN       150 ; the second pass could not be started
 %define EXIT_CPU_LEVEL         151 ; an instruction past the "cpu" level
 %define EXIT_CPU_UNKNOWN       152 ; "cpu nonsense"
+%define EXIT_BITS32_CPU        153 ; "bits 32" under "cpu 286"
+%define EXIT_BITS64_CPU        154 ; "bits 64" under "cpu p6"
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
