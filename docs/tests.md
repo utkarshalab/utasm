@@ -865,3 +865,14 @@ assemblers installed (nasm, yasm, GNU as, fasm) on generated workloads, each int
 mixed instructions, data tables, a macro-heavy source (NASM's preprocessor: utasm, nasm, yasm), and
 jump-heavy code (relaxation). It prints the best wall time of the runs, lines per second, the peak
 memory, and each assembler's time against utasm's. GNU as reads a translated copy in its Intel syntax.
+
+`scripts/bench/sample.py [--interval US] [--top N] [--callers FUNC] utasm ARGS...` profiles one run
+without perf: it stops the program under ptrace every US microseconds (default 200), reads rip, and
+maps it through `nm -n` to functions and their local labels. `--top N` lists the hottest functions
+and, for the first, its hottest labels; `--callers FUNC` lists, for the samples in FUNC, the return
+addresses on the stack above them - who calls it.
+
+```bash
+python3 scripts/bench/sample.py --interval 40 --top 30 build/gen1/utasm -f elf64 -o d.o data.s
+python3 scripts/bench/sample.py --callers symbol_find build/gen1/utasm -f elf64 -o d.o data.s
+```
