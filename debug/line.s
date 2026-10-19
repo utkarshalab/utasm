@@ -50,8 +50,8 @@ extern  str_to_int
 extern  arena_alloc_string
 extern  io_mmap
 extern  relax_map_offset
-extern  relax_map_offset_before
-extern  relax_after_pad
+extern  relax_map_ranked
+extern  relax_pad_rank
 extern  error_set_subject
 extern  str_int_to_str
 extern  coff_enabled
@@ -70,6 +70,7 @@ extern  dw_addr_size, dw_addr_type, dw_address, dw_cstr
 %define GR_FLAGS    36              ; b GLF_*
 %define GR_VKIND    37              ; b GLV_*
 %define GR_FPOS     38              ; b GRF_*: where in GNU's frag it is
+%define GR_RANK     39              ; b its padding rank (relax_pad_rank)
 %define GR_VIEW     40              ; d its view
 %define GR_FRAG     44              ; d the frag it is in (its section's)
 %define GR_VSYM     48              ; q the view's symbol (GLV_NAME)
@@ -105,9 +106,6 @@ extern  dw_addr_size, dw_addr_type, dw_address, dw_cstr
 %define GRF_UNSURE  4               ; its view depends on padding: only
                                     ; padding since the row before (or a
                                     ; row before that, at its place)
-%define GRF_AFTER   8               ; made after padding empty when read: it
-                                    ; follows the padding as it grows (else
-                                    ; it stays before, as a label does)
 
 %define GLF_NOSTMT      1           ; is_stmt 0 (0: is_stmt 1, the default)
 %define GLF_BB          2
@@ -583,12 +581,9 @@ line_emit:
     push    r8
     mov     rdi, rbx
     mov     rsi, [r12 + GR_OFF]
-    call    relax_after_pad
+    call    relax_pad_rank
     pop     r8
-    test    eax, eax
-    jz      .placed
-    or      byte [r12 + GR_FPOS], GRF_AFTER
-.placed:
+    mov     [r12 + GR_RANK], al            ; (after those paddings only)
     ; a view that depends on padding: GNU as works it out once the code is
     ; laid out (after the row before, nothing but padding - or the same
     ; place as a row before that does). Pass 2 has its value (core/known.s)
@@ -1496,13 +1491,8 @@ line_remap:
     cmp     [rbx + GR_SEC], r12
     jne     .next
     mov     rdi, [rbx + GR_OFF]
-    test    byte [rbx + GR_FPOS], GRF_AFTER
-    jnz     .after
-    call    relax_map_offset_before        ; (before padding grown at it)
-    jmp     .mapped
-.after:
-    call    relax_map_offset
-.mapped:
+    movzx   esi, byte [rbx + GR_RANK]
+    call    relax_map_ranked               ; (its place among the padding)
     mov     [rbx + GR_OFF], rax
 .next:
     add     rbx, GR_SIZE
