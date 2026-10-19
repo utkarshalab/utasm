@@ -763,7 +763,21 @@ times 16 db 0xFF                ; 16 bytes of 0xFF
 
 ; include search path set via CLI:
 ; utasm -i /usr/local/lib/utasm/ main.asm
+
+%require "utils.asm"            ; NASM 3: %include, unless this pass has
+                                ; read that file already
 ```
+
+`%require` skips a file that an `%include` or `%require` has already read
+in this pass. utasm recognises the file by its device and inode, so
+`"pi.inc"` and `"./pi.inc"` are the same file, as in NASM's assembly. NASM's
+`-E` compares names, so it reads the second spelling again. The source file
+itself does not count: a `%require` of it reads it once more, then stops
+there, as NASM does. A `%require` of a file that is not found is an error;
+NASM 3 skips it without a word.
+
+`[pragma ...]` is the same as `%pragma ...` (it is what `-E` writes for a
+`%pragma`): `[pragma output gprefix _]`.
 
 ---
 
