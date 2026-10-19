@@ -1014,7 +1014,19 @@ makes of it:
   it froze the function's code); `.p2align 4,,10` pads nothing where more
   than 10 bytes are needed, also after jumps are made short;
 - `.local x` then `.comm x, N, A` is N bytes of `.bss`, local; `.file
-  "x.c"` names the object's FILE symbol.
+  "x.c"` names the object's FILE symbol;
+- a double-quoted name is the name (GCC 16 quotes every one under
+  `-masm=intel`: `"main":`, `.globl "main"`, `call "puts"@PLT`,
+  `"cmp"[rip]`), and `sym@PLT` (`@GOTPCREL` ... as in AT&T syntax) is `sym
+  wrt ..plt`.
+
+In GNU's Intel syntax also: `st(1)` is `st1` and `st` alone `st0`;
+`XMMWORD PTR`, `YMMWORD PTR`, `ZMMWORD PTR` and `MMWORD PTR` are `oword`,
+`yword`, `zword` and `qword`; `movabs` is `mov` (GCC's, for an immediate
+past 32 bits); `data16` / `data32` and `addr16` / `addr32` are the raw
+`66` / `67` prefixes (`osp`, `asp`), `rex64` alone its `48` - GCC's TLS
+sequence. GCC's `-masm=intel` output assembles to the object GNU `as`
+makes of it as its AT&T output does.
 
 NASM's own sources keep NASM's rules: undefined names are errors, `.loop`
 is local to the label before it. A directive name followed by `:` is a
