@@ -260,6 +260,7 @@ alignb 8
 global masm_hl
 masm_hl:        resb 1              ; %use masm: these words MASM's
 alignb 8
+global mt_toks, mt_n, mx_s, mx_n, mx_cnt
 mt_toks:        resb MT_MAX * TOKEN_SIZE
 mt_n:           resq 1
 mb_buf:         resq 1
@@ -301,6 +302,7 @@ mx_cnt:         resq 1
 
 ; mt_collect: the tokens to the end of the line (the newline stays next),
 ; copied into mt_toks / mt_n. Output rax = OK or error
+global mt_collect
 mt_collect:
     mov     qword [rel mt_n], 0
 .c_next:
@@ -337,6 +339,7 @@ mt_collect:
     ret
 
 ; mt_tok: rax = token rcx
+global mt_tok
 mt_tok:
     imul    rax, rcx, TOKEN_SIZE
     push    rdx
@@ -378,6 +381,7 @@ mt_isq:
     ret
 
 ; mt_kind: eax = the kind of token rcx (0 past the end)
+global mt_kind
 mt_kind:
     xor     eax, eax
     cmp     rcx, [rel mt_n]
@@ -546,6 +550,7 @@ mt_close:
 
 ; mt_split: tokens [rcx, rdx) at their commas outside brackets: mx_s /
 ; mx_n / mx_cnt (each part's first token and how many)
+global mt_split
 mt_split:
     push    r12
     push    r13
@@ -713,6 +718,7 @@ mt_type:
 ; THE TEXT BUILT
 ; ============================================================================
 
+global mb_begin
 mb_begin:
     mov     qword [rel mb_len], 0
     mov     byte [rel mb_over], 0
@@ -733,6 +739,7 @@ mb_begin:
     ret
 
 ; mb_putc: al. Preserves all.
+global mb_putc
 mb_putc:
     push    rcx
     push    rdx
@@ -753,6 +760,7 @@ mb_putc:
     ret
 
 ; mb_putz: the NUL-terminated rsi. Preserves all.
+global mb_putz
 mb_putz:
     push    rsi
     push    rax
@@ -769,6 +777,7 @@ mb_putz:
     ret
 
 ; mb_num: rax in decimal. Preserves all.
+global mb_num
 mb_num:
     push    rax
     push    rcx
@@ -804,6 +813,7 @@ mb_num:
 
 ; mb_line: a new line of output: '%line N-1 "file"' first, so the line is
 ; numbered as the statement that made it
+global mb_line
 mb_line:
     push    rsi
     push    rax
@@ -828,6 +838,7 @@ mb_line:
     ret
 
 ; mb_nl: the line's end
+global mb_nl
 mb_nl:
     mov     al, 10
     jmp     mb_putc
@@ -866,6 +877,7 @@ m_new:
 
 ; mb_push: the text built, read next, listed as this statement's line
 ; Output rax = OK or error
+global mb_push
 mb_push:
     mov     eax, EXIT_OOM
     cmp     byte [rel mb_over], 0
@@ -883,6 +895,7 @@ mb_push:
     jnz     .ps_ret
     mov     rax, [rbx + PREP_lexer]
     mov     byte [rax + LEXER_nolist], 1
+    mov     byte [rax + LEXER_intel], 1    ; (utasm's syntax under .att_syntax)
     xor     eax, eax
 .ps_ret:
     ret
