@@ -21,6 +21,7 @@ NASM does not read; messages name it `-`, and with no `-o` the output is
 | `-a`, `-arch`, `--arch <arch>` | Target architecture: `amd64` (default), `aarch64`, or `riscv64`. |
 | `--standalone` | Produce a standalone executable and require `_start`. Its stack is not executable (`PT_GNU_STACK` read/write; `--execstack` makes it executable). |
 | `--att` | AT&T syntax from the start, as GNU `as` reads a source (GCC's `gcc -S` output has no `.att_syntax`); `.intel_syntax` in the source turns it off. See [syntax.md](syntax.md), AT&T syntax. |
+| `--gdwarf-2` .. `--gdwarf-5` | The DWARF version of the line table `.file` and `.loc` give (GCC passes `--gdwarf-5` for `-g`, `--gdwarf-4` for `-gdwarf-4`); 3 without, 5 once `.file 0` comes. See [syntax.md](syntax.md), Line tables. |
 | `--noexecstack` |An ELF object with an empty `.note.GNU-stack`: the stack need not be executable. Without it - as NASM writes objects - `ld` makes the program's stack executable. |
 | `--execstack` | `.note.GNU-stack` marked executable: the program needs an executable stack. |
 | `--cet` | An ELF object with `.note.gnu.property` saying it supports Intel CET (IBT and SHSTK), as `gcc -fcf-protection` marks its objects: linked only with others marked so, the program runs with indirect branch tracking and the shadow stack. Its indirect branch targets must begin with `endbr64` (`endbr32`), and its returns match its calls. |
