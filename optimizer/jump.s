@@ -2842,6 +2842,19 @@ rx_apply:
     jmp     .syms_next
 .sym_start:
     mov     rdi, [r13 + SYMBOL_value]
+    ; an end's hidden label ("L@here.e": GNU's .size) stays before
+    ; padding that grew from none at it
+    mov     rax, [r13 + SYMBOL_name]
+    test    rax, rax
+    jz      .sym_after
+    cmp     dword [rax], 'L@he'
+    jne     .sym_after
+    cmp     dword [rax + 4], 're.e'
+    jne     .sym_after
+    call    relax_map_offset_before
+    mov     [r13 + SYMBOL_value], rax
+    jmp     .syms_next
+.sym_after:
     call    rx_new
     mov     [r13 + SYMBOL_value], rax
 .syms_next:
