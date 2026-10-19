@@ -101,6 +101,8 @@ DEFAULT REL
 
 %define RF_RETARGET   1     ; -Os: target changed; resolve it here, even
                             ; if it stays rel32 (its relocation is stale)
+%define RF_RANKED     4     ; its target label's padding rank is in bits
+                            ; 4-7 (SYMBOL_lflags: rx_tgt_new)
 %define RF_BACKWARD   2     ; a backward rel16/rel32 jump the encoder
                             ; resolved in place (RELAX_FIXED, rx_backward):
                             ; RX_fill = its displacement | width << 56
@@ -109,6 +111,7 @@ DEFAULT REL
 %define RELOC_DELETED 0xFFFFFFFF
 
 extern global_ctx
+extern gas_names
 extern vec_init
 extern vec_push
 extern arena_alloc
@@ -140,6 +143,8 @@ rw_removed:         resq 1              ; bytes removed so far in this pass
 rw_passes:          resq 1              ; passes made choosing the sizes
 rw_ends:            resq 1              ; each record's RX_end
 rw_pref:            resq 1              ; bytes removed before each record
+rw_prev:            resq 1              ; ... in the pass before (rx_gas)
+rw_region:          resq 1              ; ... and the alignments before each
 rw_pref_ok:         resb 1              ; rw_pref and rw_ends hold (rx_new)
 rw_sorted:          resb 1              ; the records' RX_pos never go down
 global relax_no_freeze
@@ -1033,7 +1038,14 @@ rx_section:
     jae     .bcounted
     mov     rax, [r13 + rcx * 8]
     cmp     byte [rax + RX_kind], RELAX_JCC
-    ja      .bcount_next
+    jbe     .bcount_one
+    ; GNU's syntax: a backward jump resolved in place may be sized too
+    ; (rx_backward; every one is written long then)
+    cmp     byte [rax + RX_kind], RELAX_FIXED
+    jne     .bcount_next
+    cmp     byte [rel gas_names], 0
+    je      .bcount_next
+.bcount_one:
     inc     r8
 .bcount_next:
     inc     rcx
@@ -1073,7 +1085,12 @@ rx_section:
     jne     .count_next
     inc     r15
     cmp     byte [rax + RX_kind], RELAX_JCC
-    ja      .count_next
+    jbe     .count_one
+    cmp     byte [rax + RX_kind], RELAX_FIXED
+    jne     .count_next
+    cmp     byte [rel gas_names], 0
+    je      .count_next
+.count_one:
     inc     r8
 .count_next:
     inc     rcx
@@ -1242,6 +1259,32 @@ rx_section:
     ja      .tidx
     mov     rdi, [r13 + RX_aux]
     call    rx_ub
+    ; paddings empty when read at its label: those past the label's rank
+    ; are after it
+    movzx   esi, byte [r13 + RX_flags]
+    test    esi, RF_RANKED
+    jz      .tidx_set
+    shr     esi, 4                         ; the rank
+    mov     rdi, rax
+    xor     r8d, r8d                       ; the empty ones there
+.tidx_tail:
+    test    rdi, rdi
+    jz      .tidx_cut
+    mov     rcx, [rel rw_recs]
+    mov     rcx, [rcx + rdi*8 - 8]
+    mov     rdx, [r13 + RX_aux]
+    cmp     [rcx + RX_pos], rdx
+    jne     .tidx_cut
+    cmp     [rcx + RX_end], rdx
+    jne     .tidx_cut
+    inc     r8
+    dec     rdi
+    jmp     .tidx_tail
+.tidx_cut:
+    sub     r8, rsi
+    jle     .tidx_set
+    sub     rax, r8
+.tidx_set:
     mov     [r13 + RX_tidx], rax
     jmp     .tidx
 .tidx_done:
@@ -1252,6 +1295,17 @@ rx_section:
     mov     qword [rel rw_removed], 0
     mov     rdi, [rel rw_pref]
     mov     qword [rdi], 0
+    ; GNU's syntax: GNU as's sizes (rx_gas), not NASM's - but -Os's own
+    extern  gas_names
+    cmp     byte [rel gas_names], 0
+    je      .nasm_passes
+    cmp     byte [rbx + ASMCTX_opt], OPT_SIZE
+    jae     .nasm_passes
+    call    rx_gas
+    test    rax, rax
+    jnz     .ret
+    jmp     .stable
+.nasm_passes:
     xor     r15d, r15d
 .fp:
     cmp     r15, [rel rw_n]
@@ -1496,8 +1550,8 @@ rx_section:
 .verify_fixed:
     cmp     byte [r13 + RX_cc], 1
     jne     .verify_next                   ; rel32 always reaches
-    mov     rdi, [r13 + RX_aux]
-    call    rx_new
+    mov     rdi, r13
+    call    rx_tgt_new
     mov     rcx, rax                       ; new target
     mov     rdi, [r13 + RX_pos]
     call    rx_new                         ; new displacement offset
@@ -1576,6 +1630,196 @@ rx_section:
     pop     rbx
     ret
 
+; ---- rx_gas (internal) -------------------
+;
+; The sizes GNU as gives the jumps of the section rx_section is doing
+; (write.c relax_segment, relax_frag): every one that can be short starts
+; short, and a pass after pass, in order, grows one that does not reach -
+; never back. A target the pass has gone by is where it is now; one ahead
+; of it is where the pass before put it, moved by what the pass has grown
+; so far (relax_frag's stretch). Padding is worked out where it lies in
+; each pass. Until a pass changes nothing.
+; Output: RAX = OK or an error (out of memory)
+;
+rx_gas:
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    mov     rdi, [rbx + ASMCTX_arena]
+    mov     rsi, [rel rw_n]
+    lea     rsi, [rsi*8 + 8]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     [rel rw_prev], rdx
+    ; each record's region: the alignments before it (relax_segment's)
+    mov     rdi, [rbx + ASMCTX_arena]
+    mov     rsi, [rel rw_n]
+    lea     rsi, [rsi*8 + 8]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .ret
+    mov     [rel rw_region], rdx
+    xor     ecx, ecx
+    xor     r8d, r8d
+.region:
+    mov     [rdx + rcx*8], r8
+    cmp     rcx, [rel rw_n]
+    jae     .regions_done
+    mov     rax, [rel rw_recs]
+    mov     rax, [rax + rcx*8]
+    inc     rcx
+    cmp     byte [rax + RX_kind], RELAX_ALIGN
+    je      .new_region
+    cmp     byte [rax + RX_kind], RELAX_PADTO
+    jne     .region
+.new_region:
+    inc     r8
+    jmp     .region
+.regions_done:
+    xor     edi, edi                       ; the first: all short, as laid
+    call    .pass
+    mov     qword [rel rw_passes], 0
+.again:
+    mov     edi, 1
+    call    .pass
+    test    eax, eax
+    jz      .done
+    inc     qword [rel rw_passes]
+    cmp     qword [rel rw_passes], 100000
+    jb      .again
+.done:
+    xor     eax, eax
+.ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    ret
+
+; .pass: one pass (edi = 1: jumps may grow). eax = 1 when a size changed
+.pass:
+    mov     r12d, edi
+    ; the pass before: the bytes removed before each record
+    mov     rsi, [rel rw_pref]
+    mov     rdi, [rel rw_prev]
+    mov     rcx, [rel rw_n]
+    inc     rcx
+    rep movsq
+    xor     r14d, r14d                     ; a size changed
+    mov     qword [rel rw_removed], 0
+    mov     rdx, [rel rw_pref]
+    mov     qword [rdx], 0
+    xor     r15d, r15d
+.record:
+    cmp     r15, [rel rw_n]
+    jae     .passed
+    mov     rax, [rel rw_recs]
+    mov     r13, [rax + r15*8]
+    inc     r15
+    movzx   eax, byte [r13 + RX_kind]
+    cmp     eax, RELAX_ALIGN
+    je      .align
+    cmp     eax, RELAX_PADTO
+    je      .padto
+    cmp     eax, RELAX_JCC
+    ja      .zero
+    cmp     byte [r13 + RX_state], RS_SHORT
+    jne     .zero                          ; long (grown, or never short)
+    test    r12d, r12d
+    jz      .short
+    ; where its target is in this pass
+    mov     rcx, [r13 + RX_tidx]
+    lea     rdx, [r15 - 1]                 ; this record's index
+    cmp     rcx, rdx
+    ja      .ahead
+    mov     rdi, [rel rw_pref]
+    mov     rax, [r13 + RX_aux]
+    sub     rax, [rdi + rcx*8]             ; gone by: where it is now
+    jmp     .target
+.ahead:
+    mov     rdi, [rel rw_prev]
+    mov     rax, [r13 + RX_aux]
+    sub     rax, [rdi + rcx*8]             ; where the pass before put it,
+    mov     r8, [rdi + rdx*8]
+    sub     r8, [rel rw_removed]           ; ... and what has grown since
+    jz      .target
+    js      .stretch                       ; (shrunk: it moves back too)
+    ; grown: it moves as much only with no alignment between (one may take
+    ; it up: relax_frag's regions); else one now behind does not grow it
+    mov     rsi, [rel rw_region]
+    mov     r9, [rsi + rcx*8]
+    cmp     r9, [rsi + rdx*8]
+    je      .stretch
+    mov     r9, [r13 + RX_pos]
+    sub     r9, [rel rw_removed]
+    inc     r9                             ; after its opcode (GNU's fr_fix)
+    cmp     rax, r9
+    jb      .short
+    jmp     .target
+.stretch:
+    add     rax, r8
+.target:
+    mov     rcx, [r13 + RX_pos]
+    sub     rcx, [rel rw_removed]
+    add     rcx, 2
+    sub     rax, rcx                       ; its rel8
+    cmp     rax, -128
+    jl      .grow
+    cmp     rax, 127
+    jle     .short
+.grow:
+    mov     byte [r13 + RX_state], RS_LONG
+    mov     r14d, 1
+    jmp     .zero
+.short:
+    mov     rax, [r13 + RX_end]
+    sub     rax, [r13 + RX_pos]
+    sub     rax, 2                         ; 3 (jmp) or 4 (jcc) bytes less
+    jmp     .store
+.align:
+    mov     rax, [r13 + RX_pos]
+    sub     rax, [rel rw_removed]
+    neg     rax
+    mov     rcx, [r13 + RX_aux]
+    dec     rcx
+    and     rax, rcx                       ; its padding in this pass
+    mov     rcx, r13
+    call    rx_cap
+    mov     ecx, [r13 + RX_aux32]
+    sub     rcx, rax
+    mov     rax, rcx
+    jmp     .store_checked
+.padto:
+    mov     rax, [r13 + RX_pos]
+    sub     rax, [rel rw_removed]
+    neg     rax
+    add     rax, [r13 + RX_aux]
+    jns     .padto_len
+    xor     eax, eax
+.padto_len:
+    mov     ecx, [r13 + RX_aux32]
+    sub     rcx, rax
+    mov     rax, rcx
+.store_checked:
+    cmp     rax, [r13 + RX_change]
+    je      .store
+    mov     r14d, 1                        ; (GNU as passes again)
+    jmp     .store
+.zero:
+    xor     eax, eax
+.store:
+    mov     [r13 + RX_change], rax
+    add     rax, [rel rw_removed]
+    mov     [rel rw_removed], rax
+    mov     rdx, [rel rw_pref]
+    mov     [rdx + r15*8], rax
+    jmp     .record
+.passed:
+    mov     eax, r14d
+    ret
+
 ; ---- rx_prepare_candidate (internal) ----
 ;
 ; Checks that a noted jump can be shortened at all and finds its target.
@@ -1636,6 +1880,13 @@ rx_prepare_candidate:
     jnz     .done
     cmp     byte [rdx + SYMBOL_kind], SYM_LABEL
     jne     .done                          ; (global or not, as NASM does)
+    ; GNU's syntax: a weak one may be preempted - GNU as leaves its
+    ; relocation (and the jump long)
+    cmp     byte [rel gas_names], 0
+    je      .not_weak
+    cmp     byte [rdx + SYMBOL_vis], VIS_WEAK
+    je      .done
+.not_weak:
     mov     rax, [rel rw_sec]
     mov     eax, [rax + SECTION_index]
     cmp     ax, [rdx + SYMBOL_section]
@@ -1653,6 +1904,14 @@ rx_prepare_candidate:
     jb      .done                          ; not a forward target
     mov     [r12 + RX_aux], rax
     mov     byte [r12 + RX_state], RS_LONG
+    movzx   eax, byte [rdx + SYMBOL_lflags]
+    cmp     eax, 15
+    jbe     .ranked
+    mov     eax, 15
+.ranked:
+    shl     eax, 4
+    or      eax, RF_RANKED
+    or      [r12 + RX_flags], al
 .done:
     pop     r13
     pop     r12
@@ -2426,40 +2685,86 @@ rx_new:
     add     rax, rdi
     ret
 
-; relax_after_pad: eax = 1 when the last record noted is section rdi's
-; padding (align, times K-($-$$)) ending at rsi - a label defined there now
-; is after it, whatever it grows to (parser_define_label). Preserves the
-; others.
-global relax_after_pad
-relax_after_pad:
+; relax_mark_rank: the record noted last jumps to a label of padding rank
+; edi (its SYMBOL_lflags: RF_RANKED, the rank in bits 4-7 - the encoder's
+; backward jumps). Preserves every register.
+global relax_mark_rank
+relax_mark_rank:
+    push    rax
     push    rcx
+    push    rdi
+    lea     rax, [rel relax_vec]
+    cmp     byte [rax + VEC_tag], TAG_VEC
+    jne     .out
+    mov     rcx, [rax + VEC_len]
+    test    rcx, rcx
+    jz      .out
+    dec     rcx
+    imul    rcx, rcx, RX_SIZE
+    add     rcx, [rax + VEC_data]
+    cmp     edi, 15
+    jbe     .rank
+    mov     edi, 15
+.rank:
+    shl     edi, 4
+    or      edi, RF_RANKED
+    and     byte [rcx + RX_flags], 0x0F & ~RF_RANKED
+    or      [rcx + RX_flags], dil
+.out:
+    pop     rdi
+    pop     rcx
+    pop     rax
+    ret
+
+; rx_tgt_new: the target of record rdi where it is now - among padding
+; that grew from none at it, after as many as its label's rank (RF_RANKED).
+; Clobbers rcx, rdx, rdi, rsi, r9
+rx_tgt_new:
+    movzx   esi, byte [rdi + RX_flags]
+    test    esi, RF_RANKED
+    mov     rdi, [rdi + RX_aux]
+    jz      rx_new
+    shr     esi, 4
+    jmp     relax_map_ranked
+
+; relax_pad_rank: eax = how many paddings of section rdi empty as written
+; at offset rsi (align, times K-($-$$)) were noted last - a label or a row
+; made there now comes after them, and before any noted later (a label's
+; SYMBOL_lflags, parser_define_label). Preserves the others.
+global relax_pad_rank
+relax_pad_rank:
+    push    rcx
+    push    rdx
     push    r8
     xor     eax, eax
     lea     r8, [rel relax_vec]
     cmp     byte [r8 + VEC_tag], TAG_VEC
     jne     .out
     mov     rcx, [r8 + VEC_len]
+.back:
     test    rcx, rcx
     jz      .out
     dec     rcx
-    imul    rcx, rcx, RX_SIZE
-    add     rcx, [r8 + VEC_data]
-    cmp     [rcx + RX_sec], rdi
+    imul    rdx, rcx, RX_SIZE
+    add     rdx, [r8 + VEC_data]
+    cmp     [rdx + RX_sec], rdi
     jne     .out
-    movzx   r8d, byte [rcx + RX_kind]
-    cmp     r8d, RELAX_ALIGN
+    cmp     byte [rdx + RX_kind], RELAX_ALIGN
     je      .padding
-    cmp     r8d, RELAX_PADTO
+    cmp     byte [rdx + RX_kind], RELAX_PADTO
     jne     .out
 .padding:
-    ; its end as written: its start and length (RX_end is set later)
-    mov     r8d, [rcx + RX_aux32]
-    add     r8, [rcx + RX_pos]
-    cmp     r8, rsi
+    ; empty as written, at that offset (RX_end is set later)
+    cmp     [rdx + RX_pos], rsi
     jne     .out
-    mov     eax, 1
+    cmp     dword [rdx + RX_aux32], 0
+    jne     .out
+    inc     eax
+    cmp     eax, 255
+    jb      .back
 .out:
     pop     r8
+    pop     rdx
     pop     rcx
     ret
 
@@ -2469,11 +2774,11 @@ global relax_map_offset
 relax_map_offset:
     jmp     rx_new
 
-; relax_map_offset_before: the same, but before padding that grew from none
-; at that very offset (align, times K-($-$$)): where a line ending there
-; ends. Clobbers rdx, r9.
-global relax_map_offset_before
-relax_map_offset_before:
+; relax_map_ranked: rx_new, but of the paddings that grew from none at that
+; very offset only the first esi count as before it (a label, a row of
+; that rank: relax_pad_rank) - the rest are after it. Clobbers rdx, r9.
+global relax_map_ranked
+relax_map_ranked:
     push    rdi
     call    rx_new
     pop     rdi
@@ -2499,22 +2804,47 @@ relax_map_offset_before:
     jmp     .count
 .counted:
     pop     rax
-    ; the last of them, empty at the offset: their change undone
-.back:
-    test    rcx, rcx
-    jz      .done
+    ; the last of them empty at the offset: how many
+    mov     r8, rcx
+    xor     edx, edx
+.tail:
+    test    r8, r8
+    jz      .tailed
+    mov     r9, [rel rw_recs]
+    mov     r9, [r9 + r8*8 - 8]
+    cmp     [r9 + RX_end], rdi
+    jne     .tailed
+    cmp     [r9 + RX_pos], rdi
+    jne     .tailed
+    inc     rdx
+    dec     r8
+    jmp     .tail
+.tailed:
+    ; those past its rank: their change undone (they come after it)
+    movzx   r8d, sil
+    sub     rdx, r8
+    jle     .done
+.undo:
     mov     r9, [rel rw_recs]
     mov     r9, [r9 + rcx*8 - 8]
-    cmp     [r9 + RX_end], rdi
-    jne     .done
-    cmp     [r9 + RX_pos], rdi
-    jne     .done
     add     rax, [r9 + RX_change]
     dec     rcx
-    jmp     .back
+    dec     rdx
+    jnz     .undo
 .done:
     pop     r8
     pop     rcx
+    ret
+
+; relax_map_offset_before: before every padding that grew from none at
+; that very offset (align, times K-($-$$)): where a line ending there ends.
+; Clobbers rdx, r9.
+global relax_map_offset_before
+relax_map_offset_before:
+    push    rsi
+    xor     esi, esi
+    call    relax_map_ranked
+    pop     rsi
     ret
 
 ; ---- rx_short_disp (internal) -----------
@@ -2525,8 +2855,10 @@ relax_map_offset_before:
 rx_short_disp:
     push    rbx
     mov     rbx, rdi
-    mov     rdi, [rbx + RX_aux]
-    call    rx_new
+    push    rsi
+    mov     rdi, rbx
+    call    rx_tgt_new
+    pop     rsi
     mov     rcx, rax                       ; new target
     mov     rdi, [rbx + RX_pos]
     call    rx_new                         ; new start of the jump
@@ -2570,12 +2902,14 @@ rx_backward:
     mov     rdx, [rbx + RX_pos]            ; the displacement
     cmp     [rbx + RX_aux], rdx
     jae     .next                          ; forward: not this
-    cmp     rdx, 2
-    jb      .next
+    test    rdx, rdx
+    jz      .next
     ; the opcode before the displacement: E9 (jmp) or 0F 8x (jcc); a call
     ; or a loop stays as it is
     cmp     byte [r12 + rdx - 1], 0xE9
     je      .jmp
+    cmp     rdx, 2
+    jb      .next                          ; (a jcc's two opcode bytes)
     cmp     byte [r12 + rdx - 2], 0x0F
     jne     .next
     movzx   eax, byte [r12 + rdx - 1]
@@ -2606,7 +2940,7 @@ rx_backward:
     add     rdx, rcx
     mov     [rbx + RX_end], rdx
     mov     dword [rbx + RX_aux32], NO_RELOC
-    mov     byte [rbx + RX_flags], RF_BACKWARD
+    or      byte [rbx + RX_flags], RF_BACKWARD
     mov     byte [rbx + RX_state], RS_LONG
     push    rcx
     push    rdx
@@ -2645,7 +2979,7 @@ rx_backward_restore:
     mov     [rdx + RX_cc], r8b
     mov     [rdx + RX_pos], rax
     mov     [rdx + RX_end], rax
-    mov     byte [rdx + RX_flags], 0
+    and     byte [rdx + RX_flags], 0xF0 | RF_RANKED
     jmp     .next
 .done:
     ret
@@ -2801,8 +3135,8 @@ rx_apply:
     mov     rbx, [rax + r15*8]
     cmp     byte [rbx + RX_kind], RELAX_FIXED
     jne     .fixed_next
-    mov     rdi, [rbx + RX_aux]
-    call    rx_new
+    mov     rdi, rbx
+    call    rx_tgt_new
     mov     rcx, rax                       ; new target
     mov     rdi, [rbx + RX_pos]
     call    rx_new
@@ -2892,17 +3226,12 @@ rx_apply:
     mov     [r13 + SYMBOL_value], rax
     jmp     .syms_next
 .sym_after:
-    ; a label stays before padding that grew from none at it - unless it
-    ; was defined after that padding (SYML_AFTER_PAD): GCC's ".LVL8:" /
-    ; ".p2align 4,,10" ends the code before it, its ".L3:" after them
-    ; starts the code after
-    test    byte [r13 + SYMBOL_lflags], SYML_AFTER_PAD
-    jnz     .sym_new
-    call    relax_map_offset_before
-    mov     [r13 + SYMBOL_value], rax
-    jmp     .syms_next
-.sym_new:
-    call    rx_new
+    ; a label stays before padding that grew from none at it - but for the
+    ; paddings there defined before it (its rank, SYMBOL_lflags): GCC's
+    ; ".LVL8:" / ".p2align 4,,10" ends the code before it, its ".L3:"
+    ; after them starts the code after
+    movzx   esi, byte [r13 + SYMBOL_lflags]
+    call    relax_map_ranked
     mov     [r13 + SYMBOL_value], rax
 .syms_next:
     add     r13, SYMBOL_SIZE
