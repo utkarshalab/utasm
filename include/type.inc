@@ -112,7 +112,9 @@ struc SYMBOL
     field eother,   1       ; ELF visibility: default, internal, hidden,
                             ; protected
     field pflags,   1       ; SYMF_*: how the preprocessor made it
-    field lflags,   1       ; SYML_*: a label's place
+    field lflags,   1       ; a label's padding rank: the paddings empty when
+                            ; read at its offset that came before it (it
+                            ; stays after them as they grow, before others)
     field pad0,     1       ; alignment padding
     field name,     8       ; pointer to name string
     field value,    8       ; address or constant value
@@ -159,7 +161,10 @@ struc SECTION
     field bin_off,     8    ; its offset in the image (binary_layout)
     field bin_flags,   1    ; BIN_VSTART / BIN_START given
     field nrela,       4    ; relocations in it (elf64_relocs_in_section's count)
-    field pad2,        3
+    field gas_last,    1    ; GNU's syntax: 1 when the last statement here was
+                            ; data, not an instruction (tc-i386's last_insn):
+                            ; an alignment then pads with a plain nop first
+    field pad2,        2
 endstruc
 
 ; ============================================================================
