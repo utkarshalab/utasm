@@ -954,6 +954,55 @@ with the code when jumps are shortened. With `-f bin` and `-f win64` they
 are read and not written. The misuses are errors with GAS's messages
 ("CFI instruction used without previous .cfi_startproc" and the like).
 
+### Line tables: .file and .loc
+
+GCC's `-g` output names its source files and gives each instruction its
+source position; utasm makes `.debug_line` of them as GNU `as` 2.43 does,
+byte for byte (the compatibility suites assemble GCC's `-g` output at every
+level, in both syntaxes, with both and compare every section).
+
+```asm
+    .file 0 "/build" "src/m.c"      ; DWARF 5: the build directory, file 0
+    .file 1 "src/m.c"               ; file 1 ("dir" "name" and md5 0x... too)
+    .loc 1 12 5 view .LVU3          ; file, line, column, options
+    movl    %edi, %eax
+```
+
+- `.loc FILE LINE [COLUMN]` takes `is_stmt 0|1`, `discriminator N`,
+  `isa N`, `basic_block`, `prologue_end`, `epilogue_begin` and
+  `view NAME | 0 | -0`. Its row is at the next instruction - at once when it
+  has a view, or when another `.loc` comes first - in a code section (in
+  data it waits for the next instruction).
+- A row's view is 0 where the address moved on from the row before in its
+  section, else that row's view plus one; `view .LVUn` defines `.LVUn` as
+  that number, which GCC's location lists read (`.uleb128 .LVU12`).
+  `view 0` asserts it is 0; `view -0` makes it 0.
+- The version: `--gdwarf-N` (GCC passes `--gdwarf-5`), DWARF 3 without
+  one, DWARF 5 once `.file 0` or `.loc 0` comes. DWARF 5 keeps its file and
+  directory names in `.debug_line_str`, after the compiler's own strings.
+- The rows move with the code when jumps are shortened. So do the label
+  differences GCC's debug sections measure code with, `.quad .LFE1-.LFB1`
+  and `.uleb128 .LVL3-.LVL2`: GNU's syntax works them out once the code is
+  laid out, as GNU `as` does (a LEB128's in the second pass, its size from
+  its value), where utasm used to keep the code between them as it was
+  first written - jumps there stayed long.
+- A view that only padding decides (a row after `ret`, then `.p2align`,
+  then a row) is worked out once the code is laid out, as GNU `as` does:
+  the second pass has its value.
+- A label or a row just before an alignment (GCC's `.LVL8:` /
+  `.p2align 4,,10`) stays before its padding when the padding grows; one
+  after it stays after.
+- Where GNU `as` starts a new frag because its memory chunk is full, it
+  sets a `view -0` row's address again; utasm advances to the same address
+  (the same table, a few bytes otherwise).
+- `.file N` and `.loc` take the line table from `-g`: utasm writes none of
+  its own then, as GNU `as`. Without a `.debug_info` of the source's, GNU
+  `as` writes a compile unit of its own for the table; utasm does not yet.
+- The errors are GNU `as`'s: "unassigned file number N", "file table slot
+  N is already occupied by a different file", "unknown .loc sub-directive",
+  "is_stmt value not 0 or 1", "view number mismatch", "duplicate
+  .debug_line sections".
+
 ### GNU as directives
 
 utasm also reads GNU `as` code in its Intel syntax (`.intel_syntax
