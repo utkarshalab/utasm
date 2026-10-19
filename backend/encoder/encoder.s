@@ -275,14 +275,17 @@ amd64_encode_instruction:
     
     ; 2. Emit Segment Prefix if present in any operand
     lea     rdi, [r12 + INST_op0]
-    mov     al, [rdi + OPERAND_segment]
+    call    amd64_seg_of
     IF al, e, 0
         lea rdi, [r12 + INST_op1]
-        mov al, [rdi + OPERAND_segment]
+        call amd64_seg_of
         ENDIF
     IF al, ne, 0
+        call    amd64_seg_default
+        je      .seg_done                  ; GNU's syntax: the default one, left out
         call    amd64_emit_byte
         ENDIF
+.seg_done:
 
     ; 2b. Address-size prefix: "a32" written, or memory addressed by
     ;     registers of the other size
@@ -2698,6 +2701,12 @@ amd64_branch_fits_rel8:
     xor     eax, eax
     cmp     byte [rbx + ASMCTX_opt], OPT_NONE
     je      .ret                           ; -O0, -O1: jumps as written (rel32)
+    ; GNU's syntax: every jump starts long here and GNU as's relaxation
+    ; sizes it (optimizer/jump.s rx_gas) - a backward one too, which may
+    ; have to grow when padding after it does
+    extern  gas_names
+    cmp     byte [rel gas_names], 0
+    jne     .ret
     cmp     byte [rbx + ASMCTX_opt], OPT_MIN
     je      .ret
     test    rsi, rsi
@@ -2745,6 +2754,154 @@ amd64_gas_global:
     ret
 .gg_no:
     cmp     byte [rel gas_names], 2        ; ZF = 0 (it is 0 or 1)
+    ret
+
+; amd64_seg_of: al = the segment prefix the operand rdi (of the INST r12)
+; asks for, 0 for none - and none for a string instruction's es:[rdi]
+; ("movsb es:[rdi], fs:[rsi]", "stos %al, %es:(%rdi)"): es is that
+; operand's own, which no prefix changes; a 26 there overrode the other
+; operand's segment instead. Preserves all but rax and the flags.
+amd64_seg_of:
+    movzx   eax, byte [rdi + OPERAND_segment]
+    cmp     eax, 0x26
+    jne     .so_ret
+    cmp     byte [rdi + OPERAND_kind], OP_MEM
+    jne     .so_ret
+    cmp     byte [rdi + OPERAND_base], 7   ; rdi / edi / di
+    jne     .so_ret
+    push    rcx
+    movzx   ecx, word [r12 + INST_op_id]
+    cmp     ecx, 1080                      ; cmpsd / movsd: the string forms
+    je      .so_mem                        ; (a memory operand first), not SSE's
+    cmp     ecx, 1420
+    je      .so_mem
+    cmp     ecx, 1078
+    jb      .so_keep
+    cmp     ecx, 1083
+    jbe     .so_fixed                      ; cmps*
+    cmp     ecx, 1281
+    jb      .so_keep
+    cmp     ecx, 1285
+    jbe     .so_fixed                      ; ins*
+    cmp     ecx, 1418
+    je      .so_fixed                      ; movs
+    cmp     ecx, 1419
+    je      .so_fixed
+    cmp     ecx, 1423
+    je      .so_fixed
+    cmp     ecx, 1425
+    je      .so_fixed
+    cmp     ecx, 1629
+    jb      .so_keep
+    cmp     ecx, 1632
+    jbe     .so_fixed                      ; scas*
+    cmp     ecx, 1668
+    jb      .so_keep
+    cmp     ecx, 1672
+    jbe     .so_fixed                      ; stos*
+    cmp     ecx, 7534
+    je      .so_fixed                      ; scasq
+    jmp     .so_keep
+.so_mem:
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_MEM
+    jne     .so_keep
+.so_fixed:
+    xor     eax, eax
+.so_keep:
+    pop     rcx
+.so_ret:
+    ret
+
+; amd64_seg_default: ZF = 1 when, in GNU's syntax, the segment prefix al
+; written on the operand rdi is the one its address uses anyway - ss with
+; rbp / rsp as the base (bp in 16-bit addressing), ds with any other or
+; none - which GNU as leaves out ("BYTE PTR ds:0", GCC's; tc-i386
+; process_operands). NASM's syntax writes what is written. Preserves all
+; but the flags.
+amd64_seg_default:
+    extern  gas_names
+    cmp     byte [rel gas_names], 0
+    je      .sd_no
+    cmp     byte [rdi + OPERAND_kind], OP_MEM
+    jne     .sd_no
+    push    rcx
+    push    rdx
+    mov     edx, 0x3E                      ; ds
+    movzx   ecx, byte [rdi + OPERAND_base]
+    test    byte [rdi + OPERAND_flags], OP_FLAG_ADDR16
+    jz      .sd_64
+    cmp     ecx, 5
+    je      .sd_ss                         ; [bp], [bp+si], [bp+di]
+    cmp     byte [rdi + OPERAND_index], 5
+    je      .sd_ss                         ; ([si+bp])
+    jmp     .sd_cmp
+.sd_64:
+    cmp     ecx, 4
+    je      .sd_ss                         ; rsp / esp (not r12)
+    cmp     ecx, 5
+    jne     .sd_cmp                        ; rbp / ebp (not r13)
+.sd_ss:
+    mov     edx, 0x36
+.sd_cmp:
+    cmp     al, dl
+    pop     rdx
+    pop     rcx
+    ret
+.sd_no:
+    test    esp, esp                       ; ZF = 0
+    ret
+
+; amd64_gas_preempt: ZF = 1 when, in GNU's syntax, the branch whose opcode
+; was just emitted keeps its relocation to the label rsi (a SYMBOL* of
+; this section). GNU as resolves a jmp / jcc it relaxes (EB, E9, 7x, 0F
+; 8x) in the section when the symbol cannot be preempted there - not weak
+; (tc-i386 elf_symbol_resolved_in_segment_p; "jmp x@PLT" never comes
+; here) - and a global as well as a local one: only a call (and loop,
+; jecxz) to a global stays the linker's. Preserves all but the flags.
+amd64_gas_preempt:
+    call    amd64_gas_global
+    jne     .gp_ret                        ; local, or NASM's syntax: resolve
+    cmp     byte [rsi + SYMBOL_vis], VIS_WEAK
+    je      .gp_ret                        ; (ZF = 1: may be preempted)
+    push    rax
+    push    rcx
+    push    rdx
+    mov     rax, [rbx + ASMCTX_curr_sec]
+    mov     rcx, [rax + SECTION_size]
+    mov     rdx, [rax + SECTION_data]
+    cmp     rcx, [rax + SECTION_cap]
+    ja      .gp_keep
+    test    rcx, rcx
+    jz      .gp_keep
+    movzx   eax, byte [rdx + rcx - 1]      ; the opcode before the displacement
+    cmp     eax, 0xE9
+    je      .gp_resolve
+    cmp     eax, 0xEB
+    je      .gp_resolve
+    mov     edx, eax
+    and     edx, 0xF0
+    cmp     edx, 0x70
+    je      .gp_resolve                    ; jcc rel8
+    cmp     edx, 0x80
+    jne     .gp_keep
+    cmp     rcx, 2
+    jb      .gp_keep
+    mov     rdx, [rbx + ASMCTX_curr_sec]
+    mov     rdx, [rdx + SECTION_data]
+    cmp     byte [rdx + rcx - 2], 0x0F
+    je      .gp_resolve                    ; jcc rel32
+.gp_keep:
+    pop     rdx
+    pop     rcx
+    pop     rax
+    cmp     al, al                         ; ZF = 1
+    ret
+.gp_resolve:
+    pop     rdx
+    pop     rcx
+    pop     rax
+    test    esp, esp                       ; ZF = 0
+.gp_ret:
     ret
 
 ;*
@@ -5720,9 +5877,9 @@ amd64_emit_branch_disp:
     jne     .relocate              ; "wrt ..plt": its relocation, as asked
     push    rsi
     mov     rsi, r15
-    call    amd64_gas_global
+    call    amd64_gas_preempt
     pop     rsi
-    je      .relocate              ; GNU's syntax: a global keeps its relocation
+    je      .relocate              ; GNU's syntax: a call to a global keeps its relocation
 
     mov     r8, [rbx + ASMCTX_curr_sec]
     test    r8, r8
@@ -5879,6 +6036,10 @@ amd64_emit_branch_disp:
     mov     r8, r14                        ; width: 1, 2 or 4
     mov     edi, RELAX_FIXED
     call    relax_note
+    ; its label's padding rank (where it is among padding that grows)
+    movzx   edi, byte [r15 + SYMBOL_lflags]
+    extern  relax_mark_rank
+    call    relax_mark_rank
     pop     r8
     pop     rcx
     pop     rdx
@@ -6542,6 +6703,9 @@ amd64_emit_modrm_sib:
                 sub     rax, [rcx + SYMBOL_value]
                 ENDIF
             mov     [rel amd64_rip_disp], rax
+            ; (rax is the result: an offset of 40 read as EXIT_ENCODE_FAIL
+            ; made "[rel x + 40]" no form of any instruction)
+            xor     eax, eax
             ENDIF
 
         ; Emit 4-byte zero placeholder
