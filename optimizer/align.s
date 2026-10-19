@@ -160,7 +160,8 @@ align_fill_spec:
 ;
 ; align_gas_spec
 ; The fill spec of GNU as's code alignment, in the bits now: its long
-; NOPs, never a jump.
+; NOPs, never a jump. Bit 0 set (the caller): a plain nop first, as GNU as
+; pads where the last thing was not an instruction (i386_generate_nops).
 ; Output   : rax = fill spec
 ;
 global align_gas_spec
@@ -226,6 +227,15 @@ align_fill:
     ret
 
 .nops:
+    ; GNU's: a plain nop first where the last thing was data (bit 0)
+    test    edx, 1
+    jz      .no_lead
+    test    rsi, rsi
+    jz      .no_lead
+    mov     byte [rdi], 0x90
+    inc     rdi
+    dec     rsi
+.no_lead:
     ; the table for the mode and bits
     mov     eax, edx
     shr     eax, 16
