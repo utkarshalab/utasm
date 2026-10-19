@@ -26,6 +26,28 @@ extern relax_note
 
 [SECTION .text]
 
+; emit_fast n, src: the common case of the emitters below - a current
+; section with room for n more bytes - stores src there and returns
+; EXIT_OK, before any frame is built; anything else goes on to .slow.
+; Only rax and rdx change, rdx left at the last byte written (as the
+; byte-at-a-time path leaves it).
+%macro emit_fast 2
+    mov     rax, [rdi + ASMCTX_curr_sec]
+    test    rax, rax
+    jz      .slow
+    mov     rdx, [rax + SECTION_size]
+    add     rdx, %1
+    cmp     rdx, [rax + SECTION_cap]
+    ja      .slow
+    mov     [rax + SECTION_size], rdx
+    add     rdx, [rax + SECTION_data]
+    mov     [rdx - %1], %2
+    dec     rdx
+    xor     eax, eax
+    ret
+.slow:
+%endmacro
+
 ;*
 ; * [asm_ctx_emit_byte]
 ; * Purpose: Appends a single byte to the active section's buffer.
@@ -37,6 +59,7 @@ global asmctx_emit_byte
 asmctx_emit_byte:
 global asm_ctx_emit_byte
 asm_ctx_emit_byte:
+    emit_fast 1, sil
     prologue
     push    rbx
     push    r12
@@ -336,6 +359,7 @@ global asmctx_emit_dword
 asmctx_emit_dword:
 global asm_ctx_emit_dword
 asm_ctx_emit_dword:
+    emit_fast 4, esi
     prologue
     push    rbx
     push    r12
@@ -372,6 +396,7 @@ global asmctx_emit_word
 asmctx_emit_word:
 global asm_ctx_emit_word
 asm_ctx_emit_word:
+    emit_fast 2, si
     prologue
     push    rbx
     push    r12
@@ -398,6 +423,7 @@ global asmctx_emit_qword
 asmctx_emit_qword:
 global asm_ctx_emit_qword
 asm_ctx_emit_qword:
+    emit_fast 8, rsi
     prologue
     push    rbx
     push    r12
