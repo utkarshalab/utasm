@@ -2789,3 +2789,17 @@ ATT_ERRORS = [
     ("movl %eax %ebx", "AT&T syntax"),
     ("movl $5, %eax)", "AT&T syntax"),
 ]
+
+# batch 61: NASM's cpu levels (the mnemonic's lowest form's)
+BIN_PROBES.update({
+    "cpu_levels_ok": "bits 32\ncpu 586\ncpuid\ncpu p6\ncmovz eax, ebx\ncpu katmai\nmovaps xmm0, xmm1\n"
+                     "cpu x86-64\nsyscall\ncpu ia64\nhaddps xmm0, xmm1\ncpu default\nvaddps ymm0, ymm1, ymm2\n",
+})
+REJECT_CASES += [
+    ("cpu 386 cpuid", "bin", "bits 32\ncpu 386\ncpuid\n"),
+    ("cpu 8086 bswap", "bin", "bits 32\ncpu 8086\nbswap eax\n"),
+    ("cpu 486 cmovz", "bin", "bits 32\ncpu 486\ncmovz eax, ebx\n"),
+    ("cpu p6 movaps", "bin", "bits 32\ncpu p6\nmovaps xmm0, xmm1\n"),
+    ("cpu ia64 popcnt", "bin", "bits 32\ncpu ia64\npopcnt eax, ebx\n"),
+    ("cpu unknown", "bin", "cpu sparcv9\nnop\n"),
+]
