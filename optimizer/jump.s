@@ -158,6 +158,23 @@ fx_queued:          resq 1              ; ... on it (a byte per record)
 ; Noting events while assembling (called by the encoder, align, parser)
 ; ============================================================================
 
+; rx_cap: GNU's ".p2align N,,MAX" - an align record whose fill spec holds a
+; MAX (bits 10-15: MAX + 1) pads nothing where it would need more. rcx =
+; the record, rax = the padding -> rax. Preserves the rest.
+rx_cap:
+    push    rdx
+    mov     rdx, [rcx + RX_fill]
+    shr     edx, 10
+    and     edx, 63
+    jz      .cap_ret
+    dec     edx
+    cmp     rax, rdx
+    jbe     .cap_ret
+    xor     eax, eax
+.cap_ret:
+    pop     rdx
+    ret
+
 ; ---- relax_note --------------------------
 ;
 ; relax_note
@@ -1292,6 +1309,8 @@ rx_section:
     mov     rcx, [r13 + RX_aux]
     dec     rcx
     and     rax, rcx
+    mov     rcx, r13
+    call    rx_cap
     mov     ecx, [r13 + RX_aux32]
     sub     rcx, rax
     mov     rax, rcx
@@ -1411,6 +1430,8 @@ rx_section:
     mov     rcx, [r13 + RX_aux]
     dec     rcx
     and     rax, rcx                       ; its padding in this pass
+    mov     rcx, r13
+    call    rx_cap
     mov     ecx, [r13 + RX_aux32]
     sub     rcx, rax
     mov     rax, rcx
@@ -1979,6 +2000,10 @@ rx_layout:
     mov     r9, [rbx + RX_aux]
     dec     r9
     and     rax, r9                        ; new padding
+    push    rcx                            ; (the record's index)
+    mov     rcx, rbx
+    call    rx_cap
+    pop     rcx
     mov     edx, [rbx + RX_aux32]          ; old padding
     sub     rdx, rax
     jmp     .store
