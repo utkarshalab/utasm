@@ -610,34 +610,34 @@ asm_ctx_align:
     
     mov     rdx, rax
     and     rdx, rcx               ; offset = size & mask
-
-    ; Note the padding point for optimizer/jump.s - also when no padding
-    ; is needed now, since moving earlier code can make some necessary.
-    push    rax
-    push    rcx
-    push    rdx
-    push    rsi
-    push    rdi
-    push    r8
-    mov     rsi, rax               ; position of the padding
     mov     rcx, r12
     sub     rcx, rdx               ; padding = align - offset...
     test    rdx, rdx
     cmovz   rcx, rdx               ; ...or 0 when already aligned
+    ; GNU's ".p2align N,,MAX" (the fill spec's bits 10-15: MAX + 1): none
+    ; where more is needed - optimizer/jump.s (rx_cap) the same when code
+    ; before it moves
+    mov     r8, r14
+    shr     r8d, 10
+    and     r8d, 63
+    jz      .uncapped
+    dec     r8d
+    cmp     rcx, r8
+    jbe     .uncapped
+    xor     ecx, ecx
+.uncapped:
+
+    ; Note the padding point for optimizer/jump.s - also when no padding
+    ; is needed now, since moving earlier code can make some necessary.
+    ; (relax_note keeps every register)
+    mov     rsi, rax               ; position of the padding
     mov     rdx, r12               ; alignment
     mov     r8, r14                ; the fill spec, to pad again
     mov     edi, RELAX_ALIGN
     call    relax_note
-    pop     r8
-    pop     rdi
-    pop     rsi
-    pop     rdx
-    pop     rcx
-    pop     rax
-    test    rdx, rdx
-    jz      .done                  ; already aligned
-    
-    sub     r12, rdx               ; padding = align - offset
+    mov     r12, rcx               ; the padding
+    test    r12, r12
+    jz      .done                  ; already aligned (or past MAX)
     
     ; 3. The bytes (optimizer/align.s): a byte repeated, or smartalign's
     ; long NOPs
