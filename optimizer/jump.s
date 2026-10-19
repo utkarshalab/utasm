@@ -2426,6 +2426,43 @@ rx_new:
     add     rax, rdi
     ret
 
+; relax_after_pad: eax = 1 when the last record noted is section rdi's
+; padding (align, times K-($-$$)) ending at rsi - a label defined there now
+; is after it, whatever it grows to (parser_define_label). Preserves the
+; others.
+global relax_after_pad
+relax_after_pad:
+    push    rcx
+    push    r8
+    xor     eax, eax
+    lea     r8, [rel relax_vec]
+    cmp     byte [r8 + VEC_tag], TAG_VEC
+    jne     .out
+    mov     rcx, [r8 + VEC_len]
+    test    rcx, rcx
+    jz      .out
+    dec     rcx
+    imul    rcx, rcx, RX_SIZE
+    add     rcx, [r8 + VEC_data]
+    cmp     [rcx + RX_sec], rdi
+    jne     .out
+    movzx   r8d, byte [rcx + RX_kind]
+    cmp     r8d, RELAX_ALIGN
+    je      .padding
+    cmp     r8d, RELAX_PADTO
+    jne     .out
+.padding:
+    ; its end as written: its start and length (RX_end is set later)
+    mov     r8d, [rcx + RX_aux32]
+    add     r8, [rcx + RX_pos]
+    cmp     r8, rsi
+    jne     .out
+    mov     eax, 1
+.out:
+    pop     r8
+    pop     rcx
+    ret
+
 ; relax_map_offset: rx_new for the listing (lst_remap), while rx_apply
 ; rewrites a section
 global relax_map_offset
@@ -2855,6 +2892,16 @@ rx_apply:
     mov     [r13 + SYMBOL_value], rax
     jmp     .syms_next
 .sym_after:
+    ; a label stays before padding that grew from none at it - unless it
+    ; was defined after that padding (SYML_AFTER_PAD): GCC's ".LVL8:" /
+    ; ".p2align 4,,10" ends the code before it, its ".L3:" after them
+    ; starts the code after
+    test    byte [r13 + SYMBOL_lflags], SYML_AFTER_PAD
+    jnz     .sym_new
+    call    relax_map_offset_before
+    mov     [r13 + SYMBOL_value], rax
+    jmp     .syms_next
+.sym_new:
     call    rx_new
     mov     [r13 + SYMBOL_value], rax
 .syms_next:
@@ -2871,6 +2918,10 @@ rx_apply:
     mov     rdi, r12
     extern  cfi_remap
     call    cfi_remap
+    ; and GNU's .loc rows (debug/line.s)
+    mov     rdi, r12
+    extern  line_remap
+    call    line_remap
     ; and the preprocessor's label differences (core/known.s)
     mov     rdi, r12
     extern  known_remap
