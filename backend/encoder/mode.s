@@ -203,38 +203,14 @@ amd64_osz66:
 
 ;*
 ; * [amd64_emit_osz_prefix]
-; * Purpose: Emit the operand-size prefix 66. NASM puts it before the
-; *          address-size prefix 67, which the encoder's entry emits first
-; *          (amd64_a67_at): when that 67 is the last byte out, the two
-; *          trade places.
+; * Purpose: Emit the operand-size prefix 66 - after an address-size 67
+; *          the encoder's entry emitted (67 66, as NASM 3 and GNU as write
+; *          them; NASM 2 wrote 66 67, which utasm traded the two for).
 ; * Input  : RBX = AsmCtx
 ; ;
 global amd64_emit_osz_prefix
 global amd64_a67_at
 amd64_emit_osz_prefix:
-    push    rcx
-    push    rdx
-    cmp     qword [rel amd64_a67_at], -1
-    je      .plain                         ; no 67 in this instruction
-    mov     rcx, [rbx + ASMCTX_curr_sec]
-    test    rcx, rcx
-    jz      .plain
-    mov     rdx, [rcx + SECTION_size]
-    cmp     rdx, [rcx + SECTION_cap]
-    ja      .plain                         ; (not in the buffer: no bytes)
-    dec     rdx
-    cmp     rdx, [rel amd64_a67_at]
-    jne     .plain
-    mov     rcx, [rcx + SECTION_data]
-    mov     byte [rcx + rdx], 0x66
-    mov     qword [rel amd64_a67_at], -1
-    pop     rdx
-    pop     rcx
-    mov     al, 0x67
-    jmp     amd64_emit_byte
-.plain:
-    pop     rdx
-    pop     rcx
     mov     al, 0x66
     jmp     amd64_emit_byte
 
