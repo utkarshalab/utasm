@@ -311,13 +311,18 @@ prep_label_define:
 ; ("elf", "elf64" / "elf32", "win", "win64", "coff", "bin"); the first one
 ; given for each wins ("%pragma elf gprefix" with no text: none, even
 ; with "%pragma output gprefix _" after it). Other pragmas: ignored.
+; "[pragma ...]" is the same (pragma_bracket: the parser's, up to "]");
+; -E writes a %pragma on as one, as NASM does (pragma_queue).
 ; Input: rbx = PrepState. The rest of the line is left (drained after).
 ;
 global pragma_affix
+global prep_handle_pragma, pragma_bracket
 prep_handle_pragma:
     push    r12
     push    r13
     push    r14
+    cmp     byte [rel lexer_mark_lone], 0
+    jne     .dump
     mov     byte [rel prep_noexpand], 1
     mov     rdi, rbx
     call    preprocessor_next_token        ; the namespace
@@ -371,6 +376,11 @@ prep_handle_pragma:
     je      .text_done
     cmp     eax, TOK_EOF
     je      .text_done
+    cmp     eax, TOK_RBRACKET
+    jne     .text_take
+    cmp     byte [rel pragma_bracket], 0
+    jne     .text_done                     ; "[pragma ...]"'s end
+.text_take:
     mov     rdi, rbx
     call    preprocessor_next_token
     call    prep_idn_text
@@ -403,6 +413,91 @@ prep_handle_pragma:
     pop     r14
     pop     r13
     pop     r12
+    ret
+
+.dump:
+    ; -E: the line's text, for prep_dump to write as "[pragma ...]" - not
+    ; the preprocessor's own ("%pragma preproc ..."), nor one with no name
+    ; first. Queued: the directives up to the next line's token are all
+    ; read before prep_dump sees it. An entry: file, line, the text
+    mov     eax, [rel pragma_qlen]
+    cmp     eax, PRAGMA_QUEUE - PRAGMA_ENTRY
+    ja      .out                           ; (no room: left out)
+    lea     rcx, [rel pragma_queue]
+    add     rcx, rax
+    mov     [rel pragma_entry], rcx
+    mov     byte [rcx + 12], 0
+    xor     r12d, r12d                     ; tokens read
+.dump_token:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .out
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .dump_done
+    cmp     eax, TOK_EOF
+    je      .dump_done
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .out
+    mov     r13, rdx
+    test    r12d, r12d
+    jnz     .dump_blank
+    ; the first: where the line is, and its namespace
+    cmp     byte [r13 + TOKEN_kind], TOK_IDENT
+    jne     .out
+    mov     rcx, [rel pragma_entry]
+    mov     rax, [r13 + TOKEN_file]
+    mov     [rcx], rax
+    mov     eax, [r13 + TOKEN_line]
+    mov     [rcx + 8], eax
+    mov     rdi, [r13 + TOKEN_value]
+    lea     rsi, [rel s_pns_preproc]
+    call    str_cmp_kw
+    test    eax, eax
+    jz      .out
+    jmp     .dump_text
+.dump_blank:
+    test    byte [r13 + TOKEN_flags], TOK_FLAG_SPACE
+    jz      .dump_text
+    lea     rsi, [rel s_blank_text]
+    call    .dump_append
+.dump_text:
+    inc     r12d
+    mov     rdx, r13
+    call    prep_idn_text
+    mov     rsi, rax
+    call    .dump_append
+    jmp     .dump_token
+.dump_done:
+    test    r12d, r12d
+    jz      .out
+    mov     rdi, [rel pragma_entry]
+    add     rdi, 12
+    call    str_len
+    add     eax, 12 + 1
+    add     [rel pragma_qlen], eax         ; queued
+    jmp     .out
+; .dump_append: rsi's text after the entry's, as it fits
+.dump_append:
+    mov     r14, rsi
+    mov     rdi, rsi
+    call    str_len
+    push    rax
+    mov     rdi, [rel pragma_entry]
+    add     rdi, 12
+    call    str_len
+    pop     rcx
+    add     rax, rcx
+    cmp     rax, PRAGMA_ENTRY - 12 - 1
+    jae     .appended
+    mov     rdi, [rel pragma_entry]
+    add     rdi, 12
+    mov     rsi, r14
+    call    str_concat
+.appended:
     ret
 
 ; prep_pragma_ns: eax = 1 when the namespace rdi applies to this output
@@ -470,10 +565,19 @@ s_pns_elf32:    db "elf32", 0
 s_pns_win:      db "win", 0
 s_pns_win64:    db "win64", 0
 s_pns_coff:     db "coff", 0
+s_pns_preproc:  db "preproc", 0
+s_blank_text:   db " ", 0
 [SECTION .bss]
 alignb 8
 pragma_affix:   resq 4              ; gprefix, gpostfix, lprefix, lpostfix (0: none given)
 pragma_buf:     resb 128
+PRAGMA_ENTRY equ 12 + 256
+PRAGMA_QUEUE equ 8192
+pragma_queue:   resb PRAGMA_QUEUE   ; -E: %pragmas for prep_dump to write:
+pragma_qlen:    resd 1              ; the file, the line, the text of each
+pragma_entry:   resq 1              ; (the one being read)
+pragma_where:   resb TOKEN_SIZE     ; (prep_dump: its line, as a token's)
+pragma_bracket: resb 1              ; 1: the parser's "[pragma ...]"
 [SECTION .text]
 
 ; ---- prep_error_note --------------------
@@ -925,6 +1029,11 @@ prep_internal_next:
     mov     rcx, [rcx + MACROEXP_parent]
     jmp     .ml_in_own
 .ml_may_call:
+    ; the line it is called on: a .nolist one's lines are on it (-E)
+    mov     eax, [r12 + TOKEN_line]
+    mov     [rel exp_call_line], eax
+    mov     rax, [r12 + TOKEN_file]
+    mov     [rel exp_call_file], rax
     ; its arguments call no multi-line macro; its body is lines of its own
     movzx   eax, byte [rel ml_state]
     mov     [rel ml_called_at], al
@@ -944,6 +1053,16 @@ prep_internal_next:
     call    prep_list_label
     jmp     .next                  ; get first token of expansion
 .call_macro:
+    ; a blank before the name is one before what it stands for; it stands
+    ; on the name's line (-E)
+    movzx   eax, byte [r12 + TOKEN_flags]
+    and     eax, TOK_FLAG_SPACE
+    or      eax, 0x80
+    mov     [rel exp_lead], al
+    mov     eax, [r12 + TOKEN_line]
+    mov     [rel exp_call_line], eax
+    mov     rax, [r12 + TOKEN_file]
+    mov     [rel exp_call_file], rax
     mov     rdi, rbx
     mov     rsi, [rdx + SYMBOL_value] ; rsi = pointer to MACRO struct
     call    prep_expand_start
@@ -1167,15 +1286,21 @@ prep_internal_next:
     epilogue
     ret
 
+DUMP_BUF equ 16384
+
 ; ---- prep_dump --------------------------
 ;
 ; prep_dump
 ; Runs the preprocessor over the rest of the source and writes what it
-; produces as text (-E): macros expanded, conditionals resolved, includes
-; read, one output line per line. Tokens are separated by a blank where the
-; source had one; strings are written back in quotes that read back to the
-; same bytes. With fd -1 nothing is written (-M only needs the includes
-; read).
+; produces as text (-E), as NASM does: macros expanded, conditionals
+; resolved, includes read, one output line per line. A directive's line is
+; not written; a line of nothing but blanks or a comment is, empty. A
+; blank goes where the source had blanks. "%line N+step file" goes before
+; a line that is not the one after the last (an empty line instead when
+; one line was left out; step 0 while a macro's lines come again), so what
+; reads it back reports the source's lines. Strings are written back in
+; quotes that read back to the same bytes. With fd -1 nothing is written
+; (-M only needs the includes read).
 ; Input    : rdi = PrepState, esi = fd, or -1
 ; Output   : rax = EXIT_OK or the preprocessor's error
 ;
@@ -1189,61 +1314,105 @@ prep_dump:
     mov     rbx, rdi
     mov     r12d, esi
     xor     r13d, r13d                     ; 1: the line has a token already
+    extern  lexer_mark_lone
+    mov     byte [rel lexer_mark_lone], 1
+    mov     qword [rel dump_file], 0
+    mov     dword [rel dump_linnum], 0
+    mov     dword [rel dump_lineinc], 0
+    mov     dword [rel dump_fill], 0
+    mov     byte [rel dump_eof], 0
+    mov     byte [rel dump_close], 0
+    mov     byte [rel dump_after_word], 0
 .token:
     mov     rdi, rbx
     call    preprocessor_next_token
     test    rax, rax
     jnz     .ret
     mov     r14, rdx
+    cmp     dword [rel pragma_qlen], 0
+    je      .no_pragma
+    call    .pragma_out
+.no_pragma:
     movzx   eax, byte [r14 + TOKEN_kind]
     cmp     eax, TOK_EOF
-    je      .ok
+    jne     .not_eof
+    mov     byte [rel dump_eof], 1         ; a last line with no newline
+    jmp     .newline                       ; ends as the others
+.not_eof:
     cmp     eax, TOK_NEWLINE
     jne     .text
+.newline:
+    test    r13d, r13d
+    jnz     .line_end
+    ; nothing on the line: written when the source's was empty
+    test    byte [r14 + TOKEN_flags], TOK_FLAG_LONE
+    jz      .line_done
+    mov     ecx, 1
+    call    .where
+    jc      .line_done
+.line_end:
+    cmp     byte [rel dump_close], 0
+    je      .closed
+    mov     byte [rel dump_close], 0
+    lea     rsi, [rel dump_shut]
+    mov     edx, 1
+    call    .write
+.closed:
     lea     rsi, [rel dump_newline]
     mov     edx, 1
     call    .write
     xor     r13d, r13d
+.line_done:
+    cmp     byte [rel dump_eof], 0
+    jne     .ok
     jmp     .token
 
 .text:
     test    r13d, r13d
+    jnz     .placed_line
+    xor     ecx, ecx
+    call    .where
+    mov     r13d, 1
+    ; a directive NASM makes a macro of is written as what it gives:
+    ; "bits 64" is "[bits 64]", "use32" "[bits 32]", "extern a, b" is
+    ; "[extern a]" and "[extern b]" (dump_dir_words)
+    cmp     byte [r14 + TOKEN_kind], TOK_IDENT
+    jne     .placed_line
+    call    .directive_word
+    test    eax, eax
+    jz      .placed_line
+    mov     [rel dump_close], al
+    mov     [rel dump_word], rsi
+    call    .open_word
+    jmp     .token
+.placed_line:
+    cmp     byte [rel dump_close], 2
+    jne     .not_split
+    cmp     byte [r14 + TOKEN_kind], TOK_COMMA
+    jne     .not_split
+    lea     rsi, [rel dump_shut]           ; a name done: the next on a
+    mov     edx, 1                         ; line of its own, as NASM's
+    call    .write                         ; %rep writes them
+    lea     rsi, [rel dump_newline]
+    mov     edx, 1
+    call    .write
+    xor     ecx, ecx
+    call    .where
+    call    .open_word
+    jmp     .token
+.not_split:
+    cmp     byte [rel dump_after_word], 0
+    je      .own_blank
+    mov     byte [rel dump_after_word], 0
+    jmp     .blank_now                     ; "[bits" and one blank
+.own_blank:
+    test    byte [r14 + TOKEN_flags], TOK_FLAG_SPACE
     jz      .first
-    ; no blank before , ) ] or after ( [; else a blank where the source
-    ; had one
-    movzx   eax, byte [r14 + TOKEN_kind]
-    cmp     eax, TOK_COMMA
-    je      .first
-    cmp     eax, TOK_RPAREN
-    je      .first
-    cmp     eax, TOK_RBRACKET
-    je      .first
-    movzx   eax, byte [rel dump_prev_kind]
-    cmp     eax, TOK_LPAREN
-    je      .first
-    cmp     eax, TOK_LBRACKET
-    je      .first
-    mov     eax, [r14 + TOKEN_line]
-    cmp     eax, [rel dump_prev_line]
-    jne     .blank
-    movzx   eax, word [r14 + TOKEN_col]
-    cmp     eax, [rel dump_prev_end]
-    jbe     .first
-.blank:
+.blank_now:
     lea     rsi, [rel dump_blank]
     mov     edx, 1
     call    .write
 .first:
-    mov     r13d, 1
-    movzx   eax, byte [r14 + TOKEN_kind]
-    mov     [rel dump_prev_kind], al
-    mov     eax, [r14 + TOKEN_line]
-    mov     [rel dump_prev_line], eax
-    movzx   eax, word [r14 + TOKEN_col]
-    movzx   ecx, word [r14 + TOKEN_len]
-    add     eax, ecx
-    mov     [rel dump_prev_end], eax
-
     movzx   eax, byte [r14 + TOKEN_kind]
     cmp     eax, TOK_STRING
     je      .string
@@ -1281,7 +1450,10 @@ prep_dump:
     mov     rsi, rax
     call    .write_str
     cmp     byte [r14 + TOKEN_kind], TOK_LABEL
+    je      .colon
+    cmp     byte [r14 + TOKEN_kind], TOK_LOCAL_LABEL
     jne     .token
+.colon:
     lea     rsi, [rel dump_colon]          ; "name:" comes as one token
     mov     edx, 1
     call    .write
@@ -1310,39 +1482,59 @@ prep_dump:
     call    str_len
     mov     ecx, eax
 .string_len:
-    ; "..." when every byte is printable and none is ", else '...' when
-    ; none is ', else `...` with escapes
-    mov     r8d, 34                        ; "
-    mov     r9d, 39                        ; '
+    movzx   r9d, byte [r14 + TOKEN_quote]
+    call    .requote
+    jmp     .token
+
+; .requote: r15 = bytes, ecx = count, r9d = the quote the source wrote
+; them in, or 0. In that quote when it reads back the same bytes, else as
+; NASM's nasm_quote: '...', else "...", else `...` with escapes
+.requote:
+    cmp     r9d, '`'
+    je      .backquote
+    mov     r8d, 1                         ; '...' can hold them
+    mov     r10d, 1                        ; "..." can
     xor     edx, edx
 .scan:
     cmp     edx, ecx
     jae     .scanned
     movzx   eax, byte [r15 + rdx]
     inc     edx
-    cmp     eax, 32
-    jb      .backquote
-    cmp     eax, 126
-    ja      .backquote
-    cmp     eax, 34
-    jne     .not_dq
-    xor     r8d, r8d
-.not_dq:
     cmp     eax, 39
-    jne     .scan
-    xor     r9d, r9d
+    jne     .not_sq
+    xor     r8d, r8d
+.not_sq:
+    cmp     eax, '"'
+    jne     .not_dq
+    xor     r10d, r10d
+.not_dq:
+    cmp     eax, ' '
+    jb      .unprintable
+    cmp     eax, '~'
+    jbe     .scan
+.unprintable:
+    xor     r8d, r8d
+    xor     r10d, r10d
     jmp     .scan
 .scanned:
+    cmp     r9d, '"'
+    jne     .pick
+    test    r10d, r10d
+    jnz     .in_dq
+.pick:
     test    r8d, r8d
-    jnz     .plain
-    mov     r8d, r9d
-    test    r8d, r8d
+    jnz     .in_sq
+    test    r10d, r10d
     jz      .backquote
+.in_dq:
+    mov     r8d, '"'
+    jmp     .plain
+.in_sq:
+    mov     r8d, 39
 .plain:
     mov     rsi, r15
     mov     edx, ecx
-    call    .quoted
-    jmp     .token
+    jmp     .quoted
 .backquote:
     push    rcx
     lea     rsi, [rel dump_bq]
@@ -1357,52 +1549,350 @@ prep_dump:
     inc     edx
     push    rcx
     push    rdx
-    cmp     eax, 32
-    jb      .bq_hex
-    cmp     eax, 126
-    ja      .bq_hex
+    lea     rdi, [rel dump_hex]
+    mov     byte [rdi], 92                 ; backslash
     cmp     eax, '`'
-    je      .bq_hex
-    cmp     eax, 92                        ; backslash
-    je      .bq_hex
-    mov     [rel dump_hex], al
-    lea     rsi, [rel dump_hex]
+    je      .bq_escaped
+    cmp     eax, 92
+    je      .bq_escaped
+    cmp     eax, 27
+    je      .bq_esc_e
+    lea     r8d, [rax - 7]
+    cmp     r8d, 6
+    ja      .bq_other
+    lea     r10, [rel dump_named]          ; \a \b \t \n \v \f \r
+    movzx   eax, byte [r10 + r8]
+    jmp     .bq_escaped
+.bq_esc_e:
+    mov     eax, 'e'
+.bq_escaped:
+    mov     [rdi + 1], al
+    mov     edx, 2
+    jmp     .bq_put
+.bq_other:
+    cmp     eax, ' '
+    jb      .bq_octal
+    cmp     eax, '~'
+    ja      .bq_octal
+    mov     [rdi], al
     mov     edx, 1
-    call    .write
-    jmp     .bq_next
-.bq_hex:
-    ; \xHH
-    mov     ecx, eax
-    shr     ecx, 4
-    lea     rdi, [rel dump_digits]
-    mov     cl, [rdi + rcx]
-    mov     [rel dump_hex + 2], cl
-    and     eax, 15
-    mov     al, [rdi + rax]
-    mov     [rel dump_hex + 3], al
-    mov     byte [rel dump_hex], 92
-    mov     byte [rel dump_hex + 1], 'x'
+    jmp     .bq_put
+.bq_octal:
+    ; the fewest octal digits, all three when a digit 0-7 comes next
+    mov     r9d, eax
+    cmp     edx, ecx
+    jae     .oct_digits
+    movzx   r10d, byte [r15 + rdx]
+    sub     r10d, '0'
+    cmp     r10d, 7
+    ja      .oct_digits
+    mov     r9d, 0xFF
+.oct_digits:
+    lea     rsi, [rdi + 1]
+    cmp     r9d, 63
+    jbe     .oct_two
+    mov     r10d, eax
+    shr     r10d, 6
+    add     r10d, '0'
+    mov     [rsi], r10b
+    inc     rsi
+.oct_two:
+    cmp     r9d, 7
+    jbe     .oct_one
+    mov     r10d, eax
+    shr     r10d, 3
+    and     r10d, 7
+    add     r10d, '0'
+    mov     [rsi], r10b
+    inc     rsi
+.oct_one:
+    and     eax, 7
+    add     eax, '0'
+    mov     [rsi], al
+    inc     rsi
+    mov     rdx, rsi
+    sub     rdx, rdi
+.bq_put:
     lea     rsi, [rel dump_hex]
-    mov     edx, 4
     call    .write
-.bq_next:
     pop     rdx
     pop     rcx
     jmp     .bq_byte
 .bq_end:
     lea     rsi, [rel dump_bq]
     mov     edx, 1
-    call    .write
-    jmp     .token
+    jmp     .write
 
 .ok:
     xor     eax, eax
 .ret:
+    push    rax
+    call    .flush
+    pop     rax
     pop     r15
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
+    ret
+
+; .directive_word: r14's name in dump_dir_words (any letter case): eax =
+; its kind there, rsi = what follows "[" (its name, or what it stands
+; for); eax = 0 when it is none of them
+.directive_word:
+    mov     rdi, [r14 + TOKEN_value]
+    test    rdi, rdi
+    jz      .word_none
+    lea     rsi, [rel dump_dir_words]
+.word_next:
+    movzx   r8d, byte [rsi]
+    test    r8d, r8d
+    jz      .word_none
+    inc     rsi
+    call    str_cmp_kw
+    test    eax, eax
+    jz      .word_found
+    call    .past_nul
+    cmp     r8d, 3
+    jne     .word_next
+    call    .past_nul                      ; (and what it stands for)
+    jmp     .word_next
+.word_found:
+    mov     eax, r8d
+    cmp     eax, 3
+    jne     .word_ret
+    call    .past_nul
+.word_ret:
+    ret
+.word_none:
+    xor     eax, eax
+    ret
+.past_nul:
+    inc     rsi
+    cmp     byte [rsi - 1], 0
+    jne     .past_nul
+    ret
+
+; .pragma_out: the %pragmas the preprocessor read (pragma_queue), as NASM
+; writes them: "[pragma ...]", each a line of its own
+.pragma_out:
+    push    r14
+    lea     rax, [rel pragma_queue]
+    mov     [rel pragma_entry], rax        ; (the one being written)
+.pragma_next:
+    mov     eax, [rel pragma_qlen]
+    lea     rcx, [rel pragma_queue]
+    add     rcx, rax
+    mov     rax, [rel pragma_entry]
+    cmp     rax, rcx
+    jae     .pragmas_out
+    lea     r14, [rel pragma_where]
+    mov     rcx, [rax]
+    mov     [r14 + TOKEN_file], rcx
+    mov     ecx, [rax + 8]
+    mov     [r14 + TOKEN_line], ecx
+    xor     ecx, ecx
+    call    .where
+    lea     rsi, [rel dump_pragma]
+    call    .write_str
+    mov     rsi, [rel pragma_entry]
+    add     rsi, 12
+    call    .write_str
+    lea     rsi, [rel dump_shut]
+    mov     edx, 1
+    call    .write
+    lea     rsi, [rel dump_newline]
+    mov     edx, 1
+    call    .write
+    mov     rdi, [rel pragma_entry]
+    add     rdi, 12
+    call    str_len
+    lea     rax, [rax + 12 + 1]
+    add     [rel pragma_entry], rax
+    jmp     .pragma_next
+.pragmas_out:
+    mov     dword [rel pragma_qlen], 0
+    pop     r14
+    ret
+
+; .open_word: "[" and dump_word; the token after it gets one blank
+.open_word:
+    lea     rsi, [rel dump_open]
+    mov     edx, 1
+    call    .write
+    mov     rsi, [rel dump_word]
+    call    .write_str
+    mov     byte [rel dump_after_word], 1
+    ret
+
+; .where: a line starts, on r14's token's; ecx = 1 when it is empty.
+; NASM's -E: the empty line or "%line" that puts it at its place. CF = 1:
+; leave the empty line out (a "%line" comes before the next anyway)
+.where:
+    push    rcx
+    mov     edx, [r14 + TOKEN_line]
+    mov     rsi, [r14 + TOKEN_file]
+    ; text utasm read in (a %use package): on the line that read it
+    mov     ecx, [rel push_count]
+    lea     r8, [rel push_where]
+.unpushed:
+    test    ecx, ecx
+    jz      .pushed_done
+    cmp     rsi, [r8]
+    jne     .pushed_next
+    mov     rsi, [r8 + 8]
+    mov     edx, [r8 + 16]
+    jmp     .pushed_done
+.pushed_next:
+    add     r8, 24
+    dec     ecx
+    jmp     .unpushed
+.pushed_done:
+    mov     [rel dump_at], edx
+    mov     rdi, [rel dump_file]
+    cmp     rsi, rdi
+    je      .same_file
+    test    rsi, rsi
+    jz      .new_file
+    test    rdi, rdi
+    jz      .new_file
+    push    rsi
+    call    str_cmp
+    pop     rsi
+    test    rax, rax
+    jz      .same_file
+.new_file:
+    mov     [rel dump_file], rsi
+    mov     dword [rel dump_linnum], -1    ; a "%line" now
+    xor     eax, eax
+    test    rsi, rsi
+    setnz   al
+    mov     [rel dump_lineinc], eax
+    jmp     .placed
+.same_file:
+    mov     eax, [rel dump_linnum]
+    mov     ecx, [rel dump_lineinc]
+    mov     edx, [rel dump_at]
+    test    ecx, ecx
+    jz      .step_zero
+    lea     r8d, [rax + rcx]
+    cmp     r8d, edx
+    jne     .not_next
+    ; one line on: an empty line for the one left out
+    mov     [rel dump_linnum], r8d
+    lea     rsi, [rel dump_newline]
+    mov     edx, 1
+    call    .write
+    jmp     .placed
+.not_next:
+    sub     eax, ecx
+    cmp     eax, edx
+    jne     .placed
+    mov     dword [rel dump_lineinc], 0    ; the same line again: a macro's
+    jmp     .placed
+.step_zero:
+    inc     eax
+    cmp     eax, edx
+    jne     .placed
+    mov     dword [rel dump_lineinc], 1
+.placed:
+    pop     rcx
+    cmp     dword [rel dump_linnum], -1
+    jne     .mark
+    test    ecx, ecx
+    jz      .mark
+    stc
+    ret
+.mark:
+    mov     eax, [rel dump_at]
+    cmp     eax, [rel dump_linnum]
+    je      .marked
+    lea     rsi, [rel dump_line_dir]       ; "%line "
+    call    .write_str
+    mov     esi, [rel dump_at]
+    call    .write_num
+    lea     rsi, [rel dump_plus]
+    mov     edx, 1
+    call    .write
+    mov     esi, [rel dump_lineinc]
+    call    .write_num
+    lea     rsi, [rel dump_blank]
+    mov     edx, 1
+    call    .write
+    call    .write_file
+    lea     rsi, [rel dump_newline]
+    mov     edx, 1
+    call    .write
+.marked:
+    mov     eax, [rel dump_at]
+    add     eax, [rel dump_lineinc]
+    mov     [rel dump_linnum], eax
+    clc
+    ret
+
+; .write_num: esi, in decimal
+.write_num:
+    lea     rdi, [rel dump_num]
+    mov     edx, 10
+    call    int_to_str
+    lea     rsi, [rel dump_num]
+    jmp     .write_str
+
+; .write_file: dump_file's name, in quotes only when it needs them, as
+; NASM: empty, a control character, two blanks running, or a blank or a
+; quote first or last
+.write_file:
+    mov     r15, [rel dump_file]
+    test    r15, r15
+    jz      .file_empty
+    mov     rdi, r15
+    call    str_len
+    mov     ecx, eax
+    test    ecx, ecx
+    jz      .file_quote
+    movzx   eax, byte [r15]
+    call    .file_edge
+    jbe     .file_quote
+    movzx   eax, byte [r15 + rcx - 1]
+    call    .file_edge
+    jbe     .file_quote
+    xor     edx, edx
+    mov     r8d, ' '                       ; below it: quoted
+.file_scan:
+    movzx   eax, byte [r15 + rdx]
+    cmp     eax, r8d
+    jb      .file_quote
+    mov     r8d, ' '
+    cmp     eax, ' '
+    jne     .file_next
+    mov     r8d, ' ' + 1
+.file_next:
+    inc     edx
+    cmp     edx, ecx
+    jb      .file_scan
+    mov     rsi, r15
+    mov     edx, ecx
+    jmp     .write
+.file_quote:
+    xor     r9d, r9d
+    jmp     .requote
+.file_empty:
+    lea     rsi, [rel dump_no_file]
+    mov     edx, 2
+    jmp     .write
+; .file_edge: eax = a first or last character; "below or equal" (CF or
+; ZF) when it is a blank, a control character or a quote
+.file_edge:
+    cmp     eax, '"'
+    je      .edge_is
+    cmp     eax, 39
+    je      .edge_is
+    cmp     eax, '`'
+    je      .edge_is
+    cmp     eax, ' '
+    ret
+.edge_is:
+    cmp     eax, eax
     ret
 
 ; .quoted: rsi = bytes, edx = count, r8b = the quote around them
@@ -1427,17 +1917,47 @@ prep_dump:
     call    str_len
     pop     rsi
     mov     edx, eax
-; .write: rsi = bytes, edx = count, to fd r12d (nothing for -1)
+; .write: rsi = bytes, edx = count, to fd r12d (nothing for -1), through
+; dump_buf
 .write:
     test    r12d, r12d
     js      .write_none
     test    edx, edx
     jz      .write_none
+    mov     eax, [rel dump_fill]
+    lea     ecx, [rax + rdx]
+    cmp     ecx, DUMP_BUF
+    jbe     .buffer
+    push    rsi
+    push    rdx
+    call    .flush
+    pop     rdx
+    pop     rsi
+    cmp     edx, DUMP_BUF
+    jbe     .buffer
     mov     edi, r12d
     extern  io_write
     jmp     io_write
+.buffer:
+    mov     ecx, edx
+    mov     eax, [rel dump_fill]
+    lea     rdi, [rel dump_buf]
+    add     rdi, rax
+    add     [rel dump_fill], edx
+    rep movsb
 .write_none:
     ret
+; .flush: what dump_buf holds, out
+.flush:
+    test    r12d, r12d
+    js      .write_none
+    mov     edx, [rel dump_fill]
+    test    edx, edx
+    jz      .write_none
+    mov     dword [rel dump_fill], 0
+    lea     rsi, [rel dump_buf]
+    mov     edi, r12d
+    jmp     io_write
 
 ; ---- prep_push_buffer -------------------
 ;
@@ -1463,6 +1983,24 @@ prep_push_buffer:
     mov     r12, rcx
     test    r14, r14
     jz      .ok
+
+    ; where it is read in (-E writes its lines there, as NASM's packages)
+    mov     eax, [rel push_count]
+    cmp     eax, PUSH_MAX
+    jae     .where_full
+    mov     rcx, [rbx + PREP_lexer]
+    test    rcx, rcx
+    jz      .where_full
+    imul    eax, eax, 24
+    lea     rdx, [rel push_where]
+    add     rdx, rax
+    mov     [rdx], r12
+    mov     rax, [rcx + LEXER_file]
+    mov     [rdx + 8], rax
+    mov     eax, [rcx + LEXER_line]
+    mov     [rdx + 16], eax
+    inc     dword [rel push_count]
+.where_full:
 
     xor     edi, edi
     mov     rsi, r14
@@ -1521,6 +2059,7 @@ prep_push_buffer:
 .depth:
     mov     [rdx + INCLUDECTX_depth], ax
     mov     [rbx + PREP_lexer], r13
+    mov     byte [r13 + LEXER_pushed], 1
 .ok:
     xor     eax, eax
 .ret:
@@ -1590,6 +2129,15 @@ prep_expand_start:
     mov     qword [rel ml_pending00], 0
     mov     [r13 + MACROEXP_macro], r12
     mov     dword [r13 + MACROEXP_rep_count], 1 ; Default: expand once
+    movzx   eax, byte [rel exp_lead]       ; a %define's name's blank
+    mov     [r13 + MACROEXP_lead], al
+    mov     byte [rel exp_lead], 0
+    mov     eax, [rel exp_call_line]       ; ... and its line
+    mov     [r13 + MACROEXP_line], eax
+    mov     rax, [rel exp_call_file]
+    mov     [r13 + MACROEXP_call_file], rax
+    mov     dword [rel exp_call_line], 0
+    mov     qword [rel exp_call_file], 0
 
     ; %%locals are unique per *macro* expansion. A %rep body is an anonymous
     ; macro running inside one, so it must reuse the enclosing id or the
@@ -2080,6 +2628,14 @@ prep_expand_start:
     test    r9, r9
     jz      .nolist_set
     or      al, [r9 + MACROEXP_nolist]
+    ; inside a .nolist one everything is on the line it was called on
+    ; (-E), a %rep's too
+    cmp     byte [r9 + MACROEXP_nolist], 0
+    je      .nolist_set
+    mov     rcx, [r9 + MACROEXP_call_file]
+    mov     [r13 + MACROEXP_call_file], rcx
+    mov     ecx, [r9 + MACROEXP_line]
+    mov     [r13 + MACROEXP_line], ecx
 .nolist_set:
     mov     [r13 + MACROEXP_nolist], al
 
@@ -2442,8 +2998,12 @@ prep_expand_next:
         lea     rax, [rsi + TOKEN_SIZE]
         mov     [r13 + MACROEXP_pend_ptr], rax
 
+        movzx   r8d, byte [r12 + TOKEN_flags]
+        mov     r9d, [r12 + TOKEN_line]
+        mov     r10, [r12 + TOKEN_file]
         mov     rdi, r12
         copy_token
+        call    .param_at
         jmp     .produced
 .not_case2:
 
@@ -2561,9 +3121,29 @@ prep_expand_next:
     mov     [r13 + MACROEXP_pend_cnt], ecx
     lea     rax, [rsi + TOKEN_SIZE]
     mov     [r13 + MACROEXP_pend_ptr], rax
+    movzx   r8d, byte [r12 + TOKEN_flags]
+    mov     r9d, [r12 + TOKEN_line]
+    mov     r10, [r12 + TOKEN_file]
     mov     rdi, r12
     copy_token
+    call    .param_at
     jmp     .produced
+
+; .param_at: the token put in place of a parameter (r8b, r9d, r10: the
+; parameter's flags, line, file) has its blank (.lead_of) and, for -E, its
+; line: a body's line that starts with "%1" is the body's, as NASM's
+.param_at:
+    cmp     byte [rel lexer_mark_lone], 0
+    je      .lead_of
+    mov     [r12 + TOKEN_line], r9d
+    mov     [r12 + TOKEN_file], r10
+; .lead_of: the token put in place of a parameter has its blank before it
+; (r8b: the parameter's flags), not the argument's own, as NASM trims it
+.lead_of:
+    and     r8d, TOK_FLAG_SPACE
+    and     byte [r12 + TOKEN_flags], ~TOK_FLAG_SPACE
+    or      [r12 + TOKEN_flags], r8b
+    ret
 
 ; r9 one step from rng_a toward rng_b
 .rng_step:
@@ -2729,6 +3309,36 @@ prep_expand_next:
 .not_case4:
 
 .produced:
+    ; a %define's first token: the blank its name had (MACROEXP_lead)
+    mov     r8, [rbx + PREP_ctx]
+    mov     r8, [r8 + ASMCTX_mac_exp]
+    test    r8, r8
+    jz      .lead_done
+    ; -E: what a %define gives is on the line it was used on, as NASM
+    ; writes it ("%line" before it); so is what a .nolist macro gives, and
+    ; everything called inside it (NASM's noline)
+    cmp     byte [rel lexer_mark_lone], 0
+    je      .line_kept
+    mov     rax, [r8 + MACROEXP_call_file]
+    test    rax, rax
+    jz      .line_kept
+    cmp     byte [r8 + MACROEXP_nolist], 0
+    jne     .line_call
+    mov     rcx, [r8 + MACROEXP_macro]
+    test    byte [rcx + MACRO_flags], MACRO_FLAG_DEFINE
+    jz      .line_kept
+.line_call:
+    mov     [r12 + TOKEN_file], rax
+    mov     eax, [r8 + MACROEXP_line]
+    mov     [r12 + TOKEN_line], eax
+.line_kept:
+    movzx   eax, byte [r8 + MACROEXP_lead]
+    test    eax, eax
+    jz      .lead_done
+    mov     byte [r8 + MACROEXP_lead], 0
+    mov     r8d, eax
+    call    .lead_of
+.lead_done:
     ; ---- A68: Token Concatenation (##) ----
 .check_concat:
     mov     r8, [rbx + PREP_ctx]
@@ -2948,6 +3558,11 @@ prep_handle_directive:
     call    str_cmp
     test    rax, rax
     jz      .do_inc
+    mov     rdi, [r12 + TOKEN_value]
+    lea     rsi, [dir_require]
+    call    str_cmp
+    test    rax, rax
+    jz      .do_require
 
     mov     rdi, [r12 + TOKEN_value]
     lea     rsi, [dir_def]
@@ -3336,6 +3951,15 @@ prep_handle_directive:
     call    prep_handle_inc
     jmp     .done_cleanup
 
+.do_require:
+    ; NASM 3's %require: an %include of a file not read yet
+    cmp     word [rbx + PREP_skip_depth], 0
+    jne     .done_cleanup
+    mov     byte [rel inc_require], 1
+    mov     rdi, rbx
+    call    prep_handle_inc
+    jmp     .done_cleanup
+
 .do_def:
     cmp     word [rbx + PREP_skip_depth], 0
     jne     .done_cleanup                  ; don't execute when skipping
@@ -3572,7 +4196,9 @@ prep_handle_directive:
 ; ---- prep_handle_inc --------------------
 ;
 ; prep_handle_inc
-; Handles the %include directive.
+; Handles the %include directive, and %require (inc_require set): the same
+; but for a file an %include or %require read already in this pass, which
+; it leaves (NASM 3; the source itself is not one: it is read once more).
 ; Input    : rdi = pointer to PrepState
 ; Output   : rax = EXIT_OK or error code
 ;
@@ -3591,6 +4217,9 @@ prep_handle_inc:
     ; [rsp + 32] : new_lexer pointer (8 bytes)
     ; [rsp + 40] : saved depth (8 bytes)
     sub     rsp, 64                ; 32 (token) + 8 (IncludeCtx) + 8 (new_lexer) + 8 (depth) + 8 (padding) = 64
+    movzx   eax, byte [rel inc_require]
+    mov     byte [rel inc_require], 0
+    mov     [rsp + 32], rax        ; 1: %require
     
     ; 1. Get filename token - through the preprocessor: the %include of a
     ;    %rep or macro body comes from that body ("%rep 5 / %include
@@ -3635,6 +4264,17 @@ prep_handle_inc:
     jnz     .error_open
     mov     r12, rcx               ; the name it was found under
     mov     r13, rdx               ; r13 = fd
+    mov     edi, r13d
+    call    prep_file_seen
+    test    eax, eax
+    jz      .first_read
+    cmp     qword [rsp + 32], 0
+    je      .first_read
+    mov     rdi, r13               ; %require of a file read already
+    call    io_close
+    xor     eax, eax
+    jmp     .done
+.first_read:
 
     ; 4. Get file size
     mov     rdi, r13
@@ -3763,6 +4403,7 @@ prep_handle_inc:
 [SECTION .rodata]
 s_dot:          db ".", 0             ; (..@N.name)
 dir_inc:    db "include", 0
+dir_require: db "require", 0
 dir_def:    db "define", 0
 dir_assign: db "assign", 0
 dir_push:   db "push", 0
@@ -4100,6 +4741,7 @@ alt_n43: db "r3h", 0
 alt_v43: db "bh", 0
 idn_unknown: db "?", 0
 ; token kinds without text: kind, text (NUL-terminated, 4 bytes a row)
+idn_assign: db "=", 0
 idn_punct:
     db TOK_LBRACKET, "[", 0, 0
     db TOK_RBRACKET, "]", 0, 0
@@ -4899,25 +5541,16 @@ prep_idn_collect:
     jz      .no_sep
     test    r13d, 2
     jz      .sep
-    ; the source's spacing: a blank only where the source had one
-    mov     eax, [r15 + TOKEN_line]
-    cmp     eax, [rel idn_prev_line]
-    jne     .sep
-    movzx   eax, word [r15 + TOKEN_col]
-    cmp     eax, [rel idn_prev_end]
-    jbe     .no_sep
+    ; the source's spacing: a blank only where the source had one - an
+    ; argument's first token has its parameter's (NASM's)
+    test    byte [r15 + TOKEN_flags], TOK_FLAG_SPACE
+    jz      .no_sep
 .sep:
     mov     eax, ' '
     call    .put
     test    rax, rax
     jnz     .ret
 .no_sep:
-    mov     eax, [r15 + TOKEN_line]
-    mov     [rel idn_prev_line], eax
-    movzx   eax, word [r15 + TOKEN_col]
-    movzx   ecx, word [r15 + TOKEN_len]
-    add     eax, ecx
-    mov     [rel idn_prev_end], eax
     ; %defstr: a string keeps its quotes, as written
     xor     eax, eax
     test    r13d, 2
@@ -5008,6 +5641,13 @@ prep_idn_text:
     movzx   eax, byte [rdx + TOKEN_kind]
     cmp     eax, TOK_CHAR
     je      prep_token_text
+    cmp     eax, TOK_EQUAL                 ; "=" and "==" are one kind
+    jne     .not_assign
+    cmp     word [rdx + TOKEN_len], 1
+    jne     .not_assign
+    lea     rax, [rel idn_assign]
+    ret
+.not_assign:
     lea     rcx, [rel idn_punct]
 .punct:
     cmp     byte [rcx], 0
@@ -7212,15 +7852,10 @@ prep_handle_message:
     call    preprocessor_next_token
     ; every token as written ("a,b" too), a blank where the source had
     ; one, as NASM gives the line
-    mov     ecx, [rdx + TOKEN_line]
-    movzx   r8d, word [rdx + TOKEN_col]
-    movzx   r9d, word [rdx + TOKEN_len]
     test    r12d, r12d
     jz      .placed
-    cmp     ecx, [rel msg_prev_line]
-    jne     .blank
-    cmp     r8d, [rel msg_prev_end]
-    je      .placed                        ; right after it in the source
+    test    byte [rdx + TOKEN_flags], TOK_FLAG_SPACE
+    jz      .placed                        ; right after it in the source
 .blank:
     push    rdx
     push    rcx
@@ -7233,9 +7868,6 @@ prep_handle_message:
     pop     rcx
     pop     rdx
 .placed:
-    mov     [rel msg_prev_line], ecx
-    add     r8d, r9d
-    mov     [rel msg_prev_end], r8d
     movzx   eax, byte [rdx + TOKEN_kind]
     cmp     eax, TOK_STRING
     je      .text
@@ -8569,10 +9201,17 @@ prep_interp_standalone:
     mov     edx, 1                         ; nothing: the token goes
     jmp     .out
 .some:
-    ; the first in its place, when it is the only one
+    ; the first in its place, when it is the only one, with the token's
+    ; blank before it (-E, %str)
+    movzx   r8d, byte [r12 + TOKEN_flags]
+    and     r8d, TOK_FLAG_SPACE
     mov     rdi, r12
     mov     rsi, r13
     copy_token
+    and     byte [r12 + TOKEN_flags], ~TOK_FLAG_SPACE
+    or      [r12 + TOKEN_flags], r8b
+    or      r8d, 0x80
+    mov     [rel exp_lead], r8b            ; (the expansion's first, else)
     cmp     r15, 1
     je      .one
     ; else all of them as an expansion of their own, so "%[r %+ %2]" is
@@ -8595,6 +9234,7 @@ prep_interp_standalone:
     mov     edx, 1                         ; (they follow; this token goes)
     jmp     .out
 .one:
+    mov     byte [rel exp_lead], 0
     xor     eax, eax
 .ret:
     xor     edx, edx
@@ -8853,12 +9493,16 @@ prep_function:
     pop     qword [rel fn_out]
     test    rax, rax
     jnz     .ret
-    ; the result in place of the call
+    ; the result in place of the call, with its blank before it
     test    r15, r15
     jz      .nothing
+    movzx   r8d, byte [r12 + TOKEN_flags]
+    and     r8d, TOK_FLAG_SPACE
     mov     rdi, r12
     mov     rsi, r13
     copy_token
+    and     byte [r12 + TOKEN_flags], ~TOK_FLAG_SPACE
+    or      [r12 + TOKEN_flags], r8b
     cmp     r15, 1
     je      .one
     mov     rdi, [rbx + PREP_arena]
@@ -13126,8 +13770,6 @@ has_putback_next: resb 1            ; (frontend/parser/gas_macro.s: raw text)
 interp_cap:    resq 1              ; prep_resolve_interp: its buffer's size
 idn_left_buf:  resb IDN_BUF; %ifidn operands as text (to start with)
 idn_right_buf: resb IDN_BUF
-idn_prev_line: resd 1              ; prep_idn_collect: where the last token ended
-idn_prev_end:  resd 1
 brace_depth:   resd 1              ; {..} nesting in a macro argument
 brace_dropped: resb 1              ; the argument's opening brace was dropped
 mdef_icase:    resb 1              ; %imacro: the name is case-insensitive
@@ -13153,7 +13795,25 @@ dump_blank:     db " "
 dump_bq:        db "`"
 dump_quote:     db 0
 dump_hex:       db 0, 0, 0, 0
-dump_digits:    db "0123456789abcdef"
+dump_named:     db "abtnvfr"                ; -E: the escapes of bytes 7 to 13
+dump_plus:      db "+"
+dump_no_file:   db '""'
+dump_line_dir:  db "%line ", 0
+dump_open:      db "["
+dump_pragma:    db "[pragma ", 0
+dump_shut:      db "]"
+; NASM's standard macros for directives (macros/standard.mac, outbin.mac):
+; 1 "name ..." is "[name ...]"; 2 the same for each name the commas part
+; ("[extern a]", "[extern b]"); 3 the name stands for the text after it
+dump_dir_words:
+    db 1, "bits", 0, 1, "section", 0, 1, "segment", 0, 1, "absolute", 0
+    db 1, "cpu", 0, 1, "default", 0, 1, "org", 0, 1, "sectalign", 0
+    db 2, "extern", 0, 2, "static", 0, 2, "global", 0, 2, "required", 0
+    db 2, "common", 0, 2, "float", 0
+    db 3, "use16", 0, "bits 16", 0, 3, "use32", 0, "bits 32", 0
+    db 3, "use64", 0, "bits 64", 0, 3, "userel", 0, "default rel", 0
+    db 3, "useabs", 0, "default abs", 0, 3, "usebnd", 0, "default bnd", 0
+    db 3, "usenobnd", 0, "default nobnd", 0, 0
 
 [SECTION .bss]
 alignb 8
@@ -13165,10 +13825,18 @@ builtin_min:    resw 1                  ; %ifmacro: NASM's own macro's counts
 builtin_max:    resw 1
 stk_text:       resb STK_TEXT               ; %arg / %local definitions
 elif_negate:    resb 1
-alignb 4
-dump_prev_line: resd 1                  ; line and end column of the token
-dump_prev_end:  resd 1                  ; written last (-E spacing)
-dump_prev_kind: resb 1                  ; ... and its kind
+alignb 8
+dump_file:      resq 1                  ; -E: the file of the line written last,
+dump_linnum:    resd 1                  ; the line the next would be (-1: a
+dump_lineinc:   resd 1                  ; "%line" before it), the step,
+dump_at:        resd 1                  ; the line starting,
+dump_fill:      resd 1                  ; and what dump_buf holds
+dump_close:     resb 1                  ; the line is a "[...]": its kind
+dump_after_word: resb 1                 ; 1: one blank before the next token
+alignb 8
+dump_word:      resq 1                  ; ... and what follows its "["
+dump_eof:       resb 1                  ; 1: the source has ended
+dump_buf:       resb DUMP_BUF
 
 [SECTION .rodata]
 s_rep_negative: db "negative `%rep' count: ", 0
@@ -13178,6 +13846,70 @@ rep_num:       resb 96             ; a %rep count's text (its warning, error)
 
 [SECTION .bss]
 dump_num:      resb 24             ; -E: an %assign's value as text
+PUSH_MAX equ 64
+push_count:    resd 1             ; prep_push_buffer's texts: the name,
+alignb 8
+push_where:    resb 24 * PUSH_MAX ; the file and line that read it in
+exp_lead:      resb 1             ; the next expansion's MACROEXP_lead,
+alignb 8
+exp_call_file: resq 1             ; MACROEXP_call_file
+exp_call_line: resd 1             ; and MACROEXP_line
+inc_require:   resb 1             ; prep_handle_inc: for %require
+SEEN_MAX equ 4096
+alignb 8
+seen_files:    resq 2 * SEEN_MAX  ; the files read: device, inode
+seen_count:    resd 1
+[SECTION .text]
+
+; ---- prep_file_seen ---------------------
+;
+; prep_file_seen
+; Whether the open file is one read before in this pass (%require): the
+; same device and inode, whatever name it was opened under. A file not
+; seen is noted (up to SEEN_MAX; past them %require reads it again).
+; Input    : edi = the file descriptor
+; Output   : rax = 1 when it was read before, else 0
+; Clobbers : rcx, rdx, rsi, r8, r9, r11
+;
+global prep_file_seen
+prep_file_seen:
+    sub     rsp, 152                       ; struct stat
+    mov     eax, AMD64_SYS_FSTAT
+    mov     rsi, rsp
+    syscall
+    test    rax, rax
+    js      .new
+    mov     rdx, [rsp]                     ; st_dev
+    mov     r8, [rsp + 8]                  ; st_ino
+    lea     r9, [rel seen_files]
+    mov     ecx, [rel seen_count]
+.look:
+    test    ecx, ecx
+    jz      .note
+    cmp     [r9], rdx
+    jne     .on
+    cmp     [r9 + 8], r8
+    je      .seen
+.on:
+    add     r9, 16
+    dec     ecx
+    jmp     .look
+.note:
+    cmp     dword [rel seen_count], SEEN_MAX
+    jae     .new
+    mov     [r9], rdx
+    mov     [r9 + 8], r8
+    inc     dword [rel seen_count]
+.new:
+    xor     eax, eax
+    add     rsp, 152
+    ret
+.seen:
+    mov     eax, 1
+    add     rsp, 152
+    ret
+
+[SECTION .bss]
 [SECTION .text]
 
 ; ---- aliases: %defalias, %idefalias, %undefalias, %aliases ------
@@ -13489,8 +14221,6 @@ dflt_target:   resd 1              ; a call's parameters with its defaults
 [SECTION .text]
 
 [SECTION .bss]
-msg_prev_line: resd 1               ; %warning's text: the last token's line
-msg_prev_end:  resd 1               ; ... and the column after it
 [SECTION .text]
 
 [SECTION .data]
