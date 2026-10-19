@@ -159,6 +159,21 @@ intel_text: db 10
             db "%idefine ptr __?masm_ptr?__", 10
             db "%idefine flat __?masm_flat?__", 10
             db "%idefine offset", 10
+            ; GNU's (MASM's) size names: XMMWORD PTR ... MMWORD PTR
+            db "%idefine xmmword oword", 10
+            db "%idefine ymmword yword", 10
+            db "%idefine zmmword zword", 10
+            db "%idefine mmword qword", 10
+            ; movabs: GCC's for an immediate past 32 bits, which mov gives
+            ; its imm64 (B8+r) as it is
+            db "%idefine movabs mov", 10
+            ; GNU's raw prefixes (GCC's TLS sequence: "data16 lea rdi, ...",
+            ; "rex64" on a line of its own): NASM's osp / asp, the byte
+            db "%idefine data16 osp", 10
+            db "%idefine data32 osp", 10
+            db "%idefine addr16 asp", 10
+            db "%idefine addr32 asp", 10
+            db "%idefine rex64 db 0x48", 10
 intel_text_len equ $ - intel_text
 
 gas_table:
@@ -1540,7 +1555,13 @@ gas_directive:
     test    rax, rax
     jnz     .const_err
     cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    je      .name_ok
+    ; "name" quoted, as GCC 16 writes every one under -masm=intel
+    cmp     byte [rdx + TOKEN_kind], TOK_STRING
     jne     .name_bad
+    cmp     byte [rdx + TOKEN_quote], '"'
+    jne     .name_bad
+.name_ok:
     mov     rsi, [rdx + TOKEN_value]
     call    parser_gas_name
     mov     rdx, rsi
