@@ -416,6 +416,17 @@ _start:
 .amd64_encode:
     extern  amd64_encode_tracked
     call    amd64_encode_tracked
+    ; GNU's syntax: the last statement an instruction (frontend/parser/gas.s)
+    extern  gas_names, gas_insn_done
+    cmp     byte [rel gas_names], 0
+    je      .gas_noted
+    push    rax
+    push    rax
+    mov     rdi, r12
+    call    gas_insn_done
+    pop     rax
+    pop     rax
+.gas_noted:
     ; a jump GNU as relaxes ends its frag (debug/line.s)
     extern  line_active, line_insn_done
     cmp     byte [rel line_active], 0
