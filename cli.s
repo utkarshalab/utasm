@@ -181,6 +181,26 @@ cli_parse:
     jmp     .next_arg
 .not_att:
 
+    ; --gdwarf-2 .. --gdwarf-5: the version of the line table GNU's .loc
+    ; directives give (GCC passes it; debug/line.s)
+    mov     rax, '--gdwarf'
+    cmp     [r14], rax
+    jne     .not_gdwarf
+    cmp     byte [r14 + 8], '-'
+    jne     .not_gdwarf
+    movzx   eax, byte [r14 + 9]
+    sub     eax, '0'
+    cmp     eax, 2
+    jb      .not_gdwarf
+    cmp     eax, 5
+    ja      .not_gdwarf
+    cmp     byte [r14 + 10], 0
+    jne     .not_gdwarf
+    extern  line_level
+    mov     [rel line_level], eax
+    jmp     .next_arg
+.not_gdwarf:
+
     ; --noexecstack / --execstack / --cet: note sections in an ELF object
     ; (backend/output/elf/notes.s)
     extern  elf_gnu_stack, elf_cet
