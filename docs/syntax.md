@@ -205,6 +205,10 @@ r8b r9b r10b r11b r12b r13b r14b r15b
 ; 8-bit (high byte — only legacy regs)
 ah  bh  ch  dh
 
+; APX (64-bit code): r16-r31, as 64 / 32 / 16 / 8 bits
+r16  ... r31          r16d ... r31d
+r16w ... r31w         r16b ... r31b
+
 ; segment registers
 cs  ds  es  fs  gs  ss
 
@@ -247,6 +251,25 @@ rip
 ; RFLAGS (flags register — not directly addressable)
 ; flags: CF PF AF ZF SF TF IF DF OF
 ```
+
+APX's r16-r31 work anywhere a general register does in the ordinary
+(legacy and 0F-map) instructions, as a register or as a memory base or
+index: utasm writes the REX2 prefix they need (`D5`, then the bits of the
+registers above 15 and the 0F map), as NASM 3 and GNU `as` do:
+
+```asm
+mov  r16, rax                 ; D5 18 89 C0
+add  eax, [r20 + r21*4]       ; D5 30 03 04 AC
+push r31                      ; D5 11 57
+movdqa xmm0, [r16]            ; 66 D5 90 6F 00 (the 0F folded into REX2)
+```
+
+Not yet: the instructions APX encodes with EVEX instead - the 0F 38 / 0F
+3A ones (`movbe`, `crc32`, `adcx`, `andn` and the other BMI ones), VEX and
+EVEX vector instructions with r16-r31 in their operands, and APX's new
+forms (`add rax, rbx, rcx`, `{nf}`, `push2`, `ccmp`, ...). Those are an
+error ("invalid combination of opcode and operands"), never wrong bytes;
+so is r16-r31 outside 64-bit code, or beside `ah`-`dh`.
 
 ### AArch64 (ARMv8-A) Registers
 
