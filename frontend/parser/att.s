@@ -339,6 +339,7 @@ at_mnem:        resq 1              ; the Intel mnemonic's text
 at_fl:          resd 1              ; AF_*
 at_size:        resd 1              ; the suffix's size in bits (0: none)
 at_npfx:        resq 1
+at_dfv_end:     resq 1              ; tokens of a leading {dfv=...} (0: none)
 at_pfx:         resb 16             ; prefix bytes, in order
 at_strict:      resb 1              ; the first operand: "strict dword"
 at_err:         resb 1              ; an operand not read
@@ -444,7 +445,10 @@ att_statement:
     call    mt_collect
     test    rax, rax
     jnz     .done_rax
-    xor     ecx, ecx
+    ; APX's "ccmpz {dfv=of,zf} %rbx, %rax": the group before the operands
+    ; kept as written (its commas are no operands'), at_dfv_end past it
+    call    at_dfv
+    mov     rcx, [rel at_dfv_end]
     mov     rdx, [rel mt_n]
     call    mt_split
     call    at_decide
@@ -1126,6 +1130,19 @@ at_build:
 .b_words_done:
     mov     rsi, [rel at_mnem]
     call    mb_putz
+    ; ccmp's / ctest's {dfv=...}, as written
+    cmp     qword [rel at_dfv_end], 0
+    je      .b_no_dfv
+    mov     al, ' '
+    call    mb_putc
+    xor     ecx, ecx
+.b_dfv:
+    cmp     rcx, [rel at_dfv_end]
+    jae     .b_no_dfv
+    call    at_bare_text
+    inc     rcx
+    jmp     .b_dfv
+.b_no_dfv:
     ; "stos %rax, %es:(%rdi)": the size its register names
     test    dword [rel at_fl], AF_STRSZ
     jz      .b_named
@@ -1254,6 +1271,37 @@ at_db_line:
     call    mb_putc
     mov     al, 10
     jmp     mb_putc
+
+; at_dfv: at_dfv_end = the token past a {dfv=...} group the operands
+; start with (APX's ccmp / ctest), 0 for none
+at_dfv:
+    mov     qword [rel at_dfv_end], 0
+    cmp     qword [rel mt_n], 2
+    jb      .dfv_ret
+    xor     ecx, ecx
+    call    mt_kind
+    cmp     eax, TOK_LBRACE
+    jne     .dfv_ret
+    mov     ecx, 1
+    call    mt_tok
+    cmp     byte [rax + TOKEN_kind], TOK_IDENT
+    jne     .dfv_ret
+    mov     rax, [rax + TOKEN_value]
+    mov     eax, [rax]
+    or      eax, 0x00202020
+    cmp     eax, 'dfv'
+    jne     .dfv_ret
+    mov     ecx, 2
+.dfv_find:
+    cmp     rcx, [rel mt_n]
+    jae     .dfv_ret
+    call    mt_kind
+    inc     rcx
+    cmp     eax, TOK_RBRACE
+    jne     .dfv_find
+    mov     [rel at_dfv_end], rcx
+.dfv_ret:
+    ret
 
 ; at_pfx_word: rsi = NASM's word for the prefix byte eax, written on the
 ; instruction's line - the byte itself, nothing else ("osp" / "asp" for
