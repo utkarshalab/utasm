@@ -841,7 +841,11 @@ NASM_WRONG = {"vcvtqq2ph", "vcvtuqq2ph", "vp2intersectd",
               "vgetmaxph", "vgetmaxsh", "vgetminph", "vgetminsh", "vendscaleph",
               "vendscalesh", "vfmulcpch",
               # narrowing conversions with the source's width (xmm for ymm)
-              "vcvtdq2ph", "vcvtudq2ph", "vcvtpd2ph"}
+              "vcvtdq2ph", "vcvtudq2ph", "vcvtpd2ph",
+              # memory narrower than the vector (by tools/disasm's generated
+              # tables read back against objdump): vcvtph2udq's half of what
+              # it is, vdpbf16ps / vsm4key4 / vsm4rnds4's 128 bits at 256 / 512
+              "vcvtph2udq", "vdpbf16ps", "vsm4key4", "vsm4rnds4"}
 # (v4fmaddss / v4fnmaddss: NASM's zmm spelling kept, Intel's xmm one added below)
 # NASM's VCVTPS2PH of map 5 (no imm8) is Intel's VCVTPS2PHX: NASM's lines are
 # wrong in their destinations, those below are right; the F16C / AVX-512
@@ -914,6 +918,16 @@ VCVTPD2PH	xmmreg|mask|z,xmmrm128|b64	[rm:fv: evex.128.66.map5.w1 5a /r]	AVX512FP
 VCVTPD2PH	xmmreg|mask|z,ymmrm256|b64	[rm:fv: evex.256.66.map5.w1 5a /r]	AVX512FP16
 VCVTPD2PH	xmmreg|mask|z,zmmrm512|b64|er	[rm:fv: evex.512.66.map5.w1 5a /r]	AVX512FP16
 V4FMADDSS	xmmreg|mask|z,xmmreg|rs4,mem128	[rvm:m128:evex.dds.lig.f2.0f38.w0 9b /r]	AVX5124FMAPS
+VCVTPH2UDQ	xmmreg|mask|z,xmmrm64|b16	[rm:hv: evex.128.map5.w0 79 /r]	AVX512FP16,AVX512VL,FUTURE
+VCVTPH2UDQ	ymmreg|mask|z,xmmrm128|b16	[rm:hv: evex.256.map5.w0 79 /r]	AVX512FP16,AVX512VL,FUTURE
+VCVTPH2UDQ	zmmreg|mask|z,ymmrm256|b16|er	[rm:hv: evex.512.map5.w0 79 /r]	AVX512FP16,FUTURE
+VDPBF16PS	xmmreg|mask|z,xmmreg*,xmmrm128|b32	[rvm:fv: evex.128.f3.0f38.w0 52 /r]	AVX512BF16,FUTURE
+VDPBF16PS	ymmreg|mask|z,ymmreg*,ymmrm256|b32	[rvm:fv: evex.256.f3.0f38.w0 52 /r]	AVX512BF16,FUTURE
+VDPBF16PS	zmmreg|mask|z,zmmreg*,zmmrm512|b32	[rvm:fv: evex.512.f3.0f38.w0 52 /r]	AVX512BF16,FUTURE
+VSM4KEY4	xmmreg,xmmreg,xmmrm128	[rvm: vex.128.f3.0f38.w0 da /r]	SM4,FUTURE
+VSM4KEY4	ymmreg,ymmreg,ymmrm256	[rvm: vex.256.f3.0f38.w0 da /r]	SM4,FUTURE
+VSM4RNDS4	xmmreg,xmmreg,xmmrm128	[rvm: vex.128.f2.0f38.w0 da /r]	SM4,FUTURE
+VSM4RNDS4	ymmreg,ymmreg,ymmrm256	[rvm: vex.256.f2.0f38.w0 da /r]	SM4,FUTURE
 INVLPGB	void	[	np 0f 01 fe]	AMD,PRIV
 INVLPGB	reg_rax,reg_ecx,reg_edx	[---:	a64 np 0f 01 fe]	AMD,PRIV,ND,LONG
 INVLPGB	reg_eax,reg_ecx,reg_edx	[---:	a32 np 0f 01 fe]	AMD,PRIV,ND
