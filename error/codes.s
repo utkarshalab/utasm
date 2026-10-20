@@ -680,6 +680,9 @@ code_table:
     code_msg EXIT_LINE_VIEW_MOVED,   m_line_view_moved, t_line_view_moved
     code_msg EXIT_LINE_DUP,          m_line_dup
     code_msg EXIT_GAS_BASE64,        m_gas_base64
+    code_msg EXIT_PROC_NESTED,       m_proc_nested
+    code_msg EXIT_PROC_NO_PROC,      m_proc_no_proc
+    code_msg EXIT_PROC_OPEN,         m_proc_open
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -917,6 +920,9 @@ m_line_view_moved: db "a view number changed when jumps were shortened", 0
 t_line_view_moved: db "view number `^' changed when jumps were shortened", 0
 m_line_dup:     db "duplicate .debug_line sections", 0
 m_gas_base64:   db "invalid character found inside .base64 string", 0
+m_proc_nested:  db "proc inside a proc (no endproc for the one before)", 0
+m_proc_no_proc: db "endproc with no proc", 0
+m_proc_open:    db "proc has no endproc", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
 t_multi:        db "symbol `^' defined more than once", 0
