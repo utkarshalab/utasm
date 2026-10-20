@@ -53,6 +53,30 @@ amd64_encode_instruction:
     mov     byte [rel amd64_relax_kind], 0
     mov     byte [rel imm_ph_active], 0
 
+    ; "cpuid eax", "hlt 5": an instruction that takes no operands given
+    ; some (tables/noops.s) - no form, not the opcode with them dropped
+    cmp     byte [r12 + INST_nops], 0
+    je      .ops_any
+    movzx   eax, word [r12 + INST_op_id]
+    extern  amd64_takes_none
+    call    amd64_takes_none
+    jne     .ops_any
+    mov     rax, EXIT_ENCODE_FAIL
+    jmp     .error
+.ops_any:
+    ; rdmsr / wrmsrns with an MSR's number, urdmsr / uwrmsr (x86/msr.s)
+    extern  amd64_msr_claim, amd64_encode_msr
+    call    amd64_msr_claim
+    jne     .not_msr
+    call    amd64_encode_msr
+    jmp     .done
+.not_msr:
+    ; AMX's dot products: three different tile registers (simd/amx.s)
+    extern  amd64_amx_check
+    call    amd64_amx_check
+    test    rax, rax
+    jnz     .done                          ; (its own error, not .error's)
+
     ; lea's source is an address, whatever it was written as
     cmp     word [r12 + INST_op_id], 1356  ; LEA
     jne     .not_lea
