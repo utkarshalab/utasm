@@ -685,7 +685,10 @@ def modes(utasm, verbose=False):
             if nb is None:
                 s.result(name, ub is None, "NASM rejects it, utasm gives " + (ub or b"").hex())
             elif ub is None:
-                s.result(name, bool(_WIDE.search(line)), "utasm error: " + first_line(ru))
+                # NASM 3 writes nothing at all for some address sizes
+                # that contradict the count register ("a32 loop l, rcx"):
+                # utasm's "impossible combination" is the answer
+                s.result(name, bool(_WIDE.search(line)) or nb == b"", "utasm error: " + first_line(ru))
             else:
                 s.result(name, nb == ub, "nasm %s | utasm %s" % (nb.hex(), ub.hex()))
     return s
