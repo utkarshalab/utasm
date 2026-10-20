@@ -340,14 +340,14 @@ amd64_check_shape:
     jne     .fail
     jmp     .ok
 
-; ---- reg64, r/m32 ----
+; ---- reg16/32/64, r/m32 ----
 .movsxd:
     cmp     ecx, 2
     jne     .fail
     cmp     r8d, K_R
     jne     .fail
-    cmp     eax, 64
-    jne     .fail
+    cmp     eax, 8                         ; (reg16 / 32 too: 66 63, 63 -
+    je      .fail                          ; NASM 3's)
     cmp     r9d, K_I
     je      .fail
     test    edx, edx
@@ -375,6 +375,10 @@ amd64_check_shape:
 .movx_sized:
     cmp     edx, 32
     jne     .movx_narrow
+    ; movzx r16 / r64 of a dword: mov's 8B (amd64_shape_forms marked it)
+    extern  amd64_movzx_mov
+    cmp     byte [rel amd64_movzx_mov], 0
+    jne     .ok
     cmp     word [r12 + INST_op_id], 1426  ; movsx r64, r/m32: MOVSXD
     jne     .fail
     cmp     eax, 64
@@ -384,7 +388,7 @@ amd64_check_shape:
     cmp     edx, 16
     ja      .fail
     cmp     edx, eax
-    jae     .fail
+    ja      .fail                          ; (r16, r/m16: 66 0F B7 / BF)
     jmp     .ok
 
 ; ---- reg32/64, r/m8/16/32 (r/m64 into reg64 only) ----
