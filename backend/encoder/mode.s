@@ -1120,6 +1120,12 @@ amd64_rex2_finish:
     mov     rdi, [rel amd64_rex2_at]
     cmp     rdi, -1
     je      .rf_check
+    cmp     rdi, -2
+    jne     .rf_rex2
+    mov     qword [rel amd64_rex2_at], -1  ; (EVEX carried r16-r31: -2)
+    xor     eax, eax
+    ret
+.rf_rex2:
     mov     qword [rel amd64_rex2_at], -1
     mov     rcx, [rbx + ASMCTX_curr_sec]
     mov     rsi, [rcx + SECTION_size]
