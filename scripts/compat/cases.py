@@ -3027,3 +3027,36 @@ f:
 .Ldebug_line0:
 """),
 ]
+
+# batch 66: NASM 3's operand shapes, prefix order and jump sizes
+BIN_PROBES.update({
+    "shape_movx_nasm3": "bits 64\nmovzx bx, r9w\nmovzx bx, r9d\nmovzx bx, dword [rbx]\nmovzx rbx, r9d\n"
+                        "movzx rbx, dword [rbx]\nmovzx ax, dx\nmovsx bx, r9w\nmovsx bx, r9d\nmovsx ebx, r9d\n"
+                        "movsx ebx, dword [rbx]\nmovsxd bx, r9d\nmovsxd ebx, [rbx]\nmovsxd dx, eax\n"
+                        "movzx eax, bl\nmovsx rax, word [rbx]\n",
+    "shape_misc_nasm3": "bits 64\nlar rbx, r9\nlsl rbx, [rbx]\nstr rcx\nsldt rcx\nsmsw rcx\n"
+                        "crc32 ebx, r9\ncrc32 rbx, r9d\ncrc32 rbx, word [rbx]\ncrc32 rbx, [rbx]\ncrc32 rax, cl\n"
+                        "xchg al, cl\nxchg rbx, r9\nxchg eax, ecx\nxchg [rbx], r9\n"
+                        "andn ebx, r9d\nbzhi ebx, r9d\nmulx rbx, r9\npdep ebx, [rbx]\n"
+                        "kmov k1, eax\nkmov eax, k1\nkmov byte k1, eax\npextrw rax, xmm0, 1\n",
+    "acc_extend_ox": "bits 64\nmovsx eax, ax\nmovsx rax, eax\nmovsx ax, al\nmovsxd rax, eax\nmovsx rax, ax\n"
+                     "movsx ax, ah\nbits 16\nmovsx ax, al\nmovsx eax, ax\n",
+    "mov_r64_dword": "bits 64\nmov rax, dword 5\nmov rax, dword -1\nmov rax, strict dword 5\nmov rax, 5\n",
+    "prefix_order_nasm3": "bits 64\nlock add [fs:eax], ebx\nrep fs movsb\na32 fs rep movsb\nrep movsw\n"
+                          "lock add [eax], bx\no16 a32 rep stosw\nxacquire lock add [rax], ebx\n"
+                          "xrelease lock add word [rax], bx\nlock fs add word [eax], 1\no16 bnd jmp ax\n"
+                          "bits 16\na32 rep movsd\nbits 32\nlock add [bx], ax\na16 rep movsw\n",
+    "jump_near_nasm3": "bits 64\nl0: jmp near l0\njz near l0\njz near f1\njmp near f1\nf1: jmp strict near l0\n"
+                       "bits 32\ns: jmp word s\njz word s\njz dword s\njmp word f2\nf2: nop\n",
+})
+MODE_LINES += ["l: a32 jrcxz l", "l: a32 loop l, rcx"]
+# GNU as's prefix order and its own forms
+GAS_CASES += [
+    ("prefix order", ".text\nlock add [eax], bx\nrep movsw\nrep movsb [rdi], fs:[rsi]\nxacquire lock add [rax], ebx\n"
+                     ".att_syntax\nrep addr32 movsb\nlock cmpxchgw %cx, (%rdx)\nlock addw $1, %fs:(%eax)\n"
+                     "rex64 call *%rax\n"),
+    ("gnu immediates", ".text\nmov rax, 5\nmov rax, 0x80000000\nmov rax, 0xffffffff\nmov rax, -1\n"
+                       "pextrw rax, xmm0, 1\npmovmskb rax, xmm0\nlar rbx, r9\nstr rcx\nsmsw rcx\n"
+                       "crc32 rbx, r9b\nxchg al, cl\n"),
+    ("intel then at&t", ".text\nnop\n.att_syntax\nrep addr32 movsb\naddr32 rep movsb\n"),
+]
