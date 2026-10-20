@@ -246,6 +246,7 @@ def render() -> str:
                 tg.append((name_off(n), FM[form] if form else 0, flags))
 
     tev = evex_rows(name_off)       # registers the EVEX names too
+    tvg = vex_rows(name_off)        # ... and the generated VEX ones
 
     def rows(entries, label):
         # one 4-byte entry per line, with its index as a comment
@@ -277,6 +278,7 @@ def render() -> str:
     lines += rows(tg, "x86_groups") + [""]
     lines += x87_tables() + [""]
     lines += tev + [""]
+    lines += tvg + [""]
     lines += kop_rows()
     return "\n".join(lines) + "\n"
 
@@ -866,13 +868,318 @@ ev("38", 0xB5, "66", 1, "vpmadd52huq", "VHW", "v", B)
 ev("3a", 0xCE, "66", 1, "vgf2p8affineqb", "VHWI", "v", B)
 ev("3a", 0xCF, "66", 1, "vgf2p8affineinvqb", "VHWI", "v", B)
 
+# ---- the EVEX instructions the list above has not: from the encoder's forms
+# (scripts/gen_x86_enc.py, NASM's insns.dat and insns3.dat), so what utasm
+# writes it reads back. Their entries follow the hand-written ones; the
+# last shape byte holds EV2_* flags. Kept apart from evex_tab: the encoder
+# derives forms of its own from that one.
+EV_MAP.update({"map5": 6, "map6": 7})
+EV2_E16 = 1      # a broadcast's elements are 16-bit (FP16, BF16); and an
+                 # EV_NELEM one element of 2 bytes (vpcompressw)
+EV2_E8 = 2       # an EV_NELEM element of 1 byte (vpcompressb, vpexpandb)
+EV2_REG = 4      # this entry for a register ModRM.rm only (another for memory)
+EV2_MEM = 8      # ... for memory only
+EV2_DUP = 16     # vmovddup: at 128 bits the memory is 8 bytes
+EV2_PCOM = 128   # XOP's vpcom: objdump names the imm8's predicate (vpcomltb)
+EV2_PFPBF = 64   # vcmpbf16: objdump puts the predicate after "vcmpbf" (vcmpbfeq16)
+# a name the disassembler prints over its alias (Intel's / objdump's)
+DIS_PREFER = {"vbcstnebf162ps"}
+EV2_HASVEX = 32  # a VEX form reads the same: objdump writes "{evex}" when no
+                 # EVEX-only part is used (mask, zeroing, broadcast, 512 bits,
+                 # registers 16-31)
+
+# (the VEX forms that came after the EVEX ones: objdump marks those "{vex}"
+# instead, and their EVEX forms not at all)
+VEX_LATER = {"vpdpbusd", "vpdpbusds", "vpdpwssd", "vpdpwssds", "vpmadd52huq", "vpmadd52luq",
+             "vcvtneps2bf16"}
+
+def vex_names():
+    """(name, map, opcode, pp) of every VEX form"""
+    import gen_x86_enc as E
+    return {(f[0], f[3], f[4], f[2]) for f in E.forms if f[10] == E.ENC_VEX}
+
+def has_vex(name, shape, vn, key):
+    """a VEX form of the same opcode reads the same as this EVEX one"""
+    mapn, opcode, pp = key >> 24, (key >> 16) & 0xFF, (key >> 8) & 3
+    return ((name, mapn, opcode, pp) in vn and name not in VEX_LATER
+            and "K" not in shape and "k" not in shape)
+GEN_SKIP = set()  # mnemonics whose forms give no single entry (gen_report)
+# hand-written entries the generated ones replace (in the disassembler's
+# table only: the encoder's forms still come from evex_tab): the gathers /
+# scatters, read with a general register for their vector index
+GEN_OVER = {"v4fmaddps", "v4fnmaddps", "v4dpwssd", "v4dpwssds",   # (and AVX512_4FMAPS's names)
+            "vgatherdps", "vgatherdpd", "vgatherqps", "vgatherqpd", "vpgatherdd", "vpgatherdq",
+            "vpgatherqd", "vpgatherqq", "vscatterdps", "vscatterdpd", "vscatterqps", "vscatterqpd",
+            "vpscatterdd", "vpscatterdq", "vpscatterqd", "vpscatterqq"}
+gen_report = []
+
+def gen_entries(E, enc, wanted, report):
+    """the entries of the encoder's forms of encoding enc whose key
+    wanted(key, name, mapn, opcode, pfx) accepts: {key: [(name, msize,
+    flags, shape, flags2), ...]} - two for a key whose register and memory
+    forms differ (EV2_REG / EV2_MEM), else one"""
+    T_ = E.TYPES
+    by_key = {}
+    for f in E.forms:
+        if f[10] != enc:
+            continue
+        name, types, pfx, mapn, opcode, modrm, roles, flags, fiximm, prio, _, L = f[:12]
+        n8 = f[12] if len(f) > 12 else 0       # (VEX: no disp8 * N)
+        if flags & (E.F_FIXIMM | E.F_V0) or modrm == E.M_NONE:
+            continue                         # (vcmpeqph ...; NASM's two-operand spellings)
+        fixed = modrm >= 0xC0                # (tilezero, tilerelease: a register form)
+        g = 0 if (modrm == E.M_R or fixed) else 8 + modrm
+        key = (mapn << 24) | (opcode << 16) | (pfx << 8) | ((1 if flags & E.F_W else 0) << 4) | g
+        if not wanted(key, name, mapn, opcode, pfx):
+            continue
+        ty = [T_[t] for t in types]
+        rm = [t for t, r in zip(ty, roles) if r == E.R_RM]
+        can_mem = not fixed and any(t[4] != E.NOMEM for t in rm)
+        can_reg = fixed or not rm or any(t[1] != 0 for t in rm)
+        by_key.setdefault(key, []).append((name, ty, roles, flags, L & 3, n8, can_reg, fixed, can_mem))
+    out = {}
+    for key, lines in sorted(by_key.items()):
+        names = []
+        for l in lines:
+            if l[0] not in names:
+                names.append(l[0])
+        names.sort(key=lambda n: n not in DIS_PREFER)
+        # names in order, each taking the ModRM classes (register, memory)
+        # no earlier one has: aliases add nothing; vmovhlps / vmovlps split
+        # them; one name whose register and memory forms read differently
+        # (vmovsh) gets an entry for each
+        keep = []
+        covered = set()
+        for name in names:
+            mine = [l for l in lines if l[0] == name]
+            cls = {"reg": [l for l in mine if l[6]], "mem": [l for l in mine if l[8]]}
+            avail = [c for c in ("reg", "mem") if cls[c] and c not in covered]
+            if not avail:
+                continue
+            whole = len(avail) == 2 and not covered
+            if whole:
+                ok = mk_entry(E, [l[:6] for l in mine])
+                er = mk_entry(E, [l[:6] for l in cls["reg"]])
+                em = mk_entry(E, [l[:6] for l in cls["mem"]])
+                if ok[4] is True and not any(l[7] for l in mine) and (
+                        er[4] is not True or em[4] is not True or er[0] == em[0]):
+                    keep.append((name, ok[1], ok[2], ok[0], ok[3]))
+                    covered |= {"reg", "mem"}
+                    continue
+            for c in avail:
+                shape, msize, fl, fl2, ok = mk_entry(E, [l[:6] for l in cls[c]])
+                if ok is not True:
+                    report.append("%-16s %08x: %s" % (name, key, ok))
+                    continue
+                keep.append((name, msize, fl, shape, fl2 | (EV2_REG if c == "reg" else EV2_MEM)))
+                covered.add(c)
+        if keep:
+            out[key] = keep
+    return out
+
+def evex_generated():
+    import gen_x86_enc as E
+    return gen_entries(E, E.ENC_EVEX,
+                       lambda key, name, *_: key not in evex_tab or evex_tab[key][0] in GEN_OVER,
+                       gen_report)
+
+def mk_entry(E, lines):
+    """shape, msize, flags, flags2, True - or ..., reason - for one key's forms"""
+    MS_REL = {1: 0, 2: 5, 4: 6, 8: 7}                      # vl / n: v h qv o
+    MS_FIX = {1: 1, 2: 2, 4: 3, 8: 4, 16: 8, 32: 9}
+    letters = None
+    msc = None
+    rsc = None          # (the register forms' widths: for a register-only instruction)
+    fl = fl2 = 0
+    Ls = {l[4] for l in lines}
+    for name, types, roles, flags, L, n8 in lines:
+        vl = 16 << L
+        lt = []
+        for t, r in zip(types, roles):
+            tname, rclass, special, rsize, msz = t[0], t[1], t[2], t[3], t[4]
+            if rclass == E.C_RC:
+                fl |= EV_ER
+                continue
+            if rclass == E.C_SAE:
+                fl |= EV_SAE
+                continue
+            vec = rclass in (E.C_XMM, E.C_YMM, E.C_ZMM)
+            if r == E.R_RM and rclass == 0 and special == 4:
+                # VSIB: the index a vector register, as wide as the length
+                # (S) or half of it (s); the memory one element
+                iw = {1: 16, 2: 32, 3: 64}[t[5]]
+                cand = {c for c, ok in (("S", iw == vl), ("s", iw == max(16, vl // 2))) if ok}
+                lt.append(cand)
+                fl |= EV_NELEM                       # (disp8 * one element)
+                continue
+            if rclass == E.C_TMM:
+                # AMX: a tile register from ModRM.reg / ModRM.rm / vvvv
+                cand = {{E.R_REG: "T", E.R_RM: "t", E.R_VVVV: "u",
+                         E.R_NONE: "T"}.get(r, "?")}     # (R_NONE: tilezero's fixed ModRM)
+                if "?" in cand:
+                    return None, 0, 0, 0, "tmm role"
+                lt.append(cand)
+                continue
+            if r == E.R_IS4:
+                if not vec:
+                    return None, 0, 0, 0, "is4 " + tname
+                lt.append({"L"})                     # (imm8[7:4]: FMA4 / XOP)
+                continue
+            if r == E.R_VVVV and rclass == E.C_GPR:
+                lt.append({"J"})                     # (BMI: andn r, r(vvvv), r/m)
+                continue
+            novec = not any(x[1] in (E.C_XMM, E.C_YMM, E.C_ZMM) for x in types)
+            if r == E.R_RM and rclass == 0 and (msz == 0 or (novec and msz < 0x8000 and msz // 8 > 32)):
+                lt.append({"M"})                     # (memory of no size: tileloadd, ldtilecfg)
+                continue
+            if r == E.R_REG:
+                if vec:
+                    w = rsize // 8
+                    cand = {c for c, ok in (("V", w == vl), ("Y", w == max(16, vl // 2)), ("X", w == 16)) if ok}
+                elif rclass == E.C_K:
+                    cand = {"K"}
+                elif rclass == E.C_GPR:
+                    cand = {"G"}
+                else:
+                    return None, 0, 0, 0, "reg " + tname
+            elif r == E.R_VVVV:
+                if not vec:
+                    return None, 0, 0, 0, "vvvv " + tname
+                w = rsize // 8
+                cand = {c for c, ok in (("H", w == vl), ("h", w == max(16, vl // 2))) if ok}
+            elif r == E.R_RM:
+                if rclass == E.C_GPR:
+                    cand = {"E"}
+                    if msz not in (0, E.NOMEM) and msz < 0x8000:
+                        m = {MS_FIX[msz // 8]} if msz // 8 in MS_FIX else set()
+                        msc = m if msc is None else msc & m
+                elif rclass == E.C_K:
+                    cand = {"k"}
+                elif (vec or rclass == 0) and msz == E.NOMEM:
+                    cand = {"W"}                     # (a register only: {sae} / {er})
+                    nb = rsize // 8
+                    m = ({MS_REL[vl // nb]} if nb and vl % nb == 0 and vl // nb in MS_REL else set()) |                         ({MS_FIX[nb]} if nb in MS_FIX else set())
+                    rsc = m if rsc is None else rsc & m
+                elif flags & E.F_BCST and 0 < msz <= 64 and msz // 8 < vl:
+                    cand = {"W"}                     # (a broadcast: one element, not the size)
+                elif vec or rclass == 0:
+                    if msz == 0 or msz >= 0x8000:
+                        nb = (rsize or 128) // 8 if msz == E.NOMEM else vl
+                    else:
+                        nb = msz // 8
+                    rel = {MS_REL[vl // nb]} if nb and vl % nb == 0 and vl // nb in MS_REL else set()
+                    fix = {MS_FIX[nb]} if nb in MS_FIX else set()
+                    m = rel | fix
+                    if lines[0][0] == "vmovddup" and L == 0 and nb == 8:
+                        m = {0}                      # (EV2_DUP: 8 bytes at 128 bits, else the vector)
+                        fl2 |= EV2_DUP
+                    msc = m if msc is None else msc & m
+                    if not msc:
+                        return None, 0, 0, 0, "memory size"
+                    cand = {"W"}
+                    if flags & E.F_BCST and n8 and n8 < nb and n8 in (1, 2, 4, 8) and not (flags & E.F_BCST):
+                        fl |= EV_NELEM
+                    if n8 and nb and n8 < nb and not (flags & E.F_BCST) and len(Ls) > 1:
+                        fl |= EV_NELEM               # (compress / expand: one element)
+                        fl2 |= {1: EV2_E8, 2: EV2_E16}.get(n8, 0)
+                else:
+                    return None, 0, 0, 0, "rm " + tname
+            elif r == E.R_IMM:
+                if t[6] in (E.I32, E.IZ):
+                    cand = {"Z"}                     # (an imm32: TBM's bextr, lwpins)
+                elif t[6] not in (E.I8, E.I8S):
+                    return None, 0, 0, 0, "imm"
+                else:
+                    cand = {"I"}
+            elif r == E.R_NONE:
+                continue
+            else:
+                return None, 0, 0, 0, "role %d" % r
+            lt.append(cand)
+        if flags & E.F_BCST:
+            fl |= EV_BCST
+        if flags & E.F_B16:
+            fl2 |= EV2_E16
+        if letters is None:
+            letters = lt
+        elif len(letters) != len(lt):
+            return None, 0, 0, 0, "operand count"
+        else:
+            letters = [a & b for a, b in zip(letters, lt)]
+    shape = ""
+    for c in letters:
+        pick = [x for x in "VYXHhWEGKkISsLTtuJMZ" if x in c]
+        if not pick:
+            return None, 0, 0, 0, "width"
+        shape += pick[0]
+    if Ls == {0} and "W" in shape and msc and min(msc) in (1, 2, 3, 4) and not (msc & {0}):
+        fl |= EV_SCALAR                      # (lig: xmm whatever the length)
+    if lines[0][0].startswith("vcmp"):
+        fl |= EV_PFP
+        if lines[0][0] == "vcmpbf16":
+            fl2 |= EV2_PFPBF
+    if lines[0][0].startswith("vpcom") and shape.endswith("I"):
+        fl2 |= EV2_PCOM
+    if len(shape) > 7:
+        return None, 0, 0, 0, "shape too long"
+    if msc is None:
+        msc = rsc                            # (no memory form: the register's width)
+    ms = 0 if not msc else (0 if 0 in msc else sorted(msc)[0])
+    return shape, ms, fl, fl2, True
+
+# ---- the VEX instructions neither vex_tabs nor the SSE tables (with a "v")
+# have: x86_vexgen, the same entries as x86_evex, from the encoder's forms -
+# x86.s looks there first, then in its own tables
+VEX_OVER = {"vpsllw", "vpslld", "vpsllq", "vpsrlw", "vpsrld", "vpsrlq", "vpsraw", "vpsrad",
+            "vmovddup"}         # (the SSE tables give them the wrong widths)
+vex_report = []
+
+def vex_covered(mapn, op, pp):
+    m = {2: "0f", 3: "38", 4: "3a"}.get(mapn)
+    if m is None:
+        return False
+    if (op * 4 + pp) in vex_tabs[m]:
+        return True
+    e = sse_tabs[m].get(op * 4 + pp)
+    return e is not None and not (e[2] & (0x80 | S_NOVEX | S_MMX))
+
+def vex_generated():
+    import gen_x86_enc as E
+    def wanted(key, name, mapn, opcode, pfx):
+        if vex_covered(mapn, opcode, pfx) and name not in VEX_OVER:
+            return False
+        return not (name.startswith("k") or (mapn == 2 and opcode == 0xAE))   # (x86_kops; 0F AE)
+    out = gen_entries(E, E.ENC_VEX, wanted, vex_report)
+    out.update(gen_entries(E, E.ENC_XOP, lambda *_: True, vex_report))    # (XOP: maps 9-11)
+    return {k: [(n, m, f & ~EV_PFP, sh, f2) for n, m, f, sh, f2 in v] for k, v in out.items()}
+
+def vex_rows(name_off):
+    out = ["x86_vexgen:"]
+    gen = vex_generated()
+    for key, name, msize, flags, shape, fl2 in [(k,) + e for k in sorted(gen) for e in gen[k]]:
+        out.append('    dd 0x%08x\n    dw 0x%04x\n    db %d, 0x%02x, "%s"%s, %d    ; %s'
+                   % (key, name_off(name), msize, flags, shape, ", 0" * (7 - len(shape)), fl2, name))
+    out.append("    dd 0")
+    return out
+
 def evex_rows(name_off):
     out = ["x86_evex:"]
+    gen = evex_generated()
+    vn = vex_names()
     for key in sorted(evex_tab):
+        if key in gen:
+            continue                         # (GEN_OVER: replaced below)
         name, msize, flags, shape = evex_tab[key]
         assert len(shape) < 8
-        out.append('    dd 0x%08x\n    dw 0x%04x\n    db %d, 0x%02x, "%s"%s    ; %s'
-                   % (key, name_off(name), msize, flags, shape, ", 0" * (8 - len(shape)), name))
+        fl2 = EV2_HASVEX if has_vex(name, shape, vn, key) else 0
+        out.append('    dd 0x%08x\n    dw 0x%04x\n    db %d, 0x%02x, "%s"%s, %d    ; %s'
+                   % (key, name_off(name), msize, flags, shape, ", 0" * (7 - len(shape)), fl2, name))
+    out.append("    ; ---- from the encoder's forms (evex_generated) ----")
+    for key, name, msize, flags, shape, fl2 in [(k,) + e for k in sorted(gen) for e in gen[k]]:
+        if has_vex(name, shape, vn, key):
+            fl2 |= EV2_HASVEX
+        out.append('    dd 0x%08x\n    dw 0x%04x\n    db %d, 0x%02x, "%s"%s, %d    ; %s'
+                   % (key, name_off(name), msize, flags, shape, ", 0" * (7 - len(shape)), fl2, name))
     out.append("    dd 0")
     return out
 
