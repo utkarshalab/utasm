@@ -168,7 +168,16 @@ transcendental functions, control and status words); and AVX-512:
   compress/expand, `vpconflict`, `vplzcnt`, 512-bit FMA, IFMA, VNNI, VAES,
   `vpclmulqdq` and GFNI;
 - the mask-register instructions: `kmov`, `kortest`, `ktest`, `kand`/`kor`/
-  `kxor`/`knot`, `kadd`, `kunpck` and `kshift`.
+  `kxor`/`knot`, `kadd`, `kunpck` and `kshift`;
+- APX: `r16`-`r31` (REX2 `D5`, with its `0F` map, and EVEX's B4 / X4 bits
+  in the vector instructions), VEX instructions written as EVEX (BMI,
+  `kmov`, `{nf} andn`), and map 4 - a new destination (`add rax,rbx,rcx`),
+  `{nf}`, `{evex}`, `imulzu` / `setzue`, `ccmpe {dfv=of, zf}` / `ctest`,
+  `cfcmov`, `push2` / `pop2`, `pushp` / `popp`, `jmpabs`, and the `0F 38`
+  instructions with `r16`-`r31` (`movbe`, `crc32`, `adcx`, `invpcid`,
+  `enqcmd`, `movdiri`, `wrss` ...), as objdump writes them. Where objdump
+  calls `D5 18 90` "{rex2 0x18} nop", utasm writes the `xchg r16,rax` NASM
+  and GNU `as` encode so.
 
 It is checked against objdump: on utasm's own 276 object files, a linked
 utasm executable and a coverage file of NASM-assembled instruction forms,
