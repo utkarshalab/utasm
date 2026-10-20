@@ -3476,3 +3476,43 @@ ISA_ERRORS += [
 REJECT_CASES += [
     ("udb outside 64-bit mode", "bin", "bits 32\nudb\n"),
 ]
+# vaddph / vcmpph: NASM 2.16's memory 16 bits (zword refused, broadcasts
+# refused), vcmpph / vcmpsh's predicate pseudo-ops
+ISA_CASES += [  # vaddph / vcmpph (GNU as / objdump 2.47)
+    ('vaddph zmm1, zmm2, [rax]{1to32}', '62f56c585808', 'vaddph zmm1,zmm2,WORD BCST [rax]'),
+    ('vaddph zmm1, zmm2, zword [rax]', '62f56c485808', 'vaddph zmm1,zmm2,ZMMWORD PTR [rax]'),
+    ('vaddph xmm1{k1}{z}, xmm2, [rax+64]{1to8}', '62f56c99584820', 'vaddph xmm1{k1}{z},xmm2,WORD BCST [rax+0x40]'),
+    ('vaddph zmm1, zmm2, zmm3, {rn-sae}', '62f56c1858cb', 'vaddph zmm1,zmm2,zmm3{rn-sae}'),
+    ('vcmpph k1, xmm2, [rax]{1to8}, 5', '62f36c18c20805', 'vcmpnltph k1,xmm2,WORD BCST [rax]'),
+    ('vcmpph k1{k2}, zmm2, zword [rax+128], 1', '62f36c4ac2480201', 'vcmpltph k1{k2},zmm2,ZMMWORD PTR [rax+0x80]'),
+    ('vcmpeqph k1, xmm2, xmm3', '62f36c08c2cb00', 'vcmpeqph k1,xmm2,xmm3'),
+    ('vcmpnlt_uqph k1, zmm2, [rax]{1to32}', '62f36c58c20815', 'vcmpnlt_uqph k1,zmm2,WORD BCST [rax]'),
+    ('vcmpltsh k1, xmm2, word [rax]', '62f36e08c20801', 'vcmpltsh k1,xmm2,WORD PTR [rax]'),
+    ('vcmpunordsh k1{k3}, xmm2, xmm3', '62f36e0bc2cb03', 'vcmpunordsh k1{k3},xmm2,xmm3'),
+]
+# found by encfuzz's broadcasts and GNU as 2.47: REX.W off an address-sized register,
+# retw imm's 66, rstorssp's REX.B, the AVX10.2 / AVX-VNNI forms; 0F 01 read back
+ISA_CASES += [  # encoder fixes found by broadcast fuzzing; the 0F 01 system instructions read back (GNU as / objdump 2.47)
+    ('enqcmd rsi, [r11+127]', 'f2410f38f8737f', 'enqcmd rsi,[r11+0x7f]'),
+    ('enqcmds r10, [rdi-128]', 'f3440f38f85780', 'enqcmds r10,[rdi-0x80]'),
+    ('invpcid r11, [rax]', '66440f388218', 'invpcid r11,[rax]'),
+    ('retw 128', '66c28000', 'retw 0x80'),
+    ('rstorssp qword [r12+8]', 'f3410f016c2408', 'rstorssp QWORD PTR [r12+0x8]'),
+    ('rdsspq r11', 'f3490f1ecb', 'rdsspq r11'),
+    ('vpdpbssds ymm13, ymm12, ymm0', 'c4621f51e8', 'vpdpbssds ymm13,ymm12,ymm0'),
+    ('vpdpbssd xmm1{k1}, xmm2, xmm3', '62f26f0950cb', 'vpdpbssd xmm1{k1},xmm2,xmm3'),
+    ('{vex} vpdpbssd xmm1, xmm2, xmm3', 'c4e26b50cb', 'vpdpbssd xmm1,xmm2,xmm3'),
+    ('vcvtneeph2ps xmm15, oword [rsi]', 'c46279b03e', 'vcvtneeph2ps xmm15,XMMWORD PTR [rsi]'),
+    ('{vex} vpdpbusd xmm1, xmm2, xmm3', 'c4e26950cb', '{vex} vpdpbusd xmm1,xmm2,xmm3'),
+    ('vsm4key4 zmm1, zmm2, [rax+64]', '62f26e48da4801', 'vsm4key4 zmm1,zmm2,ZMMWORD PTR [rax+0x40]'),
+    ('vmpsadbw zmm1, zmm2, zmm3, 1', '62f36e4842cb01', 'vmpsadbw zmm1,zmm2,zmm3,0x1'),
+    ('vminbf16 ymm0{k3}{z}, ymm5, [rax+128]{1to16}', '62f555bb5d4040', 'vminbf16 ymm0{k3}{z},ymm5,WORD BCST [rax+0x80]'),
+    ('vmcall', '0f01c1', 'vmcall'),
+    ('erets', 'f20f01ca', 'erets'),
+    ('uiret', 'f30f01ec', 'uiret'),
+    ('wrmsrlist', 'f30f01c6', 'wrmsrlist'),
+    ('serialize', '0f01e8', 'serialize'),
+]
+ISA_CASES += [  # vbcstnebf16ps: NASM 2.16 / utasm spelling (GNU: vbcstnebf162ps)
+    ("vbcstnebf16ps ymm0, word [rax]", "c4e27eb100", "vbcstnebf162ps ymm0,WORD PTR [rax]"),
+]
