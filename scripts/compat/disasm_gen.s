@@ -1134,12 +1134,12 @@ vaddph zmm20{k7}, zmm28, zmm0
 vaddph zmm30{k1}{z}, zmm30, zmm0
 vaddsh xmm29, xmm27, xmm25
 vaddsh xmm25, xmm6, word [rdx]
-vcmpph k0{k6}, xmm12, word [rbx+rbx*2+127], 127
-vcmpph k5, xmm1, word [r9+rdx*1], -128
+vcmpph k0{k6}, xmm12, [rbx+rbx*2+127], 127
+vcmpph k5, xmm1, [r9+rdx*1], -128
 vcmpph k2, ymm7, ymm21, -1
 vcmpph k3{k1}, ymm24, ymm4, -1
-vcmpph k2{k6}, zmm14, word [rax+r11*1+8], -128
-vcmpph k1, zmm15, word [r15+rsi*4+8], 127
+vcmpph k2{k6}, zmm14, [rax+r11*1+8], -128
+vcmpph k1, zmm15, [r15+rsi*4+8], 127
 vcmpsh k1, xmm12, word [r10], 0
 vcmpsh k4, xmm29, xmm19, -128
 vcomish xmm15, word [rbx+rsi*8-128]
