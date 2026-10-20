@@ -1437,6 +1437,50 @@ Data written NASM's way (`x dd 5`) is a plain label as before: only MASM's
 unless the name is an instruction or a NASM word (`push dword 5`, `istruc
 POINT`, `.IF sdword ...`). `ENDS` with no `STRUCT` open ends a segment.
 
+### Procedures (`proc` / `endproc`)
+
+A procedure is a label with checks between it and its `endproc`. utasm
+adds no code - the pushes and pops are written as ever - but follows the
+stack and the preserved registers (rbx, rbp, r12-r15: docs/abi.md)
+through the procedure as it is written:
+
+```asm
+proc net_send uses rbx, r12      ; rbx and r12 are saved here
+    push    rbx
+    push    r12
+    mov     rbx, rdi
+    mov     r12, rsi
+    ...
+    pop     r12
+    pop     rbx
+    ret
+endproc
+```
+
+| Class | By default | What it says |
+| --- | --- | --- |
+| `proc-stack` | error | the stack is not back where it was at a `ret` ("8 bytes still pushed"), or two paths reach a label with different depths ("16 bytes here, 8 by a jump to it") |
+| `proc-uses` | error | a register named in `uses` is written before it is pushed, is not restored at a `ret`, or is never saved |
+| `proc-clobber` | warning | a preserved register is written while not saved, and `uses` does not name it |
+| `proc-unreachable` | warning | code after a `ret` or `jmp` with no label before it |
+| `proc-fallthrough` | warning | the code runs on into `endproc` |
+
+The depth is the bytes pushed since the procedure's label: `push` / `pop`
+(2 bytes for a word), `pushf` / `popf`, `push2` / `pop2`, `sub rsp, N` /
+`add rsp, N`, `lea rsp, [rsp + N]`, `enter` / `leave`, and a frame - `mov
+rbp, rsp`, then `mov rsp, rbp`, `leave` or `lea rsp, [rbp - N]` back to
+it. Any other write to `rsp` (`and rsp, -16`) leaves the depth unknown
+until a frame restores it; nothing is checked while it is unknown. A
+jump carries its depth to its label, so a push on one path and not the
+other is found where they meet. A preserved register pushed and popped
+around its use is kept, whether `uses` names it or not; `uses` adds that
+it must be. `cpuid` writes rbx. The classes take `-w-` and `-w+error=`
+as any other (`-w-proc-stack`, `-w+error=proc-clobber`).
+
+`proc` and `endproc` are utasm's own words in its syntax (not under
+`%use masm`, whose `NAME PROC` is MASM's, nor GNU's). A label named
+`proc` (`proc:`) stays a label.
+
 ### Structures
 
 ```asm
