@@ -278,6 +278,17 @@ amd64_count_size:
     jne     .none                          ; (only rcx / ecx / cx count)
     movzx   eax, byte [r12 + INST_op1 + OPERAND_size]
 .have:
+    ; a16 / a32 / a64 written for another count register ("a16 jecxz",
+    ; "a32 loop l, rcx"): NASM's "impossible combination of address
+    ; sizes" (NASM 3 itself writes nothing at all for some of them)
+    movzx   ecx, byte [r12 + INST_asize]
+    test    ecx, ecx
+    jz      .asize_ok
+    cmp     ecx, eax
+    je      .asize_ok
+    mov     eax, EXIT_EA_SIZE_MIX
+    ret
+.asize_ok:
     movzx   ecx, byte [rel asm_bits]
     cmp     eax, ecx
     je      .none
@@ -325,9 +336,10 @@ amd64_seg_base_error:
     mov     eax, EXIT_SEG_BASE
     ret
 
-; ---- amd64_bits_error (internal) --------
+; ---- amd64_bits_error -------------------
 ; EXIT_BITS_MODE, its message naming the mode: "instruction not supported
 ; in 64-bit mode", as NASM's. Output: eax. Preserves the others.
+global amd64_bits_error
 amd64_bits_error:
     push    rcx
     push    rdx
@@ -986,6 +998,466 @@ amd64_force_rex:
 [SECTION .rodata]
 rex_legacy_prefixes: db 0x66, 0x67, 0xF0, 0xF2, 0xF3, 0x26, 0x2E, 0x36, 0x3E, 0x64, 0x65, 0
 [SECTION .text]
+
+;*
+; * [amd64_shape_forms]
+; * Purpose: Operand shapes taken as the form that does the same, before
+; *   the instruction is encoded (NASM 3's, and GNU as's where marked):
+; *   - lar / lsl r64, str / sldt r64, pextrw / pmovmskb r64 (both
+; *     syntaxes), smsw r64 (NASM's): the 32-bit register - the same
+; *     result, no REX.W;
+; *   - crc32 (NASM's): the source's size is the operation's (64: REX.W),
+; *     the destination 32 or 64 either way; an unsized memory source a
+; *     byte ("crc32 ebx, r9" is crc32 rbx, r9; "crc32 rbx, r9d" F1);
+; *   - xchg reg, reg (NASM's): the first in ModRM.reg (86 C1 for "xchg
+; *     al, cl"; GNU as puts the second there);
+; *   - movzx r16, r/m32 and r64, r/m32: mov's load form (66 8B; 8B - a
+; *     32-bit write clears the rest; amd64_movzx_mov); movsx r16 / r32, r/m32: movsxd; movsxd r16 / r32
+; *     (63 without REX.W), an unsized memory source a dword; movzx /
+; *     movsx r16, r/m16 stay (0F B7 / BF with 66); movzx / movsx r16 of
+; *     an unsized memory: no form (byte or word - NASM 3's error) (NASM's);
+; *   - kmov k, r32 / r32, k with no size on the mask: kmovd (NASM's);
+; *   - under -Ox / -Os, movsx / movsxd of the accumulator's lower half
+; *     into it: cbw, cwde, cdqe (NASM's);
+; *   - andn, bextr, bzhi, mulx, pdep, pext, sarx, shlx, shrx with two
+; *     operands: the destination is the first source too ("andn ebx,
+; *     r9d" is andn ebx, ebx, r9d) (NASM's).
+; * Input  : R12 = INST, RBX = AsmCtx
+; * Output : RAX = 0, or EXIT_ENCODE_FAIL. Preserves the others.
+; ;
+global amd64_shape_forms
+amd64_shape_forms:
+    push    rcx
+    push    rdx
+    push    rsi
+    push    rdi
+    extern  gas_names
+    mov     byte [rel amd64_movzx_mov], 0
+    movzx   eax, word [r12 + INST_op_id]
+    movzx   ecx, byte [r12 + INST_nops]
+    cmp     eax, 1351                      ; LAR
+    je      .sf_lar
+    cmp     eax, 1375                      ; LSL
+    je      .sf_lar
+    cmp     eax, 1673                      ; STR
+    je      .sf_str
+    cmp     eax, 1656                      ; SLDT
+    je      .sf_str
+    cmp     eax, 7099                      ; KMOV
+    je      .sf_kmov
+    cmp     eax, 1493                      ; PEXTRW
+    je      .sf_r64_to_32
+    cmp     eax, 1523                      ; PMOVMSKB
+    je      .sf_r64_to_32
+    cmp     byte [rel gas_names], 0
+    jne     .sf_ok                         ; (the rest: NASM's)
+    cmp     eax, 1657                      ; SMSW
+    je      .sf_str
+    cmp     eax, 1091                      ; CRC32
+    je      .sf_crc
+    cmp     eax, 2152                      ; XCHG
+    je      .sf_xchg
+    cmp     eax, 1430                      ; MOVZX
+    je      .sf_movx
+    cmp     eax, 1426                      ; MOVSX
+    je      .sf_movx
+    cmp     eax, 1427                      ; MOVSXD
+    je      .sf_movsxd
+    cmp     eax, 1029                      ; ANDN
+    je      .sf_nds
+    cmp     eax, 1035                      ; BEXTR
+    je      .sf_nds
+    cmp     eax, 1058                      ; BZHI
+    je      .sf_nds
+    cmp     eax, 1437                      ; MULX
+    je      .sf_nds
+    cmp     eax, 1488                      ; PDEP
+    je      .sf_nds
+    cmp     eax, 1489                      ; PEXT
+    je      .sf_nds
+    cmp     eax, 1626                      ; SARX
+    je      .sf_nds
+    cmp     eax, 1649                      ; SHLX
+    je      .sf_nds
+    cmp     eax, 1652                      ; SHRX
+    je      .sf_nds
+    jmp     .sf_ok
+
+.sf_lar:
+    cmp     ecx, 2
+    jne     .sf_ok
+.sf_r64_to_32:
+    cmp     byte [rel asm_bits], 64
+    jne     .sf_ok                         ; (r64 outside it: the mode's error)
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_REG
+    jne     .sf_ok
+    cmp     byte [r12 + INST_op0 + OPERAND_size], 64
+    jne     .sf_ok
+    lea     rdi, [r12 + INST_op0]
+    mov     edx, 32
+    call    .sf_size
+    jmp     .sf_ok
+.sf_str:
+    cmp     ecx, 1
+    jne     .sf_ok
+    jmp     .sf_r64_to_32
+
+.sf_crc:
+    cmp     ecx, 2
+    jne     .sf_ok
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_REG
+    jne     .sf_ok
+    movzx   edx, byte [r12 + INST_op0 + OPERAND_size]
+    cmp     edx, 32
+    jb      .sf_ok                         ; ("crc32 ax, bx": no form)
+    lea     rdi, [r12 + INST_op1]
+    cmp     byte [rdi + OPERAND_kind], OP_MEM
+    jne     .sf_crc_sized
+    cmp     byte [rdi + OPERAND_size], 0
+    jne     .sf_crc_sized
+    mov     edx, 8
+    call    .sf_size
+.sf_crc_sized:
+    mov     edx, 32
+    cmp     byte [rdi + OPERAND_size], 64
+    jne     .sf_crc_dest
+    mov     edx, 64
+.sf_crc_dest:
+    lea     rdi, [r12 + INST_op0]
+    call    .sf_size
+    jmp     .sf_ok
+
+.sf_xchg:
+    cmp     ecx, 2
+    jne     .sf_ok
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_REG
+    jne     .sf_ok
+    cmp     byte [r12 + INST_op1 + OPERAND_kind], OP_REG
+    jne     .sf_ok
+    cmp     byte [r12 + INST_op0 + OPERAND_reg], 16
+    jae     .sf_ok
+    cmp     byte [r12 + INST_op1 + OPERAND_reg], 16
+    jae     .sf_ok
+    ; the two operands' places swapped
+    xor     ecx, ecx
+.sf_swap:
+    cmp     ecx, OPERAND_SIZE
+    jae     .sf_ok
+    mov     al, [r12 + INST_op0 + rcx]
+    mov     dl, [r12 + INST_op1 + rcx]
+    mov     [r12 + INST_op0 + rcx], dl
+    mov     [r12 + INST_op1 + rcx], al
+    inc     ecx
+    jmp     .sf_swap
+
+.sf_movx:
+    cmp     ecx, 2
+    jne     .sf_ok
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_REG
+    jne     .sf_ok
+    call    .sf_acc
+    jz      .sf_ok                         ; (cbw / cwde / cdqe now)
+    movzx   ecx, byte [r12 + INST_op0 + OPERAND_size]
+    movzx   edx, byte [r12 + INST_op1 + OPERAND_size]
+    cmp     byte [r12 + INST_op1 + OPERAND_kind], OP_REG
+    je      .sf_movx_src
+    cmp     byte [r12 + INST_op1 + OPERAND_kind], OP_MEM
+    jne     .sf_ok
+    test    edx, edx
+    jnz     .sf_movx_src
+    cmp     ecx, 16
+    je      .sf_fail                       ; movzx r16 of byte or word?
+    jmp     .sf_ok
+.sf_movx_src:
+    cmp     edx, 32
+    jne     .sf_ok                         ; (8 / 16: the forms as they are)
+    cmp     eax, 1426
+    je      .sf_movsx32
+    ; movzx: mov's load form, 8B (amd64_encode_movx)
+    cmp     ecx, 16
+    je      .sf_movzx_mov                  ; (66 8B: the source's low word)
+    cmp     ecx, 64
+    jne     .sf_ok                         ; (movzx r32, r/m32: no form)
+    lea     rdi, [r12 + INST_op0]
+    mov     edx, 32
+    call    .sf_size                       ; (8B, a 32-bit write)
+.sf_movzx_mov:
+    mov     byte [rel amd64_movzx_mov], 1
+    jmp     .sf_ok
+.sf_movsx32:
+    cmp     ecx, 64
+    je      .sf_ok                         ; (movsx r64, r/m32: as it is)
+    mov     word [r12 + INST_op_id], 1427  ; MOVSXD r16 / r32, r/m32
+    jmp     .sf_ok
+
+.sf_movsxd:
+    cmp     ecx, 2
+    jne     .sf_ok
+    call    .sf_acc
+    jz      .sf_ok
+    cmp     byte [r12 + INST_op1 + OPERAND_kind], OP_MEM
+    jne     .sf_ok
+    cmp     byte [r12 + INST_op1 + OPERAND_size], 0
+    jne     .sf_ok
+    lea     rdi, [r12 + INST_op1]
+    mov     edx, 32
+    call    .sf_size
+    jmp     .sf_ok
+
+.sf_nds:
+    cmp     ecx, 2
+    jne     .sf_ok
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_REG
+    jne     .sf_ok
+    ; op2 = op1, op1 = op0
+    xor     ecx, ecx
+.sf_nds_copy:
+    cmp     ecx, OPERAND_SIZE
+    jae     .sf_nds_done
+    mov     al, [r12 + INST_op1 + rcx]
+    mov     [r12 + INST_op0 + OPERAND_SIZE * 2 + rcx], al
+    mov     al, [r12 + INST_op0 + rcx]
+    mov     [r12 + INST_op1 + rcx], al
+    inc     ecx
+    jmp     .sf_nds_copy
+.sf_nds_done:
+    mov     byte [r12 + INST_nops], 3
+    jmp     .sf_ok
+
+.sf_kmov:
+    ; "kmov k1, eax" / "kmov eax, k1", no size on the mask: kmovd, by
+    ; the general register's size, as NASM 3 picks it (the forms' first,
+    ; kmovb, was taken)
+    cmp     ecx, 2
+    jne     .sf_ok
+    lea     rdi, [r12 + INST_op0]
+    lea     rsi, [r12 + INST_op1]
+    cmp     byte [rdi + OPERAND_reg], 72   ; k0 .. k7: 72 .. 79 (te_classify)
+    jae     .sf_kmov_k
+    xchg    rdi, rsi                       ; rdi = the mask register
+.sf_kmov_k:
+    cmp     byte [rdi + OPERAND_kind], OP_REG
+    jne     .sf_ok
+    cmp     byte [rdi + OPERAND_reg], 72
+    jb      .sf_ok
+    cmp     byte [rdi + OPERAND_reg], 79
+    ja      .sf_ok
+    cmp     byte [rdi + OPERAND_size], 0
+    jne     .sf_ok                         ; ("kmov byte k1, eax": kmovb)
+    cmp     byte [rsi + OPERAND_kind], OP_REG
+    jne     .sf_ok
+    cmp     byte [rsi + OPERAND_reg], 16
+    jae     .sf_ok
+    cmp     byte [rsi + OPERAND_size], 32
+    jne     .sf_ok
+    mov     word [r12 + INST_op_id], 1312  ; KMOVD
+    jmp     .sf_ok
+
+.sf_fail:
+    mov     eax, EXIT_ENCODE_FAIL
+    jmp     .sf_ret
+.sf_ok:
+    xor     eax, eax
+.sf_ret:
+    pop     rdi
+    pop     rsi
+    pop     rdx
+    pop     rcx
+    ret
+
+; .sf_acc: under -Ox / -Os, movsx / movsxd of the accumulator's lower
+; half into it is cbw, cwde or cdqe (98 with 66 / none / REX.W), as NASM 3
+; optimizes it ("movsx eax, ax" is 98); ZF = 1 when it became one.
+; Preserves all but the flags (eax: the op id, kept).
+.sf_acc:
+    cmp     word [r12 + INST_op_id], 1430
+    je      .acc_no                        ; (movzx: no such form)
+    cmp     byte [rbx + ASMCTX_opt], OPT_BASIC
+    je      .acc_opt
+    cmp     byte [rbx + ASMCTX_opt], OPT_SIZE
+    jne     .acc_no
+.acc_opt:
+    cmp     byte [r12 + INST_op1 + OPERAND_kind], OP_REG
+    jne     .acc_no
+    cmp     byte [r12 + INST_op0 + OPERAND_reg], 0
+    jne     .acc_no
+    cmp     byte [r12 + INST_op1 + OPERAND_reg], 0
+    jne     .acc_no
+    cmp     byte [r12 + INST_op0 + OPERAND_is_high], 0
+    jne     .acc_no
+    cmp     byte [r12 + INST_op1 + OPERAND_is_high], 0
+    jne     .acc_no                        ; (ah)
+    push    rdx
+    movzx   edx, byte [r12 + INST_op1 + OPERAND_size]
+    add     edx, edx
+    cmp     dl, [r12 + INST_op0 + OPERAND_size]
+    jne     .acc_pop                       ; a half into the whole only
+    mov     dx, 1060                       ; CBW
+    cmp     byte [r12 + INST_op0 + OPERAND_size], 16
+    je      .acc_set
+    mov     dx, 1115                       ; CWDE
+    cmp     byte [r12 + INST_op0 + OPERAND_size], 32
+    je      .acc_set
+    mov     dx, 1062                       ; CDQE
+.acc_set:
+    mov     [r12 + INST_op_id], dx
+    mov     byte [r12 + INST_nops], 0
+    pop     rdx
+    cmp     al, al                         ; ZF = 1
+    ret
+.acc_pop:
+    pop     rdx
+.acc_no:
+    test    esp, esp                       ; ZF = 0
+    ret
+
+; .sf_size: the operand rdi's size edx (OPERAND_size and _xsize)
+.sf_size:
+    mov     [rdi + OPERAND_size], dl
+    mov     [rdi + OPERAND_xsize], dx
+    ret
+
+[SECTION .bss]
+global amd64_movzx_mov
+amd64_movzx_mov: resb 1                ; amd64_shape_forms: movzx of a dword is mov 8B
+[SECTION .text]
+
+;*
+; * [amd64_prefix_order]
+; * Purpose: The legacy prefixes of the instruction just encoded, in the
+; *   order the assembler of its syntax writes them (stable: two of a kind
+; *   keep theirs) - the CPU takes them in any order, but the bytes are
+; *   the reference's:
+; *     NASM 3:  segment, 67, F0, 66, F2 / F3  ("lock add [eax], bx" is
+; *              67 F0 66 01 18, "rep movsw" 66 F3 A5, "xacquire lock"
+; *              F0 F2)
+; *     GNU as:  segment, 67, 66, F2 / F3, F0  (tc-i386's prefix slots:
+; *              67 66 F0 01 18, F2 F0)
+; *   A mandatory prefix (66 / F2 / F3 of an SSE form) is the last of the
+; *   run either way, as it has to be. NASM 2's order was F0 / F2 / F3
+; *   first, then the segment, 67 and 66.
+; * Input  : RBX = AsmCtx (ASMCTX_inst_len = the instruction's length)
+; * Preserves every register but the flags.
+; ;
+global amd64_prefix_order
+amd64_prefix_order:
+    push    rax
+    push    rcx
+    push    rdx
+    push    rsi
+    push    rdi
+    push    r8
+    push    r9
+    push    r10
+    mov     rcx, [rbx + ASMCTX_curr_sec]
+    test    rcx, rcx
+    jz      .ret
+    mov     rsi, [rcx + SECTION_size]
+    cmp     rsi, [rcx + SECTION_cap]
+    ja      .ret
+    mov     rdx, [rcx + SECTION_data]
+    mov     eax, [rbx + ASMCTX_inst_len]
+    cmp     rax, rsi
+    ja      .ret
+    mov     rdi, rsi
+    sub     rdi, rax                       ; rdi = the first byte
+    add     rdx, rdi                       ; rdx = the instruction
+    ; r8 = the length of its prefix run
+    xor     r8d, r8d
+.run:
+    cmp     r8, rax
+    jae     .sort
+    movzx   ecx, byte [rdx + r8]
+    call    .key
+    test    r9d, r9d
+    js      .sort
+    inc     r8
+    jmp     .run
+.sort:
+    ; insertion sort by key, from the second byte on
+    mov     r10d, 1
+.outer:
+    cmp     r10, r8
+    jae     .ret
+    movzx   esi, byte [rdx + r10]          ; the byte placed
+    mov     ecx, esi
+    call    .key
+    mov     eax, r9d                       ; its key
+    mov     rdi, r10
+.inner:
+    test    rdi, rdi
+    jz      .place
+    movzx   ecx, byte [rdx + rdi - 1]
+    call    .key
+    cmp     r9d, eax
+    jle     .place                         ; (equal keys: as they were)
+    mov     [rdx + rdi], cl
+    dec     rdi
+    jmp     .inner
+.place:
+    mov     [rdx + rdi], sil
+    inc     r10
+    jmp     .outer
+.ret:
+    pop     r10
+    pop     r9
+    pop     r8
+    pop     rdi
+    pop     rsi
+    pop     rdx
+    pop     rcx
+    pop     rax
+    ret
+
+; .key: r9d = the order of the prefix byte ecx, -1 when it is none
+.key:
+    mov     r9d, 0
+    cmp     ecx, 0x26
+    je      .k_ret
+    cmp     ecx, 0x2E
+    je      .k_ret
+    cmp     ecx, 0x36
+    je      .k_ret
+    cmp     ecx, 0x3E
+    je      .k_ret
+    cmp     ecx, 0x64
+    je      .k_ret
+    cmp     ecx, 0x65
+    je      .k_ret
+    mov     r9d, 1
+    cmp     ecx, 0x67
+    je      .k_ret
+    extern  gas_names
+    cmp     byte [rel gas_names], 0
+    jne     .k_gas
+    mov     r9d, 2
+    cmp     ecx, 0xF0
+    je      .k_ret
+    mov     r9d, 3
+    cmp     ecx, 0x66
+    je      .k_ret
+    mov     r9d, 4
+    cmp     ecx, 0xF2
+    je      .k_ret
+    cmp     ecx, 0xF3
+    je      .k_ret
+    jmp     .k_none
+.k_gas:
+    mov     r9d, 2
+    cmp     ecx, 0x66
+    je      .k_ret
+    mov     r9d, 3
+    cmp     ecx, 0xF2
+    je      .k_ret
+    cmp     ecx, 0xF3
+    je      .k_ret
+    mov     r9d, 4
+    cmp     ecx, 0xF0
+    je      .k_ret
+.k_none:
+    mov     r9d, -1
+.k_ret:
+    ret
 
 ;*
 ; * [amd64_force_osize]
