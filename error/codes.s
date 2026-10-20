@@ -683,6 +683,8 @@ code_table:
     code_msg EXIT_PROC_NESTED,       m_proc_nested
     code_msg EXIT_PROC_NO_PROC,      m_proc_no_proc
     code_msg EXIT_PROC_OPEN,         m_proc_open
+    code_msg EXIT_NOT_STRUC,         m_not_struc, t_not_struc
+    code_msg EXIT_FIELD_SIZE,        m_field_size, t_field_size
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -923,6 +925,10 @@ m_gas_base64:   db "invalid character found inside .base64 string", 0
 m_proc_nested:  db "proc inside a proc (no endproc for the one before)", 0
 m_proc_no_proc: db "endproc with no proc", 0
 m_proc_open:    db "proc has no endproc", 0
+m_not_struc:    db "not a structure", 0
+t_not_struc:    db "`^' is not a structure (one defined before this line)", 0
+m_field_size:   db "the size written is not the field's", 0
+t_field_size:   db "the size written is not that of the field `^'", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
 t_multi:        db "symbol `^' defined more than once", 0
