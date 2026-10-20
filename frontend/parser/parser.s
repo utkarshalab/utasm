@@ -696,7 +696,9 @@ parser_parse_instruction:
 .parse_operands:
     xor     r14, r14
     mov     byte [rel far_colon], 0
-    ; bndmk / bndldx / bndstx: an MIB address (parser_parse_mem_operand)
+    ; bndmk / bndldx / bndstx: an MIB address (parser_parse_mem_operand);
+    ; AMX's tile loads / stores too: their SIB index is the stride, so
+    ; "[r12*2]" is no base and a stride of r12*2, not [r12 + r12]
     movzx   eax, word [r15 + INST_op_id]
     mov     byte [rel mem_mib], 0
     cmp     eax, 1046                      ; BNDLDX
@@ -704,6 +706,16 @@ parser_parse_instruction:
     cmp     eax, 1047                      ; BNDMK
     je      .mib
     cmp     eax, 1049                      ; BNDSTX
+    je      .mib
+    cmp     eax, 1693                      ; TILELOADD
+    je      .mib
+    cmp     eax, 1694                      ; TILELOADDT1
+    je      .mib
+    cmp     eax, 1696                      ; TILESTORED
+    je      .mib
+    cmp     eax, 7672                      ; TILELOADDRS
+    je      .mib
+    cmp     eax, 7673                      ; TILELOADDRST1
     jne     .mib_noted
 .mib:
     mov     byte [rel mem_mib], 1
