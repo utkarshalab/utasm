@@ -438,6 +438,16 @@ lexer_next:
     jmp     .advance_single
 
 .emit_single_colon:
+    ; "::x": the name x outside every namespace, one identifier
+    mov     r10, [rbx + LEXER_pos]
+    call    .ns_colons
+    jne     .single_colon
+    call    .token_begin
+    mov     r13, [rbx + LEXER_pos]
+    add     qword [rbx + LEXER_pos], 2
+    add     word [rbx + LEXER_col], 2
+    jmp     .lex_ident_loop
+.single_colon:
     call    .token_begin
     mov     byte [r12 + TOKEN_kind], TOK_COLON
     jmp     .advance_single
@@ -863,6 +873,26 @@ lexer_next:
 ; If followed by : emits TOK_LABEL or TOK_LOCAL_LABEL.
 ; Otherwise emits TOK_IDENT.
 ;
+; .ns_colons: ZF = 1 when r10 is at "::" and a name's first character
+; (not '.'). Preserves all but rax, rdi
+.ns_colons:
+    lea     rax, [r10 + 3]
+    cmp     rax, [rbx + LEXER_end]
+    ja      .ns_no
+    cmp     word [r10], '::'
+    jne     .ns_ret
+    movzx   edi, byte [r10 + 2]
+    cmp     edi, '.'
+    je      .ns_no
+    test    byte [lexer_char_props + rdi], CHAR_IS_IDENT_START
+    jz      .ns_no
+    cmp     eax, eax
+.ns_ret:
+    ret
+.ns_no:
+    test    esp, esp
+    ret
+
 .lex_ident:
     call    .token_begin
     mov     r13, [rbx + LEXER_pos]     ; start of identifier
@@ -876,8 +906,15 @@ lexer_next:
     jge     .lex_ident_at
     movzx   edi, byte [r10]
     cmp     byte [str_ident_chars + rdi], 0
-    je      .lex_ident_at
+    je      .lex_ident_ns
     inc     r10
+    jmp     .lex_ident_scan
+.lex_ident_ns:
+    ; "net::send": a namespace's name goes on through "::" and a name
+    ; (middle/semantic/namespace.s)
+    call    .ns_colons
+    jne     .lex_ident_at
+    add     r10, 2
     jmp     .lex_ident_scan
 .lex_ident_at:
     mov     rax, r10
