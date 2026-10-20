@@ -1186,6 +1186,32 @@ def namespaces(utasm, verbose=False):
     return s
 
 
+def isa(utasm, verbose=False):
+    """The instructions newer than the assemblers the other suites compare
+    with: GNU as 2.47's bytes, objdump 2.47's text (cases.ISA_CASES), and
+    the forms that are errors (cases.ISA_ERRORS)."""
+    s = Suite("isa", verbose)
+    row = re.compile(r"^\s*[0-9a-f]+:\s+(?:[0-9a-f]{2} )+\s+(\S.*)$")
+    for line, want, text in cases.ISA_CASES:
+        with tempdir() as d:
+            open(os.path.join(d, "i.s"), "w").write("bits 64\n" + line + "\n")
+            r = run([utasm, "-f", "bin", "i.s", "-o", "i.bin"], cwd=d)
+            got = open(os.path.join(d, "i.bin"), "rb").read().hex() if r.returncode == 0 else None
+            dis = None
+            if run([utasm, "-f", "elf64", "i.s", "-o", "i.o"], cwd=d).returncode == 0:
+                out = run([utasm, "--disasm", "i.o"], cwd=d).stdout or ""
+                dis = " ".join(" ".join(m.group(1).split()) for m in map(row.match, out.splitlines()) if m)
+        s.result(line, got == want and (text is None or dis == text),
+                 "bytes %s (want %s), text %r (want %r): %r" % (got, want, dis, text, (r.stderr or "")[:200]))
+    for line, err in cases.ISA_ERRORS:
+        with tempdir() as d:
+            open(os.path.join(d, "i.s"), "w").write("bits 64\n" + line + "\n")
+            r = run([utasm, "-f", "bin", "i.s", "-o", "i.bin"], cwd=d)
+        s.result("error: " + line, r.returncode != 0 and err in (r.stderr or ""),
+                 "rc %d: %r" % (r.returncode, (r.stderr or "")[:200]))
+    return s
+
+
 def lints(utasm, verbose=False):
     """utasm's own warnings (pie off by default, slash-comment on): where
     they must and must not appear."""
