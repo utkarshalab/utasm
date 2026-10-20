@@ -48,7 +48,7 @@ def main(argv):
             suites.sections, suites.symbol_imm, suites.ubf, suites.diagnostics,
             suites.command_line, suites.listing, suites.dwarf, suites.elf32, suites.coff, suites.cfi,
             suites.expressions, suites.limits, suites.robustness, suites.warnings, suites.rejections,
-            suites.explanations, suites.lints, suites.procedures, suites.recovery, suites.tls, suites.readback, suites.gas, suites.att,
+            suites.explanations, suites.lints, suites.procedures, suites.typed_strucs, suites.recovery, suites.tls, suites.readback, suites.gas, suites.att,
             suites.json_diagnostics, suites.map_files, suites.fasm_features,
             suites.masm_features, suites.lsp_server]
     if not quick:
