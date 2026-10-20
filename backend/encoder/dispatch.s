@@ -1002,6 +1002,12 @@ te_emit:
     test    eax, eax
     jz      .no_66
 .put_66:
+    ; a mandatory 66 is the operand size too (wrussd m32, r32 in bits 16:
+    ; one 66, as NASM writes it)
+    movzx   eax, byte [r13 + FM_PFX]
+    and     eax, 15
+    cmp     eax, 1
+    je      .no_66
     extern  amd64_emit_osz_prefix
     call    amd64_emit_osz_prefix
 .no_66:
