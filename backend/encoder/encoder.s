@@ -69,6 +69,31 @@ amd64_encode_instruction:
     mov     word [r12 + INST_op1 + OPERAND_xsize], 0
 .not_lea:
 
+    ; APX's {nf} / {zu} / {dfv=...}: no encoding of them yet - an error,
+    ; not the instruction with its flags written after all
+    cmp     byte [r12 + INST_apx], 0
+    je      .no_apx_pfx
+    mov     rax, EXIT_ENCODE_FAIL
+    jmp     .error
+.no_apx_pfx:
+    ; inc / dec / neg / not take one operand ("inc rax, rbx" - APX's new
+    ; destination - went out as inc rax)
+    movzx   eax, word [r12 + INST_op_id]
+    cmp     eax, 1278                      ; INC
+    je      .one_op
+    cmp     eax, 1118                      ; DEC
+    je      .one_op
+    cmp     eax, 1439                      ; NEG
+    je      .one_op
+    cmp     eax, 1441                      ; NOT
+    jne     .one_op_ok
+.one_op:
+    cmp     byte [r12 + INST_nops], 1
+    je      .one_op_ok
+    mov     rax, EXIT_ENCODE_FAIL
+    jmp     .error
+.one_op_ok:
+
     ; the operand shapes NASM 3 takes as another form (mode.s)
     extern  amd64_shape_forms
     call    amd64_shape_forms
@@ -953,10 +978,10 @@ amd64_encode_instruction:
         mov     rax, EXIT_ENCODE_FAIL
     ELSEIF ax, e, 1687             ; TDPBSSD
         mov     rax, EXIT_ENCODE_FAIL
-    ELSEIF ax, e, 1590             ; RDRAND
+    ELSEIF ax, e, 1600             ; RDRAND
         mov     r14, 6
         call amd64_encode_sec_r
-    ELSEIF ax, e, 1593             ; RDSEED
+    ELSEIF ax, e, 1601             ; RDSEED
         mov     r14, 7
         call amd64_encode_sec_r
     ELSEIF ax, e, 1165             ; ENDBR64
@@ -2111,6 +2136,15 @@ amd64_encode_instruction:
     ; the prefixes in the order of the syntax's assembler (mode.s)
     test    rax, rax
     jnz     .ordered
+    ; {evex} asked for and none written ("{evex} add rax, rbx": APX's
+    ; form, not encoded yet) - an error, not the legacy bytes
+    test    byte [r12 + INST_flags], INSTF_EVEX
+    jz      .evex_ok
+    call    amd64_has_evex
+    jz      .evex_ok
+    mov     eax, EXIT_ENCODE_FAIL
+    jmp     .ordered
+.evex_ok:
     extern  amd64_rex2_finish
     call    amd64_rex2_finish
     test    eax, eax
@@ -2783,6 +2817,60 @@ amd64_gas_global:
     ret
 .gg_no:
     cmp     byte [rel gas_names], 2        ; ZF = 0 (it is 0 or 1)
+    ret
+
+; amd64_has_evex: ZF = 1 when the instruction just encoded is EVEX (62
+; after its legacy prefixes). Preserves all but the flags.
+amd64_has_evex:
+    push    rax
+    push    rcx
+    push    rdx
+    push    rsi
+    mov     rax, [rbx + ASMCTX_curr_sec]
+    mov     rcx, [rax + SECTION_size]
+    mov     rdx, [rax + SECTION_data]
+    mov     esi, [rbx + ASMCTX_inst_len]
+    sub     rcx, rsi                       ; its first byte
+.he_byte:
+    test    esi, esi
+    jz      .he_no
+    movzx   eax, byte [rdx + rcx]
+    cmp     eax, 0x62
+    je      .he_ret                        ; (ZF = 1)
+    cmp     eax, 0x66
+    je      .he_next
+    cmp     eax, 0x67
+    je      .he_next
+    cmp     eax, 0xF0
+    je      .he_next
+    cmp     eax, 0xF2
+    je      .he_next
+    cmp     eax, 0xF3
+    je      .he_next
+    cmp     eax, 0x2E
+    je      .he_next
+    cmp     eax, 0x3E
+    je      .he_next
+    cmp     eax, 0x26
+    je      .he_next
+    cmp     eax, 0x36
+    je      .he_next
+    cmp     eax, 0x64
+    je      .he_next
+    cmp     eax, 0x65
+    je      .he_next
+.he_no:
+    test    esp, esp                       ; ZF = 0
+    jmp     .he_ret
+.he_next:
+    inc     rcx
+    dec     esi
+    jmp     .he_byte
+.he_ret:
+    pop     rsi
+    pop     rdx
+    pop     rcx
+    pop     rax
     ret
 
 ; amd64_seg_of: al = the segment prefix the operand rdi (of the INST r12)
