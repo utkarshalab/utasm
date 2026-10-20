@@ -186,6 +186,13 @@
 %define EXIT_PROC_OPEN         168 ; a proc with no endproc at the end
 %define EXIT_NOT_STRUC         169 ; "[rbx:x]": x is no struc
 %define EXIT_FIELD_SIZE        170 ; "word [rbx:PACKET].len": .len is a dword
+%define EXIT_NS_NO_NS          171 ; endnamespace with no namespace
+%define EXIT_NS_MODULE         172 ; endnamespace where a module is open
+%define EXIT_NS_OUTSIDE        173 ; export / private outside a namespace
+%define EXIT_NS_DEPTH          174 ; namespaces nested too deep
+%define EXIT_NS_OPEN           175 ; a namespace with no endnamespace
+%define EXIT_NS_PRIVATE        176 ; a private name used from outside
+%define EXIT_NS_SHADOW         177 ; a name taken from outside, then defined inside
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
