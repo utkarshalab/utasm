@@ -1037,26 +1037,21 @@ diag_describe:
     jne     .other
     movzx   eax, byte [rbx + OPERAND_reg]
     ; the parser's numbers (include/arch/amd64.inc, as dispatch.s reads
-    ; them): general 0-15, segment 24-29, control 32-47, debug 48-63, mask
+    ; them): general 0-31 (16-31 APX's), control 32-47, debug 48-63,
+    ; segment 64-69, mask
     ; 72-79, vector 80-111, x87 112-119, MMX 120-127, tile 128-135, bound
     ; 136-139 - constant.inc's REG_CR0 and on are not these ("cr0" was
     ; "a debug register")
-    cmp     eax, 16
-    jb      .sized_reg
-    lea     rsi, [rel s_reg]
-    cmp     eax, 24
-    jb      .say
-    lea     rsi, [rel s_seg]
-    cmp     eax, 30
-    jb      .say
-    lea     rsi, [rel s_reg]
     cmp     eax, 32
-    jb      .say
+    jb      .sized_reg
     lea     rsi, [rel s_ctrl]
     cmp     eax, 48
     jb      .say
     lea     rsi, [rel s_dbg]
     cmp     eax, 64
+    jb      .say
+    lea     rsi, [rel s_seg]
+    cmp     eax, 70
     jb      .say
     lea     rsi, [rel s_reg]
     cmp     eax, 72
@@ -1149,7 +1144,7 @@ diag_size_clash:
     je      .sized_op
     cmp     eax, OP_REG
     jne     .op
-    cmp     byte [rbx + OPERAND_reg], REG_CS
+    cmp     byte [rbx + OPERAND_reg], 32
     jae     .op                            ; not a general register
 .sized_op:
     push    rcx
