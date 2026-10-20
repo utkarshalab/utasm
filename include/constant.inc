@@ -184,6 +184,8 @@
 %define EXIT_PROC_NESTED       166 ; proc inside a proc (middle/semantic/proc.s)
 %define EXIT_PROC_NO_PROC      167 ; endproc with no proc
 %define EXIT_PROC_OPEN         168 ; a proc with no endproc at the end
+%define EXIT_NOT_STRUC         169 ; "[rbx:x]": x is no struc
+%define EXIT_FIELD_SIZE        170 ; "word [rbx:PACKET].len": .len is a dword
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
