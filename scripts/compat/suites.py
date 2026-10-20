@@ -1131,6 +1131,27 @@ def explanations(utasm, verbose=False):
     return s
 
 
+def procedures(utasm, verbose=False):
+    """utasm's proc / endproc checks (middle/semantic/proc.s): the
+    warnings and errors each line must and must not give."""
+    s = Suite("procedures", verbose)
+    for name, src, opts, must, clean, rc in cases.PROC_CASES:
+        with tempdir() as d:
+            open(os.path.join(d, "p.s"), "w").write(src)
+            r = run([utasm, "-f", "bin", "p.s", "-o", "p.bin"] + opts, cwd=d)
+        rows = (r.stderr or "").splitlines()
+        def at(n, kind=None):
+            pre = "p.s:%d: " % n if n else "p.s:"
+            return [x for x in rows if x.startswith(pre) and (kind is None or (" %s: " % kind) in x)]
+        good = (r.returncode == 0) == (rc == 0)
+        for n, (kind, text) in must.items():
+            good = good and any(text in x for x in at(n, kind))
+        for n in clean:
+            good = good and not at(n)
+        s.result(name, good, "rc %d: %r" % (r.returncode, (r.stderr or "")[:300]))
+    return s
+
+
 def lints(utasm, verbose=False):
     """utasm's own warnings (pie off by default, slash-comment on): where
     they must and must not appear."""
