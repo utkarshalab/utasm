@@ -148,6 +148,12 @@ def operand(spec, bits, rng, evex):
         return text
     m = re.fullmatch(r"(xmm|ymm|zmm)rm(\d+)", t)
     if m:
+        # a broadcast ("[rax]{1to16}"): one element of the b16 / b32 / b64 the
+        # form allows, as many times as the vector holds
+        bc = [int(x[1:]) for x in mods if re.fullmatch(r"b(16|32|64)", x)]
+        if bc and evex and rng.random() < 0.3:
+            width = {"xmm": 128, "ymm": 256, "zmm": 512}[m.group(1)]
+            return "%s{1to%d}" % (address(bits, rng, None), width // bc[0])
         if rng.random() < 0.5:
             text = "%s%d" % (m.group(1), rng.randrange(nvec))
         else:
@@ -321,7 +327,11 @@ NASM_BOGUS = [r"^v(get(max|min)|endscale)", r"^vfmulcpch\b", r"^vcvtu?qq2ph [yz]
               r"^vget(mant|exp)sh [^,]+, [^,\[]+(, -?\d+)?$", r"^vget(mant|exp)sh [^,]+, [^,]*\[",
               r"^vp2intersectd ", r"^vcvtps2ph [^,]+, [^,]+$", r"^vrcpsh .*\{sae\}",
               # narrowing conversions with the source's width: xmm for ymm, ymm for zmm
-              r"^vcvtu?dq2ph (ymm\S*, (ymm|yword)|zmm)", r"^vcvtpd2ph [yz]mm"]
+              r"^vcvtu?dq2ph (ymm\S*, (ymm|yword)|zmm)", r"^vcvtpd2ph [yz]mm",
+              # (and with a broadcast: {1to8} of dwords is a ymm, whose half is xmm)
+              r"^vcvtu?dq2ph ymm\S*, .*\{1to8\}",
+              # vcvtph2udq's memory half of what it is (xmm, m32 for m64 ...)
+              r"^vcvtph2udq "]
 
 
 def nasm_bogus(text):
