@@ -3101,3 +3101,36 @@ BIN_PROBES.update({
     "rdrand_rdseed": "bits 64\nrdrand rax\nrdseed ecx\nrdrand r9w\n",
 })
 MODE_LINES += ["rcl rax", "vmovdqu xmm0, [r16]"]
+# batch 69: APX's EVEX forms - NDD, {nf}, {zu}, {evex}, ccmp / ctest, cfcmov,
+# push2 / pop2, pushp / popp, jmpabs, the 0F 38 ones with r16-r31
+BIN_PROBES.update({
+    "apx_ndd_alu": "bits 64\nadd rax, rbx, rcx\nadd r16, rbx, rcx\nadd rax, [rbx], rcx\nadd rax, rcx, [rbx]\n"
+                   "add rax, rbx, 5\nadd rax, rbx, 500\nsub eax, ebx, ecx\nxor ax, bx, cx\nand al, bl, cl\n"
+                   "or r31, r17, [r18+r19*4+8]\nadc rax, rbx, rcx\nsbb rax, [rbx], 7\n",
+    "apx_nf": "bits 64\n{nf} add rax, rbx\n{nf} add rax, 5\n{nf} add [rax], rbx\n{nf} add rax, rbx, rcx\n"
+              "{nf} inc rax\n{nf} neg ax\n{nf} shl rax, 1\n{nf} sar rax, 3\n{nf} imul rax, rbx\n"
+              "{nf} imul rax, rbx, 500\n{nf} mul rbx\n{nf} idiv rax\n{nf} popcnt rax, rbx\n{nf} lzcnt eax, r9d\n"
+              "{nf} tzcnt rax, [rbx]\n{nf} andn rax, rbx, rcx\n{nf} bextr rax, rbx, rcx\n{nf} blsr rax, rbx\n"
+              "{nf} not rax\n{evex} add rax, rbx\n{evex} inc rax\n",
+    "apx_ndd_more": "bits 64\ninc rax, rbx\nneg rax, rbx\nnot rax, rbx\nshl rax, rbx, 3\nshl rax, rbx, 1\n"
+                    "shl rax, rbx, cl\nrcl rax, rbx, 1\nshld rax, rbx, rcx, 3\nshrd rax, rbx, rcx, cl\n"
+                    "imul rax, rbx, rcx\ncmovz rax, rbx, rcx\nadcx rax, rbx, rcx\nadox r16, r17, [r18]\n"
+                    "{zu} imul ax, bx, 5\n{zu} setz al\n{evex} setz bl\n",
+    "apx_ccmp_cfcmov": "bits 64\nccmpz {dfv=of,zf} rax, rbx\nccmpnz {dfv=cf} rbx, 5\nccmpt {dfv=sf} qword [r16+8], r16\n"
+                       "ccmpf {dfv=} eax, [rbx]\nctestz {dfv=cf} rax, rbx\nctestnz {dfv=of,sf,zf,cf} ebx, 7\n"
+                       "cfcmovz rax, rbx\ncfcmovz rax, rbx, rcx\ncfcmovz [rax], rbx\ncfcmovz rax, [rbx]\n",
+    "apx_new": "bits 64\npush2 rax, rbx\npop2 rax, rbx\npush2p rbx, r16\npop2p rbx, r16\npushp rax\npopp r16\n"
+               "jmpabs 0x123456789\nmovbe rax, [r16]\nmovbe [r17], r16\n{evex} movbe rax, [rbx]\n"
+               "crc32 rbx, r16\ncrc32 eax, byte [r16]\n{evex} crc32 eax, ecx\ninvpcid r16, [r17]\n"
+               "movdir64b rax, [r16]\nmovdiri [r16], rax\nenqcmd rbx, [r17]\nwrssq [r16], rax\n",
+})
+MODE_LINES += ["cmovz rbx, r9, 3", "adcx rbx, r9, 3", "{nf} cmp rax, rbx", "{zu} add rax, rbx"]
+GAS_CASES += [
+    ("apx evex", ".att_syntax\n{nf} addq %rbx, %rax\naddq %rcx, %rbx, %rax\naddq $5, %rbx, %rax\n"
+                 "addq (%rbx), %rcx, %rax\n{nf} incq %rax\nincq %rbx, %rax\nshlq $3, %rbx, %rax\n"
+                 "shldq $3, %rcx, %rbx, %rax\nimulq %rcx, %rbx, %rax\ncmovzq %rcx, %rbx, %rax\n"
+                 "cfcmovzq %rbx, %rax\ncfcmovzq (%rbx), %rax\nadcxq %rcx, %rbx, %rax\n"
+                 "movbeq (%r16), %rax\ncrc32q %r16, %rbx\nccmpz {dfv=of,zf} %rbx, %rax\nccmpzq $5, %rax\n"
+                 "ctestnz {dfv=cf} $5, %ecx\npush2 %rbx, %rax\npop2 %rbx, %rax\npushp %rax\npopp %rbx\n"
+                 "{nf} andn %rcx, %rbx, %rax\n{evex} addq %rbx, %rax\n"),
+]
