@@ -3187,3 +3187,28 @@ PROC_CASES = [
     ("endproc alone", "bits 64\nendproc\n", [], {2: ("error", "endproc with no proc")}, [], 1),
     ("never closed", "bits 64\nproc f\nret\n", [], {0: ("error", "proc has no endproc")}, [], 1),
 ]
+# utasm's typed struc access, "[reg:TYPE].field" (frontend/parser/parser.s
+# parser_typed_field): name, the lines after PACKET's definition, the bytes
+# (-f bin), or None and the error the line must give
+TYPED_STRUC = ("bits 64\nstruc PACKET\n.len: resd 1\n.flags: resw 1\n.kind: resb 1\n.ptr: resq 1\n"
+               ".arr: resb 6\nendstruc\n")
+TYPED_STRUC_CASES = [
+    ("field offset", "mov eax, [rbx:PACKET].len\nmov ax, [rbx:PACKET].flags\n", "8b03668b4304", None),
+    ("the field sizes the operand", "mov [rbx:PACKET].len, 5\ninc word [rdi:PACKET].flags\n",
+     "c7030500000066ff4704", None),
+    ("an array field: its element", "mov al, [rbx:PACKET].arr\n", "8a430f", None),
+    ("a full address", "mov rdx, [rbx + rcx*8:PACKET].ptr\nmov ax, [rbx + 8 : PACKET].flags\n",
+     "488b54cb07668b430c", None),
+    ("an APX register", "mov cl, [r16:PACKET].kind\n", "d5108a4806", None),
+    ("a segment", "mov eax, [fs:rbx:PACKET].len\n", "648b03", None),
+    ("lea", "lea rsi, [rbx:PACKET].ptr\n", "488d7307", None),
+    ("no field: the start", "mov eax, [rbx:PACKET]\n", "8b03", None),
+    ("the plain form still", "mov eax, [rbx + PACKET.len]\n", "8b03", None),
+    ("register too wide", "mov eax, [rbx:PACKET].flags\n", None, "a 16-bit memory operand"),
+    ("size written not the field's", "mov eax, dword [rbx:PACKET].flags\n", None,
+     "the size written is not that of the field `PACKET.flags'"),
+    ("no such field", "mov eax, [rbx:PACKET].nope\n", None, "no structure field `PACKET.nope'"),
+    ("not a struc", "mov eax, [rbx:NOPE].len\n", None, "`NOPE' is not a structure"),
+    ("a number for the type", "mov eax, [rbx:5].len\n", None, "unexpected token"),
+    ("no term before it", "mov eax, [rbx + :PACKET].len\n", None, "expression syntax error"),
+]
