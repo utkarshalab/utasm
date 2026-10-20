@@ -813,6 +813,9 @@ x87_forms()
 # "vaddps xmm1, xmm2" for "vaddps xmm1, xmm1, xmm2"). Mnemonics new to
 # backend/isa/amd64.s go in its generated block (isa_block below).
 INSNS = os.path.join(ROOT, "scripts", "nasm", "insns.dat")
+# NASM 3.01's lines for the instructions 2.16.03's has not (AVX10.2, the
+# AMX additions, AVX-VNNI-INT16, MOVRS ...): read after it, the same way
+INSNS3 = os.path.join(ROOT, "scripts", "nasm", "insns3.dat")
 NASM_PRIO = 50
 
 # NASM's AVX512-FP16 FMA names are off from Intel's: its VFMADD132PH is
@@ -1297,7 +1300,7 @@ CPU_LEVEL = {}
 
 def nasm_forms():
     lines = []
-    for line in open(INSNS, encoding="utf-8"):
+    for line in [l for path in (INSNS, INSNS3) for l in open(path, encoding="utf-8")]:
         if line.startswith(";") or not line.strip():
             continue
         m = re.match(r"(\S+)\s+(\S+)\s+\[(.*?)\]\s+(\S+)", line)
@@ -1353,7 +1356,8 @@ def isa_text():
     if ISA_BEGIN in prev:
         blk = prev[prev.index(ISA_BEGIN):prev.index(ISA_END)]
         kept = {m.group(1): int(m.group(2)) for m in re.finditer(r'mnc_ent\s+"([^"]+)",\s*0,\s*(\d+)', blk)}
-    nxt = max(list(kept.values()) + [NASM_ID0 - 1]) + 1
+    # (past every ID in use: the hand-written ones, APX's 7600-7656, too)
+    nxt = max(list(kept.values()) + list(ISA_IDS.values()) + [NASM_ID0 - 1]) + 1
     ids = {}
     for n in new:
         if n not in kept:
