@@ -414,6 +414,15 @@ _start:
     test    rax, rax
     jnz     .check_enc
 .amd64_encode:
+    ; inside a proc: its stack and preserved registers (middle/semantic/proc.s)
+    extern  proc_active, proc_insn
+    cmp     byte [rel proc_active], 0
+    je      .no_proc_insn
+    mov     rdi, rsi
+    call    proc_insn
+    mov     rdi, rbx
+    mov     rsi, r12
+.no_proc_insn:
     extern  amd64_encode_tracked
     call    amd64_encode_tracked
     ; GNU's syntax: the last statement an instruction (frontend/parser/gas.s)
@@ -469,6 +478,11 @@ _start:
     ; a GNU .if with no .endif
     extern  gas_macro_finish
     call    gas_macro_finish
+    test    rax, rax
+    jnz     .error_in_parser
+    ; a proc with no endproc (middle/semantic/proc.s)
+    extern  proc_finish
+    call    proc_finish
     test    rax, rax
     jnz     .error_in_parser
     ; a FASM virtual block with no end virtual
