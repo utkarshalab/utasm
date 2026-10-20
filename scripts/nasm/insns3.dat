@@ -302,3 +302,44 @@ VMOVRSD	zmmreg|mask|z,mem512	[rm:fvm: evex.512.f3.map5.w0 6f /r]	AVX10_2,MOVRS
 VMOVRSQ	xmmreg|mask|z,mem128	[rm:fvm: evex.128.f3.map5.w1 6f /r]	AVX10_2,MOVRS
 VMOVRSQ	ymmreg|mask|z,mem256	[rm:fvm: evex.256.f3.map5.w1 6f /r]	AVX10_2,MOVRS
 VMOVRSQ	zmmreg|mask|z,mem512	[rm:fvm: evex.512.f3.map5.w1 6f /r]	AVX10_2,MOVRS
+;;
+;; NASM 3.01's forms of mnemonics 2.16.03 has, in an encoding it has not: the
+;; AVX10.2 EVEX forms of AVX-VNNI-INT8, vmpsadbw, vsm4key4 / vsm4rnds4; the
+;; AVX-VNNI VEX forms of vpdpbusd / vpdpbusds / vpdpwssd / vpdpwssds
+;; (vsm4key4 / vsm4rnds4's EVEX lines have no tuple there: fvm written in)
+;;
+VSM4KEY4        xmmreg,xmmreg,xmmrm128              [rvm:fvm: evex.nds.128.f3.0f38.w0 da /r] AVX,FUTURE,HSM4
+VSM4KEY4        ymmreg,ymmreg,ymmrm256              [rvm:fvm: evex.nds.256.f3.0f38.w0 da /r] AVX,FUTURE,HSM4
+VSM4KEY4        zmmreg,zmmreg,zmmrm512              [rvm:fvm: evex.nds.512.f3.0f38.w0 da /r] AVX,FUTURE,HSM4
+VSM4RNDS4       xmmreg,xmmreg,xmmrm128              [rvm:fvm: evex.nds.128.f2.0f38.w0 da /r] AVX,FUTURE,HSM4
+VSM4RNDS4       ymmreg,ymmreg,ymmrm256              [rvm:fvm: evex.nds.256.f2.0f38.w0 da /r] AVX,FUTURE,HSM4
+VSM4RNDS4       zmmreg,zmmreg,zmmrm512              [rvm:fvm: evex.nds.512.f2.0f38.w0 da /r] AVX,FUTURE,HSM4
+VPDPBUSD  	 xmmreg,xmmreg,xmmrm128			[rvm:	vex.128.66.0f38.w0 50 /r]	AVXVNNI,LATEVEX,SO
+VPDPBUSD  	 ymmreg,ymmreg,ymmrm256			[rvm:	vex.256.66.0f38.w0 50 /r]	AVXVNNI,LATEVEX,SY
+VPDPBUSDS  	 xmmreg,xmmreg,xmmrm128			[rvm:	vex.128.66.0f38.w0 51 /r]	AVXVNNI,LATEVEX,SO
+VPDPBUSDS  	 ymmreg,ymmreg,ymmrm256			[rvm:	vex.256.66.0f38.w0 51 /r]	AVXVNNI,LATEVEX,SY
+VPDPWSSD  	 xmmreg,xmmreg,xmmrm128			[rvm:	vex.128.66.0f38.w0 52 /r]	AVXVNNI,LATEVEX,SO
+VPDPWSSD  	 ymmreg,ymmreg,ymmrm256			[rvm:	vex.256.66.0f38.w0 52 /r]	AVXVNNI,LATEVEX,SY
+VPDPWSSDS  	 xmmreg,xmmreg,xmmrm128			[rvm:	vex.128.66.0f38.w0 53 /r]	AVXVNNI,LATEVEX,SO
+VPDPWSSDS  	 ymmreg,ymmreg,ymmrm256			[rvm:	vex.256.66.0f38.w0 53 /r]	AVXVNNI,LATEVEX,SY
+VMPSADBW          xmmreg|mask|z,xmmreg,xmmrm128,imm8  [rvmi:fvm: evex.128.f3.0f3a.w0 42 /r ib]  AVX10_2
+VMPSADBW          ymmreg|mask|z,ymmreg,ymmrm256,imm8  [rvmi:fvm: evex.256.f3.0f3a.w0 42 /r ib]  AVX10_2
+VMPSADBW          zmmreg|mask|z,zmmreg,zmmrm512,imm8  [rvmi:fvm: evex.512.f3.0f3a.w0 42 /r ib]  AVX10_2
+VPDPBSSD          xmmreg|mask|z,xmmreg,xmmrm128|b32   [rvm:fv: evex.128.f2.0f38.w0 50 /r ]      AVX10_2,AVX10_VNNIINT
+VPDPBSSD          ymmreg|mask|z,ymmreg,ymmrm256|b32   [rvm:fv: evex.256.f2.0f38.w0 50 /r ]      AVX10_2,AVX10_VNNIINT
+VPDPBSSD          zmmreg|mask|z,zmmreg,zmmrm512|b32   [rvm:fv: evex.512.f2.0f38.w0 50 /r ]      AVX10_2,AVX10_VNNIINT
+VPDPBSSDS         xmmreg|mask|z,xmmreg,xmmrm128|b32   [rvm:fv: evex.128.f2.0f38.w0 51 /r ]      AVX10_2,AVX10_VNNIINT
+VPDPBSSDS         ymmreg|mask|z,ymmreg,ymmrm256|b32   [rvm:fv: evex.256.f2.0f38.w0 51 /r ]      AVX10_2,AVX10_VNNIINT
+VPDPBSSDS         zmmreg|mask|z,zmmreg,zmmrm512|b32   [rvm:fv: evex.512.f2.0f38.w0 51 /r ]      AVX10_2,AVX10_VNNIINT
+VPDPBSUD          xmmreg|mask|z,xmmreg,xmmrm128|b32   [rvm:fv: evex.128.f3.0f38.w0 50 /r ]      AVX10_2,AVX10_VNNIINT
+VPDPBSUD          ymmreg|mask|z,ymmreg,ymmrm256|b32   [rvm:fv: evex.256.f3.0f38.w0 50 /r ]      AVX10_2,AVX10_VNNIINT
+VPDPBSUD          zmmreg|mask|z,zmmreg,zmmrm512|b32   [rvm:fv: evex.512.f3.0f38.w0 50 /r ]      AVX10_2,AVX10_VNNIINT
+VPDPBSUDS         xmmreg|mask|z,xmmreg,xmmrm128|b32   [rvm:fv: evex.128.f3.0f38.w0 51 /r ]      AVX10_2,AVX10_VNNIINT
+VPDPBSUDS         ymmreg|mask|z,ymmreg,ymmrm256|b32   [rvm:fv: evex.256.f3.0f38.w0 51 /r ]      AVX10_2,AVX10_VNNIINT
+VPDPBSUDS         zmmreg|mask|z,zmmreg,zmmrm512|b32   [rvm:fv: evex.512.f3.0f38.w0 51 /r ]      AVX10_2,AVX10_VNNIINT
+VPDPBUUD          xmmreg|mask|z,xmmreg,xmmrm128|b32   [rvm:fv: evex.128.np.0f38.w0 50 /r ]      AVX10_2,AVX10_VNNIINT
+VPDPBUUD          ymmreg|mask|z,ymmreg,ymmrm256|b32   [rvm:fv: evex.256.np.0f38.w0 50 /r ]      AVX10_2,AVX10_VNNIINT
+VPDPBUUD          zmmreg|mask|z,zmmreg,zmmrm512|b32   [rvm:fv: evex.512.np.0f38.w0 50 /r ]      AVX10_2,AVX10_VNNIINT
+VPDPBUUDS         xmmreg|mask|z,xmmreg,xmmrm128|b32   [rvm:fv: evex.128.np.0f38.w0 51 /r ]      AVX10_2,AVX10_VNNIINT
+VPDPBUUDS         ymmreg|mask|z,ymmreg,ymmrm256|b32   [rvm:fv: evex.256.np.0f38.w0 51 /r ]      AVX10_2,AVX10_VNNIINT
+VPDPBUUDS         zmmreg|mask|z,zmmreg,zmmrm512|b32   [rvm:fv: evex.512.np.0f38.w0 51 /r ]      AVX10_2,AVX10_VNNIINT
