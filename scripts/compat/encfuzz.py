@@ -19,7 +19,7 @@ import collections, os, random, re, sys, tempfile
 from common import run, tempdir
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-INSNS = os.path.join(os.path.dirname(HERE), "nasm", "insns.dat")
+INSNS = os.environ.get("ENCFUZZ_INSNS") or os.path.join(os.path.dirname(HERE), "nasm", "insns.dat")
 
 GPR64 = ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi"] + ["r%d" % i for i in range(8, 16)]
 GPR32 = ["eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi"] + ["r%dd" % i for i in range(8, 16)]
