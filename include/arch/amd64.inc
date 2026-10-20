@@ -40,12 +40,13 @@
 %endrep
 
 ; ---- Segment Registers -------------------
-%define REG_CS                 24
-%define REG_DS                 25
-%define REG_ES                 26
-%define REG_FS                 27
-%define REG_GS                 28
-%define REG_SS                 29
+; (64-69: 16-31 are APX's r16-r31)
+%define REG_CS                 64
+%define REG_DS                 65
+%define REG_ES                 66
+%define REG_FS                 67
+%define REG_GS                 68
+%define REG_SS                 69
 
 ; ---- Control Registers (CR0-CR15) --------
 %assign i 0
