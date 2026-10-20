@@ -67,6 +67,12 @@ amd64_encode_instruction:
     mov     word [r12 + INST_op1 + OPERAND_xsize], 0
 .not_lea:
 
+    ; the operand shapes NASM 3 takes as another form (mode.s)
+    extern  amd64_shape_forms
+    call    amd64_shape_forms
+    test    rax, rax
+    jnz     .error
+
     ; {disp8} / {disp32}: the displacement's size, for each memory operand
     ; with none written
     test    byte [r12 + INST_flags], INSTF_DISP8 | INSTF_DISP32
@@ -350,6 +356,14 @@ amd64_encode_instruction:
     jne     .not_pop_cs
     cmp     byte [r12 + INST_op0 + OPERAND_reg], 24
     jne     .not_pop_cs
+    ; not in 64-bit code (NASM 3's error): 0F there began whatever came
+    ; next as a two-byte opcode
+    cmp     byte [rel asm_bits], 64
+    jne     .pop_cs_ok
+    extern  amd64_bits_error
+    call    amd64_bits_error               ; ("... in 64-bit mode")
+    jmp     .done
+.pop_cs_ok:
     mov     al, 0x0F
     call    amd64_emit_byte
     mov     edi, WC_OBSOLETE_REMOVED
@@ -2046,6 +2060,8 @@ amd64_encode_instruction:
     je      .done
     cmp     rax, EXIT_BITS_MODE            ; (amd64_count_size)
     je      .done
+    cmp     rax, EXIT_EA_SIZE_MIX          ; ("a16 jecxz l", amd64_count_size)
+    je      .done
 .encoded:
     ; pcommit: Intel withdrew it before any CPU had it (NASM's warning)
     cmp     word [r12 + INST_op_id], 7123  ; PCOMMIT
@@ -2089,6 +2105,12 @@ amd64_encode_instruction:
     extern  amd64_force_osize
     call    amd64_force_osize
 .done:
+    ; the prefixes in the order of the syntax's assembler (mode.s)
+    test    rax, rax
+    jnz     .ordered
+    extern  amd64_prefix_order
+    call    amd64_prefix_order
+.ordered:
     ; an error a relocation found ("[x wrt ..gotoff]" in ELF64)
     mov     ecx, [rel amd64_reloc_err]
     test    ecx, ecx
@@ -2970,6 +2992,7 @@ amd64_force_sib:   resb 1          ; 1: a SIB byte even with no index (dispatch.
 amd64_disp_emit:   resq 1          ; the disp8 value to emit (scaled for EVEX)
 amd64_branch_off:  resq 1          ; offset after a branch target label (jz $+2)
 amd64_branch_width: resb 1         ; a near branch's width written (amd64_branch_osize)
+amd64_osize_done: resb 1           ; its 66 out already (amd64_branch_size_first)
 alignb 4
 global amd64_reloc_err
 amd64_reloc_err:   resd 1          ; an error a relocation found (amd64_encode_instruction)
@@ -3113,7 +3136,18 @@ amd64_encode_mov:
             cmp     byte [r13 + OPERAND_size], 64
             jne     .imm_any
             cmp     byte [r14 + OPERAND_size], 32
+            jne     .imm_unsized
+            ; "dword 5" (a number, not strict) under -Ox: the shortest
+            ; still, NASM 3's (B8+r imm32 for 5, C7 for -1)
+            cmp     byte [r14 + OPERAND_kind], OP_SYMBOL
             je      .mov_c7
+            test    byte [r14 + OPERAND_flags], OP_FLAG_STRICT
+            jnz     .mov_c7
+            cmp     byte [rbx + ASMCTX_opt], OPT_NONE
+            je      .mov_c7
+            cmp     byte [rbx + ASMCTX_opt], OPT_MIN
+            je      .mov_c7
+.imm_unsized:
             mov     dl, 64
             test    byte [r14 + OPERAND_flags], OP_FLAG_STRICT
             jnz     .mov_imm64
@@ -3126,7 +3160,11 @@ amd64_encode_mov:
             mov     rax, [r14 + OPERAND_imm]
             
             ; OPTIMIZATION: 64-bit MOV to REG with 32-bit non-negative IMM
-            ; can use 32-bit MOV (zero-extension)
+            ; can use 32-bit MOV (zero-extension) - NASM's; GNU as writes
+            ; the REX.W form it was asked for ("mov rax, 5": 48 C7 C0)
+            extern  gas_names
+            cmp     byte [rel gas_names], 0
+            jne     .no_zext
             IF dl, e, 64
                 IF byte [r14 + OPERAND_kind], e, OP_IMM
                     mov     r11, rax
@@ -3136,6 +3174,7 @@ amd64_encode_mov:
                     ENDIF
                     ENDIF
                 ENDIF
+.no_zext:
 
             ; A negative value that fits a sign-extended imm32: REX.W C7 /0 id
             ; (7 bytes, not the 10 of B8+r imm64), as NASM picks
@@ -4084,16 +4123,22 @@ amd64_encode_jcc:
     jnz     .short
     test    byte [r10 + OPERAND_flags], OP_FLAG_STRICT
     jnz     .near
-    call    amd64_branch_sized
-    jnz     .near_emit                     ; "jz word x": near, as written
-    ; -O0: short unless "near" is written, as NASM (the 8086's only jcc)
+    ; -O0: short unless strict, as NASM 3 - "near" and a size too ("jz
+    ; word x" is 66 7x; the 8086's only jcc)
     cmp     byte [rbx + ASMCTX_opt], OPT_NONE
     je      .short
+
+    ; "jz word x" / "jz near x": GNU's syntax keeps it near; NASM 3 makes
+    ; it short where it reaches, its 66 kept (amd64_branch_size_first)
+    call    amd64_branch_size_first
+    jnz     .near_emit
     mov     rsi, [r10 + OPERAND_sym]
     call    amd64_branch_fits_rel8
     test    eax, eax
     jz      .near
 .short:
+    call    amd64_branch_osize_once        ; (66 for "jz word x" in bits 32)
+    mov     byte [rel amd64_branch_width], 0   ; (rel8 all the same)
     call    amd64_encode_jcc_short
     jmp     .done
 
@@ -4112,7 +4157,7 @@ amd64_encode_jcc:
     mov     r14, rax
     mov     [rel amd64_relax_cc], al
 
-    call    amd64_branch_osize             ; (66 for "jz word x" in bits 32)
+    call    amd64_branch_osize_once        ; (66 for "jz word x" in bits 32)
     mov     al, 0x0F
     call amd64_emit_byte
     mov     al, 0x80
@@ -4195,6 +4240,22 @@ amd64_encode_movx:
     lea     r10, [r12 + INST_op0]  ; dest register
     lea     r11, [r12 + INST_op1]  ; source: register or memory
 
+    ; "movzx bx, r9d", "movzx rbx, dword [x]": mov's load form, 8B /r
+    ; with the destination's size (mode.s amd64_shape_forms, NASM 3's)
+    extern  amd64_movzx_mov
+    cmp     byte [rel amd64_movzx_mov], 0
+    je      .not_mov
+    mov     al, [r10 + OPERAND_size]
+    mov     rsi, r10
+    mov     rdx, r11
+    call    amd64_emit_prefixes
+    mov     al, 0x8B
+    call    amd64_emit_byte
+    lea     r10, [r12 + INST_op0]
+    lea     r11, [r12 + INST_op1]
+    jmp     .modrm
+.not_mov:
+
     ; VALIDATION: MOVZX/MOVSX widen an 8- or 16-bit source only. No form takes
     ; a 32-bit source -- a plain 32-bit MOV already zero-extends, and MOVSXD
     ; covers the signed case. The general operand-size check in the dispatcher
@@ -4209,10 +4270,11 @@ amd64_encode_movx:
     jmp     .error
 
 .size_ok:
-    ; The destination has to be wider than the source
+    ; The destination at least as wide as the source (r16, r/m16: 66 0F
+    ; B7 / BF, as NASM 3 writes "movzx ax, dx")
     mov     al, [r10 + OPERAND_size]
     cmp     al, [r11 + OPERAND_size]
-    jbe     .error
+    jb      .error
 
     ; Width of the destination drives REX.W / 0x66
     mov     al, [r10 + OPERAND_size]
@@ -4233,6 +4295,7 @@ amd64_encode_movx:
 
     lea     r10, [r12 + INST_op0]
     lea     r11, [r12 + INST_op1]
+.modrm:
     IF byte [r11 + OPERAND_kind], e, OP_REG
         mov     al, 0xC0
         mov     cl, [r10 + OPERAND_reg]
@@ -5761,6 +5824,49 @@ amd64_branch_sized:
     ret
 .yes:
     test    esp, esp                       ; ZF clear
+    ret
+
+; amd64_branch_size_first (jmp / jcc to a label): ZF clear when the branch
+; is to be near as written - GNU's syntax with a size on it, "near" at -O0
+; - else ZF set: it may be short. In NASM's syntax a size other than the
+; mode's puts its 66 out first (amd64_branch_osize), so that what follows
+; measures the short form after it; amd64_branch_osize_once then adds
+; none, and the displacement is rel8 or the size's (amd64_branch_width).
+amd64_branch_size_first:
+    mov     byte [rel amd64_osize_done], 0
+    cmp     byte [r12 + INST_op0 + OPERAND_near], 0
+    je      .bsf_near_ok
+    cmp     byte [rbx + ASMCTX_opt], OPT_NONE
+    je      .bsf_keep                      ; (-O0: "near" is near)
+.bsf_near_ok:
+    call    amd64_branch_sized
+    jz      .bsf_short                     ; (none written)
+    extern  gas_names
+    cmp     byte [rel gas_names], 0
+    jne     .bsf_keep
+    cmp     byte [rbx + ASMCTX_opt], OPT_NONE
+    je      .bsf_keep
+    cmp     byte [rbx + ASMCTX_opt], OPT_MIN
+    je      .bsf_keep
+    push    rcx
+    push    rdi
+    call    amd64_branch_osize
+    pop     rdi
+    pop     rcx
+    mov     byte [rel amd64_osize_done], 1
+.bsf_short:
+    cmp     eax, eax                       ; ZF set
+    ret
+.bsf_keep:
+    test    esp, esp                       ; ZF clear
+    ret
+
+; amd64_branch_osize_once: amd64_branch_osize unless amd64_branch_size_first
+; put the 66 out already. A short form takes a rel8 whatever the size.
+amd64_branch_osize_once:
+    cmp     byte [rel amd64_osize_done], 0
+    je      amd64_branch_osize
+    mov     byte [rel amd64_osize_done], 0
     ret
 
 amd64_branch_osize:
@@ -7393,8 +7499,10 @@ amd64_encode_jmp:
     jnz     .short
     test    byte [r10 + OPERAND_flags], OP_FLAG_STRICT
     jnz     .near
-    call    amd64_branch_sized
-    jnz     .near_emit                     ; "jmp word x": near, as written
+    ; "jmp word x" / "jmp near x": GNU's syntax keeps it near; NASM 3
+    ; makes it short where it reaches, its 66 kept
+    call    amd64_branch_size_first
+    jnz     .near_emit
     ; "bnd jmp" (F2): near, kept so - a short jmp does not keep the
     ; bound registers (NASM shortens it and drops the bnd it was asked for)
     cmp     byte [r12 + INST_prefixes], 0xF2
@@ -7410,6 +7518,8 @@ amd64_encode_jmp:
     test    eax, eax
     jz      .near
 .short:
+    call    amd64_branch_osize_once        ; (66 for "jmp word x" in bits 32)
+    mov     byte [rel amd64_branch_width], 0   ; (rel8 all the same)
     mov     r13, 0xEB
     call    amd64_encode_branch_short
     jmp     .done
@@ -7421,7 +7531,7 @@ amd64_encode_jmp:
     jnz     .near_emit
     mov     byte [rel amd64_relax_kind], RELAX_JMP
 .near_emit:
-    call    amd64_branch_osize             ; (66 for "jmp word x" in bits 32)
+    call    amd64_branch_osize_once        ; (66 for "jmp word x" in bits 32)
     mov     al, 0xE9                       ; jmp rel32 <label>
     call amd64_emit_byte
     lea     r10, [r12 + INST_op0]
