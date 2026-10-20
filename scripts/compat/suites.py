@@ -1168,6 +1168,24 @@ def typed_strucs(utasm, verbose=False):
     return s
 
 
+def namespaces(utasm, verbose=False):
+    """utasm's namespaces and modules: what a name inside means, the
+    files' modules, and the errors (private names, a name taken from
+    outside then defined inside, blocks not closed)."""
+    s = Suite("namespaces", verbose)
+    for name, files, want, err in cases.NS_CASES:
+        with tempdir() as d:
+            for f, text in files.items():
+                open(os.path.join(d, f), "w").write(text)
+            r = run([utasm, "-f", "bin", "t.s", "-o", "t.bin"], cwd=d)
+            got = open(os.path.join(d, "t.bin"), "rb").read().hex() if r.returncode == 0 else None
+        if want is not None:
+            s.result(name, got == want, "got %s: %r" % (got, (r.stderr or "")[:300]))
+        else:
+            s.result(name, r.returncode != 0 and err in (r.stderr or ""), "rc %d: %r" % (r.returncode, (r.stderr or "")[:300]))
+    return s
+
+
 def lints(utasm, verbose=False):
     """utasm's own warnings (pie off by default, slash-comment on): where
     they must and must not appear."""
