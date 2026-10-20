@@ -264,12 +264,42 @@ push r31                      ; D5 11 57
 movdqa xmm0, [r16]            ; 66 D5 90 6F 00 (the 0F folded into REX2)
 ```
 
-Not yet: the instructions APX encodes with EVEX instead - the 0F 38 / 0F
-3A ones (`movbe`, `crc32`, `adcx`, `andn` and the other BMI ones), VEX and
-EVEX vector instructions with r16-r31 in their operands, and APX's new
-forms (`add rax, rbx, rcx`, `{nf}`, `push2`, `ccmp`, ...). Those are an
-error ("invalid combination of opcode and operands"), never wrong bytes;
-so is r16-r31 outside 64-bit code, or beside `ah`-`dh`.
+Vector instructions with r16-r31 in their operands are EVEX (a VEX one is
+promoted to its EVEX form: `vpaddd xmm0, xmm1, [r16]` is `62 F9 75 08 FE
+00`); kmov, the AMX tile loads and stores and the BMI instructions keep
+their VEX fields in an EVEX prefix. A VEX-only vector instruction
+(`vmovdqu xmm0, [r16]`) has no form with them, as in NASM.
+
+APX's EVEX forms of the integer instructions (map 4), in NASM's syntax
+and GNU's:
+
+```asm
+add  rax, rbx, rcx            ; a new destination: rax = rbx + rcx
+sub  r16, [rbx], 5            ; (add or adc sbb and sub xor, inc dec neg
+shl  rax, rbx, cl             ;  not, the shifts, shld shrd, imul, cmovcc,
+imul rax, rbx, rcx            ;  adcx adox)
+{nf} add rax, rbx             ; the flags kept (add, or, and, sub, xor,
+{nf} popcnt rax, rbx          ;  inc dec neg, shifts, imul mul div idiv,
+{nf} andn rax, rbx, rcx       ;  popcnt lzcnt tzcnt, andn bextr bls* bzhi)
+{zu} imul ax, bx, 5           ; the destination's upper bits zeroed (also
+{zu} setz al                  ;  setcc)
+{evex} add rax, rbx           ; the EVEX form of the legacy one
+ccmpz {dfv=of,zf} rax, rbx    ; compare if ZF, else set OF ZF (ccmp / ctest
+ctestnz {dfv=cf} ebx, 7       ;  by any condition, t and f too)
+cfcmovz rax, [rbx]            ; cmov that does not fault on a false load
+push2 rax, rbx                ; two pushes / pops (push2p / pop2p: the hint)
+pushp rax                     ; push / pop with the balanced hint (REX2.W)
+jmpabs 0x123456789            ; a jump to a 64-bit address
+movbe rax, [r16]              ; (movbe crc32 invept invvpid invpcid enqcmd
+crc32 rbx, r16                ;  enqcmds movdir64b movdiri wrss wruss: EVEX
+                              ;  with r16-r31)
+```
+
+The bytes are NASM 3's in its syntax and GNU `as`'s in GNU's (they part
+over register-to-register direction and a few W bits). ccmp and ctest
+take no `{dfv=}` too (no flags), as GNU `as` does. r16-r31 outside 64-bit
+code, or beside `ah`-`dh`, and `{nf}` / `{zu}` where no form takes them,
+are errors.
 
 ### AArch64 (ARMv8-A) Registers
 
