@@ -116,6 +116,22 @@ DEFAULT REL
 %define FM_X87      73          ; x87 escape (D8-DF), decoded by dx_x87
 %define FM_EVEX     74          ; EVEX (AVX-512), operands by dx_evex_operands
 %define FM_G9       75          ; 0F C7: cmpxchg8b/16b, rdrand, rdseed
+; system / I/O forms (scripts/gen_x86_tables.py FORMS' last line)
+%define FM_GaM      76
+%define FM_WRSS     77
+%define FM_G64MO    78
+%define FM_G64M     79
+%define FM_IO       80
+%define FM_SREGW    81
+%define FM_SREGR    82
+%define FM_FSGS     83
+%define FM_GvMp     84
+%define FM_IwIb     85
+%define FM_XLAT     86
+%define FM_SFXW     87
+%define FM_SFXWI    90          ; ret imm16: retw with 66
+%define FM_GEwv     89          ; lar / lsl: a register at the operand size, memory WORD
+%define FM_SFXD     88
 
 ; ---- EVEX entry flags (EV_* in scripts/gen_x86_tables.py) ----
 %define EV_BCST     1           ; EVEX.b with memory: broadcast one element
@@ -222,7 +238,8 @@ dx_epred:   resb 1              ; the imm8 is a predicate already in the name
 dx_fwait:   resb 1              ; 9B folded into the x87 instruction (fstsw ...)
 dx_eflags2: resb 1              ; entry EV2_* flags
 dx_riz:     resb 1              ; a SIB with no index objdump writes as riz
-dx_vsib:    resb 1              ; VSIB: the index's vector class (1 xmm, 2 ymm, 3 zmm), 0: none
+dx_vsib:    resb 1
+dx_vexp:    resb 1              ; "{vex} " before the mnemonic              ; VSIB: the index's vector class (1 xmm, 2 ymm, 3 zmm), 0: none
 
 [SECTION .text]
 
@@ -281,6 +298,7 @@ x86_decode:
     mov     [rel dx_repne], al
     mov     [rel dx_seg], al
     mov     [rel dx_vsib], al
+    mov     [rel dx_vexp], al
     mov     [rel dx_fail], al
     mov     [rel dx_evex], al
     mov     [rel dx_reghi], al
@@ -557,6 +575,11 @@ x86_decode:
     mov     [rel dx_eflags], al
     mov     al, [r12 + 15]
     mov     [rel dx_eflags2], al
+    test    byte [rel dx_eflags], EV_SAE   ; (VG_PVEX: objdump's "{vex}")
+    jz      .vg_no_pvex
+    mov     byte [rel dx_vexp], 1
+    and     byte [rel dx_eflags], ~EV_SAE
+.vg_no_pvex:
     xor     eax, eax
     mov     [rel dx_eaaa], al              ; (VEX: no mask, zeroing, broadcast)
     mov     [rel dx_ez], al
@@ -1532,10 +1555,66 @@ dx_imm:
     and     rsi, rax
     jmp     dx_hex
 
+; .is_branch: ZF = 1 for a near branch (jmp / call / ret / jcc), where F2
+; is MPX's bnd
+dx_mnemonic.is_branch:
+    movzx   eax, byte [rel dx_op]
+    cmp     byte [rel dx_map], 2
+    jne     .ib_one
+    and     eax, 0xF0
+    cmp     eax, 0x80                      ; 0F 80-8F: jcc
+    ret
+.ib_one:
+    cmp     byte [rel dx_map], 1
+    jne     .ib_no
+    cmp     eax, 0xE8
+    je      .ib_ret
+    cmp     eax, 0xE9
+    je      .ib_ret
+    cmp     eax, 0xEB
+    je      .ib_ret
+    cmp     eax, 0xC2
+    je      .ib_ret
+    cmp     eax, 0xC3
+    je      .ib_ret
+    cmp     eax, 0xFF
+    je      .ib_ff
+    and     eax, 0xF0
+    cmp     eax, 0x70                      ; jcc rel8
+.ib_ret:
+    ret
+.ib_ff:
+    movzx   eax, byte [rel dx_regno]       ; FF /2 call, /4 jmp
+    and     eax, 7
+    cmp     eax, 2
+    je      .ib_ret
+    cmp     eax, 4
+    ret
+.ib_no:
+    test    esp, esp
+    ret
+
 ; dx_mnemonic: the mnemonic (with lock/rep already written), padded as
 ; objdump pads it when operands follow (esi != 0)
 dx_mnemonic:
     push    rsi
+    ; an F3 / F2 no opcode took: objdump's "repz" / "repnz" - "bnd" on a
+    ; branch (MPX)
+    cmp     byte [rel dx_repne], 0
+    je      .no_repne
+    call    .is_branch
+    lea     rsi, [rel s_repnz]
+    jne     .repne_put
+    lea     rsi, [rel s_bnd]
+.repne_put:
+    call    dx_puts
+    jmp     .no_rep
+.no_repne:
+    cmp     byte [rel dx_rep], 0
+    je      .no_rep
+    lea     rsi, [rel s_repz]
+    call    dx_puts
+.no_rep:
     cmp     byte [rel dx_nf], 0
     je      .no_nf
     lea     rsi, [rel s_nf]
@@ -1546,6 +1625,11 @@ dx_mnemonic:
     lea     rsi, [rel s4_evex]
     call    dx_puts
 .no_evexp:
+    cmp     byte [rel dx_vexp], 0
+    je      .no_vexp
+    lea     rsi, [rel s_vexp]
+    call    dx_puts
+.no_vexp:
     cmp     byte [rel dx_lock], 0
     je      .no_lock
     lea     rsi, [rel s_lock]
@@ -1643,10 +1727,16 @@ dx_mem:
     lea     rsi, [rel s_tbyte]
     cmp     edi, 80
     je      .size
+    lea     rsi, [rel s_fword]
+    cmp     edi, 48
+    je      .size
     lea     rsi, [rel s_zmmword]
     cmp     edi, 512
     je      .size
-    lea     rsi, [rel s_dword_bcst]        ; EVEX broadcast: 0x100 + element bits
+    lea     rsi, [rel s_word_bcst]         ; EVEX broadcast: 0x100 + element bits
+    cmp     edi, 0x110
+    je      .size
+    lea     rsi, [rel s_dword_bcst]
     cmp     edi, 0x120
     je      .size
     lea     rsi, [rel s_qword_bcst]
@@ -2075,6 +2165,157 @@ dx_shape_vsib:
 .sv_set:
     mov     [rel dx_vsib], al
 .sv_ret:
+    ret
+
+; ---- dx_pgrp ------------------------------
+; A group whose members differ by register / memory, mandatory prefix and W
+; (0F AE, 0F C7, F3 0F 1E): rsi = its entries (pg_*). The one for this
+; ModRM.reg, mod, prefix (one that is its own, else one of none and the
+; prefix printed), W; printed. EAX = 1, or 0 when there is none.
+%define PG_NONE     0           ; no operands
+%define PG_MEM      1           ; memory (the entry's size)
+%define PG_REGW     2           ; a register of 32 / 64 bits by W
+%define PG_REGA     3           ; a register of the address size (67: 32)
+%define PG_REG32    4
+%define PG_RMW      5           ; a register or memory of 32 / 64 bits by W
+%define PG_REG64    6
+dx_pgrp:
+    push    rbx
+    push    r12
+    push    r13
+    mov     r12, rsi
+    xor     edx, edx                       ; the prefix: 66 1, F3 2, F2 3
+    cmp     byte [rel dx_p66], 0
+    je      .pg_f3
+    mov     edx, 1
+.pg_f3:
+    cmp     byte [rel dx_rep], 0
+    je      .pg_f2
+    mov     edx, 2
+.pg_f2:
+    cmp     byte [rel dx_repne], 0
+    je      .pg_pfx
+    mov     edx, 3
+.pg_pfx:
+    movzx   ecx, byte [rel dx_regno]
+    and     ecx, 7
+    xor     r8d, r8d
+    cmp     byte [rel dx_mod], 3
+    jne     .pg_mod
+    mov     r8d, 1
+.pg_mod:
+    mov     r9d, 1                         ; W: 1 W0, 2 W1
+    test    byte [rel dx_rex], 8
+    jz      .pg_w
+    mov     r9d, 2
+.pg_w:
+    xor     r13d, r13d                     ; pass 0: its own prefix; 1: none
+.pg_pass:
+    mov     rbx, r12
+.pg_scan:
+    movzx   eax, byte [rbx]
+    cmp     eax, 0xFF
+    je      .pg_next_pass
+    cmp     eax, ecx
+    jne     .pg_skip
+    cmp     [rbx + 1], r8b
+    jne     .pg_skip
+    movzx   eax, byte [rbx + 2]
+    test    r13d, r13d
+    jnz     .pg_none_pfx
+    test    edx, edx
+    jz      .pg_skip                       ; (no prefix: pass 1)
+    cmp     eax, edx
+    jne     .pg_skip
+    jmp     .pg_w_ok
+.pg_none_pfx:
+    test    eax, eax
+    jnz     .pg_skip
+.pg_w_ok:
+    movzx   eax, byte [rbx + 3]
+    test    eax, eax
+    jz      .pg_found
+    cmp     eax, r9d
+    je      .pg_found
+.pg_skip:
+    add     rbx, 24
+    jmp     .pg_scan
+.pg_next_pass:
+    inc     r13d
+    cmp     r13d, 2
+    jb      .pg_pass
+    xor     eax, eax
+    jmp     .pg_ret
+.pg_found:
+    ; its own prefix: not printed
+    test    r13d, r13d
+    jnz     .pg_print
+    cmp     edx, 1
+    jne     .pg_own_rep
+    mov     byte [rel dx_p66], 0
+    dec     byte [rel dx_n66]
+.pg_own_rep:
+    cmp     edx, 2
+    jne     .pg_own_repne
+    mov     byte [rel dx_rep], 0
+.pg_own_repne:
+    cmp     edx, 3
+    jne     .pg_print
+    mov     byte [rel dx_repne], 0
+.pg_print:
+    lea     rax, [rbx + 8]
+    mov     [rel dx_mnem], rax
+    movzx   eax, byte [rbx + 4]
+    xor     esi, esi
+    cmp     eax, PG_NONE
+    je      .pg_mn
+    mov     esi, 1
+.pg_mn:
+    push    rax
+    push    rax
+    call    dx_mnemonic
+    pop     rax
+    pop     rax
+    cmp     eax, PG_NONE
+    je      .pg_done
+    cmp     eax, PG_MEM
+    jne     .pg_regs
+    movzx   edi, byte [rbx + 5]
+    shl     edi, 3
+    call    dx_mem
+    jmp     .pg_done
+.pg_regs:
+    mov     edi, 32
+    cmp     eax, PG_REG32
+    je      .pg_reg
+    mov     edi, 64
+    cmp     eax, PG_REG64
+    je      .pg_reg
+    cmp     eax, PG_REGA
+    jne     .pg_by_w
+    cmp     byte [rel dx_p67], 0
+    je      .pg_reg
+    mov     edi, 32
+    jmp     .pg_reg
+.pg_by_w:
+    mov     edi, 32                        ; PG_REGW / PG_RMW: 32, 64 with W
+    test    byte [rel dx_rex], 8
+    jz      .pg_rmw
+    mov     edi, 64
+.pg_rmw:
+    cmp     eax, PG_RMW
+    jne     .pg_reg
+    call    dx_rm                          ; (a register or memory at that size)
+    jmp     .pg_done
+.pg_reg:
+    movzx   esi, byte [rel dx_rmreg]
+    call    dx_reg
+.pg_done:
+    mov     eax, 1
+.pg_ret:
+    pop     r13
+    pop     r12
+    pop     rbx
     ret
 
 ; dx_tmmreg: "tmmN", N = esi & 7
@@ -2784,6 +3025,36 @@ dx_operands:
     je      .f_evex
     cmp     eax, FM_G9
     je      .f_g9
+    cmp     eax, FM_GaM
+    je      .f_GaM
+    cmp     eax, FM_WRSS
+    je      .f_WRSS
+    cmp     eax, FM_G64MO
+    je      .f_G64MO
+    cmp     eax, FM_G64M
+    je      .f_G64M
+    cmp     eax, FM_IO
+    je      .f_IO
+    cmp     eax, FM_SREGW
+    je      .f_SREGW
+    cmp     eax, FM_SREGR
+    je      .f_SREGR
+    cmp     eax, FM_FSGS
+    je      .f_FSGS
+    cmp     eax, FM_GvMp
+    je      .f_GvMp
+    cmp     eax, FM_IwIb
+    je      .f_IwIb
+    cmp     eax, FM_XLAT
+    je      .f_XLAT
+    cmp     eax, FM_SFXW
+    je      .f_SFXW
+    cmp     eax, FM_SFXD
+    je      .f_SFXD
+    cmp     eax, FM_GEwv
+    je      .f_GEwv
+    cmp     eax, FM_SFXWI
+    je      .f_SFXWI
     cmp     eax, FM_VW
     jb      .unknown_form
     call    dx_sse_operands
@@ -2793,6 +3064,10 @@ dx_operands:
     jmp     .done
 
 .f_g9:                                     ; 0F C7
+    lea     rsi, [rel pg_0fc7]
+    call    dx_pgrp
+    test    eax, eax
+    jnz     .done
     movzx   eax, byte [rel dx_regno]
     and     eax, 7
     cmp     byte [rel dx_mod], 3
@@ -2831,6 +3106,286 @@ dx_operands:
     mov     byte [rel dx_fail], 1
     jmp     .done
 
+; ---- the system / I/O forms (FM_GaM ... FM_SFXD) ----
+.f_GaM:                                    ; enqcmd / movdir64b: r (address size), m
+    cmp     byte [rel dx_mod], 3
+    je      .sys_bad
+    mov     esi, 1
+    call    dx_mnemonic
+    mov     edi, 64
+    cmp     byte [rel dx_p67], 0
+    je      .gam_reg
+    mov     edi, 32
+.gam_reg:
+    call    dx_greg
+    call    dx_sep
+    xor     edi, edi
+    call    dx_mem
+    jmp     .done
+.f_WRSS:                                   ; wrss / wruss + d / q: m, r
+    cmp     byte [rel dx_mod], 3
+    je      .sys_bad
+    mov     rsi, [rel dx_mnem]
+    lea     rdi, [rel dx_namebuf]
+.wrss_copy:
+    mov     al, [rsi]
+    test    al, al
+    jz      .wrss_sfx
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    jmp     .wrss_copy
+.wrss_sfx:
+    mov     ebx, 32
+    mov     al, 'd'
+    test    byte [rel dx_rex], 8
+    jz      .wrss_put
+    mov     ebx, 64
+    mov     al, 'q'
+.wrss_put:
+    mov     [rdi], al
+    mov     byte [rdi + 1], 0
+    lea     rax, [rel dx_namebuf]
+    mov     [rel dx_mnem], rax
+    mov     esi, 1
+    call    dx_mnemonic
+    xor     edi, edi
+    call    dx_mem
+    call    dx_sep
+    mov     edi, ebx
+    call    dx_greg
+    jmp     .done
+.f_G64MO:                                  ; invept / invvpid: r64, m128
+    mov     ebx, 0x180                     ; (OWORD PTR)
+    jmp     .g64m
+.f_G64M:                                   ; invpcid: r64, m (no size)
+    xor     ebx, ebx
+.g64m:
+    cmp     byte [rel dx_mod], 3
+    je      .sys_bad
+    mov     esi, 1
+    call    dx_mnemonic
+    mov     edi, 64
+    call    dx_greg
+    call    dx_sep
+    mov     edi, ebx
+    call    dx_mem
+    jmp     .done
+.f_IO:                                     ; in / out: E4-E7 (imm8), EC-EF (dx)
+    movzx   eax, byte [rel dx_op]
+    mov     ebx, 8                         ; the accumulator: al, or ax / eax
+    test    eax, 1
+    jz      .io_size
+    mov     ebx, 32
+    cmp     byte [rel dx_osz], 16
+    jne     .io_size
+    mov     ebx, 16
+.io_size:
+    xor     r8d, r8d                       ; the port: imm8 read first
+    test    eax, 8
+    jnz     .io_go
+    call    dx_rd8
+    movzx   r8d, al
+.io_go:
+    push    r8
+    push    r8
+    mov     esi, 1
+    call    dx_mnemonic
+    pop     r8
+    pop     r8
+    test    byte [rel dx_op], 2            ; E6 / E7 / EE / EF: out port, acc
+    jnz     .io_out
+    mov     edi, ebx
+    xor     esi, esi
+    call    dx_reg
+    call    dx_sep
+    call    .io_port
+    jmp     .done
+.io_out:
+    call    .io_port
+    call    dx_sep
+    mov     edi, ebx
+    xor     esi, esi
+    call    dx_reg
+    jmp     .done
+.io_port:
+    test    byte [rel dx_op], 8
+    jz      .io_imm
+    mov     edi, 16
+    mov     esi, 2                         ; dx
+    jmp     dx_reg
+.io_imm:
+    mov     rsi, r8
+    jmp     dx_hex
+.f_SREGW:                                  ; 8C: mov r/m, sreg
+    movzx   eax, byte [rel dx_regno]
+    and     eax, 7
+    cmp     eax, 5
+    ja      .sys_bad
+    mov     esi, 1
+    call    dx_mnemonic
+    mov     edi, ebx
+    cmp     byte [rel dx_mod], 3
+    je      .sregw_rm
+    mov     edi, 16                        ; (memory: WORD)
+.sregw_rm:
+    call    dx_rm
+    call    dx_sep
+    call    .sreg_name
+    jmp     .done
+.f_SREGR:                                  ; 8E: mov sreg, r/m
+    movzx   eax, byte [rel dx_regno]
+    and     eax, 7
+    cmp     eax, 5
+    ja      .sys_bad
+    mov     esi, 1
+    call    dx_mnemonic
+    call    .sreg_name
+    call    dx_sep
+    mov     edi, ebx
+    cmp     byte [rel dx_mod], 3
+    je      .sregr_rm
+    mov     edi, 16
+.sregr_rm:
+    call    dx_rm
+    jmp     .done
+.sreg_name:                                ; ModRM.reg's segment register
+    movzx   eax, byte [rel dx_regno]
+    and     eax, 7
+    lea     rsi, [rel sreg_names]
+    lea     rsi, [rsi + rax * 4]
+    jmp     dx_puts
+.f_FSGS:                                   ; 0F A0 / A1 / A8 / A9: push / pop fs / gs
+    mov     esi, 1
+    call    dx_mnemonic
+    lea     rsi, [rel sreg_names + 16]     ; fs
+    test    byte [rel dx_op], 8
+    jz      .fsgs_put
+    lea     rsi, [rel sreg_names + 20]     ; gs
+.fsgs_put:
+    call    dx_puts
+    jmp     .done
+.f_GvMp:                                   ; lss / lfs / lgs: r, a far pointer
+    cmp     byte [rel dx_mod], 3
+    je      .sys_bad
+    mov     esi, 1
+    call    dx_mnemonic
+    mov     edi, ebx
+    call    dx_greg
+    call    dx_sep
+    mov     edi, 32                        ; the pointer: 16:16 DWORD, else
+    cmp     ebx, 16                        ; FWORD (objdump's, 16:64 too)
+    je      .gvmp_mem
+    mov     edi, 48
+.gvmp_mem:
+    call    dx_mem
+    jmp     .done
+.f_GEwv:                                   ; lar / lsl: r, r/m (memory WORD)
+    mov     esi, 1
+    call    dx_mnemonic
+    mov     edi, ebx
+    call    dx_greg
+    call    dx_sep
+    mov     edi, ebx
+    cmp     byte [rel dx_mod], 3
+    je      .gewv_rm
+    mov     edi, 16
+.gewv_rm:
+    call    dx_rm
+    jmp     .done
+.f_IwIb:                                   ; enter imm16, imm8
+    call    dx_rd16
+    movzx   ebx, ax
+    call    dx_rd8
+    push    rax
+    push    rax
+    mov     esi, 1
+    call    dx_mnemonic
+    mov     esi, ebx
+    call    dx_hex
+    call    dx_sep
+    pop     rsi
+    pop     rsi
+    movzx   esi, sil
+    call    dx_hex
+    jmp     .done
+.f_XLAT:                                   ; xlat: BYTE PTR ds:[rbx]
+    mov     esi, 1
+    call    dx_mnemonic
+    lea     rsi, [rel s_xlat_rbx]
+    cmp     byte [rel dx_p67], 0
+    je      .xlat_put
+    lea     rsi, [rel s_xlat_ebx]
+.xlat_put:
+    call    dx_puts
+    jmp     .done
+.f_SFXW:                                   ; retf / iret / pushf / popf: w with
+    xor     ecx, ecx                       ; 66, q with REX.W, else none
+    test    byte [rel dx_rex], 8
+    jz      .sfx_66
+    mov     ecx, 'q'
+    jmp     .sfx_name
+.sfx_66:
+    cmp     byte [rel dx_p66], 0
+    je      .sfx_name
+    mov     byte [rel dx_p66], 0           ; (the suffix is it)
+    dec     byte [rel dx_n66]
+    mov     ecx, 'w'
+    jmp     .sfx_name
+.f_SFXWI:                                  ; ret imm16: retw with 66 (no q: 64 is
+    cmp     byte [rel dx_p66], 0           ; its own)
+    je      .f_Iw_ret
+    mov     byte [rel dx_p66], 0
+    dec     byte [rel dx_n66]
+    mov     rsi, [rel dx_mnem]
+    lea     rdi, [rel dx_namebuf]
+.sfxwi_copy:
+    mov     al, [rsi]
+    test    al, al
+    jz      .sfxwi_end
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    jmp     .sfxwi_copy
+.sfxwi_end:
+    mov     word [rdi], 'w'
+    lea     rax, [rel dx_namebuf]
+    mov     [rel dx_mnem], rax
+.f_Iw_ret:
+    call    dx_rd16
+    movzx   esi, ax
+    push    rsi
+    push    rsi
+    mov     esi, 1
+    call    dx_mnemonic
+    pop     rsi
+    pop     rsi
+    call    dx_hex
+    jmp     .done
+.f_SFXD:                                   ; sysexit / sysret: d, or q with REX.W
+    mov     ecx, 'd'
+    test    byte [rel dx_rex], 8
+    jz      .sfx_name
+    mov     ecx, 'q'
+.sfx_name:
+    mov     rsi, [rel dx_mnem]
+    lea     rdi, [rel dx_namebuf]
+.sfx_copy:
+    mov     al, [rsi]
+    test    al, al
+    jz      .sfx_end
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    jmp     .sfx_copy
+.sfx_end:
+    mov     [rdi], cl
+    mov     byte [rdi + 1], 0
+    lea     rax, [rel dx_namebuf]
+    mov     [rel dx_mnem], rax
+    jmp     .f_none
+
+
 .f_Ewv:                                    ; register at operand size, memory WORD
     mov     esi, 1
     call    dx_mnemonic
@@ -2845,6 +3400,22 @@ dx_operands:
 .f_g7:                                     ; 0F 01
     cmp     byte [rel dx_mod], 3
     je      .g7_reg
+    ; F3 0F 01 /5 m64: rstorssp (CET)
+    movzx   eax, byte [rel dx_regno]
+    and     eax, 7
+    cmp     eax, 5
+    jne     .g7_mem
+    cmp     byte [rel dx_rep], 0
+    je      .g7_mem
+    mov     byte [rel dx_rep], 0
+    lea     rsi, [rel s_rstorssp]
+    mov     [rel dx_mnem], rsi
+    mov     esi, 1
+    call    dx_mnemonic
+    mov     edi, 64
+    call    dx_mem
+    jmp     .done
+.g7_mem:
     lea     rsi, [rel g7_mem_names]
     lea     rdi, [rel g7_mem_sizes]
     jmp     .sys_mem
@@ -2856,6 +3427,20 @@ dx_operands:
     je      .g7_msw
     cmp     eax, 6
     je      .g7_msw
+    ; ... with the mandatory prefix there is (66 / F3 / F2), else none
+    xor     edx, edx
+    cmp     byte [rel dx_p66], 0
+    je      .g7_f3
+    mov     edx, 1
+.g7_f3:
+    cmp     byte [rel dx_rep], 0
+    je      .g7_f2
+    mov     edx, 2
+.g7_f2:
+    cmp     byte [rel dx_repne], 0
+    je      .g7_pfx
+    mov     edx, 3
+.g7_pfx:
     lea     rsi, [rel g7_reg_names]
     movzx   eax, byte [rel dx_modrm]
 .g7_scan:
@@ -2863,11 +3448,31 @@ dx_operands:
     test    ecx, ecx
     jz      .sys_bad
     cmp     ecx, eax
-    je      .g7_found
+    jne     .g7_next
+    movzx   ecx, byte [rsi + 1]
+    test    ecx, ecx
+    jz      .g7_found                      ; (no prefix of its own: any)
+    cmp     ecx, edx
+    je      .g7_own
+.g7_next:
     add     rsi, 16
     jmp     .g7_scan
+.g7_own:
+    ; the prefix is the instruction's, not printed
+    cmp     ecx, 1
+    jne     .g7_own_rep
+    mov     byte [rel dx_p66], 0
+    dec     byte [rel dx_n66]
+.g7_own_rep:
+    cmp     ecx, 2
+    jne     .g7_own_repne
+    mov     byte [rel dx_rep], 0
+.g7_own_repne:
+    cmp     ecx, 3
+    jne     .g7_found
+    mov     byte [rel dx_repne], 0
 .g7_found:
-    inc     rsi
+    add     rsi, 2
     mov     [rel dx_mnem], rsi
     jmp     .f_none
 .g7_msw:
@@ -2882,6 +3487,10 @@ dx_operands:
     jmp     .f_E
 
 .f_gae:                                    ; 0F AE
+    lea     rsi, [rel pg_0fae]
+    call    dx_pgrp
+    test    eax, eax
+    jnz     .done
     cmp     byte [rel dx_mod], 3
     je      .gae_reg
     lea     rsi, [rel gae_mem_names]
@@ -3204,6 +3813,7 @@ dx_operands:
 .f_90:                                     ; nop / pause / xchg r8,rax / xchg ax,ax
     cmp     byte [rel dx_rep], 0
     je      .n90_rex
+    mov     byte [rel dx_rep], 0           ; (F3 is pause's own)
     lea     rax, [rel s_pause]
     mov     [rel dx_mnem], rax
     jmp     .f_none
@@ -3725,6 +4335,31 @@ dx_sse_operands:
     jmp     .done
 
 .ENDBR:                                    ; F3 0F 1E FA / FB
+    ; F3 0F 1E /1 with a register: rdsspd / rdsspq (CET)
+    cmp     byte [rel dx_mod], 3
+    jne     .endbr
+    movzx   eax, byte [rel dx_regno]
+    and     eax, 7
+    cmp     eax, 1
+    jne     .endbr
+    lea     rax, [rel s_rdsspd]
+    mov     edi, 32
+    test    byte [rel dx_rex], 8
+    jz      .rdssp
+    lea     rax, [rel s_rdsspq]
+    mov     edi, 64
+.rdssp:
+    mov     [rel dx_mnem], rax
+    push    rdi
+    push    rdi
+    mov     esi, 1
+    call    dx_mnemonic
+    pop     rdi
+    pop     rdi
+    movzx   esi, byte [rel dx_rmreg]
+    call    dx_reg
+    jmp     .done
+.endbr:
     lea     rax, [rel s_endbr64]
     cmp     byte [rel dx_modrm], 0xFA
     je      .endbr_name
@@ -3965,6 +4600,8 @@ dx_string:
     push    rax
     call    dx_puts
     pop     rax
+    mov     byte [rel dx_rep], 0           ; (printed: not again by dx_mnemonic)
+    mov     byte [rel dx_repne], 0
 .mn:
     push    rax
     mov     esi, 1
@@ -4098,6 +4735,7 @@ s_qword:    db "QWORD PTR ", 0
 s_xmmword:  db "XMMWORD PTR ", 0
 s_ymmword:  db "YMMWORD PTR ", 0
 s_zmmword:  db "ZMMWORD PTR ", 0
+s_word_bcst: db "WORD BCST ", 0
 s_dword_bcst: db "DWORD BCST ", 0
 s_qword_bcst: db "QWORD BCST ", 0
 s_zmm:      db "zmm", 0
@@ -4181,6 +4819,7 @@ s_lock:     db "lock ", 0
 s_rep:      db "rep ", 0
 s_repz:     db "repz ", 0
 s_repnz:    db "repnz ", 0
+s_bnd:      db "bnd ", 0
 s_notrack:  db "notrack ", 0
 s_rexw:     db "rex.W ", 0
 s_comma1:   db ",1", 0
@@ -4190,6 +4829,14 @@ s_dsrsi:    db "ds:[rsi]", 0
 s_movabs:   db "movabs", 0
 s_jmpabs:   db "jmpabs", 0
 s_tmm:      db "tmm", 0
+s_rstorssp: db "rstorssp", 0
+s_vexp:     db "{vex} ", 0
+s_xlat_rbx: db "BYTE PTR ds:[rbx]", 0
+s_xlat_ebx: db "BYTE PTR ds:[ebx]", 0
+sreg_names: db "es", 0, 0, "cs", 0, 0, "ss", 0, 0, "ds", 0, 0, "fs", 0, 0, "gs", 0, 0
+s_fword:    db "FWORD PTR ", 0
+s_rdsspd:   db "rdsspd", 0
+s_rdsspq:   db "rdsspq", 0
 s_riz:      db "riz", 0
 s_nf:       db "{nf} ", 0
 s_pushp:    db "pushp", 0
@@ -4210,21 +4857,122 @@ g7_mem_names:  db "sgdt",0,0,0,0,0,0,0,0,0,0,0,0,  "sidt",0,0,0,0,0,0,0,0,0,0,0,
                db "smsw",0,0,0,0,0,0,0,0,0,0,0,0,  "(bad)",0,0,0,0,0,0,0,0,0,0,0
                db "lmsw",0,0,0,0,0,0,0,0,0,0,0,0,  "invlpg",0,0,0,0,0,0,0,0,0,0
 g7_mem_sizes:  db 0, 0, 0, 0, 16, 0xFF, 16, 8
-; 0F 01 with a register form: the whole ModRM byte, then the name (16-byte slots)
-g7_reg_names:  db 0xC8, "monitor", 0, 0,0,0,0,0,0,0
-               db 0xC9, "mwait", 0, 0,0,0,0,0,0,0,0,0
-               db 0xCA, "clac", 0, 0,0,0,0,0,0,0,0,0,0
-               db 0xCB, "stac", 0, 0,0,0,0,0,0,0,0,0,0
-               db 0xD0, "xgetbv", 0, 0,0,0,0,0,0,0,0
-               db 0xD1, "xsetbv", 0, 0,0,0,0,0,0,0,0
-               db 0xD5, "xend", 0, 0,0,0,0,0,0,0,0,0,0
-               db 0xD6, "xtest", 0, 0,0,0,0,0,0,0,0,0
-               db 0xEE, "rdpkru", 0, 0,0,0,0,0,0,0,0
-               db 0xEF, "wrpkru", 0, 0,0,0,0,0,0,0,0
-               db 0xF8, "swapgs", 0, 0,0,0,0,0,0,0,0
-               db 0xF9, "rdtscp", 0, 0,0,0,0,0,0,0,0
+; 0F 01 with a register form: the whole ModRM byte, the mandatory prefix
+; (0 none, 1 66, 2 F3, 3 F2), the name (16-byte slots) - the prefixed ones
+; first: a prefix finds its own, else the plain one (and is printed)
+g7_reg_names:
+               db 0xC6, 3, "rdmsrlist", 0, 0, 0, 0, 0
+               db 0xC6, 2, "wrmsrlist", 0, 0, 0, 0, 0
+               db 0xCA, 3, "erets", 0, 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xCA, 2, "eretu", 0, 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xCC, 1, "tdcall", 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xCD, 1, "seamret", 0, 0, 0, 0, 0, 0, 0
+               db 0xCE, 1, "seamops", 0, 0, 0, 0, 0, 0, 0
+               db 0xCF, 1, "seamcall", 0, 0, 0, 0, 0, 0
+               db 0xE8, 2, "setssbsy", 0, 0, 0, 0, 0, 0
+               db 0xE8, 3, "xsusldtrk", 0, 0, 0, 0, 0
+               db 0xE9, 3, "xresldtrk", 0, 0, 0, 0, 0
+               db 0xEA, 2, "saveprevssp", 0, 0, 0
+               db 0xEC, 2, "uiret", 0, 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xED, 2, "testui", 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xEE, 2, "clui", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xEF, 2, "stui", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xFA, 2, "mcommit", 0, 0, 0, 0, 0, 0, 0
+               db 0xFD, 2, "rmpquery", 0, 0, 0, 0, 0, 0
+               db 0xFE, 2, "rmpadjust", 0, 0, 0, 0, 0
+               db 0xFE, 3, "rmpupdate", 0, 0, 0, 0, 0
+               db 0xFF, 2, "psmash", 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xFF, 3, "pvalidate", 0, 0, 0, 0, 0
+               db 0xC0, 0, "enclv", 0, 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xC1, 0, "vmcall", 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xC2, 0, "vmlaunch", 0, 0, 0, 0, 0, 0
+               db 0xC3, 0, "vmresume", 0, 0, 0, 0, 0, 0
+               db 0xC4, 0, "vmxoff", 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xC5, 0, "pconfig", 0, 0, 0, 0, 0, 0, 0
+               db 0xC6, 0, "wrmsrns", 0, 0, 0, 0, 0, 0, 0
+               db 0xC7, 0, "pbndkb", 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xC8, 0, "monitor", 0, 0, 0, 0, 0, 0, 0
+               db 0xC9, 0, "mwait", 0, 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xCA, 0, "clac", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xCB, 0, "stac", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xCF, 0, "encls", 0, 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xD0, 0, "xgetbv", 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xD1, 0, "xsetbv", 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xD4, 0, "vmfunc", 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xD5, 0, "xend", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xD6, 0, "xtest", 0, 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xD7, 0, "enclu", 0, 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xD8, 0, "vmrun", 0, 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xD9, 0, "vmmcall", 0, 0, 0, 0, 0, 0, 0
+               db 0xDA, 0, "vmload", 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xDB, 0, "vmsave", 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xDC, 0, "stgi", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xDD, 0, "clgi", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xDE, 0, "skinit", 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xDF, 0, "invlpga", 0, 0, 0, 0, 0, 0, 0
+               db 0xE8, 0, "serialize", 0, 0, 0, 0, 0
+               db 0xEE, 0, "rdpkru", 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xEF, 0, "wrpkru", 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xF8, 0, "swapgs", 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xF9, 0, "rdtscp", 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xFA, 0, "monitorx", 0, 0, 0, 0, 0, 0
+               db 0xFB, 0, "mwaitx", 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xFC, 0, "clzero", 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xFD, 0, "rdpru", 0, 0, 0, 0, 0, 0, 0, 0, 0
+               db 0xFE, 0, "invlpgb", 0, 0, 0, 0, 0, 0, 0
+               db 0xFF, 0, "tlbsync", 0, 0, 0, 0, 0, 0, 0
                db 0
 ; 0F AE with a memory operand, and the register forms /5 /6 /7
+; 0F AE / 0F C7: dx_pgrp's entries (24 bytes): ModRM.reg, 1 for a
+; register (0 memory), the mandatory prefix (0 none, 1 66, 2 F3, 3 F2), W (0
+; either, 1 W0, 2 W1), the operands (PG_*), the memory's size in bytes (0:
+; none written), the name - the prefixed ones first
+pg_0fae:
+    db 6, 0, 1, 0, 1, 1, 0, 0, "clwb", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 6, 0, 2, 0, 1, 8, 0, 0, "clrssbsy", 0, 0, 0, 0, 0, 0, 0, 0
+    db 7, 0, 1, 0, 1, 1, 0, 0, "clflushopt", 0, 0, 0, 0, 0, 0
+    db 4, 0, 2, 0, 5, 0, 0, 0, "ptwrite", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0, 1, 2, 0, 2, 0, 0, 0, "rdfsbase", 0, 0, 0, 0, 0, 0, 0, 0
+    db 1, 1, 2, 0, 2, 0, 0, 0, "rdgsbase", 0, 0, 0, 0, 0, 0, 0, 0
+    db 2, 1, 2, 0, 2, 0, 0, 0, "wrfsbase", 0, 0, 0, 0, 0, 0, 0, 0
+    db 3, 1, 2, 0, 2, 0, 0, 0, "wrgsbase", 0, 0, 0, 0, 0, 0, 0, 0
+    db 4, 1, 2, 0, 5, 0, 0, 0, "ptwrite", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 5, 1, 2, 1, 4, 0, 0, 0, "incsspd", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 5, 1, 2, 2, 6, 0, 0, 0, "incsspq", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 6, 1, 2, 0, 3, 0, 0, 0, "umonitor", 0, 0, 0, 0, 0, 0, 0, 0
+    db 6, 1, 1, 0, 4, 0, 0, 0, "tpause", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 6, 1, 3, 0, 4, 0, 0, 0, "umwait", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0, 0, 0, 1, 1, 0, 0, 0, "fxsave", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0, 0, 0, 2, 1, 0, 0, 0, "fxsave64", 0, 0, 0, 0, 0, 0, 0, 0
+    db 1, 0, 0, 1, 1, 0, 0, 0, "fxrstor", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 1, 0, 0, 2, 1, 0, 0, 0, "fxrstor64", 0, 0, 0, 0, 0, 0, 0
+    db 2, 0, 0, 0, 1, 4, 0, 0, "ldmxcsr", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 3, 0, 0, 0, 1, 4, 0, 0, "stmxcsr", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 4, 0, 0, 1, 1, 0, 0, 0, "xsave", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 4, 0, 0, 2, 1, 0, 0, 0, "xsave64", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 5, 0, 0, 1, 1, 0, 0, 0, "xrstor", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 5, 0, 0, 2, 1, 0, 0, 0, "xrstor64", 0, 0, 0, 0, 0, 0, 0, 0
+    db 6, 0, 0, 1, 1, 0, 0, 0, "xsaveopt", 0, 0, 0, 0, 0, 0, 0, 0
+    db 6, 0, 0, 2, 1, 0, 0, 0, "xsaveopt64", 0, 0, 0, 0, 0, 0
+    db 7, 0, 0, 0, 1, 1, 0, 0, "clflush", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 5, 1, 0, 0, 0, 0, 0, 0, "lfence", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 6, 1, 0, 0, 0, 0, 0, 0, "mfence", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 7, 1, 0, 0, 0, 0, 0, 0, "sfence", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xFF
+pg_0fc7:
+    db 6, 0, 1, 0, 1, 8, 0, 0, "vmclear", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 6, 0, 2, 0, 1, 8, 0, 0, "vmxon", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 7, 1, 2, 0, 6, 0, 0, 0, "rdpid", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 6, 1, 2, 0, 6, 0, 0, 0, "senduipi", 0, 0, 0, 0, 0, 0, 0, 0
+    db 3, 0, 0, 1, 1, 0, 0, 0, "xrstors", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 3, 0, 0, 2, 1, 0, 0, 0, "xrstors64", 0, 0, 0, 0, 0, 0, 0
+    db 4, 0, 0, 1, 1, 0, 0, 0, "xsavec", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 4, 0, 0, 2, 1, 0, 0, 0, "xsavec64", 0, 0, 0, 0, 0, 0, 0, 0
+    db 5, 0, 0, 1, 1, 0, 0, 0, "xsaves", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 5, 0, 0, 2, 1, 0, 0, 0, "xsaves64", 0, 0, 0, 0, 0, 0, 0, 0
+    db 6, 0, 0, 0, 1, 8, 0, 0, "vmptrld", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 7, 0, 0, 0, 1, 8, 0, 0, "vmptrst", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db 0xFF
 gae_mem_names: db "fxsave",0,0,0,0,0,0,0,0,0,0,  "fxrstor",0,0,0,0,0,0,0,0,0
                db "ldmxcsr",0,0,0,0,0,0,0,0,0,  "stmxcsr",0,0,0,0,0,0,0,0,0
                db "xsave",0,0,0,0,0,0,0,0,0,0,0,  "xrstor",0,0,0,0,0,0,0,0,0,0
