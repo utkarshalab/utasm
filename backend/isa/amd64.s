@@ -2486,6 +2486,39 @@ amd64_register_table:
     dq H_R14, (8 << 8) | REG_R14
     compile_time_hash "r15", H_R15
     dq H_R15, (8 << 8) | REG_R15
+    ; APX's r16-r31 (REX2 / EVEX: register bit 4)
+    compile_time_hash "r16", H_R16
+    dq H_R16, (8 << 8) | 16
+    compile_time_hash "r17", H_R17
+    dq H_R17, (8 << 8) | 17
+    compile_time_hash "r18", H_R18
+    dq H_R18, (8 << 8) | 18
+    compile_time_hash "r19", H_R19
+    dq H_R19, (8 << 8) | 19
+    compile_time_hash "r20", H_R20
+    dq H_R20, (8 << 8) | 20
+    compile_time_hash "r21", H_R21
+    dq H_R21, (8 << 8) | 21
+    compile_time_hash "r22", H_R22
+    dq H_R22, (8 << 8) | 22
+    compile_time_hash "r23", H_R23
+    dq H_R23, (8 << 8) | 23
+    compile_time_hash "r24", H_R24
+    dq H_R24, (8 << 8) | 24
+    compile_time_hash "r25", H_R25
+    dq H_R25, (8 << 8) | 25
+    compile_time_hash "r26", H_R26
+    dq H_R26, (8 << 8) | 26
+    compile_time_hash "r27", H_R27
+    dq H_R27, (8 << 8) | 27
+    compile_time_hash "r28", H_R28
+    dq H_R28, (8 << 8) | 28
+    compile_time_hash "r29", H_R29
+    dq H_R29, (8 << 8) | 29
+    compile_time_hash "r30", H_R30
+    dq H_R30, (8 << 8) | 30
+    compile_time_hash "r31", H_R31
+    dq H_R31, (8 << 8) | 31
 
     ; ---- 32-bit GPRs ----
     compile_time_hash "eax", H_EAX
@@ -2520,6 +2553,39 @@ amd64_register_table:
     dq H_R14D, (4 << 8) | 14
     compile_time_hash "r15d", H_R15D
     dq H_R15D, (4 << 8) | 15
+    ; APX's r16-r31 (REX2 / EVEX: register bit 4)
+    compile_time_hash "r16d", H_R16D
+    dq H_R16D, (4 << 8) | 16
+    compile_time_hash "r17d", H_R17D
+    dq H_R17D, (4 << 8) | 17
+    compile_time_hash "r18d", H_R18D
+    dq H_R18D, (4 << 8) | 18
+    compile_time_hash "r19d", H_R19D
+    dq H_R19D, (4 << 8) | 19
+    compile_time_hash "r20d", H_R20D
+    dq H_R20D, (4 << 8) | 20
+    compile_time_hash "r21d", H_R21D
+    dq H_R21D, (4 << 8) | 21
+    compile_time_hash "r22d", H_R22D
+    dq H_R22D, (4 << 8) | 22
+    compile_time_hash "r23d", H_R23D
+    dq H_R23D, (4 << 8) | 23
+    compile_time_hash "r24d", H_R24D
+    dq H_R24D, (4 << 8) | 24
+    compile_time_hash "r25d", H_R25D
+    dq H_R25D, (4 << 8) | 25
+    compile_time_hash "r26d", H_R26D
+    dq H_R26D, (4 << 8) | 26
+    compile_time_hash "r27d", H_R27D
+    dq H_R27D, (4 << 8) | 27
+    compile_time_hash "r28d", H_R28D
+    dq H_R28D, (4 << 8) | 28
+    compile_time_hash "r29d", H_R29D
+    dq H_R29D, (4 << 8) | 29
+    compile_time_hash "r30d", H_R30D
+    dq H_R30D, (4 << 8) | 30
+    compile_time_hash "r31d", H_R31D
+    dq H_R31D, (4 << 8) | 31
 
     ; ---- 16-bit GPRs ----
     compile_time_hash "ax", H_AX
@@ -2554,6 +2620,39 @@ amd64_register_table:
     dq H_R14W, (2 << 8) | 14
     compile_time_hash "r15w", H_R15W
     dq H_R15W, (2 << 8) | 15
+    ; APX's r16-r31 (REX2 / EVEX: register bit 4)
+    compile_time_hash "r16w", H_R16W
+    dq H_R16W, (2 << 8) | 16
+    compile_time_hash "r17w", H_R17W
+    dq H_R17W, (2 << 8) | 17
+    compile_time_hash "r18w", H_R18W
+    dq H_R18W, (2 << 8) | 18
+    compile_time_hash "r19w", H_R19W
+    dq H_R19W, (2 << 8) | 19
+    compile_time_hash "r20w", H_R20W
+    dq H_R20W, (2 << 8) | 20
+    compile_time_hash "r21w", H_R21W
+    dq H_R21W, (2 << 8) | 21
+    compile_time_hash "r22w", H_R22W
+    dq H_R22W, (2 << 8) | 22
+    compile_time_hash "r23w", H_R23W
+    dq H_R23W, (2 << 8) | 23
+    compile_time_hash "r24w", H_R24W
+    dq H_R24W, (2 << 8) | 24
+    compile_time_hash "r25w", H_R25W
+    dq H_R25W, (2 << 8) | 25
+    compile_time_hash "r26w", H_R26W
+    dq H_R26W, (2 << 8) | 26
+    compile_time_hash "r27w", H_R27W
+    dq H_R27W, (2 << 8) | 27
+    compile_time_hash "r28w", H_R28W
+    dq H_R28W, (2 << 8) | 28
+    compile_time_hash "r29w", H_R29W
+    dq H_R29W, (2 << 8) | 29
+    compile_time_hash "r30w", H_R30W
+    dq H_R30W, (2 << 8) | 30
+    compile_time_hash "r31w", H_R31W
+    dq H_R31W, (2 << 8) | 31
 
     ; ---- 8-bit GPRs (Low) ----
     compile_time_hash "al", H_AL
@@ -2588,6 +2687,39 @@ amd64_register_table:
     dq H_R14B, (1 << 8) | 14
     compile_time_hash "r15b", H_R15B
     dq H_R15B, (1 << 8) | 15
+    ; APX's r16-r31 (REX2 / EVEX: register bit 4)
+    compile_time_hash "r16b", H_R16B
+    dq H_R16B, (1 << 8) | 16
+    compile_time_hash "r17b", H_R17B
+    dq H_R17B, (1 << 8) | 17
+    compile_time_hash "r18b", H_R18B
+    dq H_R18B, (1 << 8) | 18
+    compile_time_hash "r19b", H_R19B
+    dq H_R19B, (1 << 8) | 19
+    compile_time_hash "r20b", H_R20B
+    dq H_R20B, (1 << 8) | 20
+    compile_time_hash "r21b", H_R21B
+    dq H_R21B, (1 << 8) | 21
+    compile_time_hash "r22b", H_R22B
+    dq H_R22B, (1 << 8) | 22
+    compile_time_hash "r23b", H_R23B
+    dq H_R23B, (1 << 8) | 23
+    compile_time_hash "r24b", H_R24B
+    dq H_R24B, (1 << 8) | 24
+    compile_time_hash "r25b", H_R25B
+    dq H_R25B, (1 << 8) | 25
+    compile_time_hash "r26b", H_R26B
+    dq H_R26B, (1 << 8) | 26
+    compile_time_hash "r27b", H_R27B
+    dq H_R27B, (1 << 8) | 27
+    compile_time_hash "r28b", H_R28B
+    dq H_R28B, (1 << 8) | 28
+    compile_time_hash "r29b", H_R29B
+    dq H_R29B, (1 << 8) | 29
+    compile_time_hash "r30b", H_R30B
+    dq H_R30B, (1 << 8) | 30
+    compile_time_hash "r31b", H_R31B
+    dq H_R31B, (1 << 8) | 31
 
     ; ---- 8-bit GPRs (High) ----
     compile_time_hash "ah", H_AH
