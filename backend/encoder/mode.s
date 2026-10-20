@@ -153,7 +153,7 @@ sized_ops:
     dw 1289
     db 0xCE, 8                      ; into
     dw 0
-; push / pop of a segment register by its id (cs ds es fs gs ss = 24..29;
+; push / pop of a segment register by its id (cs ds es fs gs ss = 64..69;
 ; fs/gs: 0, encoded as in 64-bit mode; pop cs does not exist)
 seg_push_by_id: db 0x0E, 0x1E, 0x06, 0, 0, 0x16
 seg_pop_by_id:  db 0x00, 0x1F, 0x07, 0, 0, 0x17
@@ -399,7 +399,7 @@ amd64_mode_check:
     cmp     byte [rdi + OPERAND_kind], OP_REG
     jne     .seg_op
     movzx   eax, byte [rdi + OPERAND_reg]
-    sub     eax, 24
+    sub     eax, REG_CS
     cmp     eax, 5
     ja      .seg_op
     movzx   edx, word [r12 + INST_op_id]
@@ -600,7 +600,7 @@ amd64_imm_size_check:
     je      .dest
     cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_REG
     jne     .ret
-    cmp     byte [r12 + INST_op0 + OPERAND_reg], 16
+    cmp     byte [r12 + INST_op0 + OPERAND_reg], 32
     jae     .ret                           ; a general register only
 .dest:
     movzx   esi, word [r12 + INST_op_id]
@@ -698,7 +698,7 @@ amd64_imm_canon:
     je      .found
     cmp     eax, OP_REG
     jne     .width_op
-    cmp     byte [rdi + OPERAND_reg], 16
+    cmp     byte [rdi + OPERAND_reg], 32
     jae     .imms                          ; xmm, segment ...: leave it
 .found:
     movzx   r14d, byte [rdi + OPERAND_size]
@@ -1000,6 +1000,213 @@ rex_legacy_prefixes: db 0x66, 0x67, 0xF0, 0xF2, 0xF3, 0x26, 0x2E, 0x36, 0x3E, 0x
 [SECTION .text]
 
 ;*
+; * [amd64_rex_out]
+; * Purpose: The REX byte amd64_emit_prefixes worked out, out - or, when an
+; *   operand is one of APX's r16-r31 (ids 16-31: bit 4 of the register
+; *   number), REX2: D5 and a payload M0 R4 X4 B4 W R3 X3 B3 (M0, the 0F
+; *   map, set by amd64_rex2_finish once the opcode follows). The R / X /
+; *   B bits are the registers' bits 3 and 4 - the REX's were set for any
+; *   id from 8 on.
+; * Input  : AL = the REX (its W used), RSI = the ModRM.reg operand or 0,
+; *          RDX = the ModRM.rm operand (register or memory) or 0;
+; *          RBX = AsmCtx
+; * Output : EAX = 0, or EXIT_ENCODE_FAIL (r16-r31 outside 64-bit code)
+; * Preserves the others.
+; ;
+global amd64_rex_out
+amd64_rex_out:
+    push    rcx
+    push    rdi
+    push    r8
+    movzx   r8d, al
+    and     r8d, 8                         ; W
+    xor     edi, edi                       ; R4 X4 B4 (bits 6 5 4)
+    ; reg: R3 / R4
+    test    rsi, rsi
+    jz      .ro_rm
+    cmp     byte [rsi + OPERAND_kind], OP_REG
+    jne     .ro_rm
+    movzx   ecx, byte [rsi + OPERAND_reg]
+    cmp     ecx, 32
+    jae     .ro_rm                         ; (a vector or other register)
+    call    .ro_bits
+    shl     eax, 2
+    or      r8d, eax                       ; R3
+    shl     ecx, 6
+    or      edi, ecx                       ; R4
+.ro_rm:
+    test    rdx, rdx
+    jz      .ro_put
+    cmp     byte [rdx + OPERAND_kind], OP_REG
+    jne     .ro_mem
+    movzx   ecx, byte [rdx + OPERAND_reg]
+    cmp     ecx, 32
+    jae     .ro_put
+    call    .ro_bits
+    or      r8d, eax                       ; B3
+    shl     ecx, 4
+    or      edi, ecx                       ; B4
+    jmp     .ro_put
+.ro_mem:
+    cmp     byte [rdx + OPERAND_kind], OP_MEM
+    jne     .ro_put
+    movzx   ecx, byte [rdx + OPERAND_base]
+    cmp     ecx, 32
+    jae     .ro_index                      ; (none, rip)
+    call    .ro_bits
+    or      r8d, eax                       ; B3
+    shl     ecx, 4
+    or      edi, ecx                       ; B4
+.ro_index:
+    movzx   ecx, byte [rdx + OPERAND_index]
+    cmp     ecx, 32
+    jae     .ro_put                        ; (none, a vector index)
+    call    .ro_bits
+    shl     eax, 1
+    or      r8d, eax                       ; X3
+    shl     ecx, 5
+    or      edi, ecx                       ; X4
+.ro_put:
+    test    edi, edi
+    jnz     .ro_rex2
+    lea     eax, [r8 + 0x40]
+    call    amd64_emit_byte
+    xor     eax, eax
+    jmp     .ro_ret
+.ro_rex2:
+    cmp     byte [rel asm_bits], 64
+    jne     .ro_fail
+    mov     rax, [rbx + ASMCTX_curr_sec]
+    mov     rax, [rax + SECTION_size]
+    mov     [rel amd64_rex2_at], rax
+    add     r8d, edi                       ; the payload (emit_byte takes rdi)
+    mov     al, 0xD5
+    call    amd64_emit_byte
+    mov     eax, r8d
+    call    amd64_emit_byte
+    xor     eax, eax
+    jmp     .ro_ret
+.ro_fail:
+    mov     eax, EXIT_ENCODE_FAIL
+.ro_ret:
+    pop     r8
+    pop     rdi
+    pop     rcx
+    ret
+
+; .ro_bits: ecx = a register number 0-31 -> eax = its bit 3, ecx = its bit 4
+.ro_bits:
+    mov     eax, ecx
+    shr     eax, 3
+    and     eax, 1
+    shr     ecx, 4
+    and     ecx, 1
+    ret
+
+;*
+; * [amd64_rex2_finish]
+; * Purpose: Once the instruction is encoded: its REX2 (amd64_rex_out)
+; *   takes the 0F map in M0, the 0F itself out (with its relocations);
+; *   an instruction REX2 cannot carry is an error - 0F 38 / 0F 3A (APX
+; *   moves those to EVEX: not here yet), and the opcode rows REX2 does
+; *   not take (4x 7x Ax Ex; 0F 3x 8x). And an operand of r16-r31 that
+; *   went out without REX2 (an encoding that builds its own prefix, VEX /
+; *   EVEX) is an error, not wrong bytes.
+; * Input  : RBX = AsmCtx, R12 = INST (ASMCTX_inst_len its length)
+; * Output : EAX = 0 or EXIT_ENCODE_FAIL. Preserves rbx, r12-r15.
+; ;
+global amd64_rex2_finish
+amd64_rex2_finish:
+    mov     rdi, [rel amd64_rex2_at]
+    cmp     rdi, -1
+    je      .rf_check
+    mov     qword [rel amd64_rex2_at], -1
+    mov     rcx, [rbx + ASMCTX_curr_sec]
+    mov     rsi, [rcx + SECTION_size]
+    mov     rdx, [rcx + SECTION_data]
+    lea     rax, [rdi + 2]
+    cmp     rax, rsi
+    jae     .rf_fail                       ; (no opcode after it)
+    movzx   eax, byte [rdx + rdi + 2]      ; the opcode
+    cmp     eax, 0x0F
+    je      .rf_map1
+    mov     ecx, eax
+    and     ecx, 0xF0
+    cmp     ecx, 0x40
+    je      .rf_fail
+    cmp     ecx, 0x70
+    je      .rf_fail
+    cmp     ecx, 0xA0
+    je      .rf_fail
+    cmp     ecx, 0xE0
+    je      .rf_fail
+    jmp     .rf_ok
+.rf_map1:
+    lea     rax, [rdi + 3]
+    cmp     rax, rsi
+    jae     .rf_fail
+    movzx   eax, byte [rdx + rdi + 3]
+    mov     ecx, eax
+    and     ecx, 0xF0
+    cmp     ecx, 0x30
+    je      .rf_fail                       ; (0F 38, 0F 3A: EVEX's)
+    cmp     ecx, 0x80
+    je      .rf_fail
+    or      byte [rdx + rdi + 1], 0x80     ; M0
+    push    rdi
+    add     rdi, 2
+    call    osz_remove                     ; the 0F out
+    pop     rdi
+.rf_ok:
+    xor     eax, eax
+    ret
+.rf_check:
+    ; no REX2: then no operand may be r16-r31
+    xor     ecx, ecx
+.rf_op:
+    movzx   eax, byte [r12 + INST_nops]
+    cmp     ecx, eax
+    jae     .rf_ok
+    imul    eax, ecx, OPERAND_SIZE
+    lea     rsi, [r12 + INST_op0 + rax]
+    inc     ecx
+    movzx   eax, byte [rsi + OPERAND_kind]
+    cmp     eax, OP_REG
+    je      .rf_reg
+    cmp     eax, OP_MEM
+    jne     .rf_op
+    movzx   eax, byte [rsi + OPERAND_base]
+    call    .rf_egpr
+    jz      .rf_fail
+    movzx   eax, byte [rsi + OPERAND_index]
+    call    .rf_egpr
+    jz      .rf_fail
+    jmp     .rf_op
+.rf_reg:
+    movzx   eax, byte [rsi + OPERAND_reg]
+    call    .rf_egpr
+    jz      .rf_fail
+    jmp     .rf_op
+.rf_fail:
+    mov     eax, EXIT_ENCODE_FAIL
+    ret
+; .rf_egpr: ZF = 1 when eax is r16-r31
+.rf_egpr:
+    sub     eax, 16
+    cmp     eax, 16
+    jae     .rf_no
+    cmp     eax, eax
+    ret
+.rf_no:
+    test    esp, esp
+    ret
+
+[SECTION .data]
+global amd64_rex2_at
+amd64_rex2_at:  dq -1                  ; amd64_rex_out: where its D5 went (-1: none)
+[SECTION .text]
+
+;*
 ; * [amd64_shape_forms]
 ; * Purpose: Operand shapes taken as the form that does the same, before
 ; *   the instruction is encoded (NASM 3's, and GNU as's where marked):
@@ -1134,9 +1341,9 @@ amd64_shape_forms:
     jne     .sf_ok
     cmp     byte [r12 + INST_op1 + OPERAND_kind], OP_REG
     jne     .sf_ok
-    cmp     byte [r12 + INST_op0 + OPERAND_reg], 16
+    cmp     byte [r12 + INST_op0 + OPERAND_reg], 32
     jae     .sf_ok
-    cmp     byte [r12 + INST_op1 + OPERAND_reg], 16
+    cmp     byte [r12 + INST_op1 + OPERAND_reg], 32
     jae     .sf_ok
     ; the two operands' places swapped
     xor     ecx, ecx
@@ -1246,7 +1453,7 @@ amd64_shape_forms:
     jne     .sf_ok                         ; ("kmov byte k1, eax": kmovb)
     cmp     byte [rsi + OPERAND_kind], OP_REG
     jne     .sf_ok
-    cmp     byte [rsi + OPERAND_reg], 16
+    cmp     byte [rsi + OPERAND_reg], 32
     jae     .sf_ok
     cmp     byte [rsi + OPERAND_size], 32
     jne     .sf_ok
@@ -1740,7 +1947,7 @@ osz_sized:
     je      .yes
     cmp     byte [rdi + OPERAND_kind], OP_REG
     jne     .operand
-    cmp     byte [rdi + OPERAND_reg], 16
+    cmp     byte [rdi + OPERAND_reg], 32
     jb      .yes
     jmp     .operand
 .by_name:
@@ -2156,12 +2363,14 @@ amd64_mode_special:
 
 .push_reg:
     movzx   eax, byte [r14 + OPERAND_reg]
-    cmp     eax, 24
+    cmp     eax, 16
     jb      .push_gpr
-    cmp     eax, 30
-    jae     .none
+    cmp     eax, REG_CS
+    jb      .none
+    cmp     eax, REG_SS
+    ja      .none
     lea     rsi, [rel seg_push_by_id]
-    movzx   eax, byte [rsi + rax - 24]
+    movzx   eax, byte [rsi + rax - REG_CS]
     test    eax, eax
     jz      .none                          ; fs / gs: as in 64-bit mode
     call    amd64_emit_byte
@@ -2180,18 +2389,20 @@ amd64_mode_special:
     jmp     .done
 .pop_reg:
     movzx   eax, byte [r14 + OPERAND_reg]
-    cmp     eax, 24
+    cmp     eax, 16
     jb      .pop_gpr
-    cmp     eax, 30
-    jae     .none
+    cmp     eax, REG_CS
+    jb      .none
+    cmp     eax, REG_SS
+    ja      .none
     lea     rsi, [rel seg_pop_by_id]
-    movzx   eax, byte [rsi + rax - 24]
+    movzx   eax, byte [rsi + rax - REG_CS]
     test    eax, eax
     jz      .pop_seg_none
     call    amd64_emit_byte
     jmp     .done
 .pop_seg_none:
-    cmp     byte [r14 + OPERAND_reg], 24
+    cmp     byte [r14 + OPERAND_reg], REG_CS
     je      .fail                          ; pop cs
     jmp     .none
 .pop_gpr:
@@ -2633,14 +2844,14 @@ amd64_mode_special:
     or      r8d, 8                         ; qword: REX.W
 .mov_sreg_mem:
     movzx   eax, byte [r15 + OPERAND_base]
-    cmp     eax, 16
+    cmp     eax, 32
     jae     .mov_sreg_index
     cmp     eax, 8
     jb      .mov_sreg_index
     or      r8d, 1                         ; REX.B
 .mov_sreg_index:
     movzx   eax, byte [r15 + OPERAND_index]
-    cmp     eax, 16
+    cmp     eax, 32
     jae     .mov_sreg_rex
     cmp     eax, 8
     jb      .mov_sreg_rex
@@ -2648,7 +2859,7 @@ amd64_mode_special:
     jmp     .mov_sreg_rex
 .mov_sreg_reg:
     movzx   eax, byte [r15 + OPERAND_reg]
-    cmp     eax, 16
+    cmp     eax, 32
     jae     .mov_sreg_bad                  ; not a general register
     cmp     eax, 8
     jb      .mov_sreg_size
@@ -2668,16 +2879,22 @@ amd64_mode_special:
     call    .osz
     pop     r8
 .mov_sreg_rex:
+    ; (r8: some bit set from register 8 on - amd64_rex_out works the
+    ; bits out of the operand: REX, or REX2 for r16-r31)
     test    r8d, r8d
     jz      .mov_sreg_op
     lea     eax, [r8 + 0x40]
-    call    amd64_emit_byte
+    xor     esi, esi
+    mov     rdx, r15
+    call    amd64_rex_out
+    test    eax, eax
+    jnz     .mov_sreg_bad
 .mov_sreg_op:
     mov     eax, r13d
     call    amd64_emit_byte
     movzx   eax, byte [r14 + OPERAND_reg]
     lea     rsi, [rel seg_modrm_by_id]
-    movzx   eax, byte [rsi + rax - 24]
+    movzx   eax, byte [rsi + rax - REG_CS]
     mov     rdi, r15
     call    amd64_emit_modrm_sib
     jmp     .done
@@ -2831,9 +3048,9 @@ amd64_mode_special:
     cmp     byte [rdi + OPERAND_kind], OP_REG
     jne     .is_sreg_ret
     movzx   eax, byte [rdi + OPERAND_reg]
-    cmp     eax, 24
+    cmp     eax, REG_CS
     jb      .is_sreg_no
-    cmp     eax, 29
+    cmp     eax, REG_SS
     ja      .is_sreg_no
     cmp     eax, eax                       ; ZF set
     ret
