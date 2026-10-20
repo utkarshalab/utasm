@@ -329,11 +329,11 @@ form("smsw", "M16", "", "0f", 0x01, 4, "rm")
 form("lmsw", "RM16", "", "0f", 0x01, 6, "rm")
 form("invlpg", "M", "", "0f", 0x01, 7, "rm")
 # VMX / PCID TLB invalidation: a register (r64 in 64-bit mode) and a
-# 128-bit descriptor in memory; NASM writes invpcid r64 with REX.W
+# 128-bit descriptor in memory; invpcid r64 without REX.W (Intel, NASM 3)
 for n, op in (("invept", 0x80), ("invvpid", 0x81)):
     form(n, "R64 M", "66", "38", op, M_R, "reg rm")
     form(n, "R32 M", "66", "38", op, M_R, "reg rm")
-form("invpcid", "R64 M", "66", "38", 0x82, M_R, "reg rm", F_W)
+form("invpcid", "R64 M", "66", "38", 0x82, M_R, "reg rm")
 form("invpcid", "R32 M", "66", "38", 0x82, M_R, "reg rm")
 # NASM writes str r64 with REX.W but sldt r64 without it
 form("sldt", "RV", "", "0f", 0x00, 0, "rm", F_OSZ | F_D64)
@@ -845,7 +845,12 @@ NASM_WRONG = {"vcvtqq2ph", "vcvtuqq2ph", "vp2intersectd",
               # memory narrower than the vector (by tools/disasm's generated
               # tables read back against objdump): vcvtph2udq's half of what
               # it is, vdpbf16ps / vsm4key4 / vsm4rnds4's 128 bits at 256 / 512
-              "vcvtph2udq", "vdpbf16ps", "vsm4key4", "vsm4rnds4"}
+              "vcvtph2udq", "vdpbf16ps", "vsm4key4", "vsm4rnds4",
+              # vaddph / vcmpph's memory 16 bits (its broadcast's element):
+              # "zword [rax]" refused, "word [rax]" taken, {1toN} refused
+              "vaddph", "vcmpph",
+              # retw imm: no o16 (66) - NASM 3's has it
+              "retw"}
 # (v4fmaddss / v4fnmaddss: NASM's zmm spelling kept, Intel's xmm one added below)
 # NASM's VCVTPS2PH of map 5 (no imm8) is Intel's VCVTPS2PHX: NASM's lines are
 # wrong in their destinations, those below are right; the F16C / AVX-512
@@ -918,6 +923,14 @@ VCVTPD2PH	xmmreg|mask|z,xmmrm128|b64	[rm:fv: evex.128.66.map5.w1 5a /r]	AVX512FP
 VCVTPD2PH	xmmreg|mask|z,ymmrm256|b64	[rm:fv: evex.256.66.map5.w1 5a /r]	AVX512FP16
 VCVTPD2PH	xmmreg|mask|z,zmmrm512|b64|er	[rm:fv: evex.512.66.map5.w1 5a /r]	AVX512FP16
 V4FMADDSS	xmmreg|mask|z,xmmreg|rs4,mem128	[rvm:m128:evex.dds.lig.f2.0f38.w0 9b /r]	AVX5124FMAPS
+RETW	void	[	o16 c3]	8086,BND
+RETW	imm	[i:	o16 c2 iw]	8086,SW,BND
+VADDPH	xmmreg|mask|z,xmmreg*,xmmrm128|b16	[rvm:fv: evex.nds.128.np.map5.w0 58 /r]	AVX512FP16,AVX512VL,FUTURE
+VADDPH	ymmreg|mask|z,ymmreg*,ymmrm256|b16	[rvm:fv: evex.nds.256.np.map5.w0 58 /r]	AVX512FP16,AVX512VL,FUTURE
+VADDPH	zmmreg|mask|z,zmmreg*,zmmrm512|b16|er	[rvm:fv: evex.nds.512.np.map5.w0 58 /r]	AVX512FP16,FUTURE
+VCMPPH	kreg|mask,xmmreg*,xmmrm128|b16,imm8	[rvmi:fv: evex.nds.128.np.0f3a.w0 c2 /r ib]	AVX512FP16,AVX512VL,FUTURE
+VCMPPH	kreg|mask,ymmreg*,ymmrm256|b16,imm8	[rvmi:fv: evex.nds.256.np.0f3a.w0 c2 /r ib]	AVX512FP16,AVX512VL,FUTURE
+VCMPPH	kreg|mask,zmmreg*,zmmrm512|b16|sae,imm8	[rvmi:fv: evex.nds.512.np.0f3a.w0 c2 /r ib]	AVX512FP16,FUTURE
 VCVTPH2UDQ	xmmreg|mask|z,xmmrm64|b16	[rm:hv: evex.128.map5.w0 79 /r]	AVX512FP16,AVX512VL,FUTURE
 VCVTPH2UDQ	ymmreg|mask|z,xmmrm128|b16	[rm:hv: evex.256.map5.w0 79 /r]	AVX512FP16,AVX512VL,FUTURE
 VCVTPH2UDQ	zmmreg|mask|z,ymmrm256|b16|er	[rm:hv: evex.512.map5.w0 79 /r]	AVX512FP16,FUTURE
@@ -1169,9 +1182,11 @@ def nasm_form(name, ops, enc, flags=()):
             fl |= F_OSZ | (F_D64 if osz == "o64nw" else 0)
         elif osz == "o64":
             fl |= F_W
-    elif encn == ENC_LEGACY and any(t in ("R64", "RM64") for t in types):
+    elif encn == ENC_LEGACY and any(t in ("R64", "RM64") for t in types) and asz != 3:
         fl |= F_W                                # NASM: a 64-bit register sets REX.W
-                                                 # (pextrw rax, xmm0, 0)
+                                                 # (pextrw rax, xmm0, 0) - not one as
+                                                 # wide as the address (enqcmd r64,
+                                                 # m512: a64, no W)
     xo = 0                                       # the mode needs (FM_FIXIMM)
     if osz in ("o16", "o32") and not fl & F_OSZ:
         xo = 1 if osz == "o16" else 2            # 66 by the mode, not always
@@ -1300,7 +1315,9 @@ NASM_OVER = {"ldtilecfg", "sttilecfg", "tileloadd", "tileloaddt1", "tilestored",
              "cmpsd", "movsd", "rsdc", "svdc",
              # their immediates cut without a word, enter's imm16 to a byte
              "ret", "retn", "int", "enter",
-             "invlpga", "clzero", "umonitor"}
+             "invlpga", "clzero", "umonitor",
+             # rstorssp: its memory's REX.B lost ("[r12+8]" was [rsp+8])
+             "rstorssp"}
 
 def nasm_allowed(name, encn):
     """Whether NASM's form of this mnemonic goes in the table. They come
@@ -1322,6 +1339,7 @@ def nasm_allowed(name, encn):
 # hand-written encoders' (stubs for these) - bit 15 of x86_enc_index
 NASM_LEGACY_SEEN = set()
 NASM_SEEN = set()
+AVX10_EVEX = set()      # mnemonics with an AVX10.2 EVEX form (insns3.dat)
 # NASM's CPU levels (x86/iflags.ph's order), as "cpu" names them
 # (frontend/parser/parser.s cpu_levels: the same numbers)
 CPU_LEVELS = {"8086": 1, "186": 2, "286": 3, "386": 4, "486": 5, "PENT": 6, "P6": 7,
@@ -1331,15 +1349,15 @@ CPU_LEVEL = {}
 
 def nasm_forms():
     lines = []
-    for line in [l for path in (INSNS, INSNS3) for l in open(path, encoding="utf-8")]:
+    for path, line in [(path, l) for path in (INSNS, INSNS3) for l in open(path, encoding="utf-8")]:
         if line.startswith(";") or not line.strip():
             continue
         m = re.match(r"(\S+)\s+(\S+)\s+\[(.*?)\]\s+(\S+)", line)
         if not m:
             continue
         raw = m.group(1)
-        if raw.lower() in NASM_WRONG:
-            continue                     # (the forms in EXTRA_INSNS instead)
+        if raw.lower() in NASM_WRONG and path == INSNS:
+            continue                     # (2.16's: the forms in EXTRA_INSNS instead)
         if raw.lower() in NASM_WRONG_MAP5 and "map5" in m.group(3):
             continue
         if "cc" in raw and raw != raw.upper():
@@ -1360,6 +1378,8 @@ def nasm_forms():
     for name, ops, enc, flags in lines:
         flags = flags.split(",")
         NASM_SEEN.add(name)
+        if "AVX10_2" in flags and "evex." in enc:
+            AVX10_EVEX.add(name)
         # its CPU level: the lowest any of its forms has (x86_cpu_level)
         lv = [CPU_LEVELS[f] for f in flags if f in CPU_LEVELS]
         if lv:
@@ -1374,8 +1394,26 @@ def nasm_forms():
             form(*args)
             if args[10] == ENC_EVEX:
                 forms[-1] = forms[-1] + (n8,)
+            # vcmpph / vcmpsh's predicate pseudo-ops (vcmpeqph, vcmpnlt_uqsh
+            # ...), as the hand-written vcmp* get them (evex_forms)
+            if name in ("vcmpph", "vcmpsh") and args[10] == ENC_EVEX and forms[-1][1][-1] == TY["I8"]:
+                f = forms[-1]
+                for imm, p in enumerate(PRED32):
+                    forms.append(("vcmp" + p + name[4:], f[1][:-1], f[2], f[3], f[4], f[5], f[6][:-1],
+                                  f[7] | F_FIXIMM, imm) + f[9:])
 
 nasm_forms()
+
+# NASM's LATEVEX (the VEX form only with {vex} / "cpu latevex"): for a
+# mnemonic with an EVEX form to take instead. With none (AVX-NE-CONVERT's
+# vcvtneeph2ps, vbcstnebf16ps ...) the VEX form is the one, as NASM 3 writes;
+# and where the EVEX form is AVX10.2's, later than the VEX one (AVX-VNNI-INT8
+# / INT16: vpdpbssd, vpdpwsud ...), the VEX form too - a byte shorter, and
+# what the CPUs of the instruction have (GNU's as 2.47 writes it; NASM 3.01
+# the EVEX one)
+_EVEX_NAMES = {f[0] for f in forms if f[10] == ENC_EVEX} - AVX10_EVEX
+forms[:] = [f[:11] + (f[11] & ~0x40,) + f[12:] if f[10] == ENC_VEX and f[11] & 0x40 and f[0] not in _EVEX_NAMES
+            else f for f in forms]
 
 def isa_text():
     text = isa_base()
