@@ -31,7 +31,6 @@ KNOWN = {
     "elf_branch_to_number": "utasm relocates a branch to a number against symbol 0 (GNU as's *ABS*): right wherever it is linked; NASM writes a value right only at address 0",
     "listing cross_section_distance": "NASM lists a value across sections before the sections are placed",
     "listing known_runs_settle": "NASM lists a value across sections before the sections are placed",
-    "listing displacement_wraps": "NASM warns for [eax + 0xffffffff], an address that wraps exactly to eax - 1",
     "listing ptr_as_label": "the line after \"dword ptr\" is read early: its bytes list there",
 # -f win64: a label with no section before it is an undefined external in
     # NASM's object (its .text is made only for code or data); utasm's is a
