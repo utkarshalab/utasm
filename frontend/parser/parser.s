@@ -7944,6 +7944,12 @@ parser_define_label:
     prologue
     push    rbx
     push    rsi
+    ; inside a proc: a place paths meet (middle/semantic/proc.s)
+    extern  proc_active, proc_label
+    cmp     byte [rel proc_active], 0
+    je      .no_proc
+    call    proc_label
+.no_proc:
     mov     rdi, rsi
     call    parser_ptr_warn                ; "ptr:" / "ptr equ": NASM's warning
     mov     rbx, [rbx + PREP_ctx]
@@ -8465,6 +8471,16 @@ parser_handle_pseudo_op:
     call    parser_iend
     jmp     .check_handler_result
 .not_iend:
+    ; utasm's procedures: proc NAME [uses REG, ...] / endproc
+    ; (middle/semantic/proc.s)
+    extern  proc_word
+    mov     rdi, r12
+    call    proc_word
+    test    eax, eax
+    jz      .not_proc
+    mov     rax, rdx
+    jmp     .check_handler_result
+.not_proc:
     mov     rdi, r12
     lea     rsi, [rel str_absolute]
     call    str_cmp_kw
