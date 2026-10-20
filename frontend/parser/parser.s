@@ -1251,15 +1251,16 @@ parser_parse_operand:
         ; a segment register's size is ignored, as NASM does ("push dword
         ; fs" is push fs)
         movzx   eax, byte [r12 + OPERAND_reg]
-        sub     eax, 24
+        sub     eax, REG_CS
         cmp     eax, 5
         mov     [rel opnd_kw_size], cx     ; ("qword gs:[rbx]": the size)
         jbe     .reg_or_seg
         ; a mask register takes any size: NASM's "kmov byte k1, k2" picks
         ; kmovb by it
-        cmp     eax, 72 - 24
+        movzx   eax, byte [r12 + OPERAND_reg]
+        cmp     eax, 72
         jb      .sized_check
-        cmp     eax, 79 - 24
+        cmp     eax, 79
         ja      .sized_check
         mov     [r12 + OPERAND_size], cl
         mov     [r12 + OPERAND_xsize], cx
@@ -1433,10 +1434,10 @@ parser_parse_operand:
     ; "gs:[rbx]", "fs:0x28", "es:[di]": a segment register and a colon
     ; make the operand memory with that segment (not for jmp / call,
     ; where "cs:foo" is no far pointer: NASM's error)
-    ; (the register table's ids: cs ds es fs gs ss are 24-29,
+    ; (the register table's ids: cs ds es fs gs ss are 64-69,
     ; include/arch/amd64.inc)
     movzx   eax, byte [r12 + OPERAND_reg]
-    sub     eax, 24
+    sub     eax, REG_CS
     cmp     eax, 5
     ja      .is_reg
     movzx   ecx, word [r15 + INST_op_id]
@@ -4530,7 +4531,7 @@ parser_mib_index:
 .not_mem:
     cmp     byte [rdx + OPERAND_kind], OP_REG
     jne     .next
-    cmp     byte [rdx + OPERAND_reg], 16   ; (a general one: 0 .. 15)
+    cmp     byte [rdx + OPERAND_reg], 32   ; (a general one: 0 .. 31)
     jae     .next
     mov     r9, rcx
 .next:
