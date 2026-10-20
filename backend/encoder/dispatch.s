@@ -134,6 +134,8 @@ te_rmop:    resb 1
 te_plusop:  resb 1
 te_vop:     resb 1
 te_rex4:    resb 1                  ; .rexbits: APX's R4 X4 B4 (0x40 0x20 0x10) of r16-r31
+te_egpr:    resb 1                  ; te_classify: an operand is (or addresses by) r16-r31
+te_has_evex: resb 1                 ; the mnemonic has an EVEX form (amd64_table_encode)
 te_vvvv:    resb 1                  ; inverted vvvv | L << 4 | pp, for the VEX bytes
 te_evex:    resb 1                  ; an operand needs EVEX (mask, broadcast, rounding)
 te_i8_relax: resb 1                 ; the second round: a byte immediate out of range taken
@@ -196,6 +198,21 @@ amd64_table_encode:
     call    te_classify
     mov     byte [rel te_i8_relax], 0
     mov     r15, r13
+    ; has the mnemonic an EVEX form? (r16-r31 then take it, not a VEX one
+    ; made EVEX: te_match)
+    mov     byte [rel te_has_evex], 0
+    mov     rcx, r13
+.has_evex:
+    movzx   eax, byte [rcx + FM_PFX]
+    shr     eax, 4
+    cmp     eax, ENC_EVEX
+    jne     .has_evex_next
+    mov     byte [rel te_has_evex], 1
+.has_evex_next:
+    add     rcx, 16
+    movzx   eax, word [rcx + FM_ID]
+    cmp     ax, [r12 + INST_op_id]
+    je      .has_evex
 .try:
     call    te_match
     test    eax, eax
@@ -263,6 +280,7 @@ te_operand:
 ; ;
 te_classify:
     mov     byte [rel te_evex], 0
+    mov     byte [rel te_egpr], 0
     xor     ecx, ecx
 .loop:
     lea     rdx, [rel te_cls]
@@ -322,6 +340,18 @@ te_classify:
 .mem_size:
     lea     rdx, [rel te_size]
     mov     [rdx + rcx*2], ax
+    ; a base or index of r16-r31: no VEX form (te_match)
+    movzx   eax, byte [rdi + OPERAND_base]
+    sub     eax, 16
+    cmp     eax, 16
+    jb      .mem_egpr
+    movzx   eax, byte [rdi + OPERAND_index]
+    sub     eax, 16
+    cmp     eax, 16
+    jae     .mem_vsib
+.mem_egpr:
+    mov     byte [rel te_egpr], 1
+.mem_vsib:
     movzx   eax, byte [rdi + OPERAND_vsib]
     lea     rdx, [rel te_vsib]
     mov     [rdx + rcx], al
@@ -365,6 +395,10 @@ te_classify:
     jmp     .next
 .gpr:
     mov     r8d, C_GPR
+    cmp     eax, 16
+    jb      .gpr_low
+    mov     byte [rel te_egpr], 1          ; r16-r31: no VEX form (te_match)
+.gpr_low:
     lea     rdx, [rel te_size]
     mov     [rdx + rcx*2], r9w
     movzx   r9d, byte [rdi + OPERAND_is_high]
@@ -467,6 +501,39 @@ te_match:
     cmp     eax, ENC_EVEX
     jne     .fail                          ; masks/broadcast/rounding: EVEX forms only
 .enc_ok:
+    ; r16-r31: a legacy form (REX2) or an EVEX one - VEX has no bits for
+    ; them (NASM promotes "vpaddd xmm0, xmm1, [r16]" to EVEX so); a VEX
+    ; form of a mnemonic with no EVEX one (kmov, the AMX loads) is written
+    ; as EVEX, its fields the same (APX's promotion: .vex_evex)
+    cmp     byte [rel te_egpr], 0
+    je      .egpr_ok
+    movzx   eax, byte [r13 + FM_PFX]
+    shr     eax, 4
+    cmp     eax, ENC_VEX
+    jne     .egpr_ok
+    cmp     byte [rel te_has_evex], 0
+    jne     .fail
+    ; ... only the forms APX promotes: no vector register among the
+    ; operands (kmov, AMX, BMI, cmpccxadd), not vldmxcsr / vstmxcsr
+    ; (0F AE) - a vector instruction's EVEX opcode is another one's
+    cmp     byte [r13 + FM_MAP], 2
+    jne     .egpr_vec
+    cmp     byte [r13 + FM_OPCODE], 0xAE
+    je      .fail
+.egpr_vec:
+    xor     eax, eax
+.egpr_cls:
+    lea     rdx, [rel te_cls]
+    movzx   edx, byte [rdx + rax]
+    cmp     edx, C_XMM
+    jb      .egpr_cls_next
+    cmp     edx, C_ZMM
+    jbe     .fail
+.egpr_cls_next:
+    inc     eax
+    cmp     eax, 4
+    jb      .egpr_cls
+.egpr_ok:
     ; {vex} / {evex}: only that encoding's forms
     test    byte [r12 + INST_flags], INSTF_VEX | INSTF_EVEX
     jz      .enc_any
@@ -1130,8 +1197,8 @@ te_emit:
     ; ---- VEX prefix: C5 (0F map, no W/X/B) or C4 ----
 .vex:
     call    .rexbits                       ; r15 = W R X B
-    cmp     byte [rel te_rex4], 0
-    jne     .fail                          ; (r16-r31: EVEX's, not VEX)
+    cmp     byte [rel te_egpr], 0
+    jne     .vex_evex                      ; r16-r31: the same as EVEX
     xor     eax, eax
     movzx   ecx, byte [rel te_vop]
     cmp     ecx, 0xFF
@@ -1198,14 +1265,86 @@ te_emit:
     call    amd64_emit_byte
     jmp     .opcode
 
+    ; ---- a VEX form as EVEX, for r16-r31 (APX) ----
+; 62, P0 = R3 X3 B3 R4 (inverted) B4 mmm, P1 = W vvvv (inverted) X4
+; (inverted) pp, P2 = L'L, V4 (inverted): the VEX instruction's map, pp,
+; W, L and opcode; displacements unscaled.
+.vex_evex:
+    extern  amd64_rex2_at
+    mov     qword [rel amd64_rex2_at], -2  ; (r16-r31 carried here)
+    mov     al, 0x62
+    call    amd64_emit_byte
+    movzx   eax, byte [r13 + FM_MAP]
+    dec     eax
+    and     eax, 7
+    test    r15d, 4
+    jnz     .ve_x
+    or      eax, 0x80                      ; R3 (inverted)
+.ve_x:
+    test    r15d, 2
+    jnz     .ve_b
+    or      eax, 0x40                      ; X3
+.ve_b:
+    test    r15d, 1
+    jnz     .ve_r4
+    or      eax, 0x20                      ; B3
+.ve_r4:
+    test    byte [rel te_rex4], 0x40
+    jnz     .ve_b4
+    or      eax, 0x10                      ; R4
+.ve_b4:
+    test    byte [rel te_rex4], 0x10
+    jz      .ve_p0
+    or      eax, 0x08                      ; B4 (not inverted)
+.ve_p0:
+    call    amd64_emit_byte
+    ; P1
+    xor     eax, eax
+    movzx   ecx, byte [rel te_vop]
+    cmp     ecx, 0xFF
+    je      .ve_v
+    lea     rdx, [rel te_num]
+    movzx   eax, byte [rdx + rcx]
+.ve_v:
+    mov     [rel te_vvvv], al              ; (bit 4: V4)
+    not     eax
+    and     eax, 15
+    shl     eax, 3
+    test    byte [rel te_rex4], 0x20
+    jnz     .ve_pp
+    or      eax, 4                         ; X4 (inverted)
+.ve_pp:
+    movzx   ecx, byte [r13 + FM_PFX]
+    and     ecx, 3
+    or      eax, ecx
+    test    r15d, 8
+    jz      .ve_p1
+    or      eax, 0x80                      ; W
+.ve_p1:
+    call    amd64_emit_byte
+    ; P2
+    movzx   eax, byte [r13 + FM_VL]
+    and     eax, 1
+    shl     eax, 5                         ; L'L
+    test    byte [rel te_vvvv], 16
+    jnz     .ve_p2
+    or      eax, 8                         ; V4 (inverted)
+.ve_p2:
+    call    amd64_emit_byte
+    jmp     .opcode
+
     ; ---- EVEX prefix: 62 P0 P1 P2 ----
 ; P0 = R X B R' 0 0 m m, P1 = W vvvv 1 pp, P2 = z L'L b V' aaa (R X B R' vvvv
 ; V' inverted). Registers 16-31 use R' (ModRM.reg), X (a register ModRM.rm)
 ; and V' (vvvv).
 .evex:
     call    .rexbits                       ; r15 = W R X B
-    cmp     byte [rel te_rex4], 0
-    jne     .fail                          ; (r16-r31 in EVEX: not yet)
+    ; r16-r31 go in the EVEX bits (B4, X4, R', V'): no REX2 to finish
+    cmp     byte [rel te_egpr], 0
+    je      .ev_start
+    extern  amd64_rex2_at
+    mov     qword [rel amd64_rex2_at], -2
+.ev_start:
     mov     al, 0x62
     call    amd64_emit_byte
     movzx   eax, byte [r13 + FM_MAP]
@@ -1215,13 +1354,21 @@ te_emit:
     jnz     .ev_x
     or      eax, 0x80                      ; R
 .ev_x:
-    ; X: bit 4 of a register rm, else REX.X (the index)
+    ; APX: B4 (P0 bit 3, not inverted) - bit 4 of a general register rm
+    ; or a memory base of r16-r31
+    test    byte [rel te_rex4], 0x10
+    jz      .ev_x_vec
+    or      eax, 0x08
+.ev_x_vec:
+    ; X: bit 4 of a vector register rm, else REX.X (the index)
     movzx   ecx, byte [rel te_rmop]
     cmp     ecx, 0xFF
     je      .ev_x_rex
     lea     rdx, [rel te_cls]
     cmp     byte [rdx + rcx], C_MEM
     je      .ev_x_rex
+    cmp     byte [rdx + rcx], C_GPR
+    je      .ev_x_rex                      ; (a general one: its bit 4 is B4)
     lea     rdx, [rel te_num]
     test    byte [rdx + rcx], 16
     jnz     .ev_b
@@ -1274,7 +1421,10 @@ te_emit:
     not     eax
     and     eax, 15
     shl     eax, 3
+    test    byte [rel te_rex4], 0x20
+    jnz     .ev_x4                         ; APX's X4 (inverted): an index of r16-r31
     or      eax, 4
+.ev_x4:
     movzx   ecx, byte [r13 + FM_PFX]
     and     ecx, 3
     or      eax, ecx
