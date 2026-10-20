@@ -181,6 +181,9 @@
 %define EXIT_LINE_VIEW_MOVED   163 ; a view the shortened jumps would change
 %define EXIT_LINE_DUP          164 ; .loc rows and a .debug_line written too
 %define EXIT_GAS_BASE64        165 ; .base64 "a!b"
+%define EXIT_PROC_NESTED       166 ; proc inside a proc (middle/semantic/proc.s)
+%define EXIT_PROC_NO_PROC      167 ; endproc with no proc
+%define EXIT_PROC_OPEN         168 ; a proc with no endproc at the end
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
@@ -227,7 +230,12 @@
 %define WC_FLOAT_OVERFLOW      23  ; float-overflow: "dd 1.0e50"
 %define WC_PP_REP_NEGATIVE     24  ; pp-rep-negative: "%rep -1"
 %define WC_EA_DISPSIZE         25  ; ea-dispsize: "add eax, [qword 0x10]"
-%define WC_COUNT               26
+%define WC_PROC_STACK          26  ; proc-stack (an error): the stack unbalanced at a ret
+%define WC_PROC_USES           27  ; proc-uses (an error): a uses register not saved / restored
+%define WC_PROC_CLOBBER        28  ; proc-clobber: a preserved register written, not in uses
+%define WC_PROC_UNREACHABLE    29  ; proc-unreachable: code after a ret / jmp, no label between
+%define WC_PROC_FALLTHROUGH    30  ; proc-fallthrough: the code runs into endproc
+%define WC_COUNT               31
 
 ; a kept expression's record (parser_defer_record): +0 RELOC_EXPR_MARK,
 ; +8 text, +16 tokens, +24 count; and for core/known.s:
