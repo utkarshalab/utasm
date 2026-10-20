@@ -417,7 +417,7 @@ is known. `-O0`, `-O1` and `-Ox` are NASM's levels and give NASM's bytes:
 
 | Level | What it does |
 | --- | --- |
-| `-O0` | Nothing made shorter: an immediate takes its full field unless written `byte` (`add ecx, 4` is `81 /0 id`), `mov r64, imm` the 10-byte `B8+r` form, `jmp` the long form; a `jcc` is short unless written `near`, as in NASM (an error when its target is out of reach). |
+| `-O0` | Nothing made shorter: an immediate takes its full field unless written `byte` (`add ecx, 4` is `81 /0 id`), `mov r64, imm` the 10-byte `B8+r` form, `jmp` the long form; a `jcc` is short unless written `strict`, as in NASM 3 (`near` and a size keep it short too - `jz word x` is `66 7x`; an error when its target is out of reach). |
 | `-O1` | Immediates that fit a signed byte take the short form (`83 /0 ib`, `6A`, `6B`); every jump stays long and `mov r64, imm` stays 10 bytes. |
 | `-Ox` (default; also `-O2` to `-O9`) | Everything NASM does: also the 2-byte form for every `jmp`/`jcc` whose target is within reach, backward and forward (moving the following code up), and `mov rax, 5` as `mov eax, 5`. |
 | `-Os` | utasm's own: `-Ox`, and jumps rewritten, which NASM does not do: `jcc L1` / `jmp L2` / `L1:` becomes one inverted `jcc L2`; a jump to a `jmp` goes straight to that jump's target; a jump to the very next instruction is removed. In a section without `align` padding it also uses the fewest long jumps: NASM's passes can settle on more long jumps than are needed. |
@@ -430,7 +430,11 @@ is only removed when no label and no other branch points at it - but the
 code no longer matches the source instruction for instruction, which can
 surprise you when reading a disassembly. That is why it is opt-in.
 
-Jumps written `jmp short`, `jmp near` or `strict` keep the size you wrote.
+Jumps written `jmp short` or `strict` keep the size you wrote. `near`,
+and a size (`jmp word x` in 32-bit code, `jz dword x`), say only that
+the jump is not short or far: as in NASM 3, it is still made short where
+its target is within reach, a `66` written for a size other than the
+mode's kept (`66 EB cb`).
 Code in a section that turns a position into a number (`$`, a difference
 of two labels, or `equ` of a label) is never moved, since that number
 could not be updated - except under an `equ` that is one difference of
