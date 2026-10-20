@@ -115,7 +115,8 @@ struc SYMBOL
     field lflags,   1       ; a label's padding rank: the paddings empty when
                             ; read at its offset that came before it (it
                             ; stays after them as they grow, before others)
-    field pad0,     1       ; alignment padding
+    field fwidth,   1       ; a struc field's element width, bytes (its res*:
+                            ; "resd 1" 4); 0 for any other symbol
     field name,     8       ; pointer to name string
     field value,    8       ; address or constant value
     field size,     8       ; size in bytes
