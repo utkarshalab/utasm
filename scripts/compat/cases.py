@@ -3060,3 +3060,32 @@ GAS_CASES += [
                        "crc32 rbx, r9b\nxchg al, cl\n"),
     ("intel then at&t", ".text\nnop\n.att_syntax\nrep addr32 movsb\naddr32 rep movsb\n"),
 ]
+
+# batch 67: APX's r16-r31 with REX2 (D5)
+BIN_PROBES.update({
+    "apx_egpr_rex2": "bits 64\nmov rax, r16\nmov r16, rax\nmov r31, r17\nmov r16d, 5\nmov r16, 0x123456789\n"
+                     "mov r16b, 1\nmov r16w, ax\nmov spl, r16b\nadd r16, r17\nadd r16, 3\ntest r20, 1\n"
+                     "push r16\npop r31\ninc r16\nbswap r16\nbswap r25d\nxchg r16, rax\nxchg r17, r16\n"
+                     "imul r16, [r17], 300\nshld r16, r17, 3\ncmpxchg [r16], r17b\nmovzx r16, r17w\n"
+                     "movsx r16, byte [r17]\nsetnz r21b\nnop r16\njmp [r16+r17*8]\ncall r31\n",
+    "apx_egpr_memory": "bits 64\nmov eax, [r16]\nmov eax, [rax+r17*4]\nmov r20, [r21+r22*8+0x10]\n"
+                       "mov eax, [r20*2]\nmov eax, [r21]\nmov eax, [r13+r21]\nmov eax, [r16+rsp]\n"
+                       "mov eax, [r16d]\nlea r16, [r17+r18*2+3]\nmov byte [r28], r19b\nmov [r29-8], r16\n",
+    "apx_egpr_0f_map": "bits 64\nmovdqa xmm0, [r16]\nmovaps [r20+0x50], xmm0\ncvtsi2sd xmm0, r16\n"
+                       "cvttsd2si r16d, xmm0\nmovd xmm0, r16d\nmov r16, cr0\nmov cr0, r16\nmov ds, r16w\n"
+                       "mov r16w, ds\nlgdt [r19+8]\nclflush [r16]\nlock cmpxchg16b [r23+0x10]\nbsf r16, r17\n"
+                       "popcnt r16, r17\nlzcnt r17d, r18d\nfld qword [r16]\n",
+})
+MODE_LINES += ["mov eax, r16d", "push r17"]
+GAS_CASES += [
+    ("apx registers", ".text\nmov r16, rax\nmov eax, DWORD PTR [r16+r17*4+8]\nxchg r17, r16\nxchg al, r16b\n"
+                      ".att_syntax\nmovq %r16, %rax\naddl %r17d, (%r18,%r19,4)\npushq %r20\npopq %r31\n"
+                      "movw %ds, %r17w\nmovw %r16w, %ds\nleaq 8(%r21), %r22\nmovdqa (%r16), %xmm0\n"
+                      "cmpxchgq %r17, (%r23)\nbswapq %r16\nshlq $3, %r25\nimulq $5, %r17, %r16\n"),
+]
+
+# a near indirect jmp of a word in 64-bit code takes its 66
+BIN_PROBES.update({
+    "indirect_word_64": "bits 64\njmp ax\njmp word [rax]\no16 jmp ax\no16 bnd jmp ax\njmp r16\ncall r9\n",
+})
+MODE_LINES += ["call ax", "jmp eax", "call eax", "call word [rbx]", "jmp dword [ebx]"]
