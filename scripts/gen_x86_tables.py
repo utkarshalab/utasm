@@ -34,7 +34,8 @@ GvEd IbU IbS Iz Iw ZvXchg EvGv_bt EvGvIb EvGvCL STR XCHG90 CBW CWD
 Ewv G7 GAE
 VW WV VWI VE EV GW GU UI VM MV V12 EVI VEI GUI VW0 CMPS PCLMUL ENDBR
 XBCAST XINS XEXT XIS4 BGBE BGEB BBE XMLD XMST BRORX XZERO
-X87 EVEX G9""".split()
+X87 EVEX G9
+GaM WRSS G64MO G64M IO SREGW SREGR FSGS GvMp IwIb XLAT SFXW SFXD GEwv SFXWI""".split()
 FM = {name: i for i, name in enumerate(FORMS)}
 
 # ---- flags (keep in sync with FL_* in tools/disasm/x86.s) ----
@@ -129,11 +130,27 @@ for r in range(8):
     op(map1, 0xB8 + r, "mov", "ZvIv")
 grp_op(map1, 0xC0, "g2", "EbIbU", F_BYTE)
 grp_op(map1, 0xC1, "g2", "EvIbU")
-op(map1, 0xC2, "ret", "Iw")
-op(map1, 0xC3, "ret", "NONE")
+op(map1, 0xC2, "ret", "SFXWI")              # retw with 66 (objdump)
+op(map1, 0xC3, "ret", "SFXW")
 grp_op(map1, 0xC6, "g11", "EbIb", F_BYTE)
 grp_op(map1, 0xC7, "g11", "EvIz")
 op(map1, 0xC9, "leave", "NONE")
+# system, I/O, segments (the disassembler's: the encoder reads no map1/map2)
+op(map1, 0x9C, "pushf", "SFXW", F_D64)
+op(map1, 0x9D, "popf", "SFXW", F_D64)
+op(map1, 0x9E, "sahf", "NONE")
+op(map1, 0x9F, "lahf", "NONE")
+op(map1, 0xC8, "enter", "IwIb")
+op(map1, 0xCB, "retf", "SFXW")
+op(map1, 0xCF, "iret", "SFXW")
+op(map1, 0xD7, "xlat", "XLAT")
+op(map1, 0xF1, "int1", "NONE")
+for code in (0xE4, 0xE5, 0xEC, 0xED):
+    op(map1, code, "in", "IO")
+for code in (0xE6, 0xE7, 0xEE, 0xEF):
+    op(map1, code, "out", "IO")
+op(map1, 0x8C, "mov", "SREGW", F_MODRM)
+op(map1, 0x8E, "mov", "SREGR", F_MODRM)
 op(map1, 0xCC, "int3", "NONE")
 op(map1, 0xCD, "int", "IbU")
 grp_op(map1, 0xD0, "g2", "Eb1", F_BYTE)
@@ -164,8 +181,30 @@ grp_op(map1, 0xFF, "g5", "Ev")
 grp_op(map2, 0x00, "g6", "Ewv")
 op(map2, 0x01, "(0f01)", "G7", F_MODRM)
 op(map2, 0x05, "syscall", "NONE")
-op(map2, 0x07, "sysret", "NONE")
+op(map2, 0x07, "sysret", "SFXD")
 op(map2, 0x0B, "ud2", "NONE")
+op(map2, 0x02, "lar", "GEwv", F_MODRM)
+op(map2, 0x03, "lsl", "GEwv", F_MODRM)
+op(map2, 0x06, "clts", "NONE")
+op(map2, 0x08, "invd", "NONE")
+op(map2, 0x09, "wbinvd", "NONE")
+op(map2, 0x0E, "femms", "NONE")
+op(map2, 0x30, "wrmsr", "NONE")
+op(map2, 0x32, "rdmsr", "NONE")
+op(map2, 0x33, "rdpmc", "NONE")
+op(map2, 0x34, "sysenter", "NONE")
+op(map2, 0x35, "sysexit", "SFXD")
+op(map2, 0x37, "getsec", "NONE")
+op(map2, 0xAA, "rsm", "NONE")
+op(map2, 0xA0, "push", "FSGS")
+op(map2, 0xA1, "pop", "FSGS")
+op(map2, 0xA8, "push", "FSGS")
+op(map2, 0xA9, "pop", "FSGS")
+op(map2, 0xB2, "lss", "GvMp", F_MODRM)
+op(map2, 0xB4, "lfs", "GvMp", F_MODRM)
+op(map2, 0xB5, "lgs", "GvMp", F_MODRM)
+op(map2, 0xB9, "ud1", "GvEv", F_MODRM)
+op(map2, 0xFF, "ud0", "GvEv", F_MODRM)
 grp_op(map2, 0x1F, "gnop", "Ev")
 op(map2, 0x31, "rdtsc", "NONE")
 for i, c in enumerate(CC):
@@ -433,6 +472,16 @@ sse("38", 0x41, "66", "phminposuw", "VW", "x"); sse("38", 0xDB, "66", "aesimc", 
 sse_int("38", 0xF0, "np", "movbe", "GvEv"); sse_int("38", 0xF1, "np", "movbe", "EvGv")
 sse_int("38", 0xF0, "F2", "crc32", "GvEb"); sse_int("38", 0xF1, "F2", "crc32", "GvEv")
 sse_int("38", 0xF6, "66", "adcx", "GvEv"); sse_int("38", 0xF6, "F3", "adox", "GvEv")
+# (with a register, F2 / F3 0F 38 F8 are urdmsr / uwrmsr: x86_apx.inc's dx_umsr)
+sse_int("38", 0xF8, "F2", "enqcmd", "GaM"); sse_int("38", 0xF8, "F3", "enqcmds", "GaM")
+sse_int("38", 0xF8, "66", "movdir64b", "GaM")
+sse_int("38", 0xF9, "np", "movdiri", "EvGv")
+sse_int("38", 0xF5, "66", "wruss", "WRSS"); sse_int("38", 0xF6, "np", "wrss", "WRSS")
+sse_int("38", 0xFC, "np", "aadd", "EvGv"); sse_int("38", 0xFC, "66", "aand", "EvGv")
+sse_int("38", 0xFC, "F2", "aor", "EvGv"); sse_int("38", 0xFC, "F3", "axor", "EvGv")
+sse_int("38", 0x80, "66", "invept", "G64MO"); sse_int("38", 0x81, "66", "invvpid", "G64MO")
+sse_int("38", 0x82, "66", "invpcid", "G64M")
+sse_int("0f", 0x09, "F3", "wbnoinvd", "NONE", 0)
 # SHA extensions (legacy encoding only)
 for code, n in ((0xC8, "sha1nexte"), (0xC9, "sha1msg1"), (0xCA, "sha1msg2"),
                 (0xCC, "sha256msg1"), (0xCD, "sha256msg2")):
@@ -1130,6 +1179,7 @@ def mk_entry(E, lines):
 # ---- the VEX instructions neither vex_tabs nor the SSE tables (with a "v")
 # have: x86_vexgen, the same entries as x86_evex, from the encoder's forms -
 # x86.s looks there first, then in its own tables
+VG_PVEX = EV_SAE  # x86_vexgen: "{vex}" before the name (EV_SAE's bit, unused by VEX)
 VEX_OVER = {"vpsllw", "vpslld", "vpsllq", "vpsrlw", "vpsrld", "vpsrlq", "vpsraw", "vpsrad",
             "vmovddup"}         # (the SSE tables give them the wrong widths)
 vex_report = []
@@ -1151,7 +1201,10 @@ def vex_generated():
         return not (name.startswith("k") or (mapn == 2 and opcode == 0xAE))   # (x86_kops; 0F AE)
     out = gen_entries(E, E.ENC_VEX, wanted, vex_report)
     out.update(gen_entries(E, E.ENC_XOP, lambda *_: True, vex_report))    # (XOP: maps 9-11)
-    return {k: [(n, m, f & ~EV_PFP, sh, f2) for n, m, f, sh, f2 in v] for k, v in out.items()}
+    # (VEX has no rounding / {sae}: that bit is VG_PVEX here - objdump's
+    # "{vex}" on the VEX forms that came after the EVEX ones)
+    return {k: [(n, m, (f & ~(EV_PFP | EV_ER | EV_SAE)) | (VG_PVEX if n in VEX_LATER else 0), sh, f2)
+                for n, m, f, sh, f2 in v] for k, v in out.items()}
 
 def vex_rows(name_off):
     out = ["x86_vexgen:"]
