@@ -396,7 +396,10 @@ struc OPERAND
     field dispsize,   1       ; [byte x] / [word x] / [dword x]: 8, 16, 32
     field pcrel,      1       ; 1: "x - $" with x elsewhere - a PC-relative
                               ; relocation against x (OPERAND_sym)
-    field pad1,       2       ; padding to align imm to 8-byte boundary
+    field near,       1       ; 1: "near" written on a branch target - NASM 3
+                              ; still makes it short (only strict keeps it
+                              ; long); -O0 writes it long
+    field pad1,       1       ; padding to align imm to 8-byte boundary
     field imm,        8       ; immediate or displacement value
     field sym,        8       ; pointer to Symbol
     field vsib,       1       ; vector index register: 1 xmm, 2 ymm, 3 zmm (gathers)
