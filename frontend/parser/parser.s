@@ -7485,6 +7485,9 @@ prefix_words:
     db "xacquire", 0, 8
     db "xrelease", 0, 9
     db "bnd", 0, 0,0,0,0,0, 0xF2
+    db "notrack", 0, 0, 0x3E               ; CET: an indirect jmp / call IBT lets be
+    db "ht", 0, 0,0,0,0,0,0, 0x3E          ; GNU's branch hints: taken
+    db "hnt", 0, 0,0,0,0,0, 0x2E           ; ... not taken
     db "o16", 0, 0,0,0,0,0, 5              ; the operation sizes
     db "o32", 0, 0,0,0,0,0, 6
     db "o64", 0, 0,0,0,0,0, 7
