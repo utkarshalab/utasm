@@ -2337,58 +2337,122 @@ mnc_tb_x64:
     mnc_ent "vcmpeq_oqps", 0, 7189
     mnc_ent "vcmpeq_oqsd", 0, 7190
     mnc_ent "vcmpeq_oqss", 0, 7191
+    mnc_ent "vcmpeq_osph", 0, 7830
+    mnc_ent "vcmpeq_ossh", 0, 7831
+    mnc_ent "vcmpeq_uqph", 0, 7832
+    mnc_ent "vcmpeq_uqsh", 0, 7833
+    mnc_ent "vcmpeq_usph", 0, 7834
+    mnc_ent "vcmpeq_ussh", 0, 7835
+    mnc_ent "vcmpeqph", 0, 7836
+    mnc_ent "vcmpeqsh", 0, 7837
     mnc_ent "vcmpfalse_oqpd", 0, 7192
     mnc_ent "vcmpfalse_oqps", 0, 7193
     mnc_ent "vcmpfalse_oqsd", 0, 7194
     mnc_ent "vcmpfalse_oqss", 0, 7195
+    mnc_ent "vcmpfalse_osph", 0, 7838
+    mnc_ent "vcmpfalse_ossh", 0, 7839
+    mnc_ent "vcmpfalseph", 0, 7840
+    mnc_ent "vcmpfalsesh", 0, 7841
+    mnc_ent "vcmpge_oqph", 0, 7842
+    mnc_ent "vcmpge_oqsh", 0, 7843
     mnc_ent "vcmpge_ospd", 0, 7196
     mnc_ent "vcmpge_osps", 0, 7197
     mnc_ent "vcmpge_ossd", 0, 7198
     mnc_ent "vcmpge_osss", 0, 7199
+    mnc_ent "vcmpgeph", 0, 7844
+    mnc_ent "vcmpgesh", 0, 7845
+    mnc_ent "vcmpgt_oqph", 0, 7846
+    mnc_ent "vcmpgt_oqsh", 0, 7847
     mnc_ent "vcmpgt_ospd", 0, 7200
     mnc_ent "vcmpgt_osps", 0, 7201
     mnc_ent "vcmpgt_ossd", 0, 7202
     mnc_ent "vcmpgt_osss", 0, 7203
+    mnc_ent "vcmpgtph", 0, 7848
+    mnc_ent "vcmpgtsh", 0, 7849
+    mnc_ent "vcmple_oqph", 0, 7850
+    mnc_ent "vcmple_oqsh", 0, 7851
     mnc_ent "vcmple_ospd", 0, 7204
     mnc_ent "vcmple_osps", 0, 7205
     mnc_ent "vcmple_ossd", 0, 7206
     mnc_ent "vcmple_osss", 0, 7207
+    mnc_ent "vcmpleph", 0, 7852
+    mnc_ent "vcmplesh", 0, 7853
+    mnc_ent "vcmplt_oqph", 0, 7854
+    mnc_ent "vcmplt_oqsh", 0, 7855
     mnc_ent "vcmplt_ospd", 0, 7208
     mnc_ent "vcmplt_osps", 0, 7209
     mnc_ent "vcmplt_ossd", 0, 7210
     mnc_ent "vcmplt_osss", 0, 7211
+    mnc_ent "vcmpltph", 0, 7856
+    mnc_ent "vcmpltsh", 0, 7857
+    mnc_ent "vcmpneq_oqph", 0, 7858
+    mnc_ent "vcmpneq_oqsh", 0, 7859
+    mnc_ent "vcmpneq_osph", 0, 7860
+    mnc_ent "vcmpneq_ossh", 0, 7861
     mnc_ent "vcmpneq_uqpd", 0, 7212
     mnc_ent "vcmpneq_uqps", 0, 7213
     mnc_ent "vcmpneq_uqsd", 0, 7214
     mnc_ent "vcmpneq_uqss", 0, 7215
+    mnc_ent "vcmpneq_usph", 0, 7862
+    mnc_ent "vcmpneq_ussh", 0, 7863
+    mnc_ent "vcmpneqph", 0, 7864
+    mnc_ent "vcmpneqsh", 0, 7865
+    mnc_ent "vcmpnge_uqph", 0, 7866
+    mnc_ent "vcmpnge_uqsh", 0, 7867
     mnc_ent "vcmpnge_uspd", 0, 7216
     mnc_ent "vcmpnge_usps", 0, 7217
     mnc_ent "vcmpnge_ussd", 0, 7218
     mnc_ent "vcmpnge_usss", 0, 7219
+    mnc_ent "vcmpngeph", 0, 7868
+    mnc_ent "vcmpngesh", 0, 7869
+    mnc_ent "vcmpngt_uqph", 0, 7870
+    mnc_ent "vcmpngt_uqsh", 0, 7871
     mnc_ent "vcmpngt_uspd", 0, 7220
     mnc_ent "vcmpngt_usps", 0, 7221
     mnc_ent "vcmpngt_ussd", 0, 7222
     mnc_ent "vcmpngt_usss", 0, 7223
+    mnc_ent "vcmpngtph", 0, 7872
+    mnc_ent "vcmpngtsh", 0, 7873
+    mnc_ent "vcmpnle_uqph", 0, 7874
+    mnc_ent "vcmpnle_uqsh", 0, 7875
     mnc_ent "vcmpnle_uspd", 0, 7224
     mnc_ent "vcmpnle_usps", 0, 7225
     mnc_ent "vcmpnle_ussd", 0, 7226
     mnc_ent "vcmpnle_usss", 0, 7227
+    mnc_ent "vcmpnleph", 0, 7876
+    mnc_ent "vcmpnlesh", 0, 7877
+    mnc_ent "vcmpnlt_uqph", 0, 7878
+    mnc_ent "vcmpnlt_uqsh", 0, 7879
     mnc_ent "vcmpnlt_uspd", 0, 7228
     mnc_ent "vcmpnlt_usps", 0, 7229
     mnc_ent "vcmpnlt_ussd", 0, 7230
     mnc_ent "vcmpnlt_usss", 0, 7231
+    mnc_ent "vcmpnltph", 0, 7880
+    mnc_ent "vcmpnltsh", 0, 7881
     mnc_ent "vcmpord_qpd", 0, 7232
     mnc_ent "vcmpord_qps", 0, 7233
     mnc_ent "vcmpord_qsd", 0, 7234
     mnc_ent "vcmpord_qss", 0, 7235
+    mnc_ent "vcmpord_sph", 0, 7882
+    mnc_ent "vcmpord_ssh", 0, 7883
+    mnc_ent "vcmpordph", 0, 7884
+    mnc_ent "vcmpordsh", 0, 7885
     mnc_ent "vcmptrue_uqpd", 0, 7236
     mnc_ent "vcmptrue_uqps", 0, 7237
     mnc_ent "vcmptrue_uqsd", 0, 7238
     mnc_ent "vcmptrue_uqss", 0, 7239
+    mnc_ent "vcmptrue_usph", 0, 7886
+    mnc_ent "vcmptrue_ussh", 0, 7887
+    mnc_ent "vcmptrueph", 0, 7888
+    mnc_ent "vcmptruesh", 0, 7889
     mnc_ent "vcmpunord_qpd", 0, 7240
     mnc_ent "vcmpunord_qps", 0, 7241
     mnc_ent "vcmpunord_qsd", 0, 7242
     mnc_ent "vcmpunord_qss", 0, 7243
+    mnc_ent "vcmpunord_sph", 0, 7890
+    mnc_ent "vcmpunord_ssh", 0, 7891
+    mnc_ent "vcmpunordph", 0, 7892
+    mnc_ent "vcmpunordsh", 0, 7893
     mnc_ent "vcomisbf16", 0, 7678
     mnc_ent "vcomxsd", 0, 7679
     mnc_ent "vcomxsh", 0, 7680
