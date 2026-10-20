@@ -3143,3 +3143,47 @@ DISASM_APX = "bits 64\n" + "".join(
     for l in BIN_PROBES[k].splitlines()
     if l and not l.startswith("bits") and "cr0" not in l and "tile" not in l and not l.startswith("xchg r16, rax")
     and "ds," not in l and ", ds" not in l)
+# utasm's procedures (middle/semantic/proc.s): name, source, options,
+# {line: (warning | error, text)}, lines with nothing, the exit code (0 / non-0)
+PROC_CASES = [
+    ("balanced", "bits 64\nproc f uses rbx, r12\npush rbx\npush r12\nmov rbx, rdi\nmov r12, rsi\npop r12\n"
+                 "pop rbx\nret\nendproc\n", [], {}, [3, 4, 5, 6, 7, 8, 9, 10], 0),
+    ("still pushed", "bits 64\nproc f uses rbx\npush rbx\nmov rbx, 1\nret\nendproc\n", [],
+     {5: ("error", "stack not balanced at ret: 8 bytes still pushed")}, [3, 4], 1),
+    ("popped more", "bits 64\nproc f\npop rax\nret\nendproc\n", [],
+     {4: ("error", "8 bytes more popped than pushed")}, [3], 1),
+    ("not restored", "bits 64\nproc f uses rbx\npush rbx\npop rcx\nret\nendproc\n", [],
+     {5: ("error", "rbx is not restored at this ret")}, [3], 1),
+    ("written before saved", "bits 64\nproc f uses r12\nmov r12, 1\npush r12\npop r12\nret\nendproc\n", [],
+     {3: ("error", "r12 is written before it is saved")}, [4, 5, 6], 1),
+    ("never saved", "bits 64\nproc f uses rbx, r14\npush rbx\npop rbx\nret\nendproc\n", [],
+     {6: ("error", "r14 is in uses but never saved")}, [3, 4, 5], 1),
+    ("clobber", "bits 64\nproc f\nmov r13, 5\nmov rbx, 1\nxor eax, eax\nret\nendproc\n", [],
+     {3: ("warning", "r13 is written but not in uses"), 4: ("warning", "rbx is written but not in uses")},
+     [5, 6], 0),
+    ("saved without uses", "bits 64\nproc f\npush rbx\nmov rbx, 1\npop rbx\nret\nendproc\n", [], {}, [3, 4, 5, 6], 0),
+    ("cpuid writes rbx", "bits 64\nproc f\ncpuid\nret\nendproc\n", [], {3: ("warning", "rbx is written")}, [], 0),
+    ("unreachable", "bits 64\nproc f\nret\nnop\nnop\n.next:\nret\nendproc\n", [],
+     {4: ("warning", "unreachable code")}, [5, 7], 0),
+    ("fallthrough", "bits 64\nproc f\nnop\nendproc\n", [], {4: ("warning", "control reaches endproc")}, [3], 0),
+    ("frame", "bits 64\nproc f uses rbp, rbx\npush rbp\nmov rbp, rsp\npush rbx\nsub rsp, 40\nand rsp, -16\n"
+              "lea rsp, [rbp - 8]\npop rbx\npop rbp\nret\nendproc\n", [], {}, list(range(3, 13)), 0),
+    ("enter / leave", "bits 64\nproc f uses rbp\nenter 32, 0\nleave\nret\nendproc\n", [], {}, [3, 4, 5], 0),
+    ("paths meet", "bits 64\nproc f\npush rbx\ntest rdi, rdi\njz .out\npush rcx\n.out:\npop rbx\nret\nendproc\n", [],
+     {7: ("error", "stack depth differs where paths meet: 16 bytes here, 8 by a jump to it")}, [9], 1),
+    ("backward jump", "bits 64\nproc f uses rbx\npush rbx\n.again:\npush rax\ndec rdi\njnz .again\npop rbx\nret\n"
+                      "endproc\n", [], {7: ("error", "stack depth differs where paths meet")}, [9], 1),
+    ("branches", "bits 64\nproc f\npush rax\ntest rdi, rdi\njz .zero\npop rax\nret\n.zero:\npop rax\nret\nendproc\n",
+     [], {}, list(range(3, 12)), 0),
+    ("macro push", "bits 64\n%macro SAVE 1\npush %1\n%endmacro\nproc f uses rbx\nSAVE rbx\npop rbx\nret\nendproc\n",
+     [], {}, [6, 7, 8, 9], 0),
+    ("switched off", "bits 64\nproc f\nmov r13, 5\nret\nnop\nendproc\n", ["-w-proc-clobber", "-w-proc-unreachable"],
+     {}, [3, 5], 0),
+    ("clobber as an error", "bits 64\nproc f\nmov r13, 5\nret\nendproc\n", ["-w+error=proc-clobber"],
+     {3: ("error", "r13 is written")}, [], 1),
+    ("stack check off", "bits 64\nproc f\npush rax\nret\nendproc\n", ["-w-proc-stack"], {}, [4], 0),
+    ("a label named proc", "bits 64\nproc:\nret\njmp proc\n", [], {}, [2, 3, 4], 0),
+    ("nested", "bits 64\nproc f\nproc g\nret\nendproc\n", [], {3: ("error", "proc inside a proc")}, [], 1),
+    ("endproc alone", "bits 64\nendproc\n", [], {2: ("error", "endproc with no proc")}, [], 1),
+    ("never closed", "bits 64\nproc f\nret\n", [], {0: ("error", "proc has no endproc")}, [], 1),
+]
