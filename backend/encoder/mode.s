@@ -64,6 +64,7 @@ extern  warn_data_bounds, warn_number, warn_begin, warn_text, warn_end
 only64:
     dw 1588, 1540, 1297, 1062, 1090, 1423, 1671, 1371, 1081, 1681, 6529
     dw 1598, 2143
+    dw 7655, 7656, 7828                    ; urdmsr, uwrmsr, udb
     dw 0
 ; mnemonics that exist only outside 64-bit mode
 only_legacy:
