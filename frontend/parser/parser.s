@@ -237,7 +237,7 @@ parser_parse_instruction:
     lea     r14, [rel enc_prefix_words]
 .enc_prefix_find:
     cmp     byte [r14], 0
-    je      .no_enc_prefix_brace
+    je      .apx_prefix
     mov     rdi, r13
     mov     rsi, r14
     call    str_cmp_kw
@@ -260,6 +260,31 @@ parser_parse_instruction:
 .enc_prefix_bad:
     mov     rax, EXIT_UNEXPECTED_TOKEN
     jmp     .error
+.apx_prefix:
+    ; APX's: "{nf} add rax, rbx" (the flags kept), "{zu} setz al"
+    lea     r14, [rel apx_prefix_words]
+.apx_prefix_find:
+    cmp     byte [r14], 0
+    je      .no_enc_prefix_brace
+    mov     rdi, r13
+    mov     rsi, r14
+    call    str_cmp_kw
+    test    rax, rax
+    jz      .apx_prefix_found
+    add     r14, 4
+    jmp     .apx_prefix_find
+.apx_prefix_found:
+    mov     al, [r14 + 3]
+    or      [r15 + INST_apx], al
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; the word
+    check_err
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; "}"
+    check_err
+    cmp     byte [rdx + TOKEN_kind], TOK_RBRACE
+    jne     .enc_prefix_bad
+    jmp     .get_mnemonic
 .no_enc_prefix_brace:
     mov     al, [r12 + TOKEN_kind]
 .no_enc_prefix:
@@ -1069,6 +1094,26 @@ parser_parse_operand:
     mov     byte [rel far_colon], 1
 .not_far_label:
     mov     al, [r13 + TOKEN_kind]
+
+    ; APX's "{dfv=of,zf}" before ccmp's / ctest's operands: the flags it
+    ; sets when its condition is false (INST_dfv)
+    cmp     al, TOK_LBRACE
+    jne     .not_dfv
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .not_dfv_al
+    mov     rdi, [rdx + TOKEN_value]
+    lea     rsi, [rel str_dfv]
+    call    str_cmp_kw
+    test    rax, rax
+    jnz     .not_dfv_al
+    call    parser_parse_dfv
+    check_err
+    jmp     .fetch_operand_token
+.not_dfv_al:
+    mov     al, [r13 + TOKEN_kind]
+.not_dfv:
 
     ; 0. AVX-512 rounding operand: {rn-sae}, {rd-sae}, {ru-sae}, {rz-sae}, {sae}
     IF al, e, TOK_LBRACE
@@ -5555,6 +5600,66 @@ alignb 4
 mem_term_width:   resd 1                  ; the register just read: its width
 mem_addr_width:   resd 1                  ; the address's registers' width
 [SECTION .text]
+
+;*
+; * [parser_parse_dfv]
+; * Purpose: APX's "{dfv=of,sf,zf,cf}" (any of them, or none: "{dfv=}"),
+; *   the '{' already read: INST_dfv the flags' bits (OF 8, SF 4, ZF 2,
+; *   CF 1), APX_DFV in INST_apx - the flags ccmp / ctest set when their
+; *   condition is false.
+; * Input  : RBX = PrepState, R15 = INST
+; * Output : RAX = OK or EXIT_UNEXPECTED_TOKEN
+; ;
+parser_parse_dfv:
+    push    r13
+    or      byte [r15 + INST_apx], APX_DFV
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; "dfv"
+    test    rax, rax
+    jnz     .pd_ret
+    mov     rdi, rbx
+    call    preprocessor_next_token        ; "="
+    test    rax, rax
+    jnz     .pd_ret
+    cmp     byte [rdx + TOKEN_kind], TOK_EQUAL
+    jne     .pd_bad
+.pd_next:
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    test    rax, rax
+    jnz     .pd_ret
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_RBRACE
+    je      .pd_ok
+    cmp     eax, TOK_COMMA
+    je      .pd_next
+    cmp     eax, TOK_IDENT
+    jne     .pd_bad
+    mov     rsi, [rdx + TOKEN_value]
+    cmp     byte [rsi + 2], 0
+    jne     .pd_bad
+    movzx   ecx, word [rsi]
+    or      ecx, 0x2020                    ; (any case)
+    lea     r13, [rel dfv_words]
+.pd_word:
+    cmp     byte [r13], 0
+    je      .pd_bad
+    cmp     cx, [r13]
+    je      .pd_hit
+    add     r13, 3
+    jmp     .pd_word
+.pd_hit:
+    mov     al, [r13 + 2]
+    or      [r15 + INST_dfv], al
+    jmp     .pd_next
+.pd_ok:
+    xor     eax, eax
+    jmp     .pd_ret
+.pd_bad:
+    mov     eax, EXIT_UNEXPECTED_TOKEN
+.pd_ret:
+    pop     r13
+    ret
 
 ;*
 ; * [parser_parse_decorator]
@@ -14504,6 +14609,14 @@ enc_prefix_words:
     db "disp8", 0, 0, INSTF_DISP8
     db "disp32", 0, INSTF_DISP32
     db 0
+; APX's: 3-byte word, its APX_* bit (INST_apx)
+apx_prefix_words:
+    db "nf", 0, APX_NF
+    db "zu", 0, APX_ZU
+    db 0
+str_dfv:    db "dfv", 0
+; {dfv=...}: a flag's name (2 bytes, as written in lower case) and its bit
+dfv_words:  db "of", 8, "sf", 4, "zf", 2, "cf", 1, 0
 str_to:     db "to", 0
 msg_debug_token_kind: db "Debug token kind: ", 0
 msg_size_spec_bracket: db "Size specifier expected '[' but got kind: ", 0
