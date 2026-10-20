@@ -7912,21 +7912,21 @@ x86_enc_table:
     dw 0x0011
     db 0x00, 2, 16, 0x00      ; vcvtph2qq Z X RC
     dw 1739
-    db 27, 32, 0, 0, 0x20, 6, 0x79, 0x08
+    db 27, 33, 0, 0, 0x20, 6, 0x79, 0x08
     dw 0x0011
-    db 0xa0, 0, 8, 0x00      ; vcvtph2udq X XM32
+    db 0xa0, 0, 8, 0x00      ; vcvtph2udq X XM64
     dw 1739
-    db 28, 33, 0, 0, 0x20, 6, 0x79, 0x08
+    db 28, 34, 0, 0, 0x20, 6, 0x79, 0x08
     dw 0x0011
-    db 0xa0, 1, 16, 0x00      ; vcvtph2udq Y XM64
+    db 0xa0, 1, 16, 0x00      ; vcvtph2udq Y XM128
     dw 1739
-    db 29, 34, 0, 0, 0x20, 6, 0x79, 0x08
+    db 29, 35, 0, 0, 0x20, 6, 0x79, 0x08
     dw 0x0011
-    db 0xa0, 2, 32, 0x00      ; vcvtph2udq Z XM128
+    db 0xa0, 2, 32, 0x00      ; vcvtph2udq Z YM256
     dw 1739
-    db 29, 27, 70, 0, 0x20, 6, 0x79, 0x08
+    db 29, 28, 70, 0, 0x20, 6, 0x79, 0x08
     dw 0x0011
-    db 0x00, 2, 32, 0x00      ; vcvtph2udq Z X RC
+    db 0x00, 2, 32, 0x00      ; vcvtph2udq Z Y RC
     dw 1740
     db 27, 32, 0, 0, 0x21, 6, 0x79, 0x08
     dw 0x0011
@@ -8884,21 +8884,21 @@ x86_enc_table:
     dw 0x0011
     db 0x60, 0, 16, 0x00      ; vdpbf16ps X XM128
     dw 1790
-    db 28, 28, 77, 0, 0x22, 3, 0x52, 0x08
+    db 28, 28, 35, 0, 0x22, 3, 0x52, 0x08
     dw 0x0099
-    db 0x20, 1, 32, 0x00      ; vdpbf16ps Y Y YM128
+    db 0x20, 1, 32, 0x00      ; vdpbf16ps Y Y YM256
     dw 1790
-    db 28, 77, 0, 0, 0x22, 3, 0x52, 0x08
+    db 28, 35, 0, 0, 0x22, 3, 0x52, 0x08
     dw 0x0011
-    db 0x60, 1, 32, 0x00      ; vdpbf16ps Y YM128
+    db 0x60, 1, 32, 0x00      ; vdpbf16ps Y YM256
     dw 1790
-    db 29, 29, 79, 0, 0x22, 3, 0x52, 0x08
+    db 29, 29, 36, 0, 0x22, 3, 0x52, 0x08
     dw 0x0099
-    db 0x20, 2, 64, 0x00      ; vdpbf16ps Z Z ZM128
+    db 0x20, 2, 64, 0x00      ; vdpbf16ps Z Z ZM512
     dw 1790
-    db 29, 79, 0, 0, 0x22, 3, 0x52, 0x08
+    db 29, 36, 0, 0, 0x22, 3, 0x52, 0x08
     dw 0x0011
-    db 0x60, 2, 64, 0x00      ; vdpbf16ps Z ZM128
+    db 0x60, 2, 64, 0x00      ; vdpbf16ps Z ZM512
     dw 1791
     db 8, 0, 0, 0, 0x00, 2, 0x00, 0x04
     dw 0x0002
@@ -43584,17 +43584,17 @@ x86_enc_table:
     dw 0x0099
     db 0x00, 0, 1, 0x00      ; vsm4key4 X X XM128
     dw 7484
-    db 28, 28, 77, 0, 0x12, 3, 0xda, 0x08
+    db 28, 28, 35, 0, 0x12, 3, 0xda, 0x08
     dw 0x0099
-    db 0x00, 1, 1, 0x00      ; vsm4key4 Y Y YM128
+    db 0x00, 1, 1, 0x00      ; vsm4key4 Y Y YM256
     dw 7485
     db 27, 27, 34, 0, 0x13, 3, 0xda, 0x08
     dw 0x0099
     db 0x00, 0, 1, 0x00      ; vsm4rnds4 X X XM128
     dw 7485
-    db 28, 28, 77, 0, 0x13, 3, 0xda, 0x08
+    db 28, 28, 35, 0, 0x13, 3, 0xda, 0x08
     dw 0x0099
-    db 0x00, 1, 1, 0x00      ; vsm4rnds4 Y Y YM128
+    db 0x00, 1, 1, 0x00      ; vsm4rnds4 Y Y YM256
     dw 7486
     db 0, 0, 0, 0, 0x02, 2, 0x01, 0xc6
     dw 0x0000
