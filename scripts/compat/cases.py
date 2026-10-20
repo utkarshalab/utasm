@@ -3212,3 +3212,47 @@ TYPED_STRUC_CASES = [
     ("a number for the type", "mov eax, [rbx:5].len\n", None, "unexpected token"),
     ("no term before it", "mov eax, [rbx + :PACKET].len\n", None, "expression syntax error"),
 ]
+# utasm's namespaces and modules (middle/semantic/namespace.s): name, the
+# files ({name: text}, t.s assembled), the bytes (-f bin), or None and the
+# error it must give
+NS_NET = ("module net\nexport send, MTU\nMTU equ 1500\nsend:\n    call helper\n    call later\n    ret\n"
+          "helper: ret\n")
+NS_CASES = [
+    ("names inside, outside", {"t.s": "bits 64\nlog: ret\nnamespace net\nsend: call ::log\ncall helper\n"
+                                      "helper: ret\nendnamespace\ncall net::send\n"},
+     "c3e8faffffffe800000000c3e8f0ffffff", None),
+    ("innermost first, then out", {"t.s": "bits 64\nnamespace a\nf: ret\nnamespace b\ng: call f\nendnamespace\n"
+                                          "endnamespace\ncall a::b::g\n"}, "c3e8faffffffe8f6ffffff", None),
+    ("used before defined", {"t.s": "bits 64\nnamespace a\nv: dq w\nw: dd 7\nendnamespace\ndq a::v\n"},
+     "080000000000000007000000" + "00" * 8, None),
+    ("falls back outside", {"t.s": "bits 64\nnamespace a\ncall x\nendnamespace\nx: ret\n"}, "e800000000c3", None),
+    ("equ", {"t.s": "bits 64\nX equ 1\nnamespace a\nX equ 2\nmov eax, X\nendnamespace\nmov ecx, X\n"
+                    "mov edx, a::X\n"}, "b802000000b901000000ba02000000", None),
+    ("locals", {"t.s": "bits 64\nnamespace a\nf:\n.l: jmp .l\nendnamespace\njmp a::f.l\n"}, "ebfeebfc", None),
+    ("proc", {"t.s": "bits 64\nnamespace a\nproc f\nret\nendproc\nendnamespace\ncall a::f\n"}, "c3e8faffffff", None),
+    ("struc", {"t.s": "bits 64\nnamespace n\nstruc P\n.a: resd 1\n.b: resw 1\nendstruc\nmov ax, [rbx:P].b\n"
+                      "mov ecx, P_size\nendnamespace\nmov ax, [rdi:n::P].b\nmov ecx, n::P_size\n"},
+     "668b4304b906000000668b4704b906000000", None),
+    ("modules", {"net.s": NS_NET, "fs.s": "module fs\nexport read\nread: call net::send\nret\n",
+                 "t.s": "bits 64\n%include \"net.s\"\n%include \"fs.s\"\ncall fs::read\nmov eax, net::MTU\n"
+                        "later: ret\n"},
+     "e806000000e812000000c3c3e8efffffffc3e8f5ffffffb8dc050000c3", None),
+    ("a module in the main file", {"t.s": "bits 64\nmodule m\nexport f\nf: call g\ng: ret\n"}, "e800000000c3", None),
+    ("private in a namespace, inside", {"t.s": "bits 64\nnamespace a\nprivate p\np: ret\nnamespace b\ncall p\n"
+                                               "endnamespace\nendnamespace\n"}, "c3e8faffffff", None),
+    ("a label named namespace", {"t.s": "bits 64\nnamespace:\nret\njmp namespace\n"}, "c3ebfd", None),
+    ("private from outside", {"t.s": "bits 64\nnamespace a\nprivate p\np: ret\nendnamespace\ncall a::p\n"},
+     None, "t.s:6: error: `a::p' is private"),
+    ("not exported", {"net.s": NS_NET, "t.s": "bits 64\n%include \"net.s\"\ncall net::helper\nlater: ret\n"},
+     None, "t.s:3: error: `net::helper' is private"),
+    ("taken from outside, then defined", {"t.s": "bits 64\nlog: ret\nnamespace a\ncall log\nlog: ret\n"
+                                                 "endnamespace\n"},
+     None, "t.s:4: error: `log' was taken from an outer namespace, then this one defined it"),
+    ("undefined", {"t.s": "bits 64\nnamespace a\ncall nope\nendnamespace\n"}, None, "symbol `nope' not defined"),
+    ("endnamespace alone", {"t.s": "bits 64\nendnamespace\n"}, None, "endnamespace with no namespace"),
+    ("endnamespace in a module", {"t.s": "bits 64\nmodule m\nendnamespace\n"}, None,
+     "endnamespace in a module"),
+    ("never closed", {"t.s": "bits 64\nnamespace a\nnop\n"}, None, "namespace has no endnamespace"),
+    ("export outside", {"t.s": "bits 64\nexport foo\nfoo: ret\n"}, None,
+     "export / private outside a namespace or module"),
+]
