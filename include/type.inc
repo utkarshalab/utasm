@@ -420,7 +420,8 @@ struc INST
     field sae,       1       ; 1: a {sae} before the last operand, taken out
                              ;   ("vcmppd k1, zmm2, zmm3, {sae}, 5": dispatch.s)
     field op_id,     2       ; mnemonic ID
-    field pad1,      2       ; explicit padding to align next field to 8-byte boundary
+    field apx,       1       ; APX_*: {nf}, {zu}, {dfv=...} written
+    field dfv,       1       ; {dfv=of,sf,zf,cf}: OF 8, SF 4, ZF 2, CF 1 (ccmp, ctest)
     field prefixes,  4       ; instruction prefixes (up to 4 slots)
     field asize,     1       ; a16 / a32 / a64 written: 16, 32, 64 (0: none)
     field osize,     1       ; o16 / o32 / o64 written: 16, 32, 64 (0: none)
