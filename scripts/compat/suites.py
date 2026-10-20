@@ -328,7 +328,12 @@ def disasm(utasm, verbose=False, objects=()):
             return s
         bad = collections.Counter()
         example = {}
-        for f in list(objects) + [obj]:
+        # APX's forms, assembled by utasm (NASM's object would do as well)
+        apx_src = os.path.join(d, "apx.s")
+        open(apx_src, "w").write(cases.DISASM_APX)
+        apx_obj = os.path.join(d, "apx.o")
+        extra = [apx_obj] if run([utasm, "-f", "elf64", apx_src, "-o", apx_obj]).returncode == 0 else []
+        for f in list(objects) + [obj] + extra:
             r = run([utasm, "--disasm", f], timeout=120)
             if r.returncode != 0:
                 s.result("disasm " + os.path.basename(f), False, "utasm failed: " + first_line(r))
