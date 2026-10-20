@@ -155,6 +155,30 @@ mov [rax], ebx          ; 32-bit (ebx is 32-bit)
 mov [rax], rbx          ; 64-bit (rbx is 64-bit)
 ```
 
+As in NASM 3, some operand sizes are taken as the form that does the
+same thing:
+
+```asm
+movzx rbx, r9d          ; mov ebx, r9d (8B: a 32-bit write clears the rest)
+movzx bx, r9d           ; mov bx, r9w (66 8B)
+movzx ax, dx            ; 66 0F B7 - and movsx ax, dx: 66 0F BF
+movsx ebx, r9d          ; movsxd ebx, r9d (63, no REX.W)
+movsx eax, ax           ; cwde (98) under -Ox; cbw, cdqe likewise
+crc32 ebx, r9           ; the source's size is the operation's: REX.W F1
+lar rbx, r9             ; lar ebx, r9d (no REX.W; also lsl, str, sldt, smsw)
+andn ebx, r9d           ; andn ebx, ebx, r9d (bextr, bzhi, mulx, pdep,
+                        ; pext, sarx, shlx, shrx likewise)
+kmov k1, eax            ; kmovd (by the register's size; "kmov byte k1,
+                        ; eax" is kmovb)
+movzx bx, [rax]         ; an error: a byte or a word?
+```
+
+`xchg` of two registers puts the first in ModRM's reg field (`xchg al,
+cl` is `86 C1`), and prefixes come in NASM 3's order: segment, `67`,
+`lock`, `66`, `rep` (`lock add [eax], bx` is `67 F0 66 01 18`, `rep
+movsw` is `66 F3 A5`). An address size that contradicts a count register
+(`a16 jecxz`, `a32 loop l, rcx`) is an error.
+
 ---
 
 ## Registers
@@ -1095,7 +1119,14 @@ makes of it:
   wrt ..plt`;
 - a segment the address uses anyway (`ds:` with most bases, `ss:` with
   `rbp` or `rsp`) is left out: `BYTE PTR ds:0` is `[0]`, `ss:[rbp]` is
-  `[rbp]`; `ds:[rbp]` and `ss:[rax]` keep theirs.
+  `[rbp]`; `ds:[rbp]` and `ss:[rax]` keep theirs;
+- prefixes are written in GNU `as`'s order - segment, `67`, `66`, `rep`,
+  `lock` (`lock add [eax], bx` is `67 66 F0 01 18`; NASM 3's is `67 F0
+  66`), an AT&T prefix word (`rep`, `lock`, `addr32`, `%fs` of a string
+  instruction) with the instruction's own;
+- `mov rax, 5` is the `REX.W C7` form GNU `as` writes, not NASM's `mov eax,
+  5`; `pextrw` / `pmovmskb` / `lar` / `lsl` / `str` / `sldt` into a 64-bit
+  register take no `REX.W`, as GNU `as`'s.
 
 In GNU's Intel syntax also: `st(1)` is `st1` and `st` alone `st0`;
 `XMMWORD PTR`, `YMMWORD PTR`, `ZMMWORD PTR` and `MMWORD PTR` are `oword`,
