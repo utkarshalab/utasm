@@ -439,6 +439,8 @@ parser_parse_instruction:
             mov     rsi, [r12 + TOKEN_value]
             cmp     byte [rsi], '.'
             je      .equ_define
+            xor     edx, edx
+            call    ns_qualify                 ; (net::x inside net)
             mov     rdi, [rbx + PREP_ctx]
             call    symbol_find
             test    rax, rax
@@ -4291,6 +4293,9 @@ parser_evaluate_factor:
         jmp     .done
 .not_masm_word:
         pop     rsi
+        ; inside namespaces: the innermost's that has it (namespace.s)
+        extern  ns_ref
+        call    ns_ref
         ; recorded under the name it resolved to (".x" under its global
         ; label, "1f" as the label it means), for an expression kept
         mov     edi, 1
@@ -4860,6 +4865,8 @@ parser_parse_mem_operand:
     cmp     byte [rdx + TOKEN_kind], TOK_IDENT
     jne     .error
     mov     rsi, [rdx + TOKEN_value]
+    lea     rdx, [rel str_size_suffix]
+    call    ns_ref_suffix
     call    parser_is_struc
     jz      .typed_end
     mov     rdi, rsi
@@ -5056,6 +5063,8 @@ parser_parse_mem_operand:
             cmp     byte [rdx + TOKEN_kind], TOK_IDENT
             jne     .typed_bad
             mov     rsi, [rdx + TOKEN_value]
+            lea     rdx, [rel str_size_suffix]
+            call    ns_ref_suffix
             call    parser_is_struc
             jnz     .typed_not
             mov     [rel mem_struc], rsi
@@ -7532,6 +7541,13 @@ parser_parse_struc:
 
     ; Build struct-name string ("StructName", null-terminated from token)
     mov     r13, [r15 + TOKEN_value]  ; r13 = struct name ptr
+    test    r13, r13
+    jz      .struc_named
+    mov     rsi, r13
+    xor     edx, edx
+    call    ns_qualify                     ; (net::PACKET inside net)
+    mov     r13, rsi
+.struc_named:
 
     ; the struct itself: kind=SYM_STRUCT, defined here as in NASM (its
     ; place in .symtab under -g: before its fields); its size at endstruc
@@ -8036,6 +8052,10 @@ parser_parse_struc:
 global parser_define_label
 parser_define_label:
     prologue
+    ; inside a namespace: its full name, net::x (middle/semantic/namespace.s)
+    extern  ns_qualify
+    mov     edx, 1
+    call    ns_qualify
     push    rbx
     push    rsi
     ; inside a proc: a place paths meet (middle/semantic/proc.s)
@@ -8590,6 +8610,16 @@ parser_handle_pseudo_op:
     mov     rax, rdx
     jmp     .check_handler_result
 .not_proc:
+    ; namespace / endnamespace / module / export / private
+    ; (middle/semantic/namespace.s)
+    extern  ns_word
+    mov     rdi, r12
+    call    ns_word
+    test    eax, eax
+    jz      .not_ns
+    mov     rax, rdx
+    jmp     .check_handler_result
+.not_ns:
     mov     rdi, r12
     lea     rsi, [rel str_absolute]
     call    str_cmp_kw
@@ -11712,6 +11742,11 @@ parser_is_mnemonic:
     pop     r14
     pop     r13
     ret
+
+extern  ns_ref_suffix
+[SECTION .rodata]
+str_size_suffix: db "_size", 0
+[SECTION .text]
 
 ; parser_is_struc: ZF = 1 when rsi names a struc (NASM's: NAME_size is
 ; defined with it). Preserves rsi, rbx, r12-r15.
