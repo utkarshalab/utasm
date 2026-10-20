@@ -124,7 +124,7 @@ amd64_check_shape:
     mov     r8d, K_X
     cmp     eax, OP_REG
     jne     .not_reg
-    cmp     byte [rdi + OPERAND_reg], 16
+    cmp     byte [rdi + OPERAND_reg], 32
     jae     .put
     mov     r8d, K_R
     jmp     .put
