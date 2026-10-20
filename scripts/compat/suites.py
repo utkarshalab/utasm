@@ -333,6 +333,12 @@ def disasm(utasm, verbose=False, objects=()):
         open(apx_src, "w").write(cases.DISASM_APX)
         apx_obj = os.path.join(d, "apx.o")
         extra = [apx_obj] if run([utasm, "-f", "elf64", apx_src, "-o", apx_obj]).returncode == 0 else []
+        # the forms the generated tables read (AVX-512 FP16 / BF16, the
+        # gathers, FMA4, XOP, AMX ...): disasm_gen.s, assembled by utasm
+        gen_obj = os.path.join(d, "gen.o")
+        if run([utasm, "-f", "elf64", os.path.join(os.path.dirname(os.path.abspath(__file__)), "disasm_gen.s"),
+                "-o", gen_obj]).returncode == 0:
+            extra.append(gen_obj)
         for f in list(objects) + [obj] + extra:
             r = run([utasm, "--disasm", f], timeout=120)
             if r.returncode != 0:
