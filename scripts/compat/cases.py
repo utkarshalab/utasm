@@ -3427,3 +3427,52 @@ ISA_ERRORS += [
     ("tdpfp16ps tmm4, tmm7, tmm4", "the three tile registers must all differ"),
     ("tdpbf8ps tmm3, tmm3, tmm3", "the three tile registers must all differ"),
 ]
+ISA_CASES += [  # AMD privileged / SEV-SNP, TDX, notrack, branch hints, APX setzu / imulzu, udb, xstorerng (GNU as / objdump 2.47)
+    ('invlpgb', '0f01fe', None),
+    ('tlbsync', '0f01ff', None),
+    ('rdpru', '0f01fd', None),
+    ('mcommit', 'f30f01fa', None),
+    ('psmash', 'f30f01ff', None),
+    ('rmpupdate', 'f20f01fe', None),
+    ('rmpquery', 'f30f01fd', None),
+    ('rmpadjust', 'f30f01fe', None),
+    ('pvalidate', 'f20f01ff', None),
+    ('tdcall', '660f01cc', None),
+    ('seamcall', '660f01cf', None),
+    ('seamret', '660f01cd', None),
+    ('seamops', '660f01ce', None),
+    ('notrack jmp rax', '3effe0', None),
+    ('notrack call qword [rax]', '3eff10', None),
+    ('setzue al', '62f47f1844c0', None),
+    ('setzune r20b', '62fc7f1845c4', None),
+    ('imulzu ax, bx, 5', '62f47d186bc305', None),
+    ('udb', 'd6', None),
+    ('xstorerng', '0fa7c0', None),
+    ('invlpgb rax, ecx, edx', '0f01fe', None),
+    ('invlpgb eax, ecx, edx', '670f01fe', None),
+    ('psmash eax', '67f30f01ff', None),
+    ('psmash rax', 'f30f01ff', None),
+    ('hnt jne $+2', '2e75ff', None),
+    ('setzunle r31b', '62dc7f184fc7', None),
+    ('imulzu r20w, r21w, 0x1234', '62ec7d1869e53412', None),
+]
+ISA_CASES += [  # NASM 3.01's spellings and forms (its bytes): setCCzu, and
+    # setcc with a 32- / 64-bit register - setzucc, not setcc of the low byte
+    ("setezu al", "62f47f1844c0", None),
+    ("setnlezu r31b", "62dc7f184fc7", None),
+    ("sete eax", "62f47f1844c0", None),
+    ("sete rax", "62f47f1844c0", None),
+    ("setne r20d", "62fc7f1845c4", None),
+    ("{zu} sete al", "62f47f1844c0", None),
+    ("sete al", "0f94c0", None),
+    ("sete byte [rax]", "0f9400", None),
+]
+ISA_ERRORS += [
+    ("sete ax", "invalid combination of opcode and operands"),
+    ("sete r9w", "invalid combination of opcode and operands"),
+    ("tdcall rax", "invalid combination of opcode and operands"),
+    ("invlpgb rax, edx, ecx", "invalid combination of opcode and operands"),
+]
+REJECT_CASES += [
+    ("udb outside 64-bit mode", "bin", "bits 32\nudb\n"),
+]
