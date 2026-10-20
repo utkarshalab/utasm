@@ -149,6 +149,40 @@ global amd64_apx_claim
 amd64_apx_claim:
     mov     byte [rel amd64_apx_mine], 0
     movzx   eax, word [r12 + INST_op_id]
+    ; setzuCC / setCCzu (7800 + cc) and imulzu (7816): setcc / imul with
+    ; {zu}, by name
+    cmp     eax, 7800
+    jb      .not_zu_name
+    cmp     eax, 7816
+    ja      .not_zu_name
+    or      byte [r12 + INST_apx], APX_ZU
+    sub     eax, 7800 - 4016               ; setcc's (4016 + cc)
+    cmp     eax, 4032
+    jne     .zu_name
+    mov     eax, 1276                      ; imul
+.zu_name:
+    mov     [r12 + INST_op_id], ax
+.not_zu_name:
+    ; "sete eax", "sete rax": NASM 3's setzue - the register's upper bits
+    ; zeroed, not sete al (what utasm wrote, silently)
+    cmp     eax, 4016
+    jb      .not_set_wide
+    cmp     eax, 4031
+    ja      .not_set_wide
+    cmp     byte [r12 + INST_nops], 1
+    jne     .not_set_wide
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_REG
+    jne     .not_set_wide
+    cmp     byte [r12 + INST_op0 + OPERAND_size], 16
+    je      .set_word                      ; ("sete ax": no form)
+    cmp     byte [r12 + INST_op0 + OPERAND_size], 32
+    jb      .not_set_wide
+    or      byte [r12 + INST_apx], APX_ZU
+    jmp     .not_set_wide
+.set_word:
+    mov     eax, EXIT_ENCODE_FAIL
+    ret
+.not_set_wide:
     lea     rsi, [rel apx_table]
 .find:
     movzx   ecx, word [rsi]
@@ -846,6 +880,15 @@ amd64_apx_encode:
     test    eax, eax
     jz      .setcc_size
     cmp     eax, 8
+    je      .setcc_size
+    ; a 32- / 64-bit register: with ZU only (its upper bits zeroed)
+    test    byte [r12 + INST_apx], APX_ZU
+    jz      .fail
+    cmp     byte [r14 + OPERAND_kind], OP_REG
+    jne     .fail
+    cmp     eax, 32
+    je      .setcc_size
+    cmp     eax, 64
     jne     .fail
 .setcc_size:
     mov     byte [rel apx_size], 8
