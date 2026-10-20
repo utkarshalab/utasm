@@ -3134,3 +3134,12 @@ GAS_CASES += [
                  "ctestnz {dfv=cf} $5, %ecx\npush2 %rbx, %rax\npop2 %rbx, %rax\npushp %rax\npopp %rbx\n"
                  "{nf} andn %rcx, %rbx, %rax\n{evex} addq %rbx, %rax\n"),
 ]
+# the disassembler on APX (suites.disasm): the APX probes, but for what it
+# leaves to objdump - mov to / from cr and a segment register (none of
+# its own), AMX, and xchg r16-r31, rax (objdump: "{rex2 0x18} nop")
+DISASM_APX = "bits 64\n" + "".join(
+    l + "\n" for k in ("apx_egpr_rex2", "apx_egpr_memory", "apx_egpr_0f_map", "apx_egpr_evex", "apx_vex_promoted",
+                       "apx_ndd_alu", "apx_nf", "apx_ndd_more", "apx_ccmp_cfcmov", "apx_new")
+    for l in BIN_PROBES[k].splitlines()
+    if l and not l.startswith("bits") and "cr0" not in l and "tile" not in l and not l.startswith("xchg r16, rax")
+    and "ds," not in l and ", ds" not in l)
