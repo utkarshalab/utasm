@@ -914,6 +914,23 @@ VCVTPD2PH	xmmreg|mask|z,xmmrm128|b64	[rm:fv: evex.128.66.map5.w1 5a /r]	AVX512FP
 VCVTPD2PH	xmmreg|mask|z,ymmrm256|b64	[rm:fv: evex.256.66.map5.w1 5a /r]	AVX512FP16
 VCVTPD2PH	xmmreg|mask|z,zmmrm512|b64|er	[rm:fv: evex.512.66.map5.w1 5a /r]	AVX512FP16
 V4FMADDSS	xmmreg|mask|z,xmmreg|rs4,mem128	[rvm:m128:evex.dds.lig.f2.0f38.w0 9b /r]	AVX5124FMAPS
+INVLPGB	void	[	np 0f 01 fe]	AMD,PRIV
+INVLPGB	reg_rax,reg_ecx,reg_edx	[---:	a64 np 0f 01 fe]	AMD,PRIV,ND,LONG
+INVLPGB	reg_eax,reg_ecx,reg_edx	[---:	a32 np 0f 01 fe]	AMD,PRIV,ND
+TLBSYNC	void	[	np 0f 01 ff]	AMD,PRIV
+RDPRU	void	[	np 0f 01 fd]	AMD
+MCOMMIT	void	[	f3 0f 01 fa]	AMD
+PSMASH	void	[	f3 0f 01 ff]	AMD,PRIV
+PSMASH	reg_rax	[-:	a64 f3 0f 01 ff]	AMD,PRIV,ND,LONG
+PSMASH	reg_eax	[-:	a32 f3 0f 01 ff]	AMD,PRIV,ND
+RMPUPDATE	void	[	f2 0f 01 fe]	AMD,PRIV
+RMPQUERY	void	[	f3 0f 01 fd]	AMD,PRIV
+TDCALL	void	[	66 0f 01 cc]	TDX,PRIV
+SEAMCALL	void	[	66 0f 01 cf]	TDX,PRIV
+SEAMRET	void	[	66 0f 01 cd]	TDX,PRIV
+SEAMOPS	void	[	66 0f 01 ce]	TDX,PRIV
+UDB	void	[	d6]	X86_64,LONG
+XSTORERNG	void	[	0f a7 c0]	PENT,CYRIX
 V4FNMADDSS	xmmreg|mask|z,xmmreg|rs4,mem128	[rvm:m128:evex.dds.lig.f2.0f38.w0 ab /r]	AVX5124FMAPS
 '''
 
