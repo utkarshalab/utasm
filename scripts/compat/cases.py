@@ -3089,3 +3089,15 @@ BIN_PROBES.update({
     "indirect_word_64": "bits 64\njmp ax\njmp word [rax]\no16 jmp ax\no16 bnd jmp ax\njmp r16\ncall r9\n",
 })
 MODE_LINES += ["call ax", "jmp eax", "call eax", "call word [rbx]", "jmp dword [ebx]"]
+# batch 68: r16-r31 in EVEX, VEX forms promoted to EVEX (APX)
+BIN_PROBES.update({
+    "apx_egpr_evex": "bits 64\nvpaddd xmm0, xmm1, [r16]\nvpaddd xmm16, xmm1, [r17+r18*2]\nvpextrq r16, xmm0, 1\n"
+                     "vmovd xmm0, r16d\nvcvtsi2sd xmm0, xmm1, r16\nvpbroadcastd xmm0, r16d\n"
+                     "vmovdqu64 zmm0, [r16+r17]\nvaesenc xmm0, xmm1, [r16]\n",
+    "apx_vex_promoted": "bits 64\nkmovq k1, r16\nkmovd r17d, k2\nkmovw k1, [r16+8]\nkmovb [r20], k3\n"
+                        "ldtilecfg [r16]\ntileloadd tmm0, [r16+r17]\ntilestored [r16+r17], tmm1\n"
+                        "andn r16, rbx, rcx\nrorx r16, rax, 3\nshlx r16, rax, rbx\nmulx r16, rax, rbx\n"
+                        "pdep r16, rax, rbx\nbzhi r16d, r19d, r17d\nblsr r16d, r17d\n",
+    "rdrand_rdseed": "bits 64\nrdrand rax\nrdseed ecx\nrdrand r9w\n",
+})
+MODE_LINES += ["rcl rax", "vmovdqu xmm0, [r16]"]
