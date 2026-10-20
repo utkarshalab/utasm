@@ -17,16 +17,103 @@ d4_nd:      resb 1
 d4_nf:      resb 1
 d4_sc:      resb 1              ; P2's low 4 bits: ccmp / ctest's condition
 d4_osz:     resb 1              ; the operation's size
+d4_map7:    resb 1              ; EVEX map 7 (MSR_IMM, USER_MSR)
 dx_evexp:   resb 1              ; "{evex} " before the mnemonic
 [SECTION .text]
+
+; dx_vex7: VEX map 7 (C4, R X B 00111 read: edx the REX they make, al the
+; W vvvv L pp byte) - rdmsr / wrmsrns / urdmsr / uwrmsr with an imm32
+dx_vex7:
+    push    rbx
+    mov     [rel dx_rex], dl
+    mov     byte [rel dx_rex4], 0
+    test    al, 0x80
+    jz      .w0
+    or      byte [rel dx_rex], 8
+.w0:
+    test    al, 4
+    jnz     dx_evex4.fail                  ; (L 0)
+    mov     ebx, eax
+    shr     ebx, 3
+    not     ebx
+    and     ebx, 15
+    mov     [rel d4_vvvv], bl
+    and     eax, 3
+    mov     [rel d4_pp], al
+    mov     byte [rel d4_nd], 0
+    mov     byte [rel d4_nf], 0
+    call    dx_rd8                         ; the opcode
+    mov     [rel dx_op], al
+    cmp     byte [rel dx_fail], 0
+    jne     dx_evex4.fail
+    jmp     dx_evex4.map7
+
+; dx_umsr: F2 / F3 0F 38 F8 with a register (the opcode read, REX in
+; dx_rex): urdmsr r64, r64 (rm, reg) / uwrmsr r64, r64 (reg, rm). EAX = 1
+; when it is one (printed; dx_fail if it went wrong), 0: not one
+dx_umsr:
+    xor     eax, eax
+    cmp     byte [rel dx_repne], 0
+    setne   cl
+    cmp     byte [rel dx_rep], 0
+    setne   ch
+    cmp     cl, ch
+    je      .ret                           ; (none, or both)
+    push    rcx
+    call    dx_peek
+    pop     rcx
+    and     eax, 0xC0
+    cmp     eax, 0xC0
+    mov     eax, 0
+    jne     .ret
+    mov     byte [rel dx_rep], 0
+    mov     byte [rel dx_repne], 0
+    mov     byte [rel dx_osz], 64
+    push    rcx
+    call    dx_modrm_decode
+    pop     rcx
+    lea     rsi, [rel s4_urdmsr]
+    test    cl, cl
+    jnz     .name
+    lea     rsi, [rel s4_uwrmsr]
+.name:
+    push    rcx
+    mov     [rel dx_mnem], rsi
+    mov     esi, 1
+    call    dx_mnemonic
+    pop     rcx
+    mov     edi, 64
+    test    cl, cl
+    jz      .uwr
+    call    dx_rm
+    call    dx_sep
+    mov     edi, 64
+    call    dx_greg
+    jmp     .yes
+.uwr:
+    call    dx_greg
+    call    dx_sep
+    mov     edi, 64
+    call    dx_rm
+.yes:
+    mov     eax, 1
+.ret:
+    ret
 
 ; dx_evex4: P0 in al (62 and P0 read). Decodes and prints the
 ; instruction; dx_fail when it is none.
 dx_evex4:
     push    rbx
-    ; P0: R3' X3' B3' R4' B4 100
+    ; P0: R3' X3' B3' R4' B4 100 (or 111: map 7)
+    mov     byte [rel d4_map7], 0
     test    al, 3
-    jnz     .fail                          ; (map 5 / 6: not here)
+    jz      .map4
+    mov     ecx, eax
+    and     ecx, 7
+    cmp     ecx, 7
+    jne     .fail                          ; (map 5 / 6: not here)
+    mov     byte [rel d4_map7], 1
+.map4:
     mov     edx, 0x40
     test    al, 0x80
     jnz     .p0_x
@@ -91,6 +178,8 @@ dx_evex4:
     mov     [rel dx_op], al
     cmp     byte [rel dx_fail], 0
     jne     .fail
+    cmp     byte [rel d4_map7], 0
+    jne     .map7
     ; the operation's size: W 64, 66 16, else 32
     mov     ecx, 32
     cmp     byte [rel d4_pp], 1
@@ -309,6 +398,82 @@ dx_evex4:
 .imm8u:
     call    dx_rd8
     movzx   esi, al
+    jmp     dx_imm
+
+; ---- F8 with a register: urdmsr (F2) r64, r64 (rm, reg) / uwrmsr (F3)
+; r64, r64 (reg, rm) - USER_MSR ----
+.f8_reg:
+    cmp     byte [rel dx_op], 0xF8
+    jne     .fail
+    mov     byte [rel d4_osz], 64
+    mov     byte [rel dx_osz], 64
+    cmp     byte [rel d4_pp], 3
+    je      .urdmsr_rr
+    cmp     byte [rel d4_pp], 2
+    jne     .fail
+    lea     rsi, [rel s4_uwrmsr]
+    call    .name
+    call    .greg_osz
+    call    dx_sep
+    call    .rm_osz
+    jmp     .done
+.urdmsr_rr:
+    lea     rsi, [rel s4_urdmsr]
+    call    .name
+    call    .rm_osz
+    call    dx_sep
+    call    .greg_osz
+    jmp     .done
+
+; ---- map 7 (VEX / EVEX): F6 rdmsr (F2) r64, imm32 / wrmsrns (F3) imm32,
+; r64; F8 urdmsr (F2) r64, imm32 / uwrmsr (F3) imm32, r64 - /0, W 0 ----
+.map7:
+    test    byte [rel dx_rex], 8
+    jnz     .fail
+    cmp     byte [rel d4_vvvv], 0
+    jne     .fail
+    cmp     byte [rel d4_nd], 0
+    jne     .fail
+    cmp     byte [rel d4_nf], 0
+    jne     .fail
+    cmp     byte [rel d4_pp], 2
+    jb      .fail
+    call    dx_peek
+    and     eax, 0xF8
+    cmp     eax, 0xC0
+    jne     .fail                          ; (a register, /0)
+    mov     byte [rel d4_osz], 64
+    mov     byte [rel dx_osz], 64
+    mov     edi, 1
+    call    .begin
+    cmp     byte [rel dx_fail], 0
+    jne     .fail
+    lea     rsi, [rel s4_rdmsr]
+    lea     rbx, [rel s4_wrmsrns]
+    cmp     byte [rel dx_op], 0xF6
+    je      .m7_name
+    lea     rsi, [rel s4_urdmsr]
+    lea     rbx, [rel s4_uwrmsr]
+    cmp     byte [rel dx_op], 0xF8
+    jne     .fail
+.m7_name:
+    cmp     byte [rel d4_pp], 3
+    je      .m7_reg_imm
+    mov     rsi, rbx
+    call    .name
+    call    .imm32u
+    call    dx_sep
+    call    .rm_osz
+    jmp     .done
+.m7_reg_imm:
+    call    .name
+    call    .rm_osz
+    call    dx_sep
+    call    .imm32u
+    jmp     .done
+.imm32u:
+    call    dx_rd32
+    mov     esi, eax
     jmp     dx_imm
 
 .fail:
@@ -696,7 +861,7 @@ dx_evex4:
     cmp     byte [rel dx_fail], 0
     jne     .fail
     cmp     byte [rel dx_mod], 3
-    je      .fail
+    je      .f8_reg
     mov     rsi, rbx
     call    .name
     mov     edi, 64
@@ -997,6 +1162,10 @@ s4_invept:  db "invept", 0
 s4_invvpid: db "invvpid", 0
 s4_invpcid: db "invpcid", 0
 s4_movdir64b: db "movdir64b", 0
+s4_rdmsr:   db "rdmsr", 0
+s4_wrmsrns: db "wrmsrns", 0
+s4_urdmsr:  db "urdmsr", 0
+s4_uwrmsr:  db "uwrmsr", 0
 s4_enqcmd:  db "enqcmd", 0
 s4_enqcmds: db "enqcmds", 0
 s4_movdiri: db "movdiri", 0
