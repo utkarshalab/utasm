@@ -685,6 +685,13 @@ code_table:
     code_msg EXIT_PROC_OPEN,         m_proc_open
     code_msg EXIT_NOT_STRUC,         m_not_struc, t_not_struc
     code_msg EXIT_FIELD_SIZE,        m_field_size, t_field_size
+    code_msg EXIT_NS_NO_NS,          m_ns_no_ns
+    code_msg EXIT_NS_MODULE,         m_ns_module
+    code_msg EXIT_NS_OUTSIDE,        m_ns_outside
+    code_msg EXIT_NS_DEPTH,          m_ns_depth
+    code_msg EXIT_NS_OPEN,           m_ns_open
+    code_msg EXIT_NS_PRIVATE,        m_ns_private, t_ns_private
+    code_msg EXIT_NS_SHADOW,         m_ns_shadow, t_ns_shadow
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -929,6 +936,15 @@ m_not_struc:    db "not a structure", 0
 t_not_struc:    db "`^' is not a structure (one defined before this line)", 0
 m_field_size:   db "the size written is not the field's", 0
 t_field_size:   db "the size written is not that of the field `^'", 0
+m_ns_no_ns:     db "endnamespace with no namespace", 0
+m_ns_module:    db "endnamespace in a module (a module ends with its file)", 0
+m_ns_outside:   db "export / private outside a namespace or module", 0
+m_ns_depth:     db "namespaces nested too deep", 0
+m_ns_open:      db "namespace has no endnamespace", 0
+m_ns_private:   db "private name used from outside", 0
+t_ns_private:   db "`^' is private: used from outside its namespace / module", 0
+m_ns_shadow:    db "name taken from an outer namespace, then defined inside", 0
+t_ns_shadow:    db "`^' was taken from an outer namespace, then this one defined it (write ::^, or define it before)", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
 t_multi:        db "symbol `^' defined more than once", 0
