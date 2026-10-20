@@ -958,6 +958,7 @@ parser_parse_operand:
     push    rbx
     push    r12
     push    r13
+    mov     qword [rel mem_struc], 0       ; (none left by an operand in error)
     
     ; one of OPERAND_RING, cleared: the caller copies it into its INST
     mov     eax, [rel opnd_ring_next]
@@ -1556,6 +1557,9 @@ parser_parse_operand:
     jmp     .success
 
 .success:
+    ; "[rbx:PACKET].len", sized or not: the field after the bracket
+    call    parser_typed_field
+    check_err
     ; AVX-512 decorators after a register or memory operand: {k1} {z} {1to16}
     mov     rax, [rbx + PREP_ctx]
     cmp     byte [rax + ASMCTX_target], TARGET_AARCH64
@@ -4639,6 +4643,8 @@ parser_parse_mem_operand:
     je      .not_mib
     or      byte [r12 + OPERAND_flags], OP_FLAG_NOSPLIT
 .not_mib:
+    mov     qword [rel mem_struc], 0       ; ("[rbx:PACKET]": parser_typed_field)
+    mov     byte [rel mem_typed_next], 0
     mov     byte [rel mem_scaling], 1      ; "4*rcx": parser_evaluate_term
     mov     byte [rel mem_expect_term], 1  ; (a term must come)
     xor     eax, eax
@@ -4839,6 +4845,32 @@ parser_parse_mem_operand:
         jmp     .loop
         ENDIF
 
+    ; "[rbx + rcx*8:PACKET]": the address typed by the struc at its end
+    cmp     al, TOK_COLON
+    jne     .not_typed_end
+    cmp     byte [rel gas_names], 0
+    jne     .not_typed_end
+    mov     eax, EXIT_INVALID_EXPR
+    cmp     byte [rel mem_expect_term], 0
+    jne     .error
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    check_err_to .error
+    mov     eax, EXIT_UNEXPECTED_TOKEN
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .error
+    mov     rsi, [rdx + TOKEN_value]
+    call    parser_is_struc
+    jz      .typed_end
+    mov     rdi, rsi
+    call    error_set_subject
+    mov     eax, EXIT_NOT_STRUC
+    jmp     .error
+.typed_end:
+    mov     [rel mem_struc], rsi
+    jmp     .loop
+.not_typed_end:
+
     ; NASM's split form "[eax+8, ecx*4]" (the index after the comma; the
     ; MIB operand of tileloadd and bndldx): as "+", but a register after
     ; the comma is the index even times 1 ("[3, 1*r12]": r12 no base)
@@ -4900,12 +4932,32 @@ parser_parse_mem_operand:
         mov     al, [r13 + TOKEN_kind]
         ENDIF
 
-    ; "fs:" lexes as a label: inside brackets it is a segment override
+    ; "fs:" lexes as a label: inside brackets it is a segment override -
+    ; or "rbx:" a register typed by the struc after it ("[rbx:PACKET]")
     IF al, e, TOK_LABEL
         mov     rsi, [r13 + TOKEN_value]
         call    parser_seg_override
-        check_err_to .error
-        jmp     .loop
+        test    rax, rax
+        jz      .loop
+        cmp     byte [rel gas_names], 0
+        jne     .error
+        push    rax
+        call    parser_get_arch_tables
+        mov     rdi, rdx
+        mov     rsi, [r13 + TOKEN_value]
+        call    parser_is_register
+        cmp     rax, ERR
+        pop     rcx
+        je      .label_not_reg
+        cmp     al, 32
+        jae     .label_not_reg
+        mov     byte [r13 + TOKEN_kind], TOK_IDENT
+        mov     byte [rel mem_typed_next], 1
+        mov     al, TOK_IDENT
+        jmp     .parse_item
+    .label_not_reg:
+        mov     rax, rcx
+        jmp     .error
         ENDIF
 
     IF al, e, TOK_MINUS
@@ -4981,6 +5033,43 @@ parser_parse_mem_operand:
             call    preprocessor_next_token ; consume ':'
             jmp     .loop
         .not_seg:
+            ; "[rbx:PACKET]": a general register the address of a struc
+            ; (the field after the bracket: parser_typed_field)
+            cmp     al, 32
+            jae     .not_typed
+            cmp     byte [rel gas_names], 0
+            jne     .not_typed
+            push    rax
+            cmp     byte [rel mem_typed_next], 0
+            jne     .typed_name                    ; ("rbx:" lexed its colon)
+            mov     rdi, rbx
+            call    preprocessor_peek_token
+            cmp     byte [rdx + TOKEN_kind], TOK_COLON
+            jne     .typed_none
+            mov     rdi, rbx
+            call    preprocessor_next_token        ; ':'
+        .typed_name:
+            mov     byte [rel mem_typed_next], 0
+            mov     rdi, rbx
+            call    preprocessor_next_token        ; the struc
+            mov     eax, EXIT_UNEXPECTED_TOKEN
+            cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+            jne     .typed_bad
+            mov     rsi, [rdx + TOKEN_value]
+            call    parser_is_struc
+            jnz     .typed_not
+            mov     [rel mem_struc], rsi
+            jmp     .typed_none
+        .typed_not:
+            mov     rdi, rsi
+            call    error_set_subject
+            mov     eax, EXIT_NOT_STRUC
+        .typed_bad:
+            add     rsp, 8
+            jmp     .error
+        .typed_none:
+            pop     rax
+        .not_typed:
             ; registers of one size: [eax + rbx] is no address
             mov     ecx, [rel mem_term_width]
             cmp     ecx, 128
@@ -7731,6 +7820,8 @@ parser_parse_struc:
     mov     rsi, r12                       ; "<struct>.x"
 .nasm_named:
     mov     rdx, [rbp - 48]
+    mov     [rel last_label_name], rsi     ; (its res*: its width)
+    mov     [rel last_label_off], rdx
     call    parser_struc_const
     check_err_to .error
     jmp     .field_loop
@@ -7740,6 +7831,9 @@ parser_parse_struc:
     call    parser_evaluate_expression
     check_err_to .error
     imul    rdx, [rbp - 64]
+    mov     rcx, [rbp - 48]
+    mov     r8, [rbp - 64]
+    call    parser_field_width
     mov     rdi, [rbp - 48]                ; the listing: its offset, size
     mov     rsi, rdx
     push    rdx
@@ -7950,6 +8044,16 @@ parser_define_label:
     je      .no_proc
     call    proc_label
 .no_proc:
+    ; the last label and where: a struc field's res* gives it its width
+    ; (its name: the symbol's own copy, at the end)
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_curr_sec]
+    mov     qword [rel last_label_off], -1
+    test    rax, rax
+    jz      .no_last_off
+    mov     rcx, [rax + SECTION_size]
+    mov     [rel last_label_off], rcx
+.no_last_off:
     mov     rdi, rsi
     call    parser_ptr_warn                ; "ptr:" / "ptr equ": NASM's warning
     mov     rbx, [rbx + PREP_ctx]
@@ -8015,6 +8119,9 @@ parser_define_label:
     call    symbol_add
     check_err_to .error
     mov     [rbx + ASMCTX_last_symbol], rdx    ; Store for potential equ override
+    mov     rcx, [rdx + SYMBOL_name]
+    mov     [rel last_label_name], rcx
+    xor     eax, eax
 
     add     rsp, SYMBOL_SIZE
     pop     rsi
@@ -8075,6 +8182,8 @@ parser_define_label:
 .not_abs_old:
         
     mov     [rbx + ASMCTX_last_symbol], rdx    ; Store for potential equ override
+    mov     rax, [rdx + SYMBOL_name]
+    mov     [rel last_label_name], rax
     
     xor     rax, rax
     pop     rsi
@@ -11604,6 +11713,108 @@ parser_is_mnemonic:
     pop     r13
     ret
 
+; parser_is_struc: ZF = 1 when rsi names a struc (NASM's: NAME_size is
+; defined with it). Preserves rsi, rbx, r12-r15.
+parser_is_struc:
+    push    rsi
+    lea     rdi, [rel struc_size_buf]
+    xor     ecx, ecx
+.is_copy:
+    mov     al, [rsi + rcx]
+    test    al, al
+    jz      .is_suffix
+    cmp     ecx, 128
+    jae     .is_no
+    mov     [rdi + rcx], al
+    inc     ecx
+    jmp     .is_copy
+.is_suffix:
+    mov     dword [rdi + rcx], '_siz'
+    mov     word [rdi + rcx + 4], 'e'
+    mov     rdi, [rbx + PREP_ctx]
+    lea     rsi, [rel struc_size_buf]
+    call    symbol_find
+    test    rax, rax
+    pop     rsi
+    ret
+.is_no:
+    pop     rsi
+    test    esp, esp
+    ret
+
+;*
+; * [parser_typed_field]
+; * Purpose: "[rbx:PACKET].len": the memory operand addresses a PACKET
+; *   (mem_struc); ".len" after it is PACKET.len - its offset added, its
+; *   width the operand's size when none is written (and a size written
+; *   must be its: "word [rbx:PACKET].len", .len a dword, is an error).
+; *   With no field after it, the operand is the struc's start, unsized.
+; * Input  : RBX = PrepState, R12 = the OPERAND
+; * Output : RAX = OK or an error
+; ;
+parser_typed_field:
+    push    r14
+    mov     r14, [rel mem_struc]
+    test    r14, r14
+    jz      .tf_ok
+    mov     qword [rel mem_struc], 0
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .tf_ret
+    cmp     byte [rdx + TOKEN_kind], TOK_IDENT
+    jne     .tf_ok
+    mov     rsi, [rdx + TOKEN_value]
+    cmp     byte [rsi], '.'
+    jne     .tf_ok
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    mov     rsi, [rdx + TOKEN_value]
+    push    r14
+    mov     r14, [rsp]
+    call    parser_concat_local_name       ; "PACKET" + ".len"
+    pop     r14
+    test    rax, rax
+    jnz     .tf_ret
+    mov     rsi, rdx
+    push    rsi
+    mov     rdi, [rbx + PREP_ctx]
+    call    symbol_find
+    pop     rsi
+    test    rax, rax
+    jnz     .tf_unknown
+    test    byte [rdx + SYMBOL_pflags], SYMF_STRUC
+    jz      .tf_unknown
+    mov     rax, [rdx + SYMBOL_value]
+    add     [r12 + OPERAND_imm], rax
+    movzx   eax, byte [rdx + SYMBOL_fwidth]
+    test    eax, eax
+    jz      .tf_ok                         ; (no res* for it: no size)
+    shl     eax, 3                         ; bits
+    movzx   ecx, byte [r12 + OPERAND_size]
+    test    ecx, ecx
+    jz      .tf_size
+    cmp     ecx, eax
+    je      .tf_ok
+    mov     rdi, rsi
+    call    error_set_subject
+    mov     eax, EXIT_FIELD_SIZE
+    jmp     .tf_ret
+.tf_size:
+    mov     [r12 + OPERAND_size], al
+    mov     [r12 + OPERAND_xsize], ax
+.tf_ok:
+    xor     eax, eax
+.tf_ret:
+    pop     r14
+    ret
+.tf_unknown:
+    mov     rdi, rsi
+    call    error_set_subject
+    mov     eax, EXIT_MASM_FIELD
+    pop     r14
+    ret
+
 ;*
 ; * [parser_masm_field]
 ; * Purpose: %use masm's "[rbx].POINT.y": after a memory operand, ".T.F" -
@@ -12997,6 +13208,11 @@ sec_prev_align: resq 1             ; a redeclared section's alignment before
 attr_seen:     resb 2              ; parser_section_attrs: an attribute, align=
 align_hex:     resb 24             ; "0x..." for an alignment's error
 struc_open:    resq 1              ; a struc a section line left (its name)
+last_label_name: resq 1             ; the last label parser_define_label made
+last_label_off: resq 1              ; ... at this section offset (-1: none)
+mem_struc:      resq 1              ; "[rbx:PACKET]": the struc (its name), 0: none
+mem_typed_next: resb 1              ; "rbx:" read: the struc's name comes next
+struc_size_buf: resb 136            ; NAME_size, for parser_is_struc
 global masm_enabled
 masm_enabled:  resb 1              ; %use masm: "flat:", a bare "ptr x" known
 masm_mem:      resb 1              ; the operand's ptr was masm's
@@ -13025,6 +13241,28 @@ size_list:     resq 1                  ; parser_size_late: {NAME, record}
 gas_st_name:   resb 4                  ; "stN" (parser_parse_reg_info)
 size_n:        resq 1
 [SECTION .text]
+
+; parser_field_width: a res* of R8 bytes each, RDX in all, at offset RCX of
+; a struc - the field labelled just before it (last_label_*) is that wide
+; ("[rbx:PACKET].len" takes its size from it). Preserves rdx, rbx, r12-r15.
+parser_field_width:
+    cmp     rcx, [rel last_label_off]
+    jne     .fw_ret
+    mov     qword [rel last_label_off], -1
+    push    rdx
+    push    r8
+    mov     rdi, [rbx + PREP_ctx]
+    mov     rsi, [rel last_label_name]
+    call    symbol_find
+    mov     rcx, rdx
+    pop     r8
+    pop     rdx
+    test    rax, rax
+    jnz     .fw_ret
+    mov     [rcx + SYMBOL_fwidth], r8b
+    mov     [rcx + SYMBOL_size], rdx
+.fw_ret:
+    ret
 
 ;*
 ; * [parser_handle_res]
@@ -13103,6 +13341,16 @@ parser_handle_res:
     pop     rdx
     pop     rax
 .reserve:
+    ; a struc's field (".len: resd 1"): the label just before it takes its
+    ; element width and size - "[rbx:PACKET].len" is sized by them
+    cmp     byte [rax + SECTION_type], SEC_ABSOLUTE
+    jne     .not_field
+    push    rax
+    mov     rcx, [rax + SECTION_size]
+    mov     r8, r12
+    call    parser_field_width
+    pop     rax
+.not_field:
     add     [rax + SECTION_size], rdx
     mov     rdi, rax
     extern  asm_ctx_fit
