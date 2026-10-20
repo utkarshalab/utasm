@@ -133,13 +133,14 @@ te_regop:   resb 1                  ; operand index for each role, 0xFF = none
 te_rmop:    resb 1
 te_plusop:  resb 1
 te_vop:     resb 1
+te_rex4:    resb 1                  ; .rexbits: APX's R4 X4 B4 (0x40 0x20 0x10) of r16-r31
 te_vvvv:    resb 1                  ; inverted vvvv | L << 4 | pp, for the VEX bytes
 te_evex:    resb 1                  ; an operand needs EVEX (mask, broadcast, rounding)
 te_i8_relax: resb 1                 ; the second round: a byte immediate out of range taken
 te_i8_cut:  resb 1                  ; ... and this form took one
 
 [SECTION .rodata]
-; segment register IDs 24-29 (cs ds es fs gs ss) -> encoding
+; segment register IDs 64-69 (cs ds es fs gs ss) -> encoding
 te_segnum:  db 1, 3, 0, 4, 5, 2
 s_i8_bounds: db "byte data exceeds bounds", 0
 s_i16_bounds: db "word data exceeds bounds", 0
@@ -339,18 +340,14 @@ te_classify:
 .reg:
     movzx   eax, byte [rdi + OPERAND_reg]
     movzx   r9d, byte [rdi + OPERAND_size]
-    cmp     eax, 16
-    jb      .gpr
-    cmp     eax, 24
-    jb      .next
-    cmp     eax, 30
-    jb      .seg
     cmp     eax, 32
-    jb      .next
+    jb      .gpr                           ; (16-31: APX's r16-r31)
     cmp     eax, 48
     jb      .cr
     cmp     eax, 64
     jb      .dr
+    cmp     eax, 70
+    jb      .seg                           ; (64-69)
     cmp     eax, 72
     jb      .next
     cmp     eax, 80
@@ -375,7 +372,7 @@ te_classify:
     mov     [rdx + rcx], r9b
     jmp     .set_num
 .seg:
-    sub     eax, 24
+    sub     eax, 64
     lea     rdx, [rel te_segnum]
     movzx   eax, byte [rdx + rax]
     mov     r8d, C_SEG
@@ -969,9 +966,11 @@ te_emit:
     call    .rexbits
     jmp     .rex_byte
 
-; r15d = the W R X B bits (REX layout) the operands need
+; r15d = the W R X B bits (REX layout) the operands need; te_rex4 the
+; bits 4 of r16-r31 (REX2's R4 X4 B4)
 .rexbits:
     xor     r15d, r15d
+    mov     byte [rel te_rex4], 0
     test    byte [r13 + FM_FLAGS], TF_W
     jnz     .rex_w
     test    byte [r13 + FM_FLAGS], TF_OSZ
@@ -986,6 +985,8 @@ te_emit:
     movzx   ecx, byte [rel te_regop]
     cmp     ecx, 0xFF
     je      .rex_b
+    mov     al, 0x40
+    call    .rex4_gpr
     lea     rdx, [rel te_num]
     test    byte [rdx + rcx], 8
     jz      .rex_b
@@ -997,6 +998,8 @@ te_emit:
     lea     rdx, [rel te_cls]
     cmp     byte [rdx + rcx], C_MEM
     je      .rex_mem
+    mov     al, 0x10
+    call    .rex4_gpr
     lea     rdx, [rel te_num]
     test    byte [rdx + rcx], 8
     jz      .rex_plus
@@ -1009,6 +1012,12 @@ te_emit:
     je      .rex_idx
     cmp     eax, REG_RIP
     je      .rex_idx
+    cmp     eax, 32
+    jae     .rex_base3
+    test    eax, 16
+    jz      .rex_base3
+    or      byte [rel te_rex4], 0x10       ; B4: a base of r16-r31
+.rex_base3:
     test    eax, 8
     jz      .rex_idx
     or      r15d, 1
@@ -1016,6 +1025,12 @@ te_emit:
     movzx   eax, byte [rdi + OPERAND_index]
     cmp     eax, 0xFF
     je      .rex_plus
+    cmp     eax, 32
+    jae     .rex_idx3                      ; (a vector index: EVEX's)
+    test    eax, 16
+    jz      .rex_idx3
+    or      byte [rel te_rex4], 0x20       ; X4: an index of r16-r31
+.rex_idx3:
     test    eax, 8
     jz      .rex_plus
     or      r15d, 2
@@ -1026,11 +1041,25 @@ te_emit:
     lea     rdx, [rel te_cls]
     cmp     byte [rdx + rcx], C_ST
     je      .rexbits_ret                   ; st(i) has no REX bit
+    mov     al, 0x10
+    call    .rex4_gpr
     lea     rdx, [rel te_num]
     test    byte [rdx + rcx], 8
     jz      .rexbits_ret
     or      r15d, 1
 .rexbits_ret:
+    ret
+
+; .rex4_gpr: operand rcx a general register of r16-r31: te_rex4 |= al
+.rex4_gpr:
+    lea     rdx, [rel te_cls]
+    cmp     byte [rdx + rcx], C_GPR
+    jne     .rex4_ret
+    lea     rdx, [rel te_num]
+    test    byte [rdx + rcx], 16
+    jz      .rex4_ret
+    or      [rel te_rex4], al
+.rex4_ret:
     ret
 
 .rex_byte:
@@ -1069,6 +1098,8 @@ te_emit:
     jz      .rex_needed
     or      r15d, 0x40                     ; {rex}: one even with no bit set
 .rex_needed:
+    cmp     byte [rel te_rex4], 0
+    jne     .rex2
     test    r15d, r15d
     jz      .map
     test    r8d, r8d
@@ -1077,10 +1108,30 @@ te_emit:
     or      eax, 0x40
     call    amd64_emit_byte
     jmp     .map
+.rex2:
+    ; APX's r16-r31: REX2, D5 and M0 R4 X4 B4 W R X B (mode.s
+    ; amd64_rex2_finish takes the 0F into M0)
+    test    r8d, r8d
+    jnz     .fail
+    cmp     byte [rel asm_bits], 64
+    jne     .fail
+    extern  amd64_rex2_at
+    mov     rax, [rbx + ASMCTX_curr_sec]
+    mov     rax, [rax + SECTION_size]
+    mov     [rel amd64_rex2_at], rax
+    mov     al, 0xD5
+    call    amd64_emit_byte
+    mov     eax, r15d
+    and     eax, 0x0F
+    or      al, [rel te_rex4]
+    call    amd64_emit_byte
+    jmp     .map
 
     ; ---- VEX prefix: C5 (0F map, no W/X/B) or C4 ----
 .vex:
     call    .rexbits                       ; r15 = W R X B
+    cmp     byte [rel te_rex4], 0
+    jne     .fail                          ; (r16-r31: EVEX's, not VEX)
     xor     eax, eax
     movzx   ecx, byte [rel te_vop]
     cmp     ecx, 0xFF
@@ -1153,6 +1204,8 @@ te_emit:
 ; and V' (vvvv).
 .evex:
     call    .rexbits                       ; r15 = W R X B
+    cmp     byte [rel te_rex4], 0
+    jne     .fail                          ; (r16-r31 in EVEX: not yet)
     mov     al, 0x62
     call    amd64_emit_byte
     movzx   eax, byte [r13 + FM_MAP]
