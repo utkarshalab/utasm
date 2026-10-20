@@ -1007,8 +1007,9 @@ parser_parse_operand:
 .not_flat_word:
 
     ; Branch-distance modifiers, recorded on the operand for the encoder:
-    ; "short" forces the rel8 form; "near" and "strict" force rel32, so the
-    ; encoder never shortens a branch the user sized explicitly.
+    ; "short" forces the rel8 form; "strict" forces rel32, so the encoder
+    ; never shortens it; "near" is only not short or far - NASM 3 makes it
+    ; short where it reaches (OPERAND_near: -O0 keeps it long)
     IF byte [r13 + TOKEN_kind], e, TOK_IDENT
         mov     rdi, [r13 + TOKEN_value]
         lea     rsi, [rel str_strict]
@@ -1021,7 +1022,7 @@ parser_parse_operand:
         lea     rsi, [rel str_near]
         call    str_cmp_kw
         IF rax, e, 0
-            or      byte [r12 + OPERAND_flags], OP_FLAG_STRICT
+            mov     byte [r12 + OPERAND_near], 1
             jmp .fetch_operand_token
             ENDIF
         mov     rdi, [r13 + TOKEN_value]
