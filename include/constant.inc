@@ -1372,12 +1372,13 @@
 %define REG_R15                15
 
 ; ---- AMD64 Segment registers ----
-%define REG_CS                 16
-%define REG_DS                 17
-%define REG_ES                 18
-%define REG_FS                 19
-%define REG_GS                 20
-%define REG_SS                 21
+; (the register table's, include/arch/amd64.inc: 16-31 are APX's r16-r31)
+%define REG_CS                 64
+%define REG_DS                 65
+%define REG_ES                 66
+%define REG_FS                 67
+%define REG_GS                 68
+%define REG_SS                 69
 
 ; ---- AMD64 Control registers ----
 %define REG_CR0                22
