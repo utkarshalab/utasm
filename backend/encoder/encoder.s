@@ -69,30 +69,6 @@ amd64_encode_instruction:
     mov     word [r12 + INST_op1 + OPERAND_xsize], 0
 .not_lea:
 
-    ; APX's {nf} / {zu} / {dfv=...}: no encoding of them yet - an error,
-    ; not the instruction with its flags written after all
-    cmp     byte [r12 + INST_apx], 0
-    je      .no_apx_pfx
-    mov     rax, EXIT_ENCODE_FAIL
-    jmp     .error
-.no_apx_pfx:
-    ; inc / dec / neg / not take one operand ("inc rax, rbx" - APX's new
-    ; destination - went out as inc rax)
-    movzx   eax, word [r12 + INST_op_id]
-    cmp     eax, 1278                      ; INC
-    je      .one_op
-    cmp     eax, 1118                      ; DEC
-    je      .one_op
-    cmp     eax, 1439                      ; NEG
-    je      .one_op
-    cmp     eax, 1441                      ; NOT
-    jne     .one_op_ok
-.one_op:
-    cmp     byte [r12 + INST_nops], 1
-    je      .one_op_ok
-    mov     rax, EXIT_ENCODE_FAIL
-    jmp     .error
-.one_op_ok:
 
     ; the operand shapes NASM 3 takes as another form (mode.s)
     extern  amd64_shape_forms
@@ -194,6 +170,45 @@ amd64_encode_instruction:
     inc     ecx
     jmp     .sym_op
 .sym_done:
+
+    ; APX's EVEX forms (apx.s): "add rax, rbx, rcx", {nf}, {evex} - their
+    ; own operand rules, written after the legacy prefixes
+    extern  amd64_apx_claim, amd64_apx_mine
+    call    amd64_apx_claim
+    test    eax, eax
+    jnz     .done
+    cmp     byte [rel amd64_apx_mine], 1
+    je      .apx_claimed
+    cmp     byte [rel amd64_apx_mine], 2
+    je      .apx_none                      ; ({nf} andn ...: dispatch.s writes it)
+    ; {nf} / {zu} / {dfv=...} where no APX form took them: an error, not
+    ; the instruction with its flags written after all
+    cmp     byte [r12 + INST_apx], 0
+    je      .apx_none
+    mov     eax, EXIT_ENCODE_FAIL
+    jmp     .done
+.apx_claimed:
+    extern  amd64_asize_mem
+    call    amd64_asize_mem
+    jmp     .no_size_check
+.apx_none:
+    ; inc / dec / neg / not take one operand ("inc rax, rbx" - APX's new
+    ; destination - went out as inc rax) unless APX writes them
+    movzx   eax, word [r12 + INST_op_id]
+    cmp     eax, 1278                      ; INC
+    je      .one_op
+    cmp     eax, 1118                      ; DEC
+    je      .one_op
+    cmp     eax, 1439                      ; NEG
+    je      .one_op
+    cmp     eax, 1441                      ; NOT
+    jne     .one_op_ok
+.one_op:
+    cmp     byte [r12 + INST_nops], 1
+    je      .one_op_ok
+    mov     rax, EXIT_ENCODE_FAIL
+    jmp     .error
+.one_op_ok:
 
     ; 0-. Operands no form of the instruction takes ("mov bl, r9w")
     extern  amd64_check_shape
@@ -404,6 +419,15 @@ amd64_encode_instruction:
     call    amd64_warn_class
     jmp     .mode_encoded
 .not_pop_cs:
+    ; APX's EVEX forms (apx.s), claimed above
+    cmp     byte [rel amd64_apx_mine], 1
+    jne     .not_apx
+    extern  amd64_apx_encode
+    call    amd64_apx_encode
+    test    rax, rax
+    jnz     .done
+    jmp     .encoded
+.not_apx:
     ; 2a. bits 16 / bits 32: the forms that differ there (mode.s); they are
     ; this mode's own encodings, with no REX to look for afterwards
     extern  amd64_mode_special
