@@ -485,6 +485,12 @@ _start:
     call    proc_finish
     test    rax, rax
     jnz     .error_in_parser
+    ; namespaces: names used before their definition, private names
+    ; (middle/semantic/namespace.s)
+    extern  ns_finish
+    call    ns_finish
+    test    rax, rax
+    jnz     .error_in_parser
     ; a FASM virtual block with no end virtual
     extern  fasm_finish
     call    fasm_finish
