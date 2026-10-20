@@ -1506,6 +1506,41 @@ mov rax, [rbx + my_point.x]    ; field offset used directly
 mov rcx, [rbx + my_point.y]
 ```
 
+#### Typed access: `[reg:TYPE].field`
+
+utasm's own form. `:TYPE` at the end of an address says what the address
+points to. The `.field` after the bracket is then `TYPE.field`: its offset is
+added, and its width (the `res*` that reserved it) sizes the operand.
+
+```asm
+struc PACKET
+    .len:   resd 1
+    .flags: resw 1
+    .ptr:   resq 1
+endstruc
+
+mov eax, [rbx:PACKET].len            ; mov eax, [rbx + PACKET.len]
+mov [rbx:PACKET].len, 5              ; a dword: no "dword" needed
+inc word [rdi:PACKET].flags          ; a size written must be the field's
+mov rdx, [rbx + rcx*8:PACKET].ptr    ; any address; [fs:rbx:PACKET] too
+lea rsi, [rbx:PACKET].ptr
+mov eax, [rbx:PACKET]                ; no field: the struc's start, unsized
+```
+
+These lines are errors:
+
+- `mov eax, [rbx:PACKET].flags`: eax is 32 bits and the field is 16.
+- `dword [rbx:PACKET].flags`: the size written is not the field's.
+- `[rbx:PACKET].nope`: PACKET has no such field.
+- `[rbx:NOPE].len`: NOPE is not a struc.
+
+Notes:
+
+- A field of several elements (`.arr: resb 6`) is sized by one element.
+- TYPE must be defined before the line that uses it. A struc is any name
+  with a `NAME_size`.
+- In GNU mode, `reg:` keeps its meaning as a segment override.
+
 ---
 
 ### Assembler Control
