@@ -1199,6 +1199,8 @@ te_emit:
     call    .rexbits                       ; r15 = W R X B
     cmp     byte [rel te_egpr], 0
     jne     .vex_evex                      ; r16-r31: the same as EVEX
+    test    byte [r12 + INST_apx], APX_NF
+    jnz     .vex_evex                      ; {nf} andn ...: EVEX with NF
     xor     eax, eax
     movzx   ecx, byte [rel te_vop]
     cmp     ecx, 0xFF
@@ -1327,8 +1329,12 @@ te_emit:
     and     eax, 1
     shl     eax, 5                         ; L'L
     test    byte [rel te_vvvv], 16
-    jnz     .ve_p2
+    jnz     .ve_nf
     or      eax, 8                         ; V4 (inverted)
+.ve_nf:
+    test    byte [r12 + INST_apx], APX_NF
+    jz      .ve_p2
+    or      eax, 4                         ; NF ({nf}: apx.s let only BMI here)
 .ve_p2:
     call    amd64_emit_byte
     jmp     .opcode
