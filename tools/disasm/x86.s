@@ -164,6 +164,10 @@ dx_mnem:    resq 1              ; mnemonic string
 dx_disp:    resq 1              ; memory displacement (sign-extended)
 dx_textpos: resq 1              ; FmtBuf length where this text began
 dx_rex:     resb 1              ; REX byte, or 0
+dx_rex4:    resb 1              ; APX: R4 X4 B4 (0x40 0x20 0x10) - bit 4 of the registers
+dx_rex2:    resb 1              ; 1 = a REX2 prefix (D5) came
+dx_nf:      resb 1              ; APX's NF: "{nf} " before the mnemonic
+dx_p2:      resb 1              ; EVEX P2, as read
 dx_p66:     resb 1
 dx_n66:     resb 1              ; number of 66 prefixes (extra ones print data16)
 dx_sflags:  resb 1              ; SSE entry flags, 0 for integer instructions
@@ -174,7 +178,7 @@ dx_vpfx:    resb 1              ; print a "v" before the SSE name
 dx_vclass:  resb 1              ; vector registers: 0 mm, 1 xmm, 2 ymm
 dx_half:    resb 1              ; widening op: source is half the destination width
 dx_narrow:  resb 1              ; narrowing op: xmm destination, source by VEX.L
-dx_namebuf: resb 24             ; a mnemonic built at decode time
+dx_namebuf: resb 40             ; a mnemonic built at decode time (ccmp's {dfv=..})
 dx_p67:     resb 1              ; address-size prefix: 32-bit address registers
 dx_map:     resb 1              ; 1 = one-byte map, 2 = 0F map
 dx_lock:    resb 1
@@ -244,6 +248,10 @@ x86_decode:
     mov     qword [rel dx_target], -1
     xor     eax, eax
     mov     [rel dx_rex], al
+    mov     [rel dx_rex4], al
+    mov     [rel dx_rex2], al
+    mov     [rel dx_nf], al
+    mov     [rel dx_evexp], al
     mov     [rel dx_p66], al
     mov     [rel dx_n66], al
     mov     [rel dx_sflags], al
@@ -328,6 +336,8 @@ x86_decode:
 
     ; ---- REX ----
 .rex:
+    cmp     al, 0xD5
+    je      .rex2
     cmp     al, 0x62
     je      .evex
     cmp     al, 0xC5
@@ -341,6 +351,35 @@ x86_decode:
     call    dx_rd8
     mov     [rel dx_rex], al
     jmp     .opcode
+
+    ; ---- REX2 (APX): D5, M0 R4 X4 B4 W R3 X3 B3 ----
+; W R3 X3 B3 a REX byte as ever, R4 X4 B4 dx_rex4 (bit 4 of the registers
+; for r16-r31); M0 the 0F map, its 0F not written. No 0F 38 / 0F 3A.
+.rex2:
+    call    dx_rd8                         ; D5
+    call    dx_rd8                         ; the payload
+    cmp     byte [rel dx_fail], 0
+    jne     .bad
+    mov     byte [rel dx_rex2], 1
+    mov     ecx, eax
+    and     ecx, 0x0F
+    or      ecx, 0x40
+    mov     [rel dx_rex], cl
+    mov     ecx, eax
+    and     ecx, 0x70
+    mov     [rel dx_rex4], cl
+    test    al, 0x80
+    jz      .opcode
+    call    dx_rd8                         ; the 0F map's opcode
+    cmp     byte [rel dx_fail], 0
+    jne     .bad
+    cmp     al, 0x38
+    je      .bad
+    cmp     al, 0x3A
+    je      .bad
+    mov     byte [rel dx_map], 2
+    lea     r12, [rel x86_map2]
+    jmp     .have_op
 
     ; ---- VEX (C5 xx / C4 xx xx): AVX, AVX2, FMA, BMI ----
 ; The R/X/B/W bits become a synthetic REX byte, so the ModRM/SIB code and
@@ -401,6 +440,7 @@ x86_decode:
     pop     rcx
     cmp     byte [rel dx_fail], 0
     jne     .bad
+.vex_decode:
     ; k-mask instructions (AVX-512 opmask registers)
     call    dx_kop_find                    ; keeps rcx
     test    rax, rax
@@ -521,8 +561,12 @@ x86_decode:
 .evex:
     call    dx_rd8                         ; 62
     call    dx_rd8                         ; P0
-    test    al, 0x0C
-    jnz     .bad
+    test    al, 0x04
+    jnz     .evex4                         ; map 4: APX's (dx_evex4)
+    test    al, 0x08
+    jz      .e_nob4
+    or      byte [rel dx_rex4], 0x10       ; B4 (APX): a base / rm of r16-r31
+.e_nob4:
     mov     ecx, eax
     and     ecx, 3
     jz      .bad
@@ -545,10 +589,13 @@ x86_decode:
     test    al, 0x10
     jnz     .e_p1
     mov     byte [rel dx_reghi], 16        ; R'
+    or      byte [rel dx_rex4], 0x40       ; (and R4: a general register's bit 4)
 .e_p1:
     call    dx_rd8                         ; P1 (rd8 keeps edx)
     test    al, 4
-    jz      .bad
+    jnz     .e_x4
+    or      byte [rel dx_rex4], 0x20       ; X4 (APX, inverted): an index of r16-r31
+.e_x4:
     test    al, 0x80
     jz      .e_w
     or      edx, 8                         ; W
@@ -562,6 +609,7 @@ x86_decode:
     and     eax, 3
     mov     r8d, eax                       ; pp
     call    dx_rd8                         ; P2
+    mov     [rel dx_p2], al
     mov     ecx, eax
     and     ecx, 7
     mov     [rel dx_eaaa], cl
@@ -608,7 +656,23 @@ x86_decode:
     lea     ecx, [r9 + rax + 8]
     call    dx_evex_find
     test    r12, r12
-    jz      .bad
+    jnz     .e_found
+    ; APX: a VEX instruction written as EVEX (kmov, BMI, AMX with r16-r31):
+    ; no z, L'L 0 / 1, no broadcast, no mask but NF - the VEX tables with
+    ; these fields
+    movzx   eax, byte [rel dx_p2]
+    test    eax, 0x80 | 0x40 | 0x10 | 0x03
+    jnz     .bad
+    test    eax, 0x04
+    jz      .e_vex_nf
+    mov     byte [rel dx_nf], 1
+.e_vex_nf:
+    mov     byte [rel dx_eaaa], 0
+    mov     byte [rel dx_reghi], 0
+    mov     byte [rel dx_rmhi], 0
+    mov     byte [rel dx_vex], 1
+    mov     ecx, r8d                       ; pp
+    jmp     .vex_decode
 .e_found:
     mov     byte [rel dx_evex], 1
     movzx   r13d, word [r12 + 4]           ; name
@@ -688,6 +752,47 @@ x86_decode:
     jne     .bad
 .have_op:
     mov     [rel dx_op], al
+    ; REX2's own: jmpabs (A1 imm64, W 0), pushp / popp (50+r / 58+r, W 1)
+    cmp     byte [rel dx_rex2], 0
+    je      .not_rex2_own
+    cmp     byte [rel dx_map], 1
+    jne     .not_rex2_own
+    cmp     al, 0xA1
+    jne     .rex2_push
+    test    byte [rel dx_rex], 8
+    jnz     .bad
+    call    dx_rd64
+    cmp     byte [rel dx_fail], 0
+    jne     .bad
+    push    rax
+    lea     rax, [rel s_jmpabs]
+    mov     [rel dx_mnem], rax
+    mov     esi, 1
+    call    dx_mnemonic
+    pop     rsi
+    mov     byte [rel dx_osz], 64
+    call    dx_hex
+    jmp     .finish
+.rex2_push:
+    test    byte [rel dx_rex], 8
+    jz      .not_rex2_own
+    mov     ecx, eax
+    and     ecx, 0xF0
+    cmp     ecx, 0x50
+    jne     .not_rex2_own
+    lea     rcx, [rel s_pushp]
+    cmp     al, 0x58
+    jb      .rex2_pp
+    lea     rcx, [rel s_popp]
+.rex2_pp:
+    mov     [rel dx_mnem], rcx
+    mov     esi, 1
+    call    dx_mnemonic
+    mov     edi, 64
+    call    dx_opreg
+    jmp     .finish
+.not_rex2_own:
+    mov     al, [rel dx_op]
     ; 9B + fnstsw/fnstcw/fnclex/...: objdump writes one instruction, no "n"
     cmp     byte [rel dx_map], 1
     jne     .not_wait
@@ -696,6 +801,18 @@ x86_decode:
     call    dx_fwait_combo
     test    eax, eax
     jz      .not_wait
+    cmp     eax, 2
+    jne     .wait_op
+    call    dx_rd8                         ; D5
+    call    dx_rd8                         ; its payload (M0 0)
+    mov     byte [rel dx_rex2], 1
+    mov     ecx, eax
+    and     ecx, 0x0F
+    or      ecx, 0x40
+    mov     [rel dx_rex], cl
+    and     eax, 0x70
+    mov     [rel dx_rex4], al
+.wait_op:
     call    dx_rd8
     mov     [rel dx_op], al
     mov     byte [rel dx_fwait], 1
@@ -973,6 +1090,15 @@ x86_decode:
     cmp     byte [rel dx_fail], 0
     jne     .bad
 
+    jmp     .finish                        ; (vldmxcsr / vstmxcsr above)
+
+    ; ---- EVEX map 4 (APX): x86_apx.inc ----
+.evex4:
+    call    dx_evex4
+    cmp     byte [rel dx_fail], 0
+    jne     .bad
+    jmp     .finish
+
 .finish:
     mov     rax, [rel dx_cur]
     sub     rax, [rel dx_start]            ; length
@@ -1066,6 +1192,10 @@ dx_modrm_decode:
     jz      .reg
     or      edx, 8
 .reg:
+    test    byte [rel dx_rex4], 0x40       ; R4 (APX)
+    jz      .reg4
+    or      edx, 16
+.reg4:
     mov     [rel dx_regno], dl
     and     eax, 7                         ; rm
     mov     byte [rel dx_base], NO_REG
@@ -1080,6 +1210,10 @@ dx_modrm_decode:
     jz      .rmreg
     or      eax, 8
 .rmreg:
+    test    byte [rel dx_rex4], 0x10       ; B4
+    jz      .rmreg4
+    or      eax, 16
+.rmreg4:
     mov     [rel dx_rmreg], al
     ret
 
@@ -1094,8 +1228,12 @@ dx_modrm_decode:
     jmp     .disp32
 .base_rm:
     test    byte [rel dx_rex], 1
-    jz      .base_set
+    jz      .base_b4
     or      eax, 8
+.base_b4:
+    test    byte [rel dx_rex4], 0x10
+    jz      .base_set
+    or      eax, 16
 .base_set:
     mov     [rel dx_base], al
     jmp     .disp
@@ -1115,6 +1253,10 @@ dx_modrm_decode:
     jz      .idx
     or      edx, 8
 .idx:
+    test    byte [rel dx_rex4], 0x20       ; X4: r16-r31 (r20 is an index)
+    jz      .idx4
+    or      edx, 16
+.idx4:
     cmp     edx, 4
     je      .no_index                      ; index 100 without REX.X: none
     mov     [rel dx_index], dl
@@ -1126,8 +1268,12 @@ dx_modrm_decode:
     je      .disp32                        ; no base, disp32
 .sib_base:
     test    byte [rel dx_rex], 1
-    jz      .sib_base_set
+    jz      .sib_b4
     or      eax, 8
+.sib_b4:
+    test    byte [rel dx_rex4], 0x10
+    jz      .sib_base_set
+    or      eax, 16
 .sib_base_set:
     mov     [rel dx_base], al
 
@@ -1194,6 +1340,16 @@ dx_imm:
 ; objdump pads it when operands follow (esi != 0)
 dx_mnemonic:
     push    rsi
+    cmp     byte [rel dx_nf], 0
+    je      .no_nf
+    lea     rsi, [rel s_nf]
+    call    dx_puts
+.no_nf:
+    cmp     byte [rel dx_evexp], 0
+    je      .no_evexp
+    lea     rsi, [rel s4_evex]
+    call    dx_puts
+.no_evexp:
     cmp     byte [rel dx_lock], 0
     je      .no_lock
     lea     rsi, [rel s_lock]
@@ -1230,6 +1386,26 @@ dx_sep:
 
 ; dx_reg: register name. edi = size (8/16/32/64), esi = number (0-15)
 dx_reg:
+    ; APX's r16-r31: r16, r16d, r16w, r16b
+    cmp     esi, 16
+    jb      .low
+    cmp     esi, 32
+    jae     .low
+    lea     rax, [rel rnx64]
+    cmp     edi, 64
+    je      .have_x
+    lea     rax, [rel rnx32]
+    cmp     edi, 32
+    je      .have_x
+    lea     rax, [rel rnx16]
+    cmp     edi, 16
+    je      .have_x
+    lea     rax, [rel rnx8]
+.have_x:
+    sub     esi, 16
+    lea     rsi, [rax + rsi*8]
+    jmp     dx_puts
+.low:
     lea     rax, [rel rn64]
     cmp     edi, 64
     je      .have
@@ -1404,6 +1580,10 @@ dx_greg:
 dx_opreg:
     movzx   esi, byte [rel dx_op]
     and     esi, 7
+    test    byte [rel dx_rex4], 0x10       ; B4
+    jz      .op_b3
+    or      esi, 16
+.op_b3:
     test    byte [rel dx_rex], 1
     jz      dx_reg
     or      esi, 8
@@ -1554,6 +1734,22 @@ dx_x87_wait:
 ; fnstsw (DD /6 /7), fnclex/fninit (DB E2/E3), fnstsw ax (DF E0)
 dx_fwait_combo:
     mov     rcx, [rel dx_cur]
+    ; a REX2 (map 0) before it: "fstsw WORD PTR [r16]" (eax = 2 then)
+    lea     rdx, [rcx + 4]
+    cmp     rdx, [rel dx_end]
+    ja      .no_rex2
+    cmp     byte [rcx], 0xD5
+    jne     .no_rex2
+    test    byte [rcx + 1], 0x80
+    jnz     .no_rex2
+    add     rcx, 2
+    call    .no_rex2
+    test    eax, eax
+    jz      .r2_ret
+    mov     eax, 2
+.r2_ret:
+    ret
+.no_rex2:
     lea     rdx, [rcx + 2]
     cmp     rdx, [rel dx_end]
     ja      .no
@@ -2619,6 +2815,8 @@ dx_operands:
 .n90_rex:
     test    byte [rel dx_rex], 1
     jnz     .n90_xchg
+    test    byte [rel dx_rex4], 0x10       ; REX2.B4: xchg r16-r31, rax
+    jnz     .n90_xchg
     cmp     ebx, 16
     je      .n90_xchg
     test    byte [rel dx_rex], 8
@@ -3476,6 +3674,23 @@ rn8rex: db "al",0,0,0,0,0,0, "cl",0,0,0,0,0,0, "dl",0,0,0,0,0,0, "bl",0,0,0,0,0,
         db "spl",0,0,0,0,0, "bpl",0,0,0,0,0, "sil",0,0,0,0,0, "dil",0,0,0,0,0
         db "r8b",0,0,0,0,0, "r9b",0,0,0,0,0, "r10b",0,0,0,0, "r11b",0,0,0,0
         db "r12b",0,0,0,0, "r13b",0,0,0,0, "r14b",0,0,0,0, "r15b",0,0,0,0
+; APX's r16-r31
+rnx64:  db "r16",0,0,0,0,0, "r17",0,0,0,0,0, "r18",0,0,0,0,0, "r19",0,0,0,0,0
+        db "r20",0,0,0,0,0, "r21",0,0,0,0,0, "r22",0,0,0,0,0, "r23",0,0,0,0,0
+        db "r24",0,0,0,0,0, "r25",0,0,0,0,0, "r26",0,0,0,0,0, "r27",0,0,0,0,0
+        db "r28",0,0,0,0,0, "r29",0,0,0,0,0, "r30",0,0,0,0,0, "r31",0,0,0,0,0
+rnx32:  db "r16d",0,0,0,0, "r17d",0,0,0,0, "r18d",0,0,0,0, "r19d",0,0,0,0
+        db "r20d",0,0,0,0, "r21d",0,0,0,0, "r22d",0,0,0,0, "r23d",0,0,0,0
+        db "r24d",0,0,0,0, "r25d",0,0,0,0, "r26d",0,0,0,0, "r27d",0,0,0,0
+        db "r28d",0,0,0,0, "r29d",0,0,0,0, "r30d",0,0,0,0, "r31d",0,0,0,0
+rnx16:  db "r16w",0,0,0,0, "r17w",0,0,0,0, "r18w",0,0,0,0, "r19w",0,0,0,0
+        db "r20w",0,0,0,0, "r21w",0,0,0,0, "r22w",0,0,0,0, "r23w",0,0,0,0
+        db "r24w",0,0,0,0, "r25w",0,0,0,0, "r26w",0,0,0,0, "r27w",0,0,0,0
+        db "r28w",0,0,0,0, "r29w",0,0,0,0, "r30w",0,0,0,0, "r31w",0,0,0,0
+rnx8:   db "r16b",0,0,0,0, "r17b",0,0,0,0, "r18b",0,0,0,0, "r19b",0,0,0,0
+        db "r20b",0,0,0,0, "r21b",0,0,0,0, "r22b",0,0,0,0, "r23b",0,0,0,0
+        db "r24b",0,0,0,0, "r25b",0,0,0,0, "r26b",0,0,0,0, "r27b",0,0,0,0
+        db "r28b",0,0,0,0, "r29b",0,0,0,0, "r30b",0,0,0,0, "r31b",0,0,0,0
 rn8leg: db "al",0,0,0,0,0,0, "cl",0,0,0,0,0,0, "dl",0,0,0,0,0,0, "bl",0,0,0,0,0,0
         db "ah",0,0,0,0,0,0, "ch",0,0,0,0,0,0, "dh",0,0,0,0,0,0, "bh",0,0,0,0,0,0
         db "r8b",0,0,0,0,0, "r9b",0,0,0,0,0, "r10b",0,0,0,0, "r11b",0,0,0,0
@@ -3570,6 +3785,10 @@ s_commacl:  db ",cl", 0
 s_esrdi:    db "es:[rdi]", 0
 s_dsrsi:    db "ds:[rsi]", 0
 s_movabs:   db "movabs", 0
+s_jmpabs:   db "jmpabs", 0
+s_nf:       db "{nf} ", 0
+s_pushp:    db "pushp", 0
+s_popp:     db "popp", 0
 s_pause:    db "pause", 0
 s_xchg:     db "xchg", 0
 s_cbw:      db "cbw", 0
@@ -3609,3 +3828,6 @@ gae_mem_sizes: db 0, 0, 32, 32, 0, 0, 0, 8
 gae_reg_names: db "lfence",0,0, "mfence",0,0, "sfence",0,0
 
 %include "tools/disasm/x86_tables.inc"
+
+[SECTION .text]
+%include "tools/disasm/x86_apx.inc"
