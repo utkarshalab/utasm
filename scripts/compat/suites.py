@@ -1152,6 +1152,22 @@ def procedures(utasm, verbose=False):
     return s
 
 
+def typed_strucs(utasm, verbose=False):
+    """utasm's "[rbx:PACKET].len": the field's offset and width, and the
+    errors a wrong size, field or type gives."""
+    s = Suite("typed strucs", verbose)
+    for name, lines, want, err in cases.TYPED_STRUC_CASES:
+        with tempdir() as d:
+            open(os.path.join(d, "t.s"), "w").write(cases.TYPED_STRUC + lines)
+            r = run([utasm, "-f", "bin", "t.s", "-o", "t.bin"], cwd=d)
+            got = open(os.path.join(d, "t.bin"), "rb").read().hex() if r.returncode == 0 else None
+        if want is not None:
+            s.result(name, got == want, "got %s: %r" % (got, (r.stderr or "")[:300]))
+        else:
+            s.result(name, r.returncode != 0 and err in (r.stderr or ""), "rc %d: %r" % (r.returncode, (r.stderr or "")[:300]))
+    return s
+
+
 def lints(utasm, verbose=False):
     """utasm's own warnings (pie off by default, slash-comment on): where
     they must and must not appear."""
