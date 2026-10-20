@@ -584,6 +584,10 @@
 %define INSTF_DISP32           0x20        ; {disp32}: a four-byte one
 %define INSTF_XACQUIRE         0x40        ; xacquire written (its F2 is in INST_prefixes)
 %define INSTF_XRELEASE         0x80        ; xrelease written (F3)
+; INST_apx: APX's pseudo-prefixes and default flags (backend/encoder/apx.s)
+%define APX_NF                 0x01        ; {nf}: the flags kept
+%define APX_ZU                 0x02        ; {zu}: the destination's upper bits zeroed
+%define APX_DFV                0x04        ; {dfv=...} written (INST_dfv)
 
 ; RELOC_flags
 %define RELOC_FLAG_SYM         0x01        ; "wrt ..sym": against the symbol itself,
