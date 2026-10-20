@@ -46,6 +46,8 @@ amd64_encode_instruction:
     mov     dword [rbx + ASMCTX_inst_len], 0
     extern  amd64_a67_at
     mov     qword [rel amd64_a67_at], -1
+    extern  amd64_rex2_at
+    mov     qword [rel amd64_rex2_at], -1  ; (no REX2 yet: mode.s)
     mov     dword [rel amd64_rip_pending], 0
     mov     dword [rel amd64_reloc_err], 0
     mov     byte [rel amd64_relax_kind], 0
@@ -354,7 +356,7 @@ amd64_encode_instruction:
     jne     .not_pop_cs
     cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_REG
     jne     .not_pop_cs
-    cmp     byte [r12 + INST_op0 + OPERAND_reg], 24
+    cmp     byte [r12 + INST_op0 + OPERAND_reg], REG_CS
     jne     .not_pop_cs
     ; not in 64-bit code (NASM 3's error): 0F there began whatever came
     ; next as a two-byte opcode
@@ -2105,8 +2107,13 @@ amd64_encode_instruction:
     extern  amd64_force_osize
     call    amd64_force_osize
 .done:
+    ; APX's REX2: its map, or the error of r16-r31 it cannot carry; then
     ; the prefixes in the order of the syntax's assembler (mode.s)
     test    rax, rax
+    jnz     .ordered
+    extern  amd64_rex2_finish
+    call    amd64_rex2_finish
+    test    eax, eax
     jnz     .ordered
     extern  amd64_prefix_order
     call    amd64_prefix_order
@@ -2172,7 +2179,7 @@ amd64_cpu_forms:
     inc     edx
     cmp     byte [rsi + OPERAND_kind], OP_REG
     jne     .cf_op
-    cmp     byte [rsi + OPERAND_reg], 16
+    cmp     byte [rsi + OPERAND_reg], 32
     jae     .cf_op                         ; (not a general one)
     cmp     byte [rsi + OPERAND_size], 32
     jae     .cf_level
@@ -6720,10 +6727,14 @@ amd64_emit_prefixes:
             ENDIF
             ENDIF
 
+        ; REX, or APX's REX2 for r16-r31 (mode.s amd64_rex_out)
         mov     rax, r11
-        call    amd64_emit_byte
+        extern  amd64_rex_out
+        call    amd64_rex_out
+        test    eax, eax
+        jnz     .error
         ENDIF
-    
+
 .done:
     epilogue
 
@@ -7551,7 +7562,15 @@ amd64_encode_jmp:
     test    byte [r10 + OPERAND_flags], OP_FLAG_FAR
     jz      .far_width
     call    amd64_far_width
+    jmp     .width_ok
 .far_width:
+    mov     ecx, 1                         ; jmp: a word takes its 66
+    call    amd64_near_indirect_size
+    test    eax, eax
+    jnz     .bad_size
+    mov     al, 32
+.width_ok:
+    lea     r10, [r12 + INST_op0]
     xor     rsi, rsi                       ; no ModRM.reg operand
     mov     rdx, r10                       ; ModRM.rm operand
     call    amd64_emit_prefixes
@@ -7566,6 +7585,36 @@ amd64_encode_jmp:
     call    amd64_emit_modrm_sib
 .done:
     epilogue
+.bad_size:
+    mov     rax, EXIT_ENCODE_FAIL
+    epilogue
+
+; amd64_near_indirect_size: in 64-bit code a near indirect jmp / call
+; (FF /4, /2) is 64-bit: a word operand only for jmp (ecx = 1), with its
+; 66 written here ("jmp ax" is 66 FF E0, as NASM's); a dword, or a word
+; for call, no form (NASM's error) - they were jmp rax / call rax.
+; Output: eax = 0 or EXIT_ENCODE_FAIL. Clobbers rax, rdx.
+amd64_near_indirect_size:
+    xor     eax, eax
+    cmp     byte [rel asm_bits], 64
+    jne     .nis_ret
+    movzx   edx, byte [r12 + INST_op0 + OPERAND_size]
+    test    edx, edx
+    jz      .nis_ret
+    cmp     edx, 64
+    je      .nis_ret
+    cmp     edx, 16
+    jne     .nis_bad
+    test    ecx, ecx
+    jz      .nis_bad
+    mov     al, 0x66
+    call    amd64_emit_byte
+    xor     eax, eax
+.nis_ret:
+    ret
+.nis_bad:
+    mov     eax, EXIT_ENCODE_FAIL
+    ret
 
 ; amd64_warn_class: warning class edi with the text at rsi (the
 ; registers the encoder keeps are saved)
@@ -7651,7 +7700,15 @@ amd64_encode_call:
     test    byte [r10 + OPERAND_flags], OP_FLAG_FAR
     jz      .far_width
     call    amd64_far_width
+    jmp     .width_ok
 .far_width:
+    xor     ecx, ecx                       ; call: no word form
+    call    amd64_near_indirect_size
+    test    eax, eax
+    jnz     .bad_size
+    mov     al, 32
+.width_ok:
+    lea     r10, [r12 + INST_op0]
     xor     rsi, rsi                       ; no ModRM.reg operand
     mov     rdx, r10                       ; ModRM.rm operand
     call    amd64_emit_prefixes
@@ -7665,6 +7722,9 @@ amd64_encode_call:
 .call_near:
     call    amd64_emit_modrm_sib
 .done:
+    epilogue
+.bad_size:
+    mov     rax, EXIT_ENCODE_FAIL
     epilogue
 
 ;*
@@ -7699,12 +7759,17 @@ amd64_encode_push_pop:
             mov al, 0x66
             call amd64_emit_byte
             ENDIF
-        ; REX prefix if reg >= 8
+        ; REX.B for r8-r15, REX2 for r16-r31 (mode.s amd64_rex_out)
         lea     r10, [r12 + INST_op0]
         mov     al, [r10 + OPERAND_reg]
         IF al, ge, 8
-            mov al, 0x41
-            call amd64_emit_byte
+            mov     al, 0x40
+            xor     esi, esi
+            mov     rdx, r10
+            extern  amd64_rex_out
+            call    amd64_rex_out
+            test    eax, eax
+            jnz     .pp_fail
             ENDIF
         ; The opcode is built last: amd64_emit_byte scratches RDX/R10, so it
         ; cannot be held across the prefix emission above.
@@ -7732,6 +7797,9 @@ amd64_encode_push_pop:
         mov     rdi, r10
         call    amd64_emit_modrm_sib
         ENDIF
+    epilogue
+.pp_fail:
+    mov     rax, EXIT_ENCODE_FAIL
     epilogue
 
 ;*
@@ -8167,7 +8235,7 @@ amd64_encode_rm_r_0f:
     jne     .bad
     cmp     byte [r10 + OPERAND_kind], OP_REG
     jne     .bad
-    cmp     byte [r10 + OPERAND_reg], 16
+    cmp     byte [r10 + OPERAND_reg], 32
     jae     .bad
     cmp     byte [r10 + OPERAND_size], 8
     je      .bad
@@ -8175,7 +8243,7 @@ amd64_encode_rm_r_0f:
     je      .mem
     cmp     byte [r11 + OPERAND_kind], OP_REG
     jne     .bad
-    cmp     byte [r11 + OPERAND_reg], 16
+    cmp     byte [r11 + OPERAND_reg], 32
     jae     .bad
     cmp     byte [r11 + OPERAND_size], 8
     je      .bad
