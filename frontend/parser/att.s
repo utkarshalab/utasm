@@ -244,6 +244,9 @@ att_prefixes:
     ap "data32", 0x66
     ap "addr16", 0x67
     ap "addr32", 0x67
+    ; the same, as .intel_syntax's %idefine left them (gas.s intel_text)
+    ap "osp", 0x66
+    ap "asp", 0x67
     ap "cs", 0x2E
     ap "ds", 0x3E
     ap "es", 0x26
@@ -284,6 +287,20 @@ att_r64:
     db "rax", 0, "rbx", 0, "rcx", 0, "rdx", 0, "rsi", 0, "rdi", 0, "rbp", 0
     db "rsp", 0, "r8", 0, "r9", 0, "r10", 0, "r11", 0, "r12", 0, "r13", 0
     db "r14", 0, "r15", 0, 0
+
+; at_pfx_word's: a prefix byte, NASM's word for it
+at_pfx_words:
+    db 0xF3, "rep", 0
+    db 0xF2, "repne", 0
+    db 0xF0, "lock", 0
+    db 0x66, "osp", 0
+    db 0x67, "asp", 0
+    db 0x2E, "cs", 0
+    db 0x26, "es", 0
+    db 0x36, "ss", 0
+    db 0x64, "fs", 0
+    db 0x65, "gs", 0
+    db 0
 
 s_db:       db "db 0x", 0
 s_byte:     db "byte ", 0
@@ -1017,15 +1034,27 @@ at_build:
     push    r14
     mov     byte [rel at_err], 0
     call    mb_begin
-    ; the prefixes, each its byte on a line before the instruction
+    ; the prefixes: alone on the line, each its byte; before an
+    ; instruction those NASM has a word for go on its line (at_pfx_word)
+    ; - its own, so the encoder writes them in GNU as's order with the
+    ; instruction's 66 / 67 ("lock cmpxchgw" is 66 F0, as GNU as's, where
+    ; a byte line before it gave F0 66) - the rest (REX, 3E) a byte line
     xor     r12d, r12d
 .b_pfx:
     cmp     r12, [rel at_npfx]
     jae     .b_pfx_done
     lea     rax, [rel at_pfx]
     movzx   eax, byte [rax + r12]
-    call    at_db_line
     inc     r12
+    cmp     qword [rel at_mnem], 0
+    je      .b_pfx_db
+    push    rax
+    call    at_pfx_word
+    test    rsi, rsi
+    pop     rax
+    jnz     .b_pfx                         ; (on the instruction's line)
+.b_pfx_db:
+    call    at_db_line
     jmp     .b_pfx
 .b_pfx_done:
     cmp     qword [rel at_mnem], 0
@@ -1065,14 +1094,36 @@ at_build:
     cmp     byte [rsi + 2], 'i'
     je      .b_seg_skip
 .b_seg_put:
+    ; one of the prefixes on the instruction's line
     pop     rax
-    call    at_db_line
+    mov     rdx, [rel at_npfx]
+    cmp     rdx, 16
+    jae     .b_seg
+    lea     rsi, [rel at_pfx]
+    mov     [rsi + rdx], al
+    inc     qword [rel at_npfx]
     jmp     .b_seg
 .b_seg_skip:
     pop     rax
     jmp     .b_seg
 .b_line:
     call    mb_line
+    ; the prefixes NASM has a word for ("rep", "lock", "osp", "fs" ...)
+    xor     r12d, r12d
+.b_words:
+    cmp     r12, [rel at_npfx]
+    jae     .b_words_done
+    lea     rax, [rel at_pfx]
+    movzx   eax, byte [rax + r12]
+    inc     r12
+    call    at_pfx_word
+    test    rsi, rsi
+    jz      .b_words
+    call    mb_putz
+    mov     al, ' '
+    call    mb_putc
+    jmp     .b_words
+.b_words_done:
     mov     rsi, [rel at_mnem]
     call    mb_putz
     ; "stos %rax, %es:(%rdi)": the size its register names
@@ -1203,6 +1254,31 @@ at_db_line:
     call    mb_putc
     mov     al, 10
     jmp     mb_putc
+
+; at_pfx_word: rsi = NASM's word for the prefix byte eax, written on the
+; instruction's line - the byte itself, nothing else ("osp" / "asp" for
+; data16 / addr32, "repne" for bnd's F2 too) - or 0 (REX; 3E, which is
+; notrack as often as ds). Preserves all but rsi and the flags.
+at_pfx_word:
+    push    rcx
+    lea     rsi, [rel at_pfx_words]
+.pw_next:
+    movzx   ecx, byte [rsi]
+    test    ecx, ecx
+    jz      .pw_none
+    inc     rsi
+    cmp     eax, ecx
+    je      .pw_ret
+.pw_skip:
+    inc     rsi
+    cmp     byte [rsi - 1], 0
+    jne     .pw_skip
+    jmp     .pw_next
+.pw_none:
+    xor     esi, esi
+.pw_ret:
+    pop     rcx
+    ret
 
 ; at_segment: a segment at token rcx ("%fs:" or "%fs" ":")? eax = its
 ; prefix byte (0: none), rcx past it, r8 = its name (two letters)
