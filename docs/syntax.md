@@ -1543,6 +1543,71 @@ Notes:
 
 ---
 
+### Namespaces and modules
+
+utasm's own feature, for programs spread over many files.
+
+```asm
+namespace net                   ; a block: its names are public
+    private buf                 ; ... but these (used only from inside net)
+    send:                       ; net::send
+        lea  rsi, [rel buf]     ; net::buf
+        call log                ; net::log if net has one, else log
+        call ::log              ; always the outer log
+    .again:                     ; net::send.again
+        ret
+    namespace tcp               ; net::tcp, nested
+        open: call send         ; net::send (tcp has none)
+    endnamespace
+endnamespace
+
+call net::send
+call net::tcp::open
+```
+
+```asm
+; net.s - a module: a namespace to the end of its file
+module net
+export send, MTU                ; public; every other name is private to net
+MTU equ 1500
+send:   call helper
+        ret
+helper: ret                     ; net::helper: only net may use it
+
+; main.s
+%include "net.s"
+call net::send
+mov  eax, net::MTU
+```
+
+How names work inside a namespace:
+
+- A defined name is qualified: labels, `equ`, `proc NAME`, and a struc
+  with its fields and `_size`.
+- A local label (`.x`) still belongs to its label: `net::send.again`.
+- A name used inside is looked for in the innermost namespace first, then
+  in each one outward, then outside them all.
+- `::x` always means the outer `x`.
+- A name may be used before it is defined. It is resolved once the whole
+  source is read.
+
+These are errors:
+
+- A name taken from an outer namespace that an inner one defines later.
+  It would have meant the inner one.
+- A private name used from outside: `private` names in a namespace, and
+  names a module doesn't `export`.
+- `endnamespace` with no namespace open, or inside a module (a module ends
+  with its file).
+- A `namespace` with no `endnamespace`.
+- `export` or `private` outside a namespace or module.
+
+The output is unchanged: `net::send` is a label like any other.
+`namespace:` (with a colon) is still a label. The words are utasm's syntax
+only, not used under `%use masm` or GNU's.
+
+---
+
 ### Assembler Control
 
 ```asm
