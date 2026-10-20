@@ -410,6 +410,8 @@ x86_decode:
     or      edx, 1                         ; B
 .v3_map:
     and     eax, 0x1F
+    cmp     eax, 7
+    je      .vex7                          ; map 7: x86_apx.inc (dx_vex7)
     cmp     eax, 1
     jb      .bad
     cmp     eax, 3
@@ -752,6 +754,20 @@ x86_decode:
     jne     .bad
 .have_op:
     mov     [rel dx_op], al
+    ; F2 / F3 0F 38 F8 with a register: urdmsr / uwrmsr (x86_apx.inc)
+    cmp     byte [rel dx_map], 3
+    jne     .not_umsr
+    cmp     al, 0xF8
+    jne     .not_umsr
+    call    dx_umsr
+    test    eax, eax
+    jz      .not_umsr_al
+    cmp     byte [rel dx_fail], 0
+    jne     .bad
+    jmp     .finish
+.not_umsr_al:
+    mov     al, 0xF8
+.not_umsr:
     ; REX2's own: jmpabs (A1 imm64, W 0), pushp / popp (50+r / 58+r, W 1)
     cmp     byte [rel dx_rex2], 0
     je      .not_rex2_own
@@ -1093,6 +1109,12 @@ x86_decode:
     jmp     .finish                        ; (vldmxcsr / vstmxcsr above)
 
     ; ---- EVEX map 4 (APX): x86_apx.inc ----
+.vex7:
+    call    dx_rd8                         ; W vvvv L pp (rd8 keeps edx)
+    call    dx_vex7
+    cmp     byte [rel dx_fail], 0
+    jne     .bad
+    jmp     .finish
 .evex4:
     call    dx_evex4
     cmp     byte [rel dx_fail], 0
