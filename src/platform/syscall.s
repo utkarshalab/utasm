@@ -1,4 +1,4 @@
-; host/syscall.s
+; src/platform/syscall.s
 ; Phase 2 — raw Linux syscall wrappers
 ; stub — not yet implemented
 bits 64
