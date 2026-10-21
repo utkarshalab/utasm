@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/label.s
+// TEST: tests/asm/aarch64/label.s
 // Suite: AArch64 Core
 // Purpose: Label and symbol definition coverage for AArch64.
 //   Covers: global labels, local labels, forward references,
