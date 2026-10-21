@@ -1,11 +1,11 @@
 """Encoder fuzzing against NASM: random instructions of every form in NASM's
-own table (scripts/nasm/insns.dat), with random registers, addresses and
+own table (third_party/nasm/insns.dat), with random registers, addresses and
 immediates, in bits 16, 32 and 64. Each batch is assembled by both; what
 NASM rejects is dropped; then each line's bytes in the two listings must be
 the same, and utasm must take every line NASM takes.
 
-    python3 scripts/compat/encfuzz.py UTASM [LINES] [SEED] [-v]
-    python3 scripts/compat/encfuzz.py UTASM --objdump [SEED] [-v]
+    python3 tests/compat/encfuzz.py UTASM [LINES] [SEED] [-v]
+    python3 tests/compat/encfuzz.py UTASM --objdump [SEED] [-v]
 
 --objdump: NASM's table is not always right (its AVX512-FP16 forms: names
 off by an opcode, a source missing, roles swapped), and a mistake both
@@ -19,7 +19,7 @@ import collections, os, random, re, sys, tempfile
 from common import run, tempdir
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-INSNS = os.environ.get("ENCFUZZ_INSNS") or os.path.join(os.path.dirname(HERE), "nasm", "insns.dat")
+INSNS = os.environ.get("ENCFUZZ_INSNS") or os.path.join(os.path.dirname(os.path.dirname(HERE)), "third_party", "nasm", "insns.dat")
 
 GPR64 = ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi"] + ["r%d" % i for i in range(8, 16)]
 GPR32 = ["eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi"] + ["r%dd" % i for i in range(8, 16)]
