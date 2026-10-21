@@ -1,15 +1,15 @@
 ;
 ; ============================================
-; File     : lib/hash.s
+; File     : src/lib/hash.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 DEFAULT REL
 
@@ -25,7 +25,7 @@ DEFAULT REL
 ;   hash_crc32      - CRC-32 (IEEE 802.3, reflected, poly 0xEDB88320)
 ;
 ; All functions are pure and cannot fail: result is returned in rax.
-; (str_hash in lib/string.s is the older djb2 hash; these are separate.)
+; (str_hash in src/lib/string.s is the older djb2 hash; these are separate.)
 ;
 ; Calling convention (AMD64):
 ;   args  : rdi, rsi, rdx
