@@ -64,8 +64,6 @@ relocations.
 | --- | --- | --- |
 | `linker.s` | 319 | `linker_run` (the steps above), the overlap check |
 | `reloc/reloc.s` | 1,333 | `reloc_record`, `reloc_resolve_all`, `reloc_apply_one`, `reloc_wrt`, `reloc_warn_pie`, expression and offset fields |
-| `archive.s` | 282 | a Unix `.a` reader (`archive_init`, `archive_get_member_data`, `archive_resolve_symbol`) — **unused**: written for multi-object linking, not called yet |
-| `script.s` | 35 | `linker_script_parse` — **unused**: a stub for linker scripts |
 | `dead.s` | 4 | placeholder: removing unused sections (`--gc-sections`) |
 | `layout.s` | 4 | placeholder: section layout / addresses across objects |
 | `merge.s` | 4 | placeholder: section merging (COMDAT) |
@@ -99,8 +97,9 @@ What Utkarsha OS's build needs from utasm alone:
 1. several inputs in one run (or `utasm link a.o b.o -o image`), with
    symbol resolution across them (`symbol.s`), section merging and
    layout (`merge.s`, `layout.s`, `section.s`), a layout description
-   (`script.s` or a declarative form), `--gc-sections` (`dead.s`);
-2. archives (`archive.s`, already able to read `.a` files);
+   (a linker script or a declarative form), `--gc-sections` (`dead.s`);
+2. archives (`.a` files; an early unused reader was removed — git history
+   has it, commits A59-A62 of 2026-04-29);
 3. the relocations of a full linker (`reloc/*.s`);
 4. a link map (`map.s`).
 
