@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : backend/output/coff/coff.s
+; File        : src/object/coff/coff.s
 ; Project     : utasm
 ; Description : -f win64: the ELF64 object rewritten as an x86-64 COFF one,
 ;               laid out as NASM's win64 output is.
@@ -40,8 +40,8 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
 
 extern  io_open
 extern  io_close
