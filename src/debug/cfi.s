@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : debug/cfi.s
+; File        : src/debug/cfi.s
 ; Project     : utasm
 ; Description : Call frame information: GAS's .cfi_* directives, written as
 ;               the .eh_frame section an ELF object carries, so debuggers,
@@ -28,8 +28,8 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
 
 extern  asm_ctx_create_section
 extern  asm_ctx_emit_byte
