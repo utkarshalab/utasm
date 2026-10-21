@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/float.s
+// TEST: tests/asm/riscv64/float.s
 // Suite: RISC-V 64 Core
 // Purpose: Floating-point instruction coverage (F and D extensions).
 //   Covers: FLW, FSW, FLD, FSD, FADD, FSUB, FMUL, FDIV, FSQRT,
