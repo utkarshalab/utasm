@@ -88,13 +88,14 @@ Flat binary is third — needed for boot sectors and raw firmware images.
 
 ---
 
-## Why io_uring? (written, not used)
+## Why not io_uring?
 
-Today every source is **mmapped** and every output written with `write`;
-`src/platform/uring.s` holds an io_uring ring that nothing calls yet. The
-case for it: traditional read/write syscalls block. For large source files (100k+ lines), async I/O allows the lexer to process already-read data while the kernel fetches the next chunk. This is the difference between 1.2s and 0.4s on a 50MB source file.
-
-io_uring was chosen over AIO because it supports both reads and writes with a single ring interface, has lower latency, and is the direction Linux I/O is moving.
+An io_uring layer was written early and never connected; it has been
+removed. Every source is **mmapped** — the kernel pages it in as the lexer
+reads it, with no copy — and the output is written with `write` once it is
+complete. With one input already mapped and one output, asynchronous I/O
+has nothing to overlap. It would be worth revisiting only if utasm read
+many large files at once (multi-object linking, Phase B).
 
 ---
 
