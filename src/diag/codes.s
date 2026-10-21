@@ -1,15 +1,15 @@
 ;
 ; ============================================
-; File     : error/codes.s
+; File     : src/diag/codes.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 DEFAULT REL
 
@@ -197,7 +197,7 @@ error_track_token:
     mov     rax, [rdi + TOKEN_file]
     mov     [rel error_loc_file], rax
     mov     [rel error_loc_line], ecx
-    ; where the parser stopped, should it stop here (error/format/source.s)
+    ; where the parser stopped, should it stop here (src/diag/source.s)
     cmp     byte [rdi + TOKEN_kind], TOK_NEWLINE
     je      .not_marked
     cmp     byte [rdi + TOKEN_kind], TOK_EOF
@@ -364,7 +364,7 @@ error_code_message:
 global error_report_code
 error_report_code:
     call    warn_before_error              ; the warnings held: given or not
-    mov     [rel diag_code], edi           ; (error/format/source.s)
+    mov     [rel diag_code], edi           ; (src/diag/source.s)
     push    rbx
     mov     ebx, edi
     lea     rdi, [rel sev_error]
