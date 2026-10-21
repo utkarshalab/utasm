@@ -1,6 +1,6 @@
 ;
 ; ============================================
-; File     : src/cli.s
+; File     : src/main/cli.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
