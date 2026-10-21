@@ -2170,7 +2170,7 @@ COW0001: 'cpuid' is x86-64 specific — not portable to AArch64 or RISC-V
 # Exit Codes
 
 ```asm
-; defined in include/constant.inc
+; defined in src/include/constant.inc
 EXIT_OK             equ 0   ; assembly successful, no errors
 EXIT_USAGE          equ 1   ; invalid CLI arguments
 EXIT_OOM            equ 2   ; arena out of memory
