@@ -7,9 +7,9 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 extern binary_emit
 extern elf64_emit
@@ -120,7 +120,7 @@ linker_run:
         ENDIF
 
     ; 1.55 Pass 2 of two: the values taken for kept expressions hold, now
-    ;      that the code is laid out (or utasm runs again: core/known.s)
+    ;      that the code is laid out (or utasm runs again: src/core/known.s)
     extern  known_verify
     call    known_verify
 
