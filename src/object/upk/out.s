@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : backend/output/upk/out.s
+; File        : src/object/upk/out.s
 ; Description : UtkarshaLab Package (UPK) output format
 ; ============================================================================
 ;
