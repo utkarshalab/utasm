@@ -1,6 +1,6 @@
 ;
 ; ============================================
-; File     : src/main.s
+; File     : src/main/utasm.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
