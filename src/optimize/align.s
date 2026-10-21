@@ -1,15 +1,15 @@
 ;
 ; ============================================
-; File     : optimizer/align.s
+; File     : src/optimize/align.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 DEFAULT REL
 
@@ -28,12 +28,12 @@ DEFAULT REL
 ;   p6        0F 1F /0 multi-byte nops
 ;   gas       GNU as's: 0F 1F /0 up to 11 bytes (66 66 2E 0F 1F 84 ...),
 ;             never a jump - what a GNU directive's alignment writes in
-;             code (frontend/parser/gas.s)
+;             code (src/frontend/syntax/gas/gas.s)
 ;
 ; padding longer than the mode's threshold (8 for generic, 16 otherwise;
 ; "alignmode MODE, nojmp" never) is jumped over: jmp to its end, then
 ; nops. Every byte follows from the padding's length, the mode and bits,
-; so optimizer/jump.s regenerates it when moving code changes the length.
+; so src/optimize/jump.s regenerates it when moving code changes the length.
 ;
 ; A padding's fill is described by a FILL SPEC (a qword, kept in the
 ; relaxation record):
