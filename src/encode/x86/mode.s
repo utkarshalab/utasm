@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : backend/encoder/mode.s
+; File        : src/encode/x86/mode.s
 ; Project     : utasm
 ; Description : bits 16 / bits 32: what changes from 64-bit mode.
 ;
@@ -31,8 +31,8 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
 
 extern  asm_bits
 extern  amd64_emit_byte
