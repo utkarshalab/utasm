@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : include/arch/amd64.s
+; File        : src/include/arch/amd64.inc
 ; Project     : utasm
 ; Description : AMD64 Architecture Constants and Register IDs.
 ; ============================================================================
