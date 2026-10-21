@@ -10,7 +10,7 @@
 ; Uses insertion sort because N ≤ 64 entries (3072 bytes) fits
 ; entirely in L1 cache, making it faster than quicksort.
 ;
-; See docs/profiler_architecture.md §7.2 for algorithm rationale.
+; See src/profile/README.md for algorithm rationale.
 ; ============================================================================
 ;
 
