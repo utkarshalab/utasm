@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : backend/output/elf/notes.s
+; File        : src/object/elf/notes.s
 ; Project     : utasm
 ; Description : The note sections an ELF object can be asked for, which
 ;               NASM never writes (utasm's options):
@@ -22,8 +22,8 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
 
 extern  asm_ctx_create_section
 extern  asmctx_find_section
