@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/logic.s
+// TEST: tests/asm/aarch64/logic.s
 // Suite: AArch64 Core
 // Purpose: Logical/bitwise instruction coverage.
 //   Covers: AND, ORR, EOR, EON, BIC, ORN, ANDS, TST, CLZ, CLS,
