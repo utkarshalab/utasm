@@ -11,7 +11,7 @@
 ; profiler_end_phase captures RDTSCP first, then validates (excludes
 ; validation time from the measurement).
 ;
-; See docs/profiler_architecture.md §6.2, §6.3 for protocol details.
+; See src/profile/README.md for protocol details.
 ; ============================================================================
 ;
 
