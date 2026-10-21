@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/smoke.s
+// TEST: tests/asm/aarch64/smoke.s
 // Suite: AArch64 Core
 // Purpose: Minimal smoke test — verifies the AArch64 pipeline does not crash
 //          on the simplest possible instruction sequence.
