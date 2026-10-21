@@ -3,7 +3,7 @@
 
 ;
 ; ============================================
-; File     : include/type.s
+; File     : src/include/type.inc
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
@@ -553,7 +553,7 @@ endstruc
 ; STRUCT: ProfileEntry — single profiling measurement record
 ; ============================================================================
 ; One entry per assembler pipeline phase. Measures RDTSC cycle counts.
-; See docs/profiler_architecture.md §4.1 for byte-level layout.
+; See src/profile/README.md for byte-level layout.
 
 struc PROFENTRY
     field tag,         1       ; TAG_PROFENTRY (0x10)
@@ -573,7 +573,7 @@ endstruc
 ; STRUCT: ProfileState — global profiler context
 ; ============================================================================
 ; Single instance allocated at profiler_init time. Owns the entry array.
-; See docs/profiler_architecture.md §4.2 for byte-level layout.
+; See src/profile/README.md for byte-level layout.
 
 struc PROFSTATE
     field tag,            1    ; TAG_PROFSTATE (0x11)
