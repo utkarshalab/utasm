@@ -23,8 +23,6 @@ sources = [
 
     # Middle — parse tree → resolved IR
     "middle/symtable/symbol.s",
-    "middle/expr/expr.s",
-    "middle/semantic/semantic.s",
 
     # Backend — IR → binary
     "backend/isa/amd64.s",
@@ -58,7 +56,6 @@ sources = [
     "debug/dwarf.s",
 
     # Optimizer
-    "optimizer/optimizer.s",
 
     # Self-patching engine
     "selfpatch/selfpatch.s",
