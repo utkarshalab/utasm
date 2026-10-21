@@ -11,7 +11,7 @@
 ; ============================================
 ;
 
-%include "include/macro.inc"
+%include "src/include/macro.inc"
 
 %define TOK_COMMENT            0x20
 
@@ -46,7 +46,7 @@ struc ARENA
 endstruc
 
 ; ============================================================================
-; STRUCT: Vec  (lib/vec.s)
+; STRUCT: Vec  (src/lib/vec.s)
 ; ============================================================================
 ; Growable array of fixed-size elements, backed by an Arena.
 ; Growth allocates a new buffer and copies; the old one is abandoned
@@ -63,7 +63,7 @@ struc VEC
 endstruc
 
 ; ============================================================================
-; STRUCT: List / ListNode  (lib/list.s)
+; STRUCT: List / ListNode  (src/lib/list.s)
 ; ============================================================================
 ; Doubly linked list of 64-bit values (integers or pointers).
 ; Nodes are allocated from an Arena; removed nodes are not reclaimed.
@@ -84,7 +84,7 @@ struc LISTNODE
 endstruc
 
 ; ============================================================================
-; STRUCT: FmtBuf  (lib/fmt.s)
+; STRUCT: FmtBuf  (src/lib/fmt.s)
 ; ============================================================================
 ; Bounded string builder over a caller-supplied buffer. One byte is always
 ; reserved for the NUL terminator. Writes past capacity are dropped and
@@ -149,7 +149,7 @@ struc SECTION
     field index,    4       ; ELF section index
     field group_flags, 4    ; GRP_COMDAT
     field group_sig,   8    ; pointer to signature SYMBOL
-    field relax_frozen, 1   ; 1 = code here must not move (optimizer/jump.s)
+    field relax_frozen, 1   ; 1 = code here must not move (src/optimize/jump.s)
     field implicit,    1    ; 1 = the default .text utasm creates up front
     field entsize,     1    ; sh_entsize: GNU's '.section .rodata.str1.1,
                             ; "aMS", @progbits, 1' (0: none)
@@ -315,7 +315,7 @@ struc LEXER
     field nolist,   1       ; 1: a GNU macro's / repetition's text - listed
                             ; as the line that called it (gas_macro.s)
     field intel,    1       ; 1: utasm's own syntax even under .att_syntax
-                            ; (text frontend/parser/att.s and masm.s make)
+                            ; (text src/frontend/syntax/gas/att.s and masm.s make)
     field pushed,   1       ; 1: text utasm reads as if included (a %use
                             ; package, the command line's): -E writes no
                             ; empty line of it
