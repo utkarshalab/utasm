@@ -139,6 +139,7 @@ te_has_evex: resb 1                 ; the mnemonic has an EVEX form (amd64_table
 te_vvvv:    resb 1                  ; inverted vvvv | L << 4 | pp, for the VEX bytes
 te_evex:    resb 1                  ; an operand needs EVEX (mask, broadcast, rounding)
 te_i8_relax: resb 1                 ; the second round: a byte immediate out of range taken
+te_mask_relax: resb 1               ; the last round: a mask / {z} looked past (to say so)
 te_i8_cut:  resb 1                  ; ... and this form took one
 
 [SECTION .rodata]
@@ -197,6 +198,7 @@ amd64_table_encode:
     add     r13, rax                       ; r13 = first form of the mnemonic
     call    te_classify
     mov     byte [rel te_i8_relax], 0
+    mov     byte [rel te_mask_relax], 0
     mov     r15, r13
     ; has the mnemonic an EVEX form? (r16-r31 then take it, not a VEX one
     ; made EVEX: te_match)
@@ -230,6 +232,20 @@ amd64_table_encode:
     mov     r13, r15
     jmp     .try
 .no_fit:
+    ; none fits: with the mask / {z} looked past, would one? Then they are
+    ; what is wrong ("vmovd xmm17{k1}, eax": no mask, #UD with one)
+    cmp     byte [rel te_mask_relax], 0
+    jne     .no_fit_mask
+    cmp     byte [r12 + INST_op0 + OPERAND_mask], 0
+    jne     .mask_round
+    test    byte [r12 + INST_op0 + OPERAND_ctrl], 1
+    jz      .no_fit_mask
+.mask_round:
+    mov     byte [rel te_mask_relax], 1
+    mov     byte [rel te_i8_relax], 0
+    mov     r13, r15
+    jmp     .try
+.no_fit_mask:
     ; none fits: for an instruction the table has every form of (NASM's
     ; list), wrong operands - not the hand-written encoders', stubs for these
     test    r14d, 0x8000
@@ -240,6 +256,11 @@ amd64_table_encode:
     xor     eax, eax
     jmp     .ret
 .encode:
+    cmp     byte [rel te_mask_relax], 0
+    je      .encode_ok
+    mov     eax, EXIT_MASK_REFUSED         ; (the mask / {z} round: no form
+    jmp     .ret                           ; takes them)
+.encode_ok:
     ; the immediates cut: NASM's warning for each ("enter 0x12345, 300":
     ; the word's, then the byte's)
     extern  warn_begin, warn_text, warn_end
@@ -500,6 +521,29 @@ te_match:
     shr     eax, 4
     cmp     eax, ENC_EVEX
     jne     .fail                          ; masks/broadcast/rounding: EVEX forms only
+    ; a mask / {z} on the first operand: only a form that takes it (FM_VL
+    ; 0x04: no mask, 0x08: no {z} - NASM's lines with no |mask / |z)
+    cmp     byte [rel te_mask_relax], 0
+    jne     .enc_ok                        ; (dispatch's last round: looked past)
+    cmp     byte [r12 + INST_op0 + OPERAND_mask], 0
+    je      .mask_ok
+    test    byte [r13 + FM_VL], 0x04
+    jnz     .fail
+.mask_ok:
+    test    byte [r12 + INST_op0 + OPERAND_ctrl], 1
+    jz      .enc_ok
+    test    byte [r13 + FM_VL], 0x08
+    jnz     .fail
+    ; {z} zeroes a register: not memory (a store), not a mask register (a
+    ; compare's) - #UD
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_MEM
+    je      .fail
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_REG
+    jne     .enc_ok
+    movzx   eax, byte [r12 + INST_op0 + OPERAND_reg]
+    sub     eax, REG_K0
+    cmp     eax, 8
+    jb      .fail
 .enc_ok:
     ; r16-r31: a legacy form (REX2) or an EVEX one - VEX has no bits for
     ; them (NASM promotes "vpaddd xmm0, xmm1, [r16]" to EVEX so); a VEX
