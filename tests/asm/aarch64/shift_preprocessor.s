@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/shift_preprocessor.s
+// TEST: tests/asm/aarch64/shift_preprocessor.s
 // Suite: AArch64 Preprocessor
 // Purpose: Verify architecture-specific shift mnemonics in preprocessor expressions.
 // Expected: EXIT_OK.
