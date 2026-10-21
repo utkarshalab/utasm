@@ -7,14 +7,14 @@
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 DEFAULT REL
 
 extern arena_alloc
-extern att_on                   ; frontend/parser/att.s: AT&T syntax on
+extern att_on                   ; src/frontend/syntax/gas/att.s: AT&T syntax on
 extern arena_alloc_string
 extern error_emit
 extern mem_copy
@@ -641,7 +641,7 @@ lexer_next:
     mov     byte [r12 + TOKEN_kind], TOK_DOLLAR
     jmp     .advance_single
 
-; ---- AT&T syntax (frontend/parser/att.s) --
+; ---- AT&T syntax (src/frontend/syntax/gas/att.s) --
 .att_dollar:
     call    .att_active
     jne     .not_att_char
@@ -911,7 +911,7 @@ lexer_next:
     jmp     .lex_ident_scan
 .lex_ident_ns:
     ; "net::send": a namespace's name goes on through "::" and a name
-    ; (middle/semantic/namespace.s)
+    ; (src/semantic/namespace.s)
     call    .ns_colons
     jne     .lex_ident_at
     add     r10, 2
@@ -1006,7 +1006,7 @@ lexer_next:
 .lex_ident_not_label:
     mov     byte [r12 + TOKEN_kind], TOK_IDENT
     ; GNU's .ascii / .asciz / .string: their "..." strings keep \" and \\
-    ; as written, to the end of the line (frontend/parser/gas.s reads the
+    ; as written, to the end of the line (src/frontend/syntax/gas/gas.s reads the
     ; escapes) - "\"" does not end one
     mov     rdi, [r12 + TOKEN_value]
     cmp     byte [rdi], '.'
