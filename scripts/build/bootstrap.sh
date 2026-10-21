@@ -1,12 +1,13 @@
 #!/bin/bash
 # ============================================================================
-# File        : scripts/bootstrap.sh
+# File        : scripts/build/bootstrap.sh
 # Project     : utasm
 # Description : Stage 1 (Gen0) and Stage 2 (Gen1) Bootstrapping Pipeline
 #               This script initiates the Millennial Inversion.
 # ============================================================================
 
 set -e
+cd "$(dirname "$0")/../.."                 # the repository root
 
 echo "[+] Initiating UtkarshaLab Bootstrap Sequence..."
 
@@ -18,8 +19,8 @@ mkdir -p build/gen1
 # ----------------------------------------------------------------------------
 echo "[+] PHASE 1: Assembling Gen0 Compiler via NASM..."
 
-# Find all .s files in modular directories, plus root-level utasm.s and cli.s
-src_files="$(find frontend middle backend core error cpu debug optimizer selfpatch profiler io lib host tools -name "*.s") utasm.s cli.s"
+# every source under src/, in the Makefile's order
+src_files="$(find src -name "*.s" | LC_ALL=C sort)"
 obj_files=""
 
 for src_file in $src_files; do
