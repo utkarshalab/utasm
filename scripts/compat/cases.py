@@ -3533,4 +3533,9 @@ ISA_ERRORS += [
     ("vpgatherqd xmm1, [rax+ymm2*4], xmm2", "a gather's destination, index and mask registers must all differ"),
     ("vgatherdps zmm30{k1}, [rax+zmm30*4]", "a gather's destination, index and mask registers must all differ"),
     ("xbegin rax", "invalid operand"),
+    # EVEX gathers / scatters / AVX512PF prefetches: a write mask, not k0
+    # (#UD; GNU's as refuses, NASM takes them)
+    ("vgatherdpd xmm12, [rsi+xmm25*1-0x80]", "a gather / scatter needs a write mask"),
+    ("vpscatterdd [rax+zmm1*4], zmm0", "a gather / scatter needs a write mask"),
+    ("vgatherpf0dps [rax+zmm0*4]", "a gather / scatter needs a write mask"),
 ]
