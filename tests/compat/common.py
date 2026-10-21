@@ -1,11 +1,11 @@
-"""Shared helpers for the NASM compatibility suites (scripts/compat/)."""
+"""Shared helpers for the NASM compatibility suites (tests/compat/)."""
 import os, re, shutil, subprocess, tempfile
 
 # Differences from NASM that are deliberate or not implemented yet. A case
 # listed here is reported as "known" and does not fail the run; remove it
 # once utasm matches.
 KNOWN = {
-    # utasm's %use masm does MASM's PROC (frontend/parser/masm.s): USES
+    # utasm's %use masm does MASM's PROC (src/frontend/syntax/masm/masm.s): USES
     # saves its registers, a far PROC's ret is retf; NASM's package ignores
     # both when more than one word follows "proc" ("j proc far uses rbx")
     "use_masm_proc": "MASM's USES and far kept (NASM's package drops them)",
