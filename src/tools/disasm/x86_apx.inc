@@ -1,5 +1,5 @@
 ; ============================================================================
-; File        : tools/disasm/x86_apx.inc (included by x86.s)
+; File        : src/tools/disasm/x86_apx.inc (included by x86.s)
 ; Description : APX's EVEX map 4 - the legacy integer instructions with a
 ;   new data destination (ND, vvvv), no flags ({nf}: NF), zero upper (ND
 ;   of imul / setcc), {evex}; ccmp / ctest (the default flags in vvvv,
