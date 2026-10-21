@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : backend/output/elf/elf32.s
+; File        : src/object/elf/elf32.s
 ; Project     : utasm
 ; Description : -f elf32: the ELF64 object rewritten as an i386 ELF32 one.
 ;
@@ -26,8 +26,8 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
 
 extern  io_open
 extern  io_close
