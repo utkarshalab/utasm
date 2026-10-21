@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/mmu.s
+// TEST: tests/asm/amd64/mmu.s
 // Suite: AMD64 System
 // Purpose: MMU and virtual memory management instruction coverage.
 //   Covers: INVLPG, INVPCID, MOV CR3, CLFLUSH, SWAPGS,
