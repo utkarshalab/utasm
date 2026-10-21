@@ -1,12 +1,13 @@
 #!/bin/bash
 # ============================================================================
-# File        : scripts/test.sh
+# File        : tests/run.sh
 # Project     : utasm
 # Description : Test Harness for instruction suite validation.
 #               Executes the utasm compiler against all payloads in tests/.
 # ============================================================================
 
 set -e
+cd "$(dirname "$0")/.."                    # the repository root
 
 # ANSI Colors
 GREEN='\033[0;32m'
@@ -31,7 +32,7 @@ TOTAL=0
 echo -e "${BOLD}[+] Executing Global Test Matrix...${NC}"
 
 # Use find to get all .s files recursively in tests/
-test_files=$(find tests -name "*.s")
+test_files=$(find tests -name "*.s" -not -path "tests/compat/*" | LC_ALL=C sort)
 
 for test_file in $test_files; do
     TOTAL=$((TOTAL + 1))
@@ -133,10 +134,10 @@ echo "==========================================================================
 # ----------------------------------------------------------------------------
 # Profiler subsystem suite
 # ----------------------------------------------------------------------------
-if [ -x scripts/test_profiler.sh ] || [ -f scripts/test_profiler.sh ]; then
+if [ -x tests/run_profiler.sh ] || [ -f tests/run_profiler.sh ]; then
     echo
     echo -e "${BOLD}[+] Running Profiler subsystem suite...${NC}"
-    if bash scripts/test_profiler.sh; then
+    if bash tests/run_profiler.sh; then
         echo -e "${GREEN}[+] Profiler suite passed.${NC}"
     else
         echo -e "${RED}[-] Profiler suite FAILED.${NC}"
@@ -148,11 +149,11 @@ fi
 # Profiler pipeline integration: --profile must produce a report, and must
 # stay silent (and not change the output) when it is not asked for.
 # ----------------------------------------------------------------------------
-if [ -x "$UTASM_BIN" ] && [ -f tests/hello_amd64.s ]; then
+if [ -x "$UTASM_BIN" ] && [ -f tests/asm/hello_amd64.s ]; then
     echo
     echo -e "${BOLD}[+] Checking profiler pipeline integration...${NC}"
     mkdir -p build/tests
-    if "$UTASM_BIN" --profile -f elf64 tests/hello_amd64.s \
+    if "$UTASM_BIN" --profile -f elf64 tests/asm/hello_amd64.s \
             -o build/tests/prof_on.o 2>build/tests/prof.err \
         && grep -q "utasm profiler report" build/tests/prof.err; then
         echo -e "${GREEN}    --profile emits a report: OK${NC}"
@@ -161,7 +162,7 @@ if [ -x "$UTASM_BIN" ] && [ -f tests/hello_amd64.s ]; then
         FAILED=$((FAILED + 1))
     fi
 
-    if "$UTASM_BIN" -f elf64 tests/hello_amd64.s \
+    if "$UTASM_BIN" -f elf64 tests/asm/hello_amd64.s \
             -o build/tests/prof_off.o 2>build/tests/prof_off.err \
         && [ ! -s build/tests/prof_off.err ]; then
         echo -e "${GREEN}    silent without --profile: OK${NC}"
@@ -179,14 +180,14 @@ if [ -x "$UTASM_BIN" ] && [ -f tests/hello_amd64.s ]; then
 fi
 
 # ----------------------------------------------------------------------------
-# NASM compatibility suites (scripts/compat/): the same sources assembled by
+# NASM compatibility suites (tests/compat/): the same sources assembled by
 # NASM and utasm must give the same bytes, relocations and symbols. Skipped
 # (with a note) where NASM, binutils or python3 are not installed.
 # ----------------------------------------------------------------------------
 if command -v python3 >/dev/null 2>&1; then
     echo
     echo -e "${BOLD}[+] Running NASM compatibility suites...${NC}"
-    if python3 scripts/compat/run_all.py "$UTASM_BIN"; then
+    if python3 tests/compat/run_all.py "$UTASM_BIN"; then
         echo -e "${GREEN}[+] NASM compatibility suites passed.${NC}"
     else
         echo -e "${RED}[-] NASM compatibility suites FAILED.${NC}"
