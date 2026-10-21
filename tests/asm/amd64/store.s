@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/store.s
+// TEST: tests/asm/amd64/store.s
 // Suite: AMD64 Core
 // Purpose: All store instruction forms: MOV (store), STOSx, string stores,
 //          MOVNTI (non-temporal), all sizes.
