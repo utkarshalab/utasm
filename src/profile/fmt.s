@@ -10,7 +10,7 @@
 ; and right-aligned numeric printing. These are internal helpers called
 ; by table.s and report.s.
 ;
-; See docs/profiler_architecture.md §9.2 for formatting specifications.
+; See src/profile/README.md for formatting specifications.
 ; ============================================================================
 ;
 
