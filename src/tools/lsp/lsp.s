@@ -1,15 +1,15 @@
 ;
 ; ============================================
-; File     : tools/lsp/lsp.s
+; File     : src/tools/lsp/lsp.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 DEFAULT REL
 
@@ -30,7 +30,7 @@ DEFAULT REL
 ;
 ; Each document is assembled by utasm itself, run anew (/proc/self/exe -X
 ; json -f elf64 -I <its directory> -o /dev/null), on a copy of its text in
-; /tmp (the editor's text, saved or not): every message as JSON (error/
+; /tmp (the editor's text, saved or not): every message as JSON (src/diag/
 ; json.s), its line and column made the diagnostic's range (0-based), its
 ; severity an error (1), a warning (2), a note (3). A request it does not
 ; know is answered "method not found".
