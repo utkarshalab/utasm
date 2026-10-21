@@ -181,6 +181,8 @@ def sse_forms():
             f = FORM_NAME[fm]
             if fl & 0x80:                           # integer instruction selected by a prefix
                 continue                            # listed by hand below
+            if name == "maskmovq":                  # registers only: NASM's line
+                continue
             msz = MSZ[fl & 7]
             V, W = vec_types(fl, msz)
             wq = fl & T.S_WQ
@@ -237,6 +239,8 @@ def sse_forms():
                 form("endbr32", [], pfx, mp, opcode, 0xFB, [])
             elif f == "NONE":
                 form(name, [], pfx, mp, opcode, M_NONE, [])
+            elif f in ("VQ", "PW"):                 # MMX <-> SSE: the disassembler's
+                continue                            # (NASM's lines encode them)
             else:
                 raise SystemExit("unhandled SSE form %s (%s)" % (f, name))
 
@@ -790,7 +794,7 @@ def x87_forms():
                 if n in ("fxch", "fcom", "fcomp", "fucom", "fucomp"):
                     form(n, [], "", "", code, base | 1, [], prio=2)
     for code, modrm, n, opnd in T.X87_FIX:
-        if opnd:
+        if opnd == 1:                               # fnstsw ax (2 / 3: the 8087's / 287's, none)
             form(n, "AX", "", "", code, modrm, "-")
             if n.startswith("fn"):
                 form("f" + n[2:], "AX", "", "", code, modrm, "-", F_WAIT)
@@ -867,6 +871,8 @@ EXTRA_INSNS = '''
 AOR	   	mem32,reg32				[mr:	norexw f2 0f 38 fc /r	]	RAOINT,FUTURE,SD
 AOR	   	mem64,reg64				[mr:	o64 f2 0f 38 fc /r	]	RAOINT,FUTURE,SQ,LONG
 PMULHRW		mmxreg,mmxrm			[rm:	o64nw 0f 0f /r b7]			PENT,3DNOW,SQ
+VP4DPWSSDS		zmmreg|mask|z,zmmreg|rs4,mem		[rvm:m128:evex.dds.512.f2.0f38.w0 53 /r]	AVX5124VNNIW,FUTURE,SO
+VP4DPWSSD		zmmreg|mask|z,zmmreg|rs4,mem		[rvm:m128:evex.dds.512.f2.0f38.w0 52 /r]	AVX5124VNNIW,FUTURE,SO
 VCVTQQ2PH	xmmreg|mask|z,xmmrm128|b64	[rm:fv: evex.128.np.map5.w1 5b /r]	AVX512FP16
 VCVTQQ2PH	xmmreg|mask|z,ymmrm256|b64	[rm:fv: evex.256.np.map5.w1 5b /r]	AVX512FP16
 VCVTQQ2PH	xmmreg|mask|z,zmmrm512|b64|er	[rm:fv: evex.512.np.map5.w1 5b /r]	AVX512FP16
