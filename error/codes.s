@@ -695,6 +695,7 @@ code_table:
     code_msg EXIT_TMM_SAME,          m_tmm_same
     code_msg EXIT_GATHER_SAME,       m_gather_same
     code_msg EXIT_VSIB_NO_MASK,      m_vsib_no_mask
+    code_msg EXIT_MASK_REFUSED,      m_mask_refused
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -950,6 +951,7 @@ m_ns_shadow:    db "name taken from an outer namespace, then defined inside", 0
 m_tmm_same:     db "the three tile registers must all differ (#UD otherwise)", 0
 m_gather_same:  db "a gather's destination, index and mask registers must all differ (#UD otherwise)", 0
 m_vsib_no_mask: db "a gather / scatter needs a write mask, {k1} to {k7} (#UD with k0)", 0
+m_mask_refused: db "this instruction takes no write mask / {z} here (#UD with one)", 0
 t_ns_shadow:    db "`^' was taken from an outer namespace, then this one defined it (write ::^, or define it before)", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
