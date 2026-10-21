@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : src/linker/binary.s
+; File        : src/object/flat/flat.s
 ; Project     : utasm
 ; Description : Flat binary emitter (-f bin).
 ;                Writes raw machine bytes with no ELF container.
