@@ -6,9 +6,9 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 extern hash_fnv1a_str
 extern io_mmap
@@ -615,7 +615,7 @@ asm_ctx_align:
     test    rdx, rdx
     cmovz   rcx, rdx               ; ...or 0 when already aligned
     ; GNU's ".p2align N,,MAX" (the fill spec's bits 10-15: MAX + 1): none
-    ; where more is needed - optimizer/jump.s (rx_cap) the same when code
+    ; where more is needed - src/optimize/jump.s (rx_cap) the same when code
     ; before it moves
     mov     r8, r14
     shr     r8d, 10
@@ -627,7 +627,7 @@ asm_ctx_align:
     xor     ecx, ecx
 .uncapped:
 
-    ; Note the padding point for optimizer/jump.s - also when no padding
+    ; Note the padding point for src/optimize/jump.s - also when no padding
     ; is needed now, since moving earlier code can make some necessary.
     ; (relax_note keeps every register)
     mov     rsi, rax               ; position of the padding
@@ -639,7 +639,7 @@ asm_ctx_align:
     test    r12, r12
     jz      .done                  ; already aligned (or past MAX)
     
-    ; 3. The bytes (optimizer/align.s): a byte repeated, or smartalign's
+    ; 3. The bytes (src/optimize/align.s): a byte repeated, or smartalign's
     ; long NOPs
     test    r14d, 0x200
     jz      .fill_loop
@@ -739,7 +739,7 @@ asm_ctx_align_fill:
 
 ;*
 ; * [asm_ctx_align_spec]
-; * Purpose: asm_ctx_align with a fill spec (optimizer/align.s): GNU as's
+; * Purpose: asm_ctx_align with a fill spec (src/optimize/align.s): GNU as's
 ; *   long NOPs (align_gas_spec).
 ; * Input  : RDI = AsmCtx, RSI = alignment, RDX = fill spec
 ; ;
