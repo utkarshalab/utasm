@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/branch.s
+// TEST: tests/asm/aarch64/branch.s
 // Suite: AArch64 Core
 // Purpose: Branch instruction coverage.
 //   Covers: B, BL, BR, BLR, RET, B.cond (all 16 conditions),
