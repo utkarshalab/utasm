@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/interrupt.s
+// TEST: tests/asm/amd64/interrupt.s
 // Suite: AMD64 System
 // Purpose: Interrupt, exception, and trap instruction coverage.
 //   Covers: INT n (all vectors), INT3, INTO, IRET/IRETQ, UD2,
