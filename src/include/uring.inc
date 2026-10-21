@@ -3,7 +3,7 @@
 
 ;
 ; ============================================================================
-; File        : include/uring.s
+; File        : src/include/uring.inc
 ; Project     : utasm
 ; Description : Linux io_uring architectural definitions and syscall maps.
 ;                Used for hyper-fast, asynchronous, zero-copy file I/O operations.
