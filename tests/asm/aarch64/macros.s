@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/macros.s
+// TEST: tests/asm/aarch64/macros.s
 // Suite: AArch64 Preprocessor
 // Purpose: Macro definition and expansion within AArch64 context.
 //   Tests: %macro/%endmacro, 0/1/2/3 params, local labels,
