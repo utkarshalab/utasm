@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/mmu.s
+// TEST: tests/asm/aarch64/mmu.s
 // Suite: AArch64 System
 // Purpose: MMU and virtual memory management instruction coverage.
 //   Covers: TLBI, DC, IC, AT, MSR/MRS for paging registers,
