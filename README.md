@@ -1,102 +1,102 @@
 # utasm
 
-> A high-performance, self-hosting, self-patching, multi-architecture assembler and linker — written entirely in x86-64 assembly.
+> The native assembler of Utkarsha OS: a self-hosting x86-64 assembler,
+> written entirely in x86-64 assembly, with no libc and no runtime.
 
-`utasm` is the universal assembler engine of the UtkarshaLab toolchain. It targets three architectures from a single unified codebase, produces correct ELF64/PE32+ binaries, assembles itself, and patches itself at runtime based on profiling data.
+utasm assembles NASM's syntax (and MASM's, fasm's and GNU as's, Intel or
+AT&T) into ELF objects and executables, flat binaries and the UBF boot
+images Utkarsha OS loads. It builds itself: NASM assembles the first
+generation, and every later one is assembled by utasm, byte-identical from
+the second on. Its output is checked on every change against NASM 3.01,
+GNU as and objdump 2.47, over tens of thousands of cases.
 
 ---
 
 ## Features
 
-- **Multi-Architecture** — Native instruction encoding for x86-64, AArch64, and RISC-V 64 (RV64GC)
-- **Self-Hosting** — Bootstrap pipeline that compiles Gen0 via NASM and Gen1+ via itself
-- **Self-Patching** — Runtime binary self-modification engine that rewrites hot paths based on profiler data
-- **Integrated Linker** — ELF64/PE32+ emission with section layout, relocation resolution, and dead code elimination
-- **Diagnostics that explain** — on a terminal, each error and warning shows its source line with the place marked, in color; operand errors say what the operands were and what clashes; misspelt instructions and symbols get a "did you mean". Piped, the output is NASM's lines (see [Beyond NASM](#beyond-nasm))
-- **Recursive Preprocessor** — `%define`, `%macro`, `%if`, `%rep`, `%rotate`, token pasting, stringification, macro libraries
-- **O(1) Symbol Table** — Hash-based lookup with quadratic probing and ELF index tracking
-- **Full x86-64 Encoding** — REX, VEX-3, EVEX, AVX-512 (F/BW/DQ/VL/VNNI/BF16), AMX, AES-NI
-- **CPU Profiles** — Named CPU targets with per-instruction feature validation
-- **DWARF v5** — Full debug symbol emission (`.debug_info`, `.debug_abbrev`, `.debug_line`, `.debug_frame`)
-- **io\_uring I/O** — Asynchronous file I/O for ultra-fast multi-megabyte builds
-- **Multiple Output Formats** — ELF64 (objects and standalone executables), ELF32 i386 objects, flat binary, `.ubf` boot images for Tattva OS ([docs/ubf.md](docs/ubf.md)); PE32+ (UEFI) and `.upk` packages are planned
-- **16-, 32- and 64-bit code** — `bits 16` / `bits 32` / `bits 64` encode as NASM does in each mode (operand- and address-size prefixes, 16-bit addressing, rel16 branches, the instructions each mode has)
-- **Built-in Tools** — Disassembler, object inspector, symbol dumper — no external tools required. `--disasm` reads ELF64, ELF32 and raw files in 16-, 32- and 64-bit mode and gives objdump 2.47's output for every instruction NASM knows and for the whole opcode space (`scripts/compat/disasm_scan.py`) ([docs/cli.md](docs/cli.md#disassembling))
-- **Zero Dependencies** — No libc, no runtime, raw syscalls only
+- **NASM-compatible, byte for byte** — the same bytes as NASM for its syntax, preprocessor and directives, checked by the suites in `tests/compat/`; better than NASM where NASM is wrong (its table errors fixed, #UD encodings refused)
+- **Full x86-64 encoding** — REX, REX2 and APX, VEX, EVEX (AVX-512, AVX10.2, AVX-512 FP16), AMX, XOP, FMA4, x87, in 16-, 32- and 64-bit code (`bits 16` / `32` / `64`)
+- **Other syntaxes** — `%use masm` (PROC, LOCAL, INVOKE, .IF, typed data), fasm, GNU as with Intel or AT&T operands
+- **A language of its own** — procs, typed structs, namespaces and modules with private names ([docs/user/syntax.md](docs/user/syntax.md))
+- **Diagnostics that explain** — each error and warning with its source line and the place marked; operand errors say what the operands were; misspelt names get a "did you mean"; piped, the output is NASM's lines (see [Error System](#error-system)); JSON (`-X json`) and an LSP server (`--lsp`)
+- **Output formats** — ELF64 (objects and standalone executables), ELF32 i386 objects, COFF (`-f win64`), flat binary, `.ubf` boot images for Utkarsha OS ([docs/user/ubf.md](docs/user/ubf.md)); listings, map files, Makefile dependencies
+- **Debug information** — DWARF line tables, a compile unit and call-frame information (`-g`, `.cfi_*`)
+- **Built-in tools** — `--disasm` (ELF64, ELF32 and raw files, 16-, 32- and 64-bit mode: objdump 2.47's output for every instruction NASM knows and for the whole opcode space), `--inspect` (ELF headers, sections, symbols, relocations) ([docs/user/cli.md](docs/user/cli.md#disassembling))
+- **Fast** — 3x NASM on ordinary code, 100x on jump-heavy code (see [Beyond NASM](#beyond-nasm))
+- **Zero dependencies** — no libc, no runtime: raw system calls, io_uring for file I/O
 
 ---
 
-## Supported Architectures
+## Architectures
 
-| Architecture | Base ISA | Extensions |
-|---|---|---|
-| x86-64 | AMD64 | REX, VEX-3, EVEX, AVX/AVX2/AVX-512, AMX, AES-NI, SHA |
-| AArch64 | ARMv8-A | NEON Advanced SIMD, SVE, SVE2 |
-| RISC-V 64 | RV64GC | M, A, F, D, V extensions |
+| Architecture | Status |
+|---|---|
+| x86-64 (amd64) | complete: every instruction NASM 3.01 and GNU as 2.47 know, 16 / 32 / 64-bit modes |
+| AArch64 | base encoder (`-arch aarch64`); NEON / SVE planned |
+| RISC-V 64 | base encoder (`-arch riscv64`); M / A / F / D / V planned |
+
+x86-64 comes first; the other two follow when there are devices to run them on.
 
 ---
 
 ## Project Structure
 
-What is in the tree today (placeholders for work not started are marked).
-
 ```
 utasm/
-├── utasm.s                      ; entry point: init, passes, output
-├── cli.s                        ; command line: options, -f, --disasm / --inspect
-├── Makefile                     ; gen0 (NASM) → gen1 → gen2, byte-identical check
-├── VERSION  LICENSE  CHANGELOG.md  CONTRIBUTING.md  README.md
+├── src/                     ; all assembly source (the build reads src/ alone)
+│   ├── main/                ; utasm.s (entry: init, passes, output), cli.s (options)
+│   ├── core/                ; assembler context, passes, crash handler
+│   ├── include/             ; constants, structures, macros, ELF / syscall definitions;
+│   │                        ;   arch/ per-architecture registers
+│   ├── frontend/
+│   │   ├── lexer/           ; tokens, numbers, strings, comments
+│   │   ├── preproc/         ; NASM's preprocessor: macros, %if, %rep, include paths
+│   │   └── syntax/          ; nasm/ (the parser: statements, directives, operands, data),
+│   │                        ;   masm/, fasm/, gas/ (GNU as, its macros, AT&T)
+│   ├── semantic/            ; symbol table, procs, namespaces / modules
+│   ├── encode/
+│   │   ├── x86/             ; encoder, form matching, 16 / 32-bit modes, APX, mnemonics;
+│   │   │   └── gen/         ;   opcode.s - GENERATED by scripts/gen/gen_x86_enc.py
+│   │   ├── aarch64/         ; base encoder and mnemonics (NEON / SVE: placeholders)
+│   │   └── riscv64/         ; base encoder and mnemonics (extensions: placeholders)
+│   ├── optimize/            ; jump relaxation, alignment
+│   ├── object/              ; elf/ (ELF64, ELF32, notes), coff/, flat/, ubf/, listing/,
+│   │                        ;   map files; pe/ and upk/: placeholders
+│   ├── link/                ; output dispatch, relocations, archives;
+│   │                        ;   multi-object linking: placeholders
+│   ├── debug/               ; DWARF: line tables, debug_info, CFI
+│   ├── diag/                ; error codes and messages, source excerpts, hints,
+│   │   └── gen/             ;   warnings, JSON; mnemonic_names.inc - GENERATED
+│   ├── tools/
+│   │   ├── disasm/          ; --disasm (x86); gen/x86_tables.inc - GENERATED
+│   │   ├── inspect/         ; --inspect: ELF64 / ELF32
+│   │   ├── symdump/         ; symbol and relocation dumps
+│   │   └── lsp/             ; --lsp
+│   ├── profile/             ; --profile: phases, rdtsc, hot paths, report
+│   ├── platform/            ; system calls, files, memory, io_uring
+│   ├── lib/                 ; arena, strings, fmt, hash, sort, float, sha256, time ...
+│   └── planned/             ; cpu/ (CPU profiles), selfpatch/: placeholders
 │
-├── core/                        ; assembler context (asmctx.s), passes (known.s), crash handler
-├── include/                     ; constants, structures, macros, ELF / syscall definitions,
-│   └── arch/                    ;   per-architecture registers (amd64, aarch64, riscv64)
-│
-├── frontend/
-│   ├── lexer/lexer.s            ; tokens, numbers, strings, comments
-│   ├── macro/                   ; NASM preprocessor: macro.s, include paths, %rotate
-│   └── parser/                  ; parser.s (NASM syntax, directives, operands, data),
-│                                ;   masm.s, fasm.s, gas.s / gas_macro.s / att.s
-├── middle/
-│   ├── symtable/symtable.s      ; symbol table
-│   └── semantic/                ; procs (proc.s), namespaces / modules (namespace.s)
-│
-├── backend/
-│   ├── encoder/                 ; encoder.s, dispatch.s (form matching), mode.s (16 / 32-bit),
-│   │                            ;   apx.s, shape.s, simd/ (AMX, gathers), x86/msr.s
-│   │   ├── tables/opcode.s      ;   GENERATED by scripts/gen_x86_enc.py - do not edit
-│   │   ├── aarch64/  riscv64/   ;   base encoders (NEON, SVE, RVV ...: placeholders)
-│   ├── isa/                     ; mnemonic tables per architecture
-│   ├── linker/                  ; output dispatch (linker.s), relocations (reloc/reloc.s),
-│   │                            ;   archives; multi-object linking: placeholders (Phase B)
-│   └── output/                  ; elf/ (ELF64, ELF32, notes), flat/, ubf/, coff/, listing/,
-│                                ;   map files; pe/ and upk/: placeholders
-├── optimizer/                   ; jump relaxation (jump.s), alignment
-├── debug/                       ; DWARF: line tables, debug_info, CFI
-├── error/                       ; error codes, messages, source excerpts, hints,
-│                                ;   "did you mean", warnings, JSON diagnostics
-├── io/                          ; files, memory, io_uring
-├── lib/                         ; arena, strings, fmt, hash, sort, float, sha256, time ...
-├── profiler/                    ; --profile: phases, rdtsc, hot paths, report
-├── tools/
-│   ├── disasm/                  ; --disasm: disasm.s, x86.s, x86_apx.inc,
-│   │                            ;   x86_tables.inc (GENERATED by scripts/gen_x86_tables.py)
-│   ├── inspector/               ; --inspect: ELF64 / ELF32
-│   ├── symdump/                 ; symbol and relocation dumps
-│   └── lsp/                     ; --lsp: diagnostics over LSP
-├── cpu/  selfpatch/  host/      ; placeholders (CPU profile files, self-patching)
+├── tests/
+│   ├── compat/              ; the suites against NASM / GNU as / objdump (run_all.py),
+│   │                        ;   the fuzzers, disasm_scan.py
+│   ├── asm/                 ; per-architecture sources (tests/run.sh)
+│   ├── unit/                ; unit tests (profiler/; more planned)
+│   └── ...                  ; integration/, error/, fixtures/ ...: planned
 │
 ├── scripts/
-│   ├── bootstrap.sh             ; Gen0 → Gen1 → Gen2 bootstrap
-│   ├── compat/                  ; the test suites against NASM / GNU as / objdump
-│   │                            ;   (run_all.py, suites.py, cases.py, corpus.py, fuzzers,
-│   │                            ;   disasm_scan.py)
-│   ├── gen_x86_enc.py           ; → backend/encoder/tables/opcode.s
-│   ├── gen_x86_tables.py        ; → tools/disasm/x86_tables.inc
-│   ├── nasm/                    ; NASM's instruction tables (the generators' input)
-│   └── bench/                   ; benchmarks and a ptrace sampler
-├── tests/                       ; per-architecture sources; empty folders for planned tests
-├── docs/                        ; cli, syntax, abi, architecture, tests, ubf, errors, dev guide
-└── build/                       ; gen0 / gen1 / gen2 output (not committed)
+│   ├── build/bootstrap.sh   ; gen0 (NASM) → gen1 → gen2, byte-identical check
+│   ├── gen/                 ; the table generators (gen_x86_enc.py, gen_x86_tables.py,
+│   │                        ;   gen_mnemonic_names.py)
+│   └── bench/               ; benchmarks, a ptrace sampler
+│
+├── third_party/nasm/        ; NASM's instruction tables (the generators' input; BSD-2)
+├── docs/
+│   ├── user/                ; cli, syntax, ubf, errors
+│   ├── reference/           ; abi, isa/ (per-architecture instruction lists)
+│   └── dev/                 ; architecture, dev guide, tests (history/: the first plan)
+├── build/                   ; gen0 / gen1 / gen2 output (not committed)
+└── Makefile  README.md  CHANGELOG.md  CONTRIBUTING.md  SECURITY.md  LICENSE  VERSION
 ```
 
 ---
@@ -129,7 +129,7 @@ hint: did you mean 'count'?
 The mark is on the name the message is about, else where the parser
 stopped, else the statement. `--no-color`, `NO_COLOR` or `TERM=dumb` keep
 the plain form. Warnings carry NASM's classes (`[-w+zeroing]`) and the
-`-w` / `-W` options; see [docs/cli.md](docs/cli.md).
+`-w` / `-W` options; see [docs/user/cli.md](docs/user/cli.md).
 
 ---
 
@@ -142,7 +142,7 @@ leaves the programmer alone:
 - **It explains.** The line, the place, the operands' sizes, what to write
   instead (above).
 - **It is fast.** The same output as NASM, measured by
-  `scripts/compat/bench.py` (x86-64, one core):
+  `scripts/bench/compat_bench.py` (x86-64, one core):
 
   | input | NASM | utasm |
   |---|---|---|
@@ -170,146 +170,73 @@ leaves the programmer alone:
   rejects - two index registers, mixed address sizes.
 - **It finds its own bugs.** A fault inside utasm is reported as an
   internal error at the statement being read, not a core dump; the
-  fuzzer (`scripts/compat/fuzz.py`) keeps it that way.
+  fuzzer (`tests/compat/fuzz.py`) keeps it that way.
 - **No fixed limits.** Macro parameters, nesting, line and section counts
   grow as needed.
 
 ---
 
-## CPU Profiles
-
-```asm
-CPU GENERIC        ; baseline x86-64 only
-CPU SERVER         ; server-grade feature set
-CPU ZEN4           ; AMD Zen 4 specific
-CPU SPR            ; Intel Sapphire Rapids specific
-CPU CUSTOM         ; user defined
-```
-
-utasm validates every instruction against the active CPU profile and fires `E7xx` errors for unavailable features.
-
----
-
 ## Building
 
-utasm requires NASM and GNU `ld` for the initial bootstrap only. After Gen1 is built, utasm is fully self-sufficient.
-
-**Bootstrap (one command):**
+NASM assembles the first generation; GNU `ld` links every generation.
 
 ```sh
-bash scripts/bootstrap.sh
+make            # gen0 (NASM), then gen1 (utasm, by gen0): build/gen1/utasm
+make bootstrap  # gen0 → gen1 → gen2; fails unless gen1 and gen2 are identical
 ```
 
-This runs three stages:
-
-```
-Stage 1: NASM assembles utasm  →  build/gen0/utasm
-Stage 2: Gen0 assembles utasm  →  build/gen1/utasm
-Stage 3: Gen1 assembles utasm  →  build/gen2/utasm
-Parity:  gen1 and gen2 must be bit-identical
-```
-
-**Manual Stage 1:**
-
-```sh
-for src in $(find frontend middle backend core error cpu debug optimizer selfpatch profiler io lib host tools -name "*.s") utasm.s cli.s; do
-    obj="build/gen0/${src%.s}.o"
-    mkdir -p "$(dirname "$obj")"
-    nasm -I./ -f elf64 "$src" -o "$obj"
-done
-ld -o build/gen0/utasm $(find build/gen0 -name "*.o")
-```
-
-**Manual Stage 2:**
-
-```sh
-for src in $(find frontend middle backend core error cpu debug optimizer selfpatch profiler io lib host tools -name "*.s") utasm.s cli.s; do
-    obj="build/gen1/${src%.s}.o"
-    mkdir -p "$(dirname "$obj")"
-    ./build/gen0/utasm -arch amd64 -f elf64 "$src" -o "$obj"
-done
-ld -o build/gen1/utasm $(find build/gen1 -name "*.o")
-```
+The build reads every `.s` under `src/` in one fixed order, so the same tree
+gives the same binary on every machine.
 
 ---
 
 ## Usage
 
-```
-utasm [options] <source.s>
-
-Options:
-  -f, --format <format>
-                    Output format: elf64, bin  (default: elf64)
-  -o <file>         Output file                         (default: source.o / source.bin)
-  -a, -arch, --arch <arch>
-                    Target: amd64, aarch64, riscv64           (default: amd64)
-  --standalone      Produce standalone executable (_start resolved)
-  --verbose         Enable verbose diagnostics
-  --color, --no-color
-                    Control diagnostic color
-  -Werror           Treat all warnings as errors
-  --profile         Enable internal profiler output
-  -h, --help        Show this help
-  -v, --version     Show version
-```
-
-**Examples:**
-
 ```sh
-# Standalone AMD64 executable
-utasm -arch amd64 -f elf64 --standalone main.s -o hello
-
-# Relocatable object file
-utasm -arch amd64 -f elf64 src/scheduler.s -o build/scheduler.o
-
-# AArch64 cross-compile
-utasm -arch aarch64 -f elf64 --standalone main.s -o hello_arm
-
-# RISC-V 64 cross-compile
-utasm -arch riscv64 -f elf64 --standalone main.s -o hello_rv64
-
-# Produce a standalone executable and an internal compile profile
-utasm -arch amd64 -f elf64 --standalone --profile main.s -o main
+utasm prog.s -o prog.o                          # an ELF64 object
+utasm -f elf64 --standalone prog.s -o prog      # a static executable
+utasm -f bin boot.s -o boot.bin                 # a flat binary
+utasm -f ubf kernel.s -o utkarsha.ubf           # a Utkarsha OS boot image
+utasm --disasm prog.o                           # objdump -d -M intel's listing
+utasm --disasm --bits 16 --org 0x7c00 boot.bin  # a boot sector
 ```
+
+`utasm -h` lists every option; [docs/user/cli.md](docs/user/cli.md)
+explains them, [docs/user/syntax.md](docs/user/syntax.md) the language.
 
 ---
 
 ## Running Tests
 
 ```sh
-bash scripts/bootstrap.sh   # build Gen1 first
-bash scripts/test.sh        # run full test suite
+make                                                  # build/gen1/utasm
+python3 tests/compat/run_all.py build/gen1/utasm      # every suite: NASM / GNU as / objdump
+python3 tests/compat/disasm_scan.py build/gen1/utasm  # the disassembler over the opcode space
+bash tests/run.sh                                     # the per-architecture sources
 ```
 
-See [tests.md](docs/tests.md) for the complete test architecture.
+See [docs/dev/tests.md](docs/dev/tests.md) for what each suite checks.
 
 ---
 
 ## Requirements
 
-| Dependency | Purpose | Required |
+| Tool | For | |
 |---|---|---|
-| NASM | Gen0 bootstrap compilation | Yes (once) |
-| GNU ld | Linking Gen0 and Gen1 | Yes (once) |
-| QEMU | Cross-arch smoke test execution | Optional |
-
-> After bootstrap, utasm has zero external dependencies. It assembles and links itself entirely.
+| NASM | assembling gen0 | build |
+| GNU ld | linking each generation | build |
+| Python 3 | the generators and the test suites | tests |
+| NASM 3.01, GNU as / readelf / objcopy, objdump 2.47 | the references the suites compare with | tests |
+| QEMU | running the AArch64 / RISC-V tests | optional |
 
 ---
 
-## Self-Patching
+## Roadmap
 
-When `--selfpatch` is enabled:
-
-```
-1. Profiler measures hot paths via RDTSC
-2. Hot path detector identifies slow encoding routines
-3. Self-patch engine validates safety of proposed patch
-4. Patch applied directly to running binary in memory
-5. Rollback triggered automatically if patch degrades performance
-6. Patch log written to utasm.patch.log
-```
+Planned, with placeholders in the tree: linking several objects in one run,
+and relocatable, signed UBF modules (the next phase); DWARF types; CPU
+profiles (`src/planned/cpu/`); PE32+ and `.upk` output; self-patching
+(`src/planned/selfpatch/`); the AArch64 / RISC-V extensions.
 
 ---
 
@@ -321,7 +248,9 @@ Tracked in [`VERSION`](VERSION). Follows [Semantic Versioning](https://semver.or
 
 ## License
 
-Released under the [Apache License 2.0](LICENSE).
+Released under the [Apache License 2.0](LICENSE). NASM's instruction
+tables in `third_party/nasm/` are under NASM's 2-clause BSD licence
+([third_party/nasm/README.md](third_party/nasm/README.md)).
 
 ---
 
