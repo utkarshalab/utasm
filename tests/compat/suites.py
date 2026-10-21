@@ -1,5 +1,5 @@
 """The NASM compatibility suites. Each takes the utasm binary and returns a
-common.Suite; scripts/compat/run_all.py runs them all."""
+common.Suite; tests/compat/run_all.py runs them all."""
 import collections, subprocess, concurrent.futures as cf, difflib, hashlib, os, platform, re, struct, zlib
 
 from common import Suite, assemble_bin, first_line, have, run, tempdir
@@ -330,7 +330,7 @@ def _mode_corpus(d, bits):
     here = os.path.dirname(os.path.abspath(__file__))
     rng, lines = random.Random(7), []
     for table in ("insns.dat", "insns3.dat"):
-        encfuzz.INSNS = os.path.join(here, "..", "nasm", table)
+        encfuzz.INSNS = os.path.join(here, "..", "..", "third_party", "nasm", table)
         for f in encfuzz.forms():
             n = f[0].upper()
             if n.startswith(("RES", "INCBIN", "EQU")) or n in ("DB", "DW", "DD", "DQ", "DT", "DO", "DY", "DZ"):
@@ -427,7 +427,7 @@ def disasm(utasm, verbose=False, objects=()):
                 example.setdefault("reloc", "%s+%x: objdump '%s' | utasm '%s'" % (k[0], k[1], v, ours_r.get(k, "-")))
         # 16 / 32-bit mode: every form of NASM's tables in bits 16 / 32, NASM's
         # flat binary read with --bits as objdump -b binary -m i8086 / i386 reads
-        # it, and the bits 32 one as an ELF32 object (tools/inspector/elf32.s)
+        # it, and the bits 32 one as an ELF32 object (src/tools/inspect/elf32.s)
         for bits, arch in ((32, "i386"), (16, "i8086")):
             src = _mode_corpus(d, bits)
             if src is None:
@@ -1231,7 +1231,7 @@ def explanations(utasm, verbose=False):
 
 
 def procedures(utasm, verbose=False):
-    """utasm's proc / endproc checks (middle/semantic/proc.s): the
+    """utasm's proc / endproc checks (src/semantic/proc.s): the
     warnings and errors each line must and must not give."""
     s = Suite("procedures", verbose)
     for name, src, opts, must, clean, rc in cases.PROC_CASES:
@@ -1467,7 +1467,7 @@ def gas_view(path):
 
 
 def gas(utasm, verbose=False):
-    """GNU as's directives (frontend/parser/gas.s): the same source, its
+    """GNU as's directives (src/frontend/syntax/gas/gas.s): the same source, its
     instructions in Intel syntax, assembled by GNU as and by utasm - the same
     sections, bytes, relocations and symbols"""
     s = Suite("GNU as", verbose)
@@ -1508,7 +1508,7 @@ def _att_text(o):
 
 
 def att(utasm, verbose=False):
-    """AT&T syntax (frontend/parser/att.s, --att): each line, and whole
+    """AT&T syntax (src/frontend/syntax/gas/att.s, --att): each line, and whole
     sources, assembled by GNU as and by utasm - the same bytes, relocations
     and symbols; a C program GCC compiles at several levels, the same object
     as GNU as makes of it, run"""
@@ -1610,7 +1610,7 @@ def _json_text(o):
 
 
 def json_diagnostics(utasm, verbose=False):
-    """-X json (error/json.s): one JSON object for each line utasm writes to
+    """-X json (src/diag/json.s): one JSON object for each line utasm writes to
     stderr - the same messages as the text, field by field"""
     import json
     s = Suite("json diagnostics", verbose)
@@ -1634,7 +1634,7 @@ def json_diagnostics(utasm, verbose=False):
 
 
 def map_files(utasm, verbose=False):
-    """[map ...] (backend/output/map.s): the map file NASM writes for the
+    """[map ...] (src/object/map.s): the map file NASM writes for the
     same flat binary, line for line; and --map on an ELF object"""
     s = Suite("map files", verbose)
     for name, src in cases.MAP_CASES:
@@ -1704,7 +1704,7 @@ def fasm_features(utasm, verbose=False):
 
 
 def masm_features(utasm, verbose=False):
-    """%use masm's PROC / LOCAL / INVOKE / .IF & co (frontend/parser/masm.s):
+    """%use masm's PROC / LOCAL / INVOKE / .IF & co (src/frontend/syntax/masm/masm.s):
     a program using them all, linked and run; their code in 32-bit and
     Win64; each error"""
     s = Suite("masm features", verbose)
@@ -1744,7 +1744,7 @@ def masm_features(utasm, verbose=False):
 
 
 def lsp_server(utasm, verbose=False):
-    """utasm --lsp (tools/lsp/lsp.s): a client's session - initialize, a
+    """utasm --lsp (src/tools/lsp/lsp.s): a client's session - initialize, a
     document opened (its errors and warnings as diagnostics, an %include
     beside it found, UTF-8 text), changed, an unknown request, closed,
     shutdown and exit"""
