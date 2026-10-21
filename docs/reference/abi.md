@@ -567,7 +567,7 @@ mov rax, 501            ; what is 501? no idea without looking it up
 mov rax, E501           ; operand size mismatch — immediately clear
 ```
 
-All constants defined in `error/table.s` and referenced via `include/constant.inc`.
+All constants defined in `src/diag/table.s` and referenced via `src/include/constant.inc`.
 
 ---
 
@@ -742,7 +742,7 @@ RCX   →  destroyed (saved RIP)
 R11   →  destroyed (saved RFLAGS)
 ```
 
-Always use the wrappers in `host/syscall.s`. Never call SYSCALL directly from module code.
+Always use the wrappers in `src/platform/syscall.s`. Never call SYSCALL directly from module code.
 
 ```asm
 ; correct — use wrapper:
@@ -1412,7 +1412,7 @@ When parallel assembly is added (Phase 20), this section will be updated with lo
 │ VZEROUPPER   │ required before calling non-SIMD     │
 │ Flags        │ not preserved across calls           │
 │ Error return │ RAX = 0 (ok) or error code (E1xx+)  │
-│ Syscalls     │ via host/syscall.s wrappers only     │
+│ Syscalls     │ via src/platform/syscall.s wrappers only     │
 └──────────────┴──────────────────────────────────────┘
 ```
 
@@ -1600,7 +1600,7 @@ Never swap this order. Pointer first. Length second. Always.
 
 ## Struct Layout Rules
 
-All structs defined in `include/type.inc` follow these layout rules exactly.
+All structs defined in `src/include/type.inc` follow these layout rules exactly.
 
 ### Alignment Rule
 
@@ -1980,7 +1980,7 @@ mov [rsp], rax              ; touch second new page
 
 ; or use the stack probe helper:
 mov rdi, 8192               ; bytes needed
-call stack_probe            ; in lib/math.s — probes all pages
+call stack_probe            ; in src/lib/math.s — probes all pages
 sub rsp, 8192               ; now safe to allocate
 ```
 
@@ -1993,8 +1993,8 @@ rule applies to encoder buffers, output buffers, and large temporary arrays.
 
 Each module's mutable state is declared in that module's own `.bss` /
 `.data`, next to the code that owns it (the symbol table in
-`middle/symtable/symtable.s`, the relocations in
-`backend/linker/reloc/reloc.s`, the diagnostics in `error/`). Access rules:
+`src/semantic/symtable.s`, the relocations in
+`src/link/reloc/reloc.s`, the diagnostics in `src/diag/`). Access rules:
 
 ### Reading Global State
 
@@ -2014,18 +2014,18 @@ variable is a bug even when it works.
 
 ### Global State Initialization Order
 
-`utasm.s` initializes the modules once, in this order, before reading the
+`src/main/utasm.s` initializes the modules once, in this order, before reading the
 command line's sources:
 
 ```
-1. core/known.s                     → known_init()     (pass bookkeeping)
-2. lib/arena.s                      → arena_init()
-3. middle/symtable/symtable.s       → symbol_init()
-4. error/format/source.s            → diag_init()      ← before anything reports errors
-5. profiler/profiler.s              → profiler_init()
-6. backend/linker/reloc/reloc.s     → reloc_init()
-7. frontend/lexer/lexer.s           → lexer_init()
-8. frontend/macro/macro.s           → prep_init()
+1. src/core/known.s                     → known_init()     (pass bookkeeping)
+2. src/lib/arena.s                      → arena_init()
+3. src/semantic/symtable.s       → symbol_init()
+4. src/diag/source.s            → diag_init()      ← before anything reports errors
+5. src/profile/profiler.s              → profiler_init()
+6. src/link/reloc/reloc.s     → reloc_init()
+7. src/frontend/lexer/lexer.s           → lexer_init()
+8. src/frontend/preproc/macro.s           → prep_init()
 ```
 
 The other modules need no init (pure functions, or state set up per use).
@@ -2054,7 +2054,7 @@ lock cmpxchg [rel counter], rdx
 
 ## Interrupt Handler ABI
 
-Interrupt handlers (IDT entries in Tattva OS kernel) use a completely different
+Interrupt handlers (IDT entries in Utkarsha OS kernel) use a completely different
 ABI. **This section is here so you do not confuse the two.**
 
 Interrupt handlers are not called with CALL — they are entered via the
@@ -2114,7 +2114,7 @@ my_handler:
     iretq               ; return from interrupt — not RET
 ```
 
-This ABI is for Tattva OS kernel code, not utasm internal code.
+This ABI is for Utkarsha OS kernel code, not utasm internal code.
 Documented here to prevent confusion.
 
 ---
@@ -2251,7 +2251,7 @@ Any change to this ABI requires:
 │ Buffer convention   │ input first, output second — always     │
 │ Null pointer        │ 0 — document if accepted                 │
 │ Error return        │ RAX = 0 (ok) or error code (non-zero)   │
-│ Syscalls            │ via host/syscall.s wrappers only        │
+│ Syscalls            │ via src/platform/syscall.s wrappers only        │
 │ Function pointers   │ call through register, not memory       │
 │ Varargs             │ not supported — use ptr+count           │
 │ Global writes       │ only by owning module                    │
