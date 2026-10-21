@@ -864,6 +864,9 @@ CONDITIONS = [("o", 0), ("no", 1), ("b", 2), ("c", 2), ("nae", 2), ("ae", 3), ("
 # forms NASM has wrong or not at all, from Intel's manual, in insns.dat's
 # notation
 EXTRA_INSNS = '''
+AOR	   	mem32,reg32				[mr:	norexw f2 0f 38 fc /r	]	RAOINT,FUTURE,SD
+AOR	   	mem64,reg64				[mr:	o64 f2 0f 38 fc /r	]	RAOINT,FUTURE,SQ,LONG
+PMULHRW		mmxreg,mmxrm			[rm:	o64nw 0f 0f /r b7]			PENT,3DNOW,SQ
 VCVTQQ2PH	xmmreg|mask|z,xmmrm128|b64	[rm:fv: evex.128.np.map5.w1 5b /r]	AVX512FP16
 VCVTQQ2PH	xmmreg|mask|z,ymmrm256|b64	[rm:fv: evex.256.np.map5.w1 5b /r]	AVX512FP16
 VCVTQQ2PH	xmmreg|mask|z,zmmrm512|b64|er	[rm:fv: evex.512.np.map5.w1 5b /r]	AVX512FP16
