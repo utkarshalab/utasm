@@ -141,6 +141,13 @@ DEFAULT REL
 %define FM_CRC      99          ; crc32: r32 / r64 (REX.W), r/m8 (F0) or r/m16/32/64
 %define FM_VQ       100         ; xmm, mm/m (cvtpi2ps, movq2dq)
 %define FM_PW       101         ; mm, xmm/m (cvtps2pi, movdq2q)
+; 16 / 32-bit mode's own (x86_map1l)
+%define FM_SEGOP    102         ; push / pop es / cs / ss / ds (opcode bits 5-3)
+%define FM_BOUND    103         ; bound r, m (two of the operand size)
+%define FM_ARPL     104         ; arpl r/m16 (a register at the operand size), r
+%define FM_AP       105         ; call / jmp far ptr16:16 / ptr16:32
+%define FM_MOFFS    106         ; A0-A3: mov al / eAX, moffs (and back)
+%define FM_MP       107         ; FF /3 /5: call / jmp far m16:16 / m16:32
 %define FM_SSE4AR   98
 %define FM_GEwv     89          ; lar / lsl: a register at the operand size, memory WORD
 %define FM_SFXD     88
@@ -180,6 +187,8 @@ DEFAULT REL
 %define FL_BYTE      4
 %define FL_D64       8          ; default 64-bit operand size (push/pop)
 %define FL_F64      16          ; always 64-bit (near call/jmp)
+%define FL_X32      32          ; 32 bits outside 64-bit mode (vmread / vmwrite)
+%define FL_O64      64          ; 64-bit mode's alone (movrs): none in 16 / 32
 
 %define NO_REG      0xFF
 %define RIP_REG     0xFE
@@ -261,6 +270,23 @@ dx_port:    resq 1              ; in / out's port (imm8)
 dx_wargs:   resq 4              ; x86_decode's rdi, rsi, rdx, rcx
 dx_wf64:    resb 1              ; REX.W on a near call / jmp
 dx_trialing: resb 1             ; x86_decode's trial decodes running
+dx_ripmem:  resb 1              ; a [rip + disp32] operand was read
+dx_mode:    resb 1              ; this instruction's mode: 16, 32 or 64
+dx_asz:     resb 1              ; its address size
+dx_a16:     resb 1              ; its memory operand is 16-bit addressing
+dx_sysfx:   resb 1              ; a suffix for .sys_mem's name (sgdtw), or 0
+dx_ewretry: resb 1              ; EVEX: the W0 entry looked up for a W1 (16 / 32)
+dx_undef:   resb 1              ; a form found no instruction (dx_fail too): "(bad)"
+alignb 8
+dx_after_modrm: resq 1          ; dx_cur after the ModRM byte
+dx_markbad: resb 1              ; dx_bad_marks: "/(bad)" after operand n (bit n)
+dx_repbad:  resb 1              ; ... the operand written "(bad)" (0xFF: none)
+global x86_mode, x86_hex0x
+x86_mode:   resb 1              ; the decoder's mode: 16, 32 or 64 (0: 64)
+x86_hex0x:  resb 1              ; branch targets as "0x37" (no symbols to name them)
+alignb 8
+global x86_rip_target
+x86_rip_target: resq 1          ; x86_decode: the address [rip + disp] names, or -1
 dx_tfb_a:   resb FMTBUF_SIZE    ; the trials' FmtBufs: the instruction,
 dx_tfb_b:   resb FMTBUF_SIZE    ; and a variant of it
 dx_tbuf_a:  resb DX_TBUF
@@ -284,6 +310,7 @@ dx_urend:   resb 16
 ; Output   : rax = instruction length, or 0 if it could not be decoded
 ;              (nothing useful is written then; print "(bad)")
 ;            rdx = target address of a direct jmp/jcc/call/loop, or -1
+;            x86_rip_target = the address a [rip + disp] operand names, or -1
 ;
 ; A prefix the instruction has no use for is written as objdump writes it
 ; ("fs", "data16", "addr32", "rex.WB"): the instruction decoded without it
@@ -339,10 +366,18 @@ x86_decode:
     je      .next
     mov     edx, 2
     lea     r13, [rel s_u66]
+    cmp     byte [rel dx_mode], 16
+    jne     .u66
+    lea     r13, [rel s_u66_32]            ; (16-bit mode: data32)
+.u66:
     cmp     eax, 0x66
     je      .kind
     mov     edx, 4
     lea     r13, [rel s_u67]
+    cmp     byte [rel dx_mode], 32
+    jne     .u67
+    lea     r13, [rel s_u67_16]            ; (32-bit mode: addr16)
+.u67:
     cmp     eax, 0x67
     je      .kind
     mov     edx, 1
@@ -367,6 +402,8 @@ x86_decode:
     mov     ecx, eax
     and     ecx, 0xF0
     cmp     ecx, 0x40
+    jne     .final
+    cmp     byte [rel dx_mode], 64         ; (16 / 32-bit mode: inc / dec)
     je      .rex
     jmp     .final
 .kind:
@@ -589,7 +626,13 @@ dx_decode1:
     mov     rax, [rcx + FMTBUF_len]
     mov     [rel dx_textpos], rax
     mov     qword [rel dx_target], -1
+    mov     qword [rel x86_rip_target], -1
     xor     eax, eax
+    mov     [rel dx_ripmem], al
+    mov     [rel dx_ewretry], al
+    mov     [rel dx_undef], al
+    mov     [rel dx_markbad], al
+    mov     byte [rel dx_repbad], 0xFF
     mov     [rel dx_rex], al
     mov     [rel dx_rex4], al
     mov     [rel dx_rex2], al
@@ -681,6 +724,52 @@ dx_decode1:
 
     ; ---- REX ----
 .rex:
+    ; the mode (x86_mode; 0 is 64) and the address size: the mode's, or
+    ; with 67 the other one (64: 32, 32: 16, 16: 32)
+    movzx   ecx, byte [rel x86_mode]
+    test    ecx, ecx
+    jnz     .mode_set
+    mov     ecx, 64
+.mode_set:
+    mov     [rel dx_mode], cl
+    mov     edx, ecx
+    cmp     byte [rel dx_p67], 0
+    je      .asz_set
+    mov     edx, 32
+    cmp     ecx, 64
+    je      .asz_set
+    mov     edx, 16
+    cmp     ecx, 32
+    je      .asz_set
+    mov     edx, 32
+.asz_set:
+    mov     [rel dx_asz], dl
+    cmp     ecx, 64
+    je      .rex64
+    ; 16 / 32-bit mode: no REX / REX2 (40-4F are inc / dec, D5 aad); C4 /
+    ; C5 / 62 are VEX / EVEX only where the next byte would be a ModRM of
+    ; mod 11 (les / lds / bound take memory)
+    cmp     al, 0x8F
+    je      .xop_check
+    cmp     al, 0x62
+    je      .legacy_vex
+    cmp     al, 0xC4
+    je      .legacy_vex
+    cmp     al, 0xC5
+    jne     .opcode
+.legacy_vex:
+    mov     rcx, [rel dx_cur]
+    lea     rdx, [rcx + 1]
+    cmp     rdx, [rel dx_end]
+    jae     .opcode
+    cmp     byte [rcx + 1], 0xC0
+    jb      .opcode
+    cmp     al, 0x62
+    je      .evex
+    cmp     al, 0xC5
+    je      .vex2
+    jmp     .vex3
+.rex64:
     cmp     al, 0xD5
     je      .rex2
     cmp     al, 0x62
@@ -691,6 +780,7 @@ dx_decode1:
     je      .vex3
     cmp     al, 0x8F
     jne     .not_xop
+.xop_check:
     ; 8F with a map of 8 or more in the next byte's low 5 bits: AMD's XOP
     ; (pop r/m's ModRM.reg is 0, so its byte there is below 8 ... or not
     ; - objdump reads XOP)
@@ -703,6 +793,8 @@ dx_decode1:
     cmp     edx, 8
     jae     .xop3
 .not_xop:
+    cmp     byte [rel dx_mode], 64
+    jne     .opcode                        ; (no REX outside 64-bit mode)
     mov     ecx, eax
     and     ecx, 0xF0
     cmp     ecx, 0x40
@@ -814,11 +906,19 @@ dx_decode1:
     or      edx, 8                         ; W
 .vex_fields:
     ; eax = the byte holding vvvv L pp, edx = synthetic REX
+    cmp     byte [rel dx_mode], 64
+    je      .vf_rex
+    and     edx, 0x48                      ; (16 / 32-bit mode: W alone)
+.vf_rex:
     mov     [rel dx_rex], dl
     mov     ecx, eax
     shr     ecx, 3
     not     ecx
     and     ecx, 15
+    cmp     byte [rel dx_mode], 64
+    je      .vf_vvvv
+    and     ecx, 7
+.vf_vvvv:
     mov     [rel dx_vvvv], cl
     mov     ecx, eax
     shr     ecx, 2
@@ -899,6 +999,8 @@ dx_decode1:
     mov     [rel dx_eb], al
     mov     byte [rel dx_disp8n], 1
     call    dx_shape_vsib
+    call    dx_vvvv_unused
+    jnz     .undef
     mov     byte [rel dx_flags], FL_MODRM
     mov     byte [rel dx_form], FM_EVEX
     jmp     .entry_loaded
@@ -944,6 +1046,27 @@ dx_decode1:
     or      byte [rel dx_sflags], 0x80     ; mark "vector"
     mov     al, [r12 + 2]
     mov     [rel dx_form], al
+    ; an SSE instruction's VEX form with no vvvv operand: vvvv 1111, else
+    ; no instruction (#UD; objdump's "(bad)")
+    cmp     byte [rel dx_vpfx], 0
+    je      .vex_vvvv_ok
+    test    byte [rel dx_sflags], SF_NDS
+    jnz     .vex_vvvv_ok
+    test    byte [rel dx_vvvv], 15
+    jz      .vex_vvvv_ok
+    lea     rdx, [rel vex_novvvv_forms]
+.vex_nv_scan:
+    movzx   ecx, byte [rdx]
+    cmp     ecx, 0xFF
+    je      .vex_vvvv_ok
+    cmp     ecx, eax
+    je      .vex_vvvv_bad
+    inc     rdx
+    jmp     .vex_nv_scan
+.vex_vvvv_bad:
+    mov     byte [rel dx_vpfx], 0
+    jmp     .undef
+.vex_vvvv_ok:
     mov     byte [rel dx_flags], FL_MODRM
     cmp     al, FM_XZERO
     jne     .vex_class
@@ -1083,6 +1206,14 @@ dx_decode1:
     jnz     .e_op
     or      byte [rel dx_vvvv], 16         ; V'
 .e_op:
+    cmp     byte [rel dx_mode], 64
+    je      .e_op64
+    and     byte [rel dx_rex], 0x48        ; (16 / 32-bit mode: registers 0-7)
+    and     byte [rel dx_vvvv], 7
+    mov     byte [rel dx_reghi], 0
+    mov     byte [rel dx_rmhi], 0
+    mov     byte [rel dx_rex4], 0
+.e_op64:
     call    dx_rd8                         ; opcode
     mov     [rel dx_op], al
     cmp     byte [rel dx_fail], 0
@@ -1131,6 +1262,32 @@ dx_decode1:
     mov     ecx, r8d                       ; pp
     jmp     .vex_decode
 .e_found:
+    ; (16 / 32-bit mode: W1 of an E / G shape is ignored - the W0 entry)
+    cmp     byte [rel dx_mode], 64
+    je      .e_found_w
+    test    byte [rel dx_rex], 8
+    jz      .e_found_w
+    cmp     byte [rel dx_ewretry], 0
+    jne     .e_found_w
+    lea     rax, [r12 + 8]
+    mov     ecx, 7
+.e_wscan:
+    movzx   edx, byte [rax]
+    cmp     edx, 'E'
+    je      .e_wretry
+    cmp     edx, 'G'
+    je      .e_wretry
+    inc     rax
+    dec     ecx
+    jnz     .e_wscan
+    jmp     .e_found_w
+.e_wretry:
+    mov     byte [rel dx_ewretry], 1
+    and     byte [rel dx_rex], ~8
+    mov     ecx, r9d
+    and     ecx, ~0x1F                     ; (no W, no group member)
+    jmp     .e_key
+.e_found_w:
     mov     byte [rel dx_evex], 1
     movzx   r13d, word [r12 + 4]           ; name
     mov     al, [r12 + 6]
@@ -1140,6 +1297,8 @@ dx_decode1:
     mov     al, [r12 + 15]                 ; (the shape's last byte: EV2_*)
     mov     [rel dx_eflags2], al
     call    dx_shape_vsib
+    call    dx_vvvv_unused
+    jnz     .undef
     ; written as EVEX, readable as VEX: objdump's "{evex}" - no mask, no
     ; zeroing, no broadcast / rounding, 128 / 256 bits, registers 0-15
     test    byte [rel dx_eflags2], EV2_HASVEX
@@ -1254,6 +1413,16 @@ dx_decode1:
     jne     .bad
 .have_op:
     mov     [rel dx_op], al
+    cmp     byte [rel dx_mode], 64
+    je      .op_map_kept
+    cmp     byte [rel dx_map], 1
+    jne     .op_map_kept
+    movzx   ecx, al
+    lea     rdx, [rel x86_map1l]
+    cmp     word [rdx + rcx * 4], 0xFFFF
+    je      .op_map_kept
+    mov     r12, rdx                       ; (16 / 32-bit mode's own)
+.op_map_kept:
     ; F2 / F3 0F 38 F8 with a register: urdmsr / uwrmsr (x86_apx.inc)
     cmp     byte [rel dx_map], 3
     jne     .not_umsr
@@ -1372,11 +1541,14 @@ dx_decode1:
     je      .sse_none
     mov     r12, rdx
     mov     r13d, eax
-    ; the prefix is part of the opcode now, not operand size / rep
+    ; the prefix is part of the opcode now, not operand size / rep (16-bit
+    ; mode: still the operand size's - 32 bits, as the CPU reads it)
     cmp     ecx, 1
     jne     .sse_c2
-    mov     byte [rel dx_p66], 0
     dec     byte [rel dx_n66]
+    cmp     byte [rel dx_mode], 16
+    je      .sse_c2
+    mov     byte [rel dx_p66], 0
 .sse_c2:
     cmp     ecx, 2
     jne     .sse_c3
@@ -1423,14 +1595,18 @@ dx_decode1:
     jmp     .sse_c4
 .sse_none_map:
     cmp     byte [rel dx_map], 2
-    jne     .bad                           ; nothing else in 0F 38 / 0F 3A
+    jne     .undef                         ; nothing else in 0F 38 / 0F 3A
     lea     r12, [rel x86_map2]
 .integer:
     movzx   eax, byte [rel dx_op]
     lea     r12, [r12 + rax*4]             ; r12 = table entry
     movzx   r13d, word [r12]               ; r13 = name offset / group
     cmp     r13d, 0xFFFF
-    je      .bad
+    jne     .defined
+    cmp     byte [rel dx_map], 2
+    jae     .undef
+    jmp     .bad
+.defined:
     mov     al, [r12 + 2]
     mov     [rel dx_form], al
     cmp     al, FM_X87
@@ -1438,6 +1614,11 @@ dx_decode1:
     mov     al, [r12 + 3]
     mov     [rel dx_flags], al
 .entry_loaded:
+    test    byte [rel dx_flags], FL_O64
+    jz      .o64_ok
+    cmp     byte [rel dx_mode], 64
+    jne     .undef
+.o64_ok:
 
     ; ---- ModRM (and SIB / displacement) ----
     test    byte [rel dx_flags], FL_MODRM
@@ -1501,6 +1682,13 @@ dx_decode1:
     mov     al, 8
     test    byte [rel dx_flags], FL_BYTE
     jnz     .osz
+    cmp     byte [rel dx_mode], 64
+    je      .osz_64
+    mov     al, 32
+    test    byte [rel dx_flags], FL_X32
+    jnz     .osz
+    jmp     .osz_std
+.osz_64:
     mov     al, 64
     test    byte [rel dx_rex], 8           ; REX.W
     jnz     .osz
@@ -1513,10 +1701,14 @@ dx_decode1:
     mov     al, 16
     jmp     .osz
 .osz_std:
-    mov     al, 32
+    mov     al, 32                         ; (16-bit mode: 16, 32 with 66)
+    cmp     byte [rel dx_mode], 16
+    jne     .osz_66
+    mov     al, 16
+.osz_66:
     cmp     byte [rel dx_p66], 0
     je      .osz
-    mov     al, 16
+    xor     al, 32 ^ 16
 .osz:
     mov     [rel dx_osz], al
 
@@ -1595,8 +1787,16 @@ dx_decode1:
 .operands:
     call    dx_operands
     cmp     byte [rel dx_fail], 0
-    jne     .bad
-    jmp     .finish
+    je      .finish
+    cmp     byte [rel dx_undef], 0         ; (a form found no instruction:
+    je      .bad                           ; "(bad)", the bytes it took)
+    mov     byte [rel dx_fail], 0
+    mov     rcx, [rel dx_fb]
+    mov     rax, [rel dx_textpos]
+    mov     [rcx + FMTBUF_len], rax
+    mov     rdx, [rcx + FMTBUF_buf]
+    mov     byte [rdx + rax], 0
+    jmp     .undef
 
     ; ---- x87 floating point: ModRM, then its own tables ----
 .x87:
@@ -1663,9 +1863,31 @@ dx_decode1:
 .finish:
     mov     rax, [rel dx_cur]
     sub     rax, [rel dx_start]            ; length
+    ; [rip + disp]: the address it names, for objdump's "# 13 <sym+0x7>"
+    cmp     byte [rel dx_ripmem], 0
+    je      .rip_done
+    mov     rcx, [rel dx_addr]
+    add     rcx, rax
+    add     rcx, [rel dx_disp]
+    cmp     byte [rel dx_p67], 0
+    je      .rip_put
+    mov     ecx, ecx                       ; ([eip + disp])
+.rip_put:
+    mov     [rel x86_rip_target], rcx
+.rip_done:
     mov     rdx, [rel dx_target]
     jmp     .ret
 
+.undef:
+    ; no instruction: objdump's "(bad)" takes the prefixes, 0F (38 / 3A) and
+    ; the opcode byte (and names the prefixes)
+    mov     byte [rel dx_rep], 0
+    mov     byte [rel dx_repne], 0
+    lea     rax, [rel s_bad_opnd]
+    mov     [rel dx_mnem], rax
+    xor     esi, esi
+    call    dx_mnemonic
+    jmp     .finish
 .bad:
     ; undo any partial text
     mov     rcx, [rel dx_fb]
@@ -1743,6 +1965,8 @@ dx_rd64:
 dx_modrm_decode:
     call    dx_rd8
     mov     [rel dx_modrm], al
+    mov     rcx, [rel dx_cur]
+    mov     [rel dx_after_modrm], rcx
     mov     edx, eax
     shr     edx, 6
     mov     [rel dx_mod], dl
@@ -1780,14 +2004,44 @@ dx_modrm_decode:
     ret
 
 .memory:
+    mov     byte [rel dx_a16], 0
+    cmp     byte [rel dx_asz], 16
+    je      .mem16
     cmp     eax, 4
     je      .sib
     cmp     eax, 5
     jne     .base_rm
     cmp     byte [rel dx_mod], 0
     jne     .base_rm
+    cmp     byte [rel dx_mode], 64
+    jne     .disp32                        ; (16 / 32-bit mode: [disp32])
     mov     byte [rel dx_base], RIP_REG    ; [rip + disp32]
+    mov     byte [rel dx_ripmem], 1
     jmp     .disp32
+.mem16:
+    ; [bx+si] [bx+di] [bp+si] [bp+di] [si] [di] [bp] [bx]; mod 0 rm 6 a
+    ; disp16 alone; disp8 / disp16 after
+    mov     byte [rel dx_a16], 1
+    lea     rcx, [rel dx_m16_base]
+    mov     dl, [rcx + rax]
+    mov     [rel dx_base], dl
+    lea     rcx, [rel dx_m16_index]
+    mov     dl, [rcx + rax]
+    mov     [rel dx_index], dl
+    cmp     byte [rel dx_mod], 1
+    je      .disp8
+    cmp     byte [rel dx_mod], 2
+    je      .disp16
+    cmp     eax, 6
+    jne     .m16_ret
+    mov     byte [rel dx_base], NO_REG
+.disp16:
+    call    dx_rd16
+    movsx   rax, ax
+    mov     [rel dx_disp], rax
+    mov     byte [rel dx_hasdisp], 1
+.m16_ret:
+    ret
 .base_rm:
     test    byte [rel dx_rex], 1
     jz      .base_b4
@@ -1895,6 +2149,13 @@ dx_puts:
 ; the others' bases: objdump writes them as unused prefixes)
 dx_seg_fsgs:
     movzx   eax, byte [rel dx_seg]
+    cmp     byte [rel dx_mode], 64
+    je      .mode64
+    test    eax, eax                       ; (16 / 32-bit mode: any override,
+    jnz     .put                           ; else ds:)
+    mov     eax, 'd'
+    jmp     .put
+.mode64:
     cmp     eax, 'f'
     je      .put
     cmp     eax, 'g'
@@ -2157,6 +2418,13 @@ dx_mem:
     call    dx_puts
 .abs_value:
     mov     rsi, [rel dx_disp]
+    cmp     byte [rel dx_mode], 64
+    je      .abs_put
+    mov     esi, esi                       ; (16 / 32-bit mode: the address's
+    cmp     byte [rel dx_asz], 16          ; width)
+    jne     .abs_put
+    movzx   esi, si
+.abs_put:
     call    dx_hex
     pop     rbx
     ret
@@ -2195,6 +2463,10 @@ dx_mem:
     call    dx_putc
 .riz_put:
     lea     rsi, [rel s_riz]
+    cmp     byte [rel dx_asz], 32
+    jne     .riz_named
+    lea     rsi, [rel s_eiz]
+.riz_named:
     call    dx_puts
     mov     esi, '*'
     call    dx_putc
@@ -2222,6 +2494,8 @@ dx_mem:
     mov     esi, eax
     call    dx_reg
 .index_scale:
+    cmp     byte [rel dx_a16], 0           ; ([bx+si]: no scale)
+    jne     .disp
     mov     esi, '*'
     call    dx_putc
     movzx   esi, byte [rel dx_scale]
@@ -2254,12 +2528,8 @@ dx_mem:
     call    dx_putc
     pop     rbx
     ret
-.addr_size:                                ; edi = 32 under a 67 prefix, else 64
-    mov     edi, 64
-    cmp     byte [rel dx_p67], 0
-    je      .addr_ret
-    mov     edi, 32
-.addr_ret:
+.addr_size:                                ; edi = the address size
+    movzx   edi, byte [rel dx_asz]
     ret
 
 ; dx_rm: the ModRM r/m operand at size edi (register or memory)
@@ -2294,7 +2564,9 @@ dx_branch:
     add     rax, [rel dx_addr]             ; address of the next instruction
     add     rsi, rax
     mov     [rel dx_target], rsi
-    jmp     dx_hexraw
+    cmp     byte [rel x86_hex0x], 0
+    je      dx_hexraw
+    jmp     dx_hex
 
 ; ============================================================================
 ; x87 floating point
@@ -2732,12 +3004,15 @@ dx_pgrp:
     je      .pg_reg
     mov     edi, 64
     cmp     eax, PG_REG64
-    je      .pg_reg
-    cmp     eax, PG_REGA
-    jne     .pg_by_w
-    cmp     byte [rel dx_p67], 0
+    jne     .pg_not64
+    cmp     byte [rel dx_mode], 64
     je      .pg_reg
     mov     edi, 32
+    jmp     .pg_reg
+.pg_not64:
+    cmp     eax, PG_REGA
+    jne     .pg_by_w
+    movzx   edi, byte [rel dx_asz]
     jmp     .pg_reg
 .pg_by_w:
     mov     edi, 32                        ; PG_REGW / PG_RMW: 32, 64 with W
@@ -2821,6 +3096,149 @@ dx_evex_elem:
     test    byte [rel dx_rex], 8
     jz      .ret
     mov     eax, 8
+.ret:
+    ret
+
+; ---- dx_vvvv_unused ------------------------
+; A generated VEX / EVEX entry (r12) whose shape has no vvvv operand (H h
+; J u) needs vvvv 1111: ZF clear when it is not - no instruction (#UD),
+; objdump's "(bad)" through the opcode.
+dx_vvvv_unused:
+    lea     rsi, [r12 + 8]
+    mov     ecx, 7
+.scan:
+    movzx   eax, byte [rsi]
+    test    eax, eax
+    jz      .unused
+    cmp     eax, 'H'
+    je      .used
+    cmp     eax, 'h'
+    je      .used
+    cmp     eax, 'J'
+    je      .used
+    cmp     eax, 'u'
+    je      .used
+    inc     rsi
+    dec     ecx
+    jnz     .scan
+.unused:
+    movzx   eax, byte [rel dx_vvvv]
+    and     eax, 15                        ; (V' is not looked at: objdump's)
+    ret
+.used:
+    xor     eax, eax                       ; (ZF set)
+    ret
+
+; ---- dx_bad_marks --------------------------
+; What objdump marks as one the CPU refuses (#UD) in a VEX / EVEX entry
+; r12: dx_markbad (bit n: "/(bad)" after operand n) and dx_repbad (the
+; operand written "(bad)", 0xFF none).
+;   - a VEX gather (V S H): destination / index / mask, each pair that is
+;     one register marks both;
+;   - an EVEX gather (V S) with no mask: its destination;
+;   - vmovw with a mask: after it;
+;   - vf(c)maddc / vf(c)mulc ph / sh whose destination is a source: it.
+dx_bad_marks:
+    lea     rsi, [r12 + 8]                 ; shape: V / Y / X, then S / s
+    movzx   eax, byte [rsi + 1]
+    cmp     eax, 'S'
+    je      .g_mem
+    cmp     eax, 's'
+    jne     .not_gather
+.g_mem:
+    movzx   eax, byte [rsi]
+    cmp     eax, 'V'
+    je      .g_dest
+    cmp     eax, 'Y'
+    je      .g_dest
+    cmp     eax, 'X'
+    jne     .not_gather
+.g_dest:
+    movzx   eax, byte [rel dx_regno]
+    movzx   ecx, byte [rel dx_reghi]
+    or      eax, ecx                       ; destination
+    movzx   ecx, byte [rel dx_index]       ; index
+    cmp     byte [rel dx_evex], 0
+    jne     .evex_gather
+    movzx   edx, byte [rsi + 2]
+    cmp     edx, 'H'
+    je      .g_mask
+    cmp     edx, 'h'
+    jne     .ret
+.g_mask:
+    movzx   edx, byte [rel dx_vvvv]        ; mask
+    xor     r8d, r8d
+    cmp     eax, ecx
+    jne     .g1
+    or      r8d, 3
+.g1:
+    cmp     eax, edx
+    jne     .g2
+    or      r8d, 5
+.g2:
+    cmp     ecx, edx
+    jne     .g3
+    or      r8d, 6
+.g3:
+    mov     [rel dx_markbad], r8b
+    ret
+.evex_gather:
+    cmp     byte [rel dx_eaaa], 0
+    jne     .ret
+    mov     byte [rel dx_markbad], 1
+    ret
+.not_gather:
+    mov     rdi, [rel dx_mnem]
+    ; vmovw: no masking
+    cmp     dword [rdi], "vmov"
+    jne     .not_vmovw
+    cmp     word [rdi + 4], "w"            ; ("w", 0)
+    jne     .not_vmovw
+    cmp     byte [rel dx_eaaa], 0
+    je      .ret
+    mov     byte [rel dx_markbad], 1
+    ret
+.not_vmovw:
+    ; the complex FP16 multiplies: vf[c]maddc / vf[c]mulc + ph / sh
+    cmp     word [rdi], "vf"
+    jne     .ret
+    lea     rdx, [rdi + 2]
+    cmp     byte [rdx], 'c'
+    jne     .cx_op
+    inc     rdx
+.cx_op:
+    cmp     dword [rdx], "madd"
+    jne     .cx_mul
+    add     rdx, 4
+    jmp     .cx_c
+.cx_mul:
+    cmp     word [rdx], "mu"
+    jne     .ret
+    cmp     byte [rdx + 2], 'l'
+    jne     .ret
+    add     rdx, 3
+.cx_c:
+    cmp     byte [rdx], 'c'
+    jne     .ret
+    cmp     byte [rdx + 2], 'h'
+    jne     .ret
+    cmp     byte [rdx + 3], 0
+    jne     .ret
+    movzx   eax, byte [rel dx_regno]
+    movzx   ecx, byte [rel dx_reghi]
+    or      eax, ecx
+    movzx   ecx, byte [rel dx_vvvv]
+    cmp     eax, ecx
+    je      .cx_bad
+    cmp     byte [rel dx_mod], 3
+    jne     .ret
+    movzx   ecx, byte [rel dx_rmreg]
+    movzx   edx, byte [rel dx_rmhi]
+    or      ecx, edx
+    cmp     eax, ecx
+    jne     .ret
+.cx_bad:
+    mov     byte [rel dx_repbad], 0
 .ret:
     ret
 
@@ -2924,6 +3342,7 @@ dx_evex_operands:
     lea     rax, [rel dx_namebuf]
     mov     [rel dx_mnem], rax
 .named:
+    call    dx_bad_marks
     mov     esi, 1
     call    dx_mnemonic
     lea     rbx, [r12 + 8]                 ; shape
@@ -2953,13 +3372,32 @@ dx_evex_operands:
     call    dx_sep
     pop     rax
 .first:
+    movzx   ecx, byte [rel dx_repbad]
+    cmp     ecx, r14d
+    jne     .operand_put
+    push    rax
+    push    rax
+    lea     rsi, [rel s_bad_opnd]          ; (a destination it may not be)
+    call    dx_puts
+    pop     rax
+    pop     rax
+    jmp     .operand_done
+.operand_put:
     call    .operand
+.operand_done:
     cmp     byte [rel dx_fail], 0
     jne     .done
     inc     r14d
     cmp     r14d, 1
-    jne     .next
+    jne     .marked
     call    .mask
+.marked:
+    lea     ecx, [r14 - 1]
+    movzx   eax, byte [rel dx_markbad]
+    bt      eax, ecx
+    jnc     .next
+    lea     rsi, [rel s_slash_bad]
+    call    dx_puts
     jmp     .next
 
 .done:
@@ -3241,6 +3679,8 @@ dx_evex_operands:
     mov     edi, 32
     test    byte [rel dx_rex], 8
     jz      .gs_ret
+    cmp     byte [rel dx_mode], 64
+    jne     .gs_ret
     mov     edi, 64
 .gs_ret:
     ret
@@ -3575,6 +4015,18 @@ dx_operands:
     je      .f_SSE4AR
     cmp     eax, FM_CRC
     je      .f_CRC
+    cmp     eax, FM_SEGOP
+    je      .f_SEGOP
+    cmp     eax, FM_BOUND
+    je      .f_BOUND
+    cmp     eax, FM_ARPL
+    je      .f_ARPL
+    cmp     eax, FM_AP
+    je      .f_AP
+    cmp     eax, FM_MOFFS
+    je      .f_MOFFS
+    cmp     eax, FM_MP
+    je      .f_MP
     cmp     eax, FM_VW
     jb      .unknown_form
     call    dx_sse_operands
@@ -3632,10 +4084,7 @@ dx_operands:
     je      .sys_bad
     mov     esi, 1
     call    dx_mnemonic
-    mov     edi, 64
-    cmp     byte [rel dx_p67], 0
-    je      .gam_reg
-    mov     edi, 32
+    movzx   edi, byte [rel dx_asz]
 .gam_reg:
     call    dx_greg
     call    dx_sep
@@ -3686,6 +4135,10 @@ dx_operands:
     mov     esi, 1
     call    dx_mnemonic
     mov     edi, 64
+    cmp     byte [rel dx_mode], 64
+    je      .g64m_reg
+    mov     edi, 32
+.g64m_reg:
     call    dx_greg
     call    dx_sep
     mov     edi, ebx
@@ -3833,9 +4286,12 @@ dx_operands:
     call    dx_puts
     call    dx_seg_fsgs
     lea     rsi, [rel s_xlat_rbx]
-    cmp     byte [rel dx_p67], 0
+    cmp     byte [rel dx_asz], 64
     je      .xlat_put
     lea     rsi, [rel s_xlat_ebx]
+    cmp     byte [rel dx_asz], 32
+    je      .xlat_put
+    lea     rsi, [rel s_xlat_bx]
 .xlat_put:
     call    dx_puts
     jmp     .done
@@ -3851,6 +4307,9 @@ dx_operands:
     mov     byte [rel dx_p66], 0           ; (the suffix is it)
     dec     byte [rel dx_n66]
     mov     ecx, 'w'
+    cmp     byte [rel dx_mode], 16
+    jne     .sfx_name
+    mov     ecx, 'd'                       ; (16-bit mode: 66 is 32 bits)
     jmp     .sfx_name
 ; ---- MPX: bnd, r/m64 (memory of no size) / bnd, bnd/m / bnd/m, bnd /
 ; bnd, m / m, bnd ----
@@ -3862,6 +4321,10 @@ dx_operands:
     cmp     byte [rel dx_mod], 3
     jne     .bnd_nomem
     mov     edi, 64
+    cmp     byte [rel dx_mode], 64
+    je      .bge_reg
+    mov     edi, 32
+.bge_reg:
     movzx   esi, byte [rel dx_rmreg]
     call    dx_reg
     jmp     .done
@@ -3887,16 +4350,14 @@ dx_operands:
     call    .bnd_reg
     call    dx_sep
 .bnd_nomem:
-    xor     edi, edi
-    call    dx_mem
+    call    .bnd_mem
     jmp     .done
 .f_MB:
     cmp     byte [rel dx_mod], 3
     je      .bnd_nop
     mov     esi, 1
     call    dx_mnemonic
-    xor     edi, edi
-    call    dx_mem
+    call    .bnd_mem
     call    dx_sep
     call    .bnd_reg
     jmp     .done
@@ -3923,8 +4384,16 @@ dx_operands:
 .bnd_rm:                                   ; a bnd register or memory (no size)
     cmp     byte [rel dx_mod], 3
     je      .bnd_rmreg
+.bnd_mem:                                  ; (16-bit addressing: none - "(bad)")
+    cmp     byte [rel dx_a16], 0
+    jne     .bnd_bad_mem
     xor     edi, edi
     jmp     dx_mem
+.bnd_bad_mem:
+    mov     rax, [rel dx_after_modrm]      ; (objdump reads no displacement)
+    mov     [rel dx_cur], rax
+    lea     rsi, [rel s_bad_opnd]
+    jmp     dx_puts
 .bnd_rmreg:
     movzx   esi, byte [rel dx_rmreg]
 .bnd_put:
@@ -3971,6 +4440,130 @@ dx_operands:
     call    dx_hex
     call    dx_sep
     mov     rsi, [rel dx_port]
+    call    dx_hex
+    jmp     .done
+.f_SEGOP:                                  ; push / pop es / cs / ss / ds
+    mov     esi, 1
+    call    dx_mnemonic
+    movzx   eax, byte [rel dx_op]
+    shr     eax, 3
+    and     eax, 3
+    lea     rsi, [rel sreg_names]
+    lea     rsi, [rsi + rax * 4]
+    call    dx_puts
+    jmp     .done
+.f_BOUND:                                  ; bound r, m16&16 / m32&32
+    cmp     byte [rel dx_mod], 3
+    je      .sys_bad
+    mov     esi, 1
+    call    dx_mnemonic
+    mov     edi, ebx
+    call    dx_greg
+    call    dx_sep
+    lea     edi, [rbx + rbx]
+    call    dx_mem
+    jmp     .done
+.f_ARPL:                                   ; arpl r/m16, r (a register at the
+    mov     esi, 1                         ; operand size, as objdump writes)
+    call    dx_mnemonic
+    mov     edi, ebx
+    cmp     byte [rel dx_mod], 3
+    je      .arpl_rm
+    mov     edi, 16
+.arpl_rm:
+    call    dx_rm
+    call    dx_sep
+    mov     edi, ebx
+    call    dx_greg
+    jmp     .done
+.f_MP:                                     ; call / jmp far [m]: DWORD (16:16) with a
+    cmp     byte [rel dx_mod], 3           ; 16-bit operand size, else FWORD
+    je      .sys_bad
+    mov     esi, 1
+    call    dx_mnemonic
+    mov     edi, 48
+    cmp     ebx, 16
+    jne     .mp_mem
+    mov     edi, 32
+.mp_mem:
+    call    dx_mem
+    jmp     .done
+.f_MOFFS:                                  ; A0-A3: the offset as wide as the address
+    movzx   eax, byte [rel dx_asz]
+    cmp     eax, 64
+    je      .mo_64
+    cmp     eax, 32
+    je      .mo_32
+    call    dx_rd16
+    jmp     .mo_have
+.mo_32:
+    call    dx_rd32
+    jmp     .mo_have
+.mo_64:
+    call    dx_rd64
+    lea     rcx, [rel s_movabs]            ; (objdump's movabs)
+    mov     [rel dx_mnem], rcx
+.mo_have:
+    mov     [rel dx_port], rax             ; (the offset)
+    ; 67: objdump names it ("addr32 mov ax, ds:0x..."), used or not
+    cmp     byte [rel dx_p67], 0
+    je      .mo_named
+    lea     rdi, [rel dx_upfx]
+    lea     rsi, [rel s_u67]
+    cmp     byte [rel dx_mode], 32
+    jne     .mo_cat
+    lea     rsi, [rel s_u67_16]
+.mo_cat:
+    call    dx_strcat
+.mo_named:
+    mov     esi, 1
+    call    dx_mnemonic
+    test    byte [rel dx_op], 2
+    jnz     .mo_store
+    call    .mo_acc
+    call    dx_sep
+    call    .mo_mem
+    jmp     .done
+.mo_store:
+    call    .mo_mem
+    call    dx_sep
+    call    .mo_acc
+    jmp     .done
+.mo_acc:
+    mov     edi, ebx
+    xor     esi, esi
+    jmp     dx_reg
+.mo_mem:                                   ; ds:0x... (or the override's)
+    movzx   esi, byte [rel dx_seg]
+    test    esi, esi
+    jnz     .mo_seg
+    mov     esi, 'd'
+.mo_seg:
+    call    dx_putc
+    mov     esi, 's'
+    call    dx_putc
+    mov     esi, ':'
+    call    dx_putc
+    mov     rsi, [rel dx_port]
+    jmp     dx_hex
+.f_AP:                                     ; call / jmp 0xseg:0xoffset
+    cmp     ebx, 16
+    je      .ap_16
+    call    dx_rd32
+    jmp     .ap_seg
+.ap_16:
+    call    dx_rd16
+.ap_seg:
+    push    rax
+    call    dx_rd16
+    push    rax
+    mov     esi, 1
+    call    dx_mnemonic
+    pop     rsi
+    call    dx_hex
+    mov     esi, ':'
+    call    dx_putc
+    pop     rsi
     call    dx_hex
     jmp     .done
 .f_CRC:                                    ; crc32 r32/r64, r/m8 / r/m16/32/64
@@ -4049,6 +4642,9 @@ dx_operands:
     mov     byte [rel dx_p66], 0
     dec     byte [rel dx_n66]
     mov     ecx, 'w'
+    cmp     byte [rel dx_mode], 16
+    jne     .sfxwi_named
+    mov     ecx, 'd'
 .sfxwi_named:
     mov     rsi, [rel dx_mnem]
     lea     rdi, [rel dx_namebuf]
@@ -4077,6 +4673,8 @@ dx_operands:
     call    dx_hex
     jmp     .done
 .f_SFXD:                                   ; sysexit / sysret: d, or q with REX.W
+    cmp     byte [rel dx_mode], 64
+    jne     .f_none                        ; (16 / 32-bit mode: none)
     mov     ecx, 'd'
     test    byte [rel dx_rex], 8
     jz      .sfx_name
@@ -4132,6 +4730,16 @@ dx_operands:
 .g7_mem:
     lea     rsi, [rel g7_mem_names]
     lea     rdi, [rel g7_mem_sizes]
+    cmp     byte [rel dx_mode], 64
+    je      .sys_mem
+    movzx   eax, byte [rel dx_regno]
+    and     eax, 7
+    cmp     eax, 3
+    ja      .sys_mem
+    mov     byte [rel dx_sysfx], 'd'       ; (16 / 32-bit mode: the operand
+    cmp     ebx, 16                        ; size said, objdump's sgdtw / lidtd)
+    jne     .sys_mem
+    mov     byte [rel dx_sysfx], 'w'
     jmp     .sys_mem
 .g7_reg:
     ; smsw r / lmsw r (reg 4 / 6), else the whole ModRM byte selects it
@@ -4155,6 +4763,27 @@ dx_operands:
     je      .g7_pfx
     mov     edx, 3
 .g7_pfx:
+    ; 64-bit mode's alone (seamcall, uiret, erets, the RMP ones ...): in 16 /
+    ; 32-bit mode no instruction - "(bad)" through 0F 01, as objdump reads it
+    movzx   eax, byte [rel dx_modrm]
+    cmp     byte [rel dx_mode], 64
+    je      .g7_any
+    lea     rsi, [rel g7_64only]
+.g7_64scan:
+    movzx   ecx, byte [rsi]
+    cmp     ecx, 0xFF
+    je      .g7_any
+    cmp     ecx, edx
+    jne     .g7_64next
+    cmp     al, [rsi + 1]
+    jne     .g7_64next
+    mov     byte [rel dx_undef], 1
+    dec     qword [rel dx_cur]             ; (the ModRM byte: unread)
+    jmp     .sys_bad
+.g7_64next:
+    add     rsi, 2
+    jmp     .g7_64scan
+.g7_any:
     lea     rsi, [rel g7_reg_names]
     movzx   eax, byte [rel dx_modrm]
 .g7_scan:
@@ -4229,6 +4858,25 @@ dx_operands:
     shl     eax, 4
     add     rsi, rax
     mov     [rel dx_mnem], rsi
+    movzx   eax, byte [rel dx_sysfx]
+    test    eax, eax
+    jz      .sys_named
+    mov     byte [rel dx_sysfx], 0
+    lea     rdi, [rel dx_namebuf]
+.sys_copy:
+    mov     dl, [rsi]
+    test    dl, dl
+    jz      .sys_end
+    mov     [rdi], dl
+    inc     rsi
+    inc     rdi
+    jmp     .sys_copy
+.sys_end:
+    mov     [rdi], al
+    mov     byte [rdi + 1], 0
+    lea     rax, [rel dx_namebuf]
+    mov     [rel dx_mnem], rax
+.sys_named:
     push    rcx
     push    rcx
     mov     esi, 1
@@ -4536,8 +5184,8 @@ dx_operands:
     jnz     .n90_xchg
     test    byte [rel dx_rex4], 0x10       ; REX2.B4: xchg r16-r31, rax
     jnz     .n90_xchg
-    cmp     ebx, 16
-    je      .n90_xchg
+    cmp     byte [rel dx_p66], 0           ; (66: xchg ax, ax - or eax, eax in
+    jne     .n90_xchg                      ; 16-bit mode)
     test    byte [rel dx_rex], 8
     jz      .f_none                        ; plain nop
     cmp     byte [rel dx_rex2], 0          ; (a REX's unused W: x86_decode's
@@ -5313,6 +5961,8 @@ dx_opE:
     mov     edi, 32
     test    byte [rel dx_rex], 8
     jz      .sized
+    cmp     byte [rel dx_mode], 64
+    jne     .sized
     mov     edi, 64
     jmp     .sized
 .e32:                                      ; dx_opE.e32: 32 bits whatever W says
@@ -5336,6 +5986,8 @@ dx_opG:
     mov     edi, 32
     test    byte [rel dx_rex], 8
     jz      .reg
+    cmp     byte [rel dx_mode], 64
+    jne     .reg
     mov     edi, 64
 .reg:
     jmp     dx_greg
@@ -5446,21 +6098,32 @@ dx_string:
     mov     edi, 16
     mov     esi, 2                         ; (dx)
     jmp     dx_reg
-.es_rdi:                                   ; [rdi] ([edi] with 67): es, always
+.es_rdi:                                   ; [rdi] / [edi] / [di]: es, always
     call    .size
+    cmp     byte [rel dx_mode], 64
+    je      .es_put
+    lea     rsi, [rel s_es]                ; (16 / 32-bit mode: written)
+    call    dx_puts
+.es_put:
     lea     rsi, [rel s_rdi]
-    cmp     byte [rel dx_p67], 0
+    cmp     byte [rel dx_asz], 64
     je      .str_put
     lea     rsi, [rel s_edi]
+    cmp     byte [rel dx_asz], 32
+    je      .str_put
+    lea     rsi, [rel s_di]
 .str_put:
     jmp     dx_puts
-.ds_rsi:                                   ; [rsi] ([esi]); fs: / gs: written
+.ds_rsi:                                   ; [rsi] / [esi] / [si]; fs: / gs:
     call    .size
     call    dx_seg_fsgs
     lea     rsi, [rel s_rsi]
-    cmp     byte [rel dx_p67], 0
+    cmp     byte [rel dx_asz], 64
     je      .str_put
     lea     rsi, [rel s_esi]
+    cmp     byte [rel dx_asz], 32
+    je      .str_put
+    lea     rsi, [rel s_si]
     jmp     .str_put
 .size:
     lea     rsi, [rel s_byte]
@@ -5611,6 +6274,9 @@ s_bnd:      db "bnd ", 0
 s_notrack:  db "notrack ", 0
 s_u66:      db "data16 ", 0
 s_u67:      db "addr32 ", 0
+s_u66_32:   db "data32 ", 0
+s_u67_16:   db "addr16 ", 0
+s_eiz:      db "eiz", 0
 s_ucs:      db "cs ", 0
 s_uss:      db "ss ", 0
 s_uds:      db "ds ", 0
@@ -5628,6 +6294,15 @@ s_vexp:     db "{vex} ", 0
 s_1to:      db "{1to", 0
 s_8087_only: db "(8087 only)", 0
 s_bad_opnd: db "(bad)", 0
+s_slash_bad: db "/(bad)", 0
+; the SSE forms whose VEX form has no vvvv operand without SF_NDS
+vex_novvvv_forms: db FM_VW, FM_WV, FM_VWI, FM_VE, FM_EV, FM_GW, FM_GU, FM_VM, FM_MV
+                  db FM_EVI, FM_GUI, FM_XBCAST, FM_XEXT, FM_XZERO, 0xFF
+; 0F 01 register forms of 64-bit mode alone: prefix (0 none, 1 66, 2 F3,
+; 3 F2), ModRM; FF ends it
+g7_64only:  db 0, 0xC7, 1, 0xCD, 1, 0xCE, 1, 0xCF, 2, 0xC6, 2, 0xCA
+            db 2, 0xEC, 2, 0xED, 2, 0xEE, 2, 0xEF, 2, 0xFD, 2, 0xFE, 2, 0xFF
+            db 3, 0xC6, 3, 0xCA, 3, 0xFD, 3, 0xFE, 0xFF
 s_hint_nop: db "nop", 0
 s_287_only: db "(287 only)", 0
 s_bnd_reg:  db "bnd", 0
@@ -5660,6 +6335,13 @@ d3now_names:
     db 0
 s_xlat_rbx: db "[rbx]", 0
 s_xlat_ebx: db "[ebx]", 0
+s_xlat_bx:  db "[bx]", 0
+s_es:       db "es:", 0
+s_di:       db "[di]", 0
+s_si:       db "[si]", 0
+; 16-bit addressing by ModRM.rm: base / index registers (NO_REG: none)
+dx_m16_base:  db 3, 3, 5, 5, 6, 7, 5, 3
+dx_m16_index: db 6, 7, 6, 7, NO_REG, NO_REG, NO_REG, NO_REG
 s_rdi:      db "[rdi]", 0
 s_edi:      db "[edi]", 0
 s_rsi:      db "[rsi]", 0
