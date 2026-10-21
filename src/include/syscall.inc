@@ -3,7 +3,7 @@
 
 ;
 ; ============================================================================
-; File        : include/syscall.s
+; File        : src/include/syscall.inc
 ; Project     : utasm
 ; Description : Complete AMD64 system call numbers (syscall table).
 ;                Covers all entries in the Linux x86_64 syscall ABI up to
