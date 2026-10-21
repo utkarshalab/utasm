@@ -3516,3 +3516,21 @@ ISA_CASES += [  # encoder fixes found by broadcast fuzzing; the 0F 01 system ins
 ISA_CASES += [  # vbcstnebf16ps: NASM 2.16 / utasm spelling (GNU: vbcstnebf162ps)
     ("vbcstnebf16ps ymm0, word [rax]", "c4e27eb100", "vbcstnebf162ps ymm0,WORD PTR [rax]"),
 ]
+ISA_CASES += [  # xbegin as a branch (a number / $ too), aor (RAO-INT), 3DNow!'s pmulhrw (GNU as / objdump 2.47)
+    ("xbegin $+6", "c7f800000000", None),
+    ("xbegin $", "c7f8faffffff", None),
+    ("aor [rax], eax", "f20f38fc00", "aor DWORD PTR [rax],eax"),
+    ("aor [r9+8], r10", "f24d0f38fc5108", "aor QWORD PTR [r9+0x8],r10"),
+    ("pmulhrw mm0, [rax]", "0f0f00b7", "pmulhrw mm0,QWORD PTR [rax]"),
+    ("vpgatherdd xmm0, [rax+xmm1*4], xmm2", "c4e269900488", "vpgatherdd xmm0,DWORD PTR [rax+xmm1*4],xmm2"),
+    ("vpscatterdd [rax+zmm0*4]{k1}, zmm0", "62f27d49a00480", "vpscatterdd DWORD PTR [rax+zmm0*4]{k1},zmm0"),
+]
+ISA_ERRORS += [
+    # a gather's destination, index and mask: all different (#UD; GNU's
+    # as warns, NASM takes them)
+    ("vpgatherdd xmm0, [rax+xmm0*4], xmm1", "a gather's destination, index and mask registers must all differ"),
+    ("vpgatherdd xmm0, [rax+xmm1*4], xmm0", "a gather's destination, index and mask registers must all differ"),
+    ("vpgatherqd xmm1, [rax+ymm2*4], xmm2", "a gather's destination, index and mask registers must all differ"),
+    ("vgatherdps zmm30{k1}, [rax+zmm30*4]", "a gather's destination, index and mask registers must all differ"),
+    ("xbegin rax", "invalid operand"),
+]
