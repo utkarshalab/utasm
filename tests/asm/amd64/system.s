@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/system.s
+// TEST: tests/asm/amd64/system.s
 // Suite: AMD64 System
 // Purpose: System/privileged instruction coverage.
 //   Covers: SYSCALL/SYSRET, INT/IRET, HLT, RDTSC, RDMSR/WRMSR,
