@@ -599,6 +599,9 @@ sse("38", 0xCF, "66", "gf2p8mulb", "VW", "x", S_NDS)
 # then in the SSE tables (with a "v" prefix added to the name).
 V_WSD = 8
 vex_tabs = {"0f": {}, "38": {}, "3a": {}}
+# (tab, key)s that are there for the disassembler alone - what objdump reads
+# and no assembler writes (gen_x86_enc.py makes no encoder forms of them)
+DIS_ONLY = set()
 
 def vex(tab, code, pfx, name, form, mem, flags=0):
     vex_tabs[tab][code * 4 + PFX[pfx]] = (name, FM[form], MEM[mem] | flags)
@@ -608,6 +611,8 @@ def vex_grp(tab, code, pfx, gname, form):
 
 for pfx in ("np", "66", "F3", "F2"):                  # (objdump: pp ignored)
     vex("0f", 0x77, pfx, "vzeroupper", "XZERO", "")
+    if pfx != "np":
+        DIS_ONLY.add(("0f", 0x77 * 4 + PFX[pfx]))
 for code, n, form, m, f in (
         (0x0C, "vpermilps", "VW", "x", S_NDS), (0x0D, "vpermilpd", "VW", "x", S_NDS),
         (0x0E, "vtestps", "VW", "x", 0), (0x0F, "vtestpd", "VW", "x", 0),
