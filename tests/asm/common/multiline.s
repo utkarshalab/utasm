@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/common/multiline.s
+// TEST: tests/asm/common/multiline.s
 // Suite: Common Preprocessor
 // Purpose: Multiline macro and directive coverage.
 // Expected: EXIT_OK.
