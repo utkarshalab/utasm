@@ -1,15 +1,15 @@
 ;
 ; ============================================
-; File     : optimizer/jump.s
+; File     : src/optimize/jump.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 DEFAULT REL
 
@@ -88,7 +88,7 @@ DEFAULT REL
 %define RX_aux       24     ; q  target offset (old) / alignment
 %define RX_end       32     ; q  first byte after the part that can change
 %define RX_change    40     ; q  bytes removed here in the current layout
-%define RX_fill      48     ; q  align: the fill spec (optimizer/align.s)
+%define RX_fill      48     ; q  align: the fill spec (src/optimize/align.s)
 %define RX_tidx      56     ; q  candidate: the records ending at or before
                             ;    its target (rx_ub; the same every pass)
 %define RX_SIZE      64
@@ -120,7 +120,7 @@ extern symbol_find
 
 [SECTION .bss]
 align 8
-relax_vec:          resb VEC_SIZE       ; records (lib/vec.s)
+relax_vec:          resb VEC_SIZE       ; records (src/lib/vec.s)
 rw_ctx:             resq 1              ; AsmCtx during relax_run
 rw_sec:             resq 1              ; section being processed
 rw_recs:            resq 1              ; its records (array of pointers)
@@ -260,7 +260,7 @@ relax_note:
 ; ---- relax_overlap -----------------------
 ;
 ; relax_overlap
-; FASM's load / store (frontend/parser/fasm.s): eax = 1 when a record of
+; FASM's load / store (src/frontend/syntax/fasm/fasm.s): eax = 1 when a record of
 ; section rdi can still change bytes in [rsi, rdx) - a jump's (its
 ; displacement filled in later, its size), a padding's - also one that
 ; starts before them (relax_range_fixed looks at the starts).
@@ -722,7 +722,7 @@ relax_range_fixed:
 ; relax_range_savings
 ; rax = the bytes the forward jumps of section rdi in [rsi, rdx) give up
 ; when all are made short (jmp 3, jcc 4; in bits 16: 1, 2): the distance
-; across them NASM's first pass takes (core/known.s known_pp_diff).
+; across them NASM's first pass takes (src/core/known.s known_pp_diff).
 ; Clobbers: rcx, r8-r10.
 ;
 global relax_range_savings
@@ -3243,15 +3243,15 @@ rx_apply:
     mov     rdi, r12
     extern  lst_remap
     call    lst_remap
-    ; and the .cfi_ directives' places (debug/cfi.s)
+    ; and the .cfi_ directives' places (src/debug/cfi.s)
     mov     rdi, r12
     extern  cfi_remap
     call    cfi_remap
-    ; and GNU's .loc rows (debug/line.s)
+    ; and GNU's .loc rows (src/debug/line.s)
     mov     rdi, r12
     extern  line_remap
     call    line_remap
-    ; and the preprocessor's label differences (core/known.s)
+    ; and the preprocessor's label differences (src/core/known.s)
     mov     rdi, r12
     extern  known_remap
     call    known_remap
