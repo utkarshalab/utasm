@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/compare.s
+// TEST: tests/asm/amd64/compare.s
 // Suite: AMD64 Core
 // Purpose: All comparison instructions — CMP, TEST, CMPXCHG, CMPXCHG8B,
 //          CMPXCHG16B — all sizes and operand combinations.
