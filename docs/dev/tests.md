@@ -43,7 +43,7 @@ tests/
 ├── parallel.s               ; parallel test execution
 │
 ├── unit/                    ; one module, one behaviour
-├── error/                   ; verify every error code fires correctly
+├── src/diag/                   ; verify every error code fires correctly
 ├── warning/                 ; verify warnings fire and are suppressible
 ├── integration/             ; source → binary → execution
 ├── regression/              ; every bug ever fixed, grows forever
@@ -585,7 +585,7 @@ tests/integration/
 │   ├── aarch64.sh
 │   └── riscv64.sh
 │
-└── selfpatch/
+└── src/planned/selfpatch/
     ├── basic.s
     ├── rollback.s
     └── perf.s
@@ -623,33 +623,33 @@ This folder is permanent memory. Every entry is an hour transformed into permane
 
 ## Speed
 
-`scripts/compat/bench.py` assembles the same large inputs with NASM and
+`scripts/bench/compat_bench.py` assembles the same large inputs with NASM and
 utasm - straight-line code, jumps among labels, macro calls, labelled data -
 and times them, checking that the code is the same. It also times both on
 utasm's own sources, NASM with the Makefile's `-d__NASM__=1 -I./`:
 
 ```sh
-python3 scripts/compat/bench.py build/gen1/utasm            # about a minute
-python3 scripts/compat/bench.py build/gen1/utasm --scale 5  # larger inputs
-python3 scripts/compat/bench.py build/gen1/utasm --only jumps
+python3 scripts/bench/compat_bench.py build/gen1/utasm            # about a minute
+python3 scripts/bench/compat_bench.py build/gen1/utasm --scale 5  # larger inputs
+python3 scripts/bench/compat_bench.py build/gen1/utasm --only jumps
 ```
 
 ---
 
 ## Fuzz Tests
 
-`scripts/compat/fuzz.py` changes the test sources and the compatibility
+`tests/compat/fuzz.py` changes the test sources and the compatibility
 cases at random - lines dropped, repeated, cut, swapped or spliced in from
 another source; directives, operators, odd bytes and nesting inserted - and
 assembles each result as bin, elf64 or elf32, sometimes with `-l` or `-g`:
 
 ```sh
-python3 scripts/compat/fuzz.py build/gen1/utasm 6000 7   # 6000 runs, seed 7
+python3 tests/compat/fuzz.py build/gen1/utasm 6000 7   # 6000 runs, seed 7
 ```
 
 **Invariants that must hold regardless of input:**
 - No internal error: a fault in utasm (SIGSEGV, SIGBUS, SIGFPE, SIGILL) is
-  caught by `core/crash.s` and reported as `file:line: fatal: internal
+  caught by `src/core/crash.s` and reported as `file:line: fatal: internal
   error: ... at 0x...`, exit status 9 - the fuzzer counts it, as it counts
   a death by any other signal
 - Finishes within 10 seconds
@@ -731,19 +731,19 @@ tests/fixtures/
 ## Running Tests
 
 ```sh
-bash scripts/bootstrap.sh          # build Gen1 first
+bash scripts/build/bootstrap.sh          # build Gen1 first
 
-bash scripts/test.sh               # full suite
-bash scripts/test.sh unit          # unit tests only
-bash scripts/test.sh error         # error tests only
-bash scripts/test.sh integration   # integration only
-bash scripts/test.sh regression    # regression only
-bash scripts/test.sh perf          # benchmarks only
-bash scripts/test.sh fuzz          # fuzz tests only
+bash tests/run.sh               # full suite
+bash tests/run.sh unit          # unit tests only
+bash tests/run.sh error         # error tests only
+bash tests/run.sh integration   # integration only
+bash tests/run.sh regression    # regression only
+bash tests/run.sh perf          # benchmarks only
+bash tests/run.sh fuzz          # fuzz tests only
 
-bash scripts/test.sh unit/lexer/ident   ; single test
-bash scripts/test.sh --verbose          ; verbose output
-bash scripts/test.sh --timeout 30       ; timeout override (default 5s)
+bash tests/run.sh unit/lexer/ident   ; single test
+bash tests/run.sh --verbose          ; verbose output
+bash tests/run.sh --timeout 30       ; timeout override (default 5s)
 ```
 
 **Expected output:**
@@ -791,7 +791,7 @@ bash scripts/test.sh --timeout 30       ; timeout override (default 5s)
 ; Expects:  token stream matches fixtures/expect/lex_ident.bin
 ```
 
-4. Run `bash scripts/test.sh unit/lexer/ident` and verify it passes (`test.sh` finds every `.s` under `tests/` itself)
+4. Run `bash tests/run.sh unit/lexer/ident` and verify it passes (`test.sh` finds every `.s` under `tests/` itself)
 
 ---
 
@@ -801,7 +801,7 @@ bash scripts/test.sh --timeout 30       ; timeout override (default 5s)
 ; REGRESSION: reg_NNN
 ; Date:       YYYY-MM-DD
 ; Bug:        utasm crashed on RIP-relative with negative displacement
-; Symptom:    segfault in backend/encoder/x86/riprel.s:142
+; Symptom:    segfault in src/encode/x86/encoder.s:142
 ; Root cause: sign extension not applied before range check
 ; Fix:        MOVSX applied before CMP in range validation
 ; Error:      E505 now fires correctly instead of crashing
@@ -813,14 +813,14 @@ Add it. Run it. It passes. The bug is gone forever.
 
 ## NASM Compatibility Suites
 
-`scripts/compat/run_all.py` assembles the same sources with NASM and with
-utasm and compares what comes out. `scripts/test.sh` runs it after the test
+`tests/compat/run_all.py` assembles the same sources with NASM and with
+utasm and compares what comes out. `tests/run.sh` runs it after the test
 matrix; it can also be run alone:
 
 ```sh
-python3 scripts/compat/run_all.py build/gen1/utasm          # everything
-python3 scripts/compat/run_all.py build/gen1/utasm --quick  # skip the slow suites
-python3 scripts/compat/run_all.py build/gen1/utasm -v       # also list known differences
+python3 tests/compat/run_all.py build/gen1/utasm          # everything
+python3 tests/compat/run_all.py build/gen1/utasm --quick  # skip the slow suites
+python3 tests/compat/run_all.py build/gen1/utasm -v       # also list known differences
 ```
 
 | Suite | What is compared |
@@ -846,7 +846,7 @@ python3 scripts/compat/run_all.py build/gen1/utasm -v       # also list known di
 | operand shapes | ~1,700 pairings of register and memory sizes for the general-purpose instructions: the same bytes as NASM, or rejected where NASM rejects them |
 | disassembler | `utasm --disasm` against `objdump -d -M intel` (binutils 2.47 or later: older ones fail the suite) on the gen1 objects, the corpus, NASM's every form in 64, 32 and 16-bit mode and an ELF32 object: bytes, text and symbol annotation of every instruction |
 
-The sources live in `scripts/compat/cases.py` and `corpus.py`. A difference
+The sources live in `tests/compat/cases.py` and `corpus.py`. A difference
 that is deliberate or not implemented yet goes in `common.KNOWN` with the
 reason: it is reported as *known* and does not fail the run, and the suite
 says so when it starts matching, so the entry can be removed. The suites
@@ -862,8 +862,8 @@ opcode space:
 
 ```sh
 PATH=/path/to/binutils-2.47/bin:$PATH \
-    python3 scripts/compat/disasm_scan.py build/gen1/utasm            # 133,320 cases a mode
-python3 scripts/compat/disasm_scan.py build/gen1/utasm --quick --bits 64   # 16,160
+    python3 tests/compat/disasm_scan.py build/gen1/utasm            # 133,320 cases a mode
+python3 tests/compat/disasm_scan.py build/gen1/utasm --quick --bits 64   # 16,160
 ```
 
 Each case is a prefix (none, 66, F3, F2), a map (one-byte, 0F, 0F 38,
@@ -872,7 +872,7 @@ the instruction reads after it. The first instruction utasm decodes is
 compared with objdump's (`-D -b binary`): its length and its text. It
 prints every difference and exits 1 if there is one. Today it finds none in
 16, 32 or 64-bit mode. It takes a few minutes a mode, so it is not part of
-`run_all.py`; run it after changing `tools/disasm/` or the tables.
+`run_all.py`; run it after changing `src/tools/disasm/` or the tables.
 
 ---
 
