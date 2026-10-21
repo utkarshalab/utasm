@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/store.s
+// TEST: tests/asm/aarch64/store.s
 // Suite: AArch64 Core
 // Purpose: Store instruction coverage — STR, STRB, STRH, STP,
 //          STXR/STLXR atomics, all addressing modes.
