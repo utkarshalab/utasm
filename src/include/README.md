@@ -44,7 +44,7 @@ The structures modules pass to each other (NASM `struc`s; under NASM the
 | `ASMCTX` | the assembler context: target, format, options, sections, symbols, relocations | main/utasm.s |
 | `LEXER`, `PREP`, `INCLUDECTX`, `MACRO`, `MACROEXP` | the lexer, the preprocessor, an include, a macro and one expansion of it | frontend/ |
 | `OPERAND`, `INST` | a parsed instruction: up to four operands (register, memory: base / index / scale / displacement, immediate, masks, decorators) | frontend/syntax |
-| `ARENA`, `VEC`, `LIST`, `LISTNODE`, `FMTBUF` | the library's containers | lib/ |
+| `ARENA`, `VEC`, `FMTBUF` | the library's arena, growable array and string builder | lib/ |
 | `PHDR` | an ELF program header (standalone executables) | object/elf |
 | profiler's `PROFSTATE` / `PROFENTRY` | the per-phase measurements | profile/ |
 
@@ -83,10 +83,8 @@ The macros utasm's own code is written with, about 120 of them:
 | `elf.inc` | 424 | ELF64 header and section / segment offsets and types | object/elf, link/reloc, encode/x86, frontend/syntax (parser), tools/ |
 | `inspect.inc` | 163 | shared definitions of the inspector and the symbol dumper | tools/inspect, tools/symdump, tools/disasm, main/cli.s |
 | `listing.inc` | 42 | the per-line entries the listing (`-l`) and the DWARF line table share | object/listing, debug/dwarf |
-| `archive.inc` | 25 | Unix `.a` archive header layout | link/archive.s |
 | `register.inc` | 255 | AMD64 register aliases: ABI roles, control / debug registers, MSR numbers | platform/mem.s |
 | `syscall.inc` | 437 | the Linux x86-64 system call numbers (`SYS_*`) | platform/mem.s (the rest use `constant.inc`'s) |
-| `uring.inc` | 117 | io_uring structures and constants | platform/uring.s |
 
 ## Files
 
@@ -99,9 +97,7 @@ The macros utasm's own code is written with, about 120 of them:
 | `syscall.inc` | 437 |
 | `register.inc` | 255 |
 | `inspect.inc` | 163 |
-| `uring.inc` | 117 |
 | `listing.inc` | 42 |
-| `archive.inc` | 25 |
 | `arch/amd64.inc` | 106 |
 | `arch/aarch64.inc` | 138 |
 | `arch/riscv64.inc` | 159 |
