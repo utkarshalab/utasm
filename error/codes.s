@@ -693,6 +693,7 @@ code_table:
     code_msg EXIT_NS_PRIVATE,        m_ns_private, t_ns_private
     code_msg EXIT_NS_SHADOW,         m_ns_shadow, t_ns_shadow
     code_msg EXIT_TMM_SAME,          m_tmm_same
+    code_msg EXIT_GATHER_SAME,       m_gather_same
     code_msg EXIT_CTX_DEPTH,         m_ctx_deep
     code_msg EXIT_MACRO_ARITY_FAIL,  m_macro_arity, t_macro_arity
     code_msg EXIT_DEFINE,            m_define
@@ -946,6 +947,7 @@ m_ns_private:   db "private name used from outside", 0
 t_ns_private:   db "`^' is private: used from outside its namespace / module", 0
 m_ns_shadow:    db "name taken from an outer namespace, then defined inside", 0
 m_tmm_same:     db "the three tile registers must all differ (#UD otherwise)", 0
+m_gather_same:  db "a gather's destination, index and mask registers must all differ (#UD otherwise)", 0
 t_ns_shadow:    db "`^' was taken from an outer namespace, then this one defined it (write ::^, or define it before)", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
