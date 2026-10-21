@@ -7,9 +7,9 @@
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 %define IDN_BUF 512
 %define CAP_SIZE (1 << 30)              ; the capture area (reserved, committed as used)
@@ -4057,7 +4057,7 @@ prep_handle_directive:
     jne     .done_cleanup
     mov     rdi, rbx
     extern  prep_handle_rotate
-    call    prep_handle_rotate             ; frontend/macro/rotate.s
+    call    prep_handle_rotate             ; src/frontend/preproc/rotate.s
     jmp     .done_cleanup
 
 
@@ -4546,7 +4546,7 @@ pd_verid:    db "__NASM_VERSION_ID__", 0
 pd_ver:      db "__NASM_VER__", 0
 pd_ver_q:    db "__?NASM_VER?__", 0
 pd_utasm:    db "__UTASM__", 0
-; the time of assembly (lib/time.s)
+; the time of assembly (src/lib/time.s)
 pt_date:      db "__DATE__", 0
 pt_date_q:    db "__?DATE?__", 0
 pt_time:      db "__TIME__", 0
@@ -6528,7 +6528,7 @@ prep_handle_pop:
 ; prep_resolve_interp
 ; Rewrites a token's text, replacing every "%[NAME]" with the decimal value
 ; of NAME. A name that is not defined contributes nothing, matching how the
-; tables in include/arch/*.inc are built.
+; tables in src/include/arch/*.inc are built.
 ;
 ; Input    : rdi = pointer to PrepState
 ;             rsi = pointer to Token (text is replaced in place)
@@ -7798,7 +7798,7 @@ prep_handle_message:
     mov     rbx, rdi
     mov     r13d, esi
     ; %error / %fatal in a run whose "$ - $$" the layout is still to give
-    ; (core/known.s): the next run, which has it, says whether they hold
+    ; (src/core/known.s): the next run, which has it, says whether they hold
     cmp     r13d, 1
     jb      .reported
     extern  known_tentative, known_defer_error
@@ -11278,7 +11278,7 @@ prep_handle_use:
     cmp     byte [rel masm_enabled], 0
     jne     .done
     mov     byte [rel masm_enabled], 1
-    ; PROC / ENDP / LOCAL / INVOKE / .IF & co (frontend/parser/masm.s)
+    ; PROC / ENDP / LOCAL / INVOKE / .IF & co (src/frontend/syntax/masm/masm.s)
     mov     byte [rel masm_hl], 1
     mov     rdi, rbx
     lea     rsi, [rel use_masm_text]
@@ -11287,7 +11287,7 @@ prep_handle_use:
     call    prep_push_buffer
     jmp     .ret
 .not_masm:
-    ; %use smartalign: align pads code with long NOPs (optimizer/align.s),
+    ; %use smartalign: align pads code with long NOPs (src/optimize/align.s),
     ; "alignmode generic" to start with
     push    rax
     mov     rdi, rax
@@ -12893,7 +12893,7 @@ macro_handle_def:
     mov     rax, [rsp + 72]
     mov     [r15 + MACRO_max_params], ax
     movzx   eax, byte [rel mdef_greedy]
-    or      al, [rel mdef_nolist]          ; .nolist (error/codes.s: unlisted)
+    or      al, [rel mdef_nolist]          ; .nolist (src/diag/codes.s: unlisted)
     or      [r15 + MACRO_flags], al
     ; %rmacro / %irmacro: the one kind that may call itself
     mov     rdi, [rel mdef_dir]
@@ -13766,7 +13766,7 @@ mdef_dot:       resb 1              ; prep_parse_count: the count was "N."
 mdef_nolist:    resb 1              ; ... MACRO_FLAG_NOLIST after ".nolist"
 putback_next:  resb TOKEN_SIZE     ; a token queued behind the peek slot
 global has_putback_next
-has_putback_next: resb 1            ; (frontend/parser/gas_macro.s: raw text)
+has_putback_next: resb 1            ; (src/frontend/syntax/gas/gas_macro.s: raw text)
 interp_cap:    resq 1              ; prep_resolve_interp: its buffer's size
 idn_left_buf:  resb IDN_BUF; %ifidn operands as text (to start with)
 idn_right_buf: resb IDN_BUF
