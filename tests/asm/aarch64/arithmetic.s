@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/arithmetic.s
+// TEST: tests/asm/aarch64/arithmetic.s
 // Suite: AArch64 Core
 // Purpose: Exhaustive arithmetic instruction coverage.
 //   Covers: ADD, SUB, MUL, MADD, MSUB, UDIV, SDIV, NEG, NGC,
