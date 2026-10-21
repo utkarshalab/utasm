@@ -1,15 +1,15 @@
 ;
 ; ============================================
-; File     : error/hints.s
+; File     : src/diag/hints.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 DEFAULT REL
 
@@ -20,7 +20,7 @@ extern warn_hold_put
 ; "DID YOU MEAN" HINTS
 ; ============================================================================
 ; Context-specific suggestions for common mistakes, built on the
-; suggestion engine in error/suggest.s:
+; suggestion engine in src/diag/suggest.s:
 ;
 ;   error_hint_mnemonic(name)      unknown instruction or directive
 ;   error_hint_symbol(ctx, name)   undefined symbol
@@ -36,7 +36,7 @@ extern warn_hold_put
 ;     prog.s:3: error: parser: instruction expected, found `mvo'
 ;     hint: did you mean 'mov'?
 ;
-; Mnemonic candidates come from error/mnemonic_names.inc, generated from
+; Mnemonic candidates come from src/diag/gen/mnemonic_names.inc, generated from
 ; the real x86-64 mnemonic table, so only instructions utasm actually
 ; knows are ever suggested. They are used when targeting amd64; the
 ; directive list is used for every target.
@@ -209,7 +209,7 @@ error_hint_clear:
 hint_write:
     test    rdx, rdx
     jz      .done
-    ; with a warning: held with it (error/warnings.s)
+    ; with a warning: held with it (src/diag/warnings.s)
     cmp     byte [rel stderr_hold], 0
     je      .write
     mov     rdi, rsi
@@ -235,7 +235,7 @@ hint_prefix_len  equ $ - hint_prefix
 hint_suffix:     db "'?", 10
 hint_suffix_len  equ $ - hint_suffix
 
-; Directives recognised by parser_handle_pseudo_op (frontend/parser/parser.s),
+; Directives recognised by parser_handle_pseudo_op (src/frontend/syntax/nasm/parser.s),
 ; as a packed NUL-separated list. Keep in sync when adding a directive.
 directive_names:
     db "section", 0, "global", 0, "extern", 0, "weak", 0, "local", 0, "common", 0
@@ -245,4 +245,4 @@ directive_names:
     db "struc", 0, "endstruc", 0, "field", 0
 directive_names_end:
 
-%include "error/mnemonic_names.inc"
+%include "src/diag/gen/mnemonic_names.inc"
