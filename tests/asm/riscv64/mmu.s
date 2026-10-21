@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/mmu.s
+// TEST: tests/asm/riscv64/mmu.s
 // Suite: RISC-V 64 Core
 // Purpose: MMU and virtual memory management instruction coverage.
 //   Covers: SFENCE.VMA, SATP (CSR) manipulation, page table setup idioms.
