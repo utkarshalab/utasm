@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/simd.s
+// TEST: tests/asm/riscv64/simd.s
 // Suite: RISC-V 64 Core
 // Purpose: Vector extension (V) instruction coverage.
 //   Covers: Vector loads/stores, vector arithmetic, vector logic,
