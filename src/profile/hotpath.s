@@ -9,7 +9,7 @@
 ; Scans the PROFENTRY array and flags entries whose accumulated cycle
 ; count exceeds the hot_threshold. O(N) linear scan, N ≤ 64.
 ;
-; See docs/profiler_architecture.md §7.1 for algorithm details.
+; See src/profile/README.md for algorithm details.
 ; ============================================================================
 ;
 
