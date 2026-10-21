@@ -1,4 +1,4 @@
-; backend/output/pe/cert.s
+; src/object/pe/cert.s
 ; Phase 13 — PE security certificate
 ; stub — not yet implemented
 bits 64
