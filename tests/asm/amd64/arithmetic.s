@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/arithmetic.s
+// TEST: tests/asm/amd64/arithmetic.s
 // Suite: AMD64 Core
 // Purpose: Exhaustive arithmetic and logical instruction coverage.
 //   Covers: ADD, SUB, IMUL, IDIV, MUL, DIV, INC, DEC, NEG, NOT,
