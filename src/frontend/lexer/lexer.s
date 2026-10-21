@@ -1,6 +1,6 @@
 ;
 ; ============================================
-; File     : src/core/lexer.s
+; File     : src/frontend/lexer/lexer.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
