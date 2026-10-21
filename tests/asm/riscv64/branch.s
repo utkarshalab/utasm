@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/branch.s
+// TEST: tests/asm/riscv64/branch.s
 // Suite: RISC-V 64 Core
 // Purpose: Branch and jump instruction coverage.
 //   Covers: BEQ, BNE, BLT, BGE, BLTU, BGEU, JAL, JALR,
