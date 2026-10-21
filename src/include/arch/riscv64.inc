@@ -1,9 +1,9 @@
 ;
 ; ============================================================================
-; File        : include/arch/riscv64.s
+; File        : src/include/arch/riscv64.inc
 ; Project     : utasm
 ; Description : RISC-V 64-bit Architecture Constants and Register IDs.
-;                Aligned with src/isa/riscv64.s IDs.
+;                Aligned with src/encode/riscv64/isa.s IDs.
 ; ============================================================================
 ;
 
@@ -30,7 +30,7 @@
 %define REG_A1                 11
 
 ; ---- Mnemonic IDs (RISC-V Specific) ------
-; These must match the IDs in src/isa/riscv64.s exactly.
+; These must match the IDs in src/encode/riscv64/isa.s exactly.
 %define ID_RV_ADD              3000
 %define ID_RV_ADDI             3001
 %define ID_RV_ADDIW            3002
