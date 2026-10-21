@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : backend/encoder/x86/msr.s
+; File        : src/encode/x86/msr.s
 ; Project     : utasm
 ; Description : The MSR forms with operands (amd64): MSR_IMM, USER_MSR.
 ;
@@ -16,9 +16,9 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 DEFAULT REL
 
