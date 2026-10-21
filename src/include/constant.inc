@@ -1849,7 +1849,7 @@
 ; PROFILER CONSTANTS
 ; ============================================================================
 ; Type tags, phase identifiers, and thresholds for the RDTSC-based profiler.
-; See docs/profiler_architecture.md for full design rationale.
+; See src/profile/README.md for full design rationale.
 
 ; ── Profiler Type Tags ──
 %define TAG_PROFENTRY          0x10        ; ProfileEntry struct identifier
