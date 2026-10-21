@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/shift.s
+// TEST: tests/asm/aarch64/shift.s
 // Suite: AArch64 Core
 // Purpose: Shift instruction coverage.
 //   Covers: LSL, LSR, ASR, ROR (register and immediate),
