@@ -89,18 +89,18 @@ Stack must be 16-byte aligned before any `call`.
 
 ## Adding a New Instruction
 
-1. Add the opcode entry to `backend/isa/<arch>.s`
-2. Add the encoding handler to `backend/encoder/<arch>/` (appropriate file)
+1. Add the opcode entry to `src/encode/<arch>.s`
+2. Add the encoding handler to `src/encode/<arch>/` (appropriate file)
 3. Add a unit test at `tests/unit/encoder/<arch>/<instr>.s`
 4. Verify encoding matches reference (objdump or manual check)
-5. Run `bash scripts/test.sh unit/encoder/<arch>/<instr>`
+5. Run `bash tests/run.sh unit/encoder/<arch>/<instr>`
 
 ---
 
 ## Adding a New Error Code
 
-1. Reserve the code in `docs/error_reference.md`
-2. Add the message string to `error/table.s`
+1. Reserve the code in `docs/user/errors.md`
+2. Add the message string to `src/diag/table.s`
 3. Emit it from the correct stage with `error_emit`
 4. Add a test at `tests/error/E<Nxx>/E<NNN>.s`
 5. Verify: correct code fires, correct line/col, recovery continues
@@ -109,18 +109,18 @@ Stack must be 16-byte aligned before any `call`.
 
 ## Adding a New CPU Profile
 
-1. Add the profile file at `cpu/profiles/<name>.s`
-2. Register it in `cpu/profiles/profiles.s`
-3. Add feature flags to `cpu/features.s`
+1. Add the profile file at `src/planned/cpu/profiles/<name>.s`
+2. Register it in `src/planned/cpu/profiles/profiles.s`
+3. Add feature flags to `src/planned/cpu/features.s`
 4. Document it in `docs/cpu_profiles.md`
 
 ---
 
 ## Adding a New Output Format
 
-1. Add the entry point at `backend/output/<format>/out.s`
-2. Register the format in the output dispatch of `backend/linker/linker.s` (by `ASMCTX_fmt`'s `FMT_*` value)
-3. Add the `-f <format>` CLI option in `cli.s`
+1. Add the entry point at `src/object/<format>/out.s`
+2. Register the format in the output dispatch of `src/link/linker.s` (by `ASMCTX_fmt`'s `FMT_*` value)
+3. Add the `-f <format>` CLI option in `src/main/cli.s`
 4. Add integration tests at `tests/integration/<format>/`
 
 ---
@@ -153,7 +153,7 @@ Types: `fix`, `feat`, `refactor`, `test`, `docs`, `chore`
 
 **Every bug fixed gets a regression test. No exceptions.**
 
-See [tests.md](docs/tests.md) for the regression test format.
+See [tests.md](docs/dev/tests.md) for the regression test format.
 
 ---
 
