@@ -3,16 +3,16 @@
 
 ;
 ; ============================================
-; File     : include/inspect.inc
+; File     : src/include/inspect.inc
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
 ; Description: Shared definitions for the ELF inspector
-;              (tools/inspector) and symbol dumper (tools/symdump).
+;              (src/tools/inspect) and symbol dumper (src/tools/symdump).
 ; ============================================
 ;
 
-%include "include/type.inc"
+%include "src/include/type.inc"
 
 ; ============================================================================
 ; What to print  (inspect_run flags, may be OR-ed)
@@ -27,7 +27,7 @@
 %define INSPECT_DISASM      0x20    ; x86-64 disassembly of code sections (not in ALL)
 
 ; ============================================================================
-; Name tables  (dump_name / dump_put_name kinds, see tools/symdump/fmt.s)
+; Name tables  (dump_name / dump_put_name kinds, see src/tools/symdump/fmt.s)
 ; ============================================================================
 
 %define NAME_ETYPE          0       ; e_type
