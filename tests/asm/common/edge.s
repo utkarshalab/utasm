@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/common/edge.s
+// TEST: tests/asm/common/edge.s
 // Suite: Common Preprocessor
 // Purpose: Edge case coverage (empty macros, large numbers, etc).
 // Expected: EXIT_OK.
