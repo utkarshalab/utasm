@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/load.s
+// TEST: tests/asm/riscv64/load.s
 // Suite: RISC-V 64 Core
 // Purpose: Load instruction coverage.
 //   Covers: LB, LH, LW, LD, LBU, LHU, LWU — all sizes, all offset ranges.
