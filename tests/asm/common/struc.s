@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/common/struc.s
+// TEST: tests/asm/common/struc.s
 // Suite: Common Parser
 // Purpose: Verify struct parsing and field offset registration.
 // Expected: EXIT_OK.
