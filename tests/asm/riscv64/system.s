@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/system.s
+// TEST: tests/asm/riscv64/system.s
 // Suite: RISC-V 64 Core
 // Purpose: System instruction and CSR coverage.
 //   Covers: ECALL, EBREAK, CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI,
