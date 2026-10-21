@@ -2,7 +2,7 @@
 %define CONSTANT_S
 
 ; ============================================================================
-; File     : include/constant.inc
+; File     : src/include/constant.inc
 %define CONSTANT_S
 ; Project  : utasm
 ; Author   : Utkarsha Lab
@@ -21,7 +21,7 @@
 ;
 ; NOTE ON PARITY & CONVENTIONS:
 ; - Standard compiler exit codes (0 to 9) align precisely with the calling
-;   expectations in main.s, docs/error_reference.md, and docs/abi.md.
+;   expectations in main.s, docs/user/errors.md, and docs/reference/abi.md.
 ; - Values 124 (EXIT_INTERNAL) and 125 (EXIT_OOM) were historically proposed
 ;   to keep compiler crash statuses distinct from standard shell/OS utility 
 ;   statuses, but consecutive codes 0-9 are preferred to prevent mismatch 
@@ -170,7 +170,7 @@
 %define EXIT_CPU_UNKNOWN       152 ; "cpu nonsense"
 %define EXIT_BITS32_CPU        153 ; "bits 32" under "cpu 286"
 %define EXIT_BITS64_CPU        154 ; "bits 64" under "cpu p6"
-%define EXIT_LINE_FILE_NUM     155 ; ".file -1" (debug/line.s)
+%define EXIT_LINE_FILE_NUM     155 ; ".file -1" (src/debug/line.s)
 %define EXIT_LINE_UNASSIGNED   156 ; ".loc 9 ..." with no ".file 9"
 %define EXIT_LINE_FILE_SLOT    157 ; ".file 1" twice, other files
 %define EXIT_LINE_FILE_BIG     158 ; ".file 99999999"
@@ -181,7 +181,7 @@
 %define EXIT_LINE_VIEW_MOVED   163 ; a view the shortened jumps would change
 %define EXIT_LINE_DUP          164 ; .loc rows and a .debug_line written too
 %define EXIT_GAS_BASE64        165 ; .base64 "a!b"
-%define EXIT_PROC_NESTED       166 ; proc inside a proc (middle/semantic/proc.s)
+%define EXIT_PROC_NESTED       166 ; proc inside a proc (src/semantic/proc.s)
 %define EXIT_PROC_NO_PROC      167 ; endproc with no proc
 %define EXIT_PROC_OPEN         168 ; a proc with no endproc at the end
 %define EXIT_NOT_STRUC         169 ; "[rbx:x]": x is no struc
@@ -198,7 +198,7 @@
 %define EXIT_VSIB_NO_MASK      180 ; an EVEX gather / scatter with no write mask (k0)
 %define EXIT_MASK_REFUSED      181 ; a write mask / {z} the instruction does not take
 
-; debug/cfi.s: the records the .cfi_ directives make
+; src/debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
 %define CFI_END                2
 %define CFI_DEF_CFA            3
@@ -216,7 +216,7 @@
 %define CFI_SIGNAL             15
 %define CFI_ESCAPE             16
 
-; warning classes, by NASM's names (error/warnings.s)
+; warning classes, by NASM's names (src/diag/warnings.s)
 %define WC_OTHER               0   ; other
 %define WC_USER                1   ; user: %warning
 %define WC_ZEROING             2   ; zeroing: db ? / resb outside .bss
@@ -251,7 +251,7 @@
 %define WC_COUNT               31
 
 ; a kept expression's record (parser_defer_record): +0 RELOC_EXPR_MARK,
-; +8 text, +16 tokens, +24 count; and for core/known.s:
+; +8 text, +16 tokens, +24 count; and for src/core/known.s:
 %define DEFER_KEY             32   ; q its key across the passes
 %define DEFER_DATA            40   ; b 1: a data directive's (size fixed)
 %define DEFER_SIZE            48
@@ -314,7 +314,7 @@
 %define MAX_MACRO_PARAMS       32          ; maximum parameters per macro
 %define MAX_MACRO_DEPTH        10000       ; nested macro expansions (NASM's default limit)
 %define MAX_REP_COUNT          65536       ; maximum iterations per %rep block
-%define MAX_ERRORS             100         ; fatal hard stop threshold for error count (consistent with docs/workflow.md and docs/error_reference.md)
+%define MAX_ERRORS             100         ; fatal hard stop threshold for error count (consistent with docs/dev/history/workflow.md and docs/user/errors.md)
 %define MAX_ERRORS_SOFT        100         ; soft threshold for warning count reporting
 %define MAX_WARNINGS           100         ; threshold for warning count
 %define MAX_RELOC              (1 << 22)   ; relocation entries (reserved, committed as used)
@@ -353,9 +353,9 @@
 %define TAG_INSTRUCTION        0x0D
 %define TAG_ARCHIVE            0x0E
 ; 0x10–0x11 are taken by the profiler (TAG_PROFENTRY / TAG_PROFSTATE)
-%define TAG_VEC                0x12        ; growable array (lib/vec.s)
-%define TAG_LIST               0x13        ; doubly linked list (lib/list.s)
-%define TAG_FMTBUF             0x14        ; string builder (lib/fmt.s)
+%define TAG_VEC                0x12        ; growable array (src/lib/vec.s)
+%define TAG_LIST               0x13        ; doubly linked list (src/lib/list.s)
+%define TAG_FMTBUF             0x14        ; string builder (src/lib/fmt.s)
 
 ; ============================================================================
 ; TOKEN TYPES
@@ -403,7 +403,7 @@
 %define TOK_FLAG_LONE          0x08        ; a newline ending a line of nothing but blanks or a
                                            ; comment (-E writes it; lexer_mark_lone)
 
-; floating-point formats (lib/float.s)
+; floating-point formats (src/lib/float.s)
 %define FLT_HALF               1           ; binary16, dw
 %define FLT_SINGLE             2           ; binary32, dd
 %define FLT_DOUBLE             3           ; binary64, dq
@@ -488,7 +488,7 @@
 ; SYMBOL_pflags
 %define SYMF_ASSIGN            0x01        ; a %assign value: a single-line macro
 %define SYMF_POSDEP            0x02        ; an equ whose value depends on code positions
-%define SYMF_KNOWN             0x04        ; handed to the second pass (core/known.s)
+%define SYMF_KNOWN             0x04        ; handed to the second pass (src/core/known.s)
 %define SYMF_SHADOW            0x08        ; a %define over an equ: SYMBOL_size keeps its value
 %define SYMF_LATE              0x10        ; an equ of something defined later: undefined
                                            ; until parser_late_equs works it out
@@ -497,7 +497,7 @@
 %define SYMF_USED              0x40        ; a relocation names it (an extern no
                                            ; relocation names stays out of .symtab)
 %define SYMF_NAMED             0x80        ; GNU's syntax: a relocation names it as itself,
-                                           ; in a merge section (backend/output/elf/out.s)
+                                           ; in a merge section (src/object/elf/elf64.s)
 %define SYM_SET                0x0E        ; mutable variable defined via %assign or SET
 %define SYM_EQU                0x0F        ; immutable assembler constant defined via EQU
 %define SYM_IFUNC              0x10        ; ELF indirect function symbol
@@ -591,7 +591,7 @@
 %define OP_FLAG_ADDR32         0x20        ; memory addressed by 32-bit registers (67 prefix)
 %define OP_FLAG_FAR            0x40        ; FAR: an indirect far jump / call (m16:32)
 %define OP_FLAG_ADDR16         0x80        ; memory addressed by 16-bit registers ([bx+si])
-; NASM's "cpu" choices of an encoding (cpu_latevex, backend/encoder/dispatch.s)
+; NASM's "cpu" choices of an encoding (cpu_latevex, src/encode/x86/dispatch.s)
 %define CPUF_LATEVEX           0x01        ; cpu latevex: the late VEX forms too
 %define CPUF_NOVEX             0x02        ; cpu novex: no VEX forms
 %define CPUF_NOEVEX            0x04        ; cpu noevex: no EVEX forms
@@ -605,7 +605,7 @@
 %define INSTF_DISP32           0x20        ; {disp32}: a four-byte one
 %define INSTF_XACQUIRE         0x40        ; xacquire written (its F2 is in INST_prefixes)
 %define INSTF_XRELEASE         0x80        ; xrelease written (F3)
-; INST_apx: APX's pseudo-prefixes and default flags (backend/encoder/apx.s)
+; INST_apx: APX's pseudo-prefixes and default flags (src/encode/x86/apx.s)
 %define APX_NF                 0x01        ; {nf}: the flags kept
 %define APX_ZU                 0x02        ; {zu}: the destination's upper bits zeroed
 %define APX_DFV                0x04        ; {dfv=...} written (INST_dfv)
@@ -657,7 +657,7 @@
 %define COFF_PDATA             5
 
 ; -f win64's "wrt ..imagebase", carried through the ELF64 object to the COFF
-; converter (backend/output/coff/coff.s) in types ELF does not use
+; converter (src/object/coff/coff.s) in types ELF does not use
 %define R_UTASM_IMAGEBASE      0x7F        ; a 32-bit field: ADDR32NB
 %define R_UTASM_IMAGEBASE64    0x7E        ; a 64-bit one: COFF has none
 
@@ -707,7 +707,7 @@
 %define CTX_FLAG_SHOW_VERSION  0x400000
 %define CTX_FLAG_DEFAULT_REL   0x800000    ; DEFAULT REL: [label] means [rel label]
 
-; Jump-shortening records (optimizer/jump.s), noted while encoding
+; Jump-shortening records (src/optimize/jump.s), noted while encoding
 %define RELAX_JMP              1           ; forward jmp emitted as E9 rel32
 %define RELAX_JCC              2           ; forward jcc emitted as 0F 8x rel32
 %define RELAX_FIXED            3           ; branch displacement resolved in place
@@ -925,11 +925,11 @@
 
 %define OPT_NONE               0           ; -O0: no immediate or jump made shorter
 %define OPT_BASIC              1           ; -Ox / -O2 (default): NASM's full optimization
-%define OPT_SIZE               2           ; -Os: -Ox, and jumps rewritten (optimizer/jump.s)
+%define OPT_SIZE               2           ; -Os: -Ox, and jumps rewritten (src/optimize/jump.s)
 %define OPT_MIN                3           ; -O1: byte immediates, every jump long
 
 ; ============================================================================
-; COMMAND-LINE MODES (cli.s: NASM's -E, -M, -MD, -MP, -D/-U/-p)
+; COMMAND-LINE MODES (src/main/cli.s: NASM's -E, -M, -MD, -MP, -D/-U/-p)
 ; ============================================================================
 %define CLI_MODE_ASSEMBLE      0           ; assemble (the default)
 %define CLI_MODE_PREPROCESS    1           ; -E: write the preprocessed source
@@ -1397,7 +1397,7 @@
 %define REG_R15                15
 
 ; ---- AMD64 Segment registers ----
-; (the register table's, include/arch/amd64.inc: 16-31 are APX's r16-r31)
+; (the register table's, src/include/arch/amd64.inc: 16-31 are APX's r16-r31)
 %define REG_CS                 64
 %define REG_DS                 65
 %define REG_ES                 66
@@ -1693,7 +1693,7 @@
 ; MACRO ENGINE CONSTANTS
 ; ============================================================================
 ; (%macro / %rep / times bodies and macro arguments have no fixed capacity:
-; they are read into the capture area, frontend/macro/macro.s)
+; they are read into the capture area, src/frontend/preproc/macro.s)
 %define MACRO_VARIADIC         0xFFFF      ; MACRO_max_params of "%macro m 1-*"
 %define MACRO_PARAMS_MAX       0xFFFE      ; parameters a macro may declare or take
 %define MACRO_FLAG_FUNC        0x01        ; %define NAME(a,b): arguments in parentheses
@@ -1702,7 +1702,7 @@
 %define MACRO_FLAG_TIMES       0x08        ; the repeated statement of a times
 %define MACRO_FLAG_NOLIST      0x10        ; %macro m 0.nolist: its lines not listed
 %define MACRO_FLAG_RECURSIVE   0x20        ; %rmacro / %irmacro: may call itself
-; the marks of a %define's parameter (frontend/macro/macro.s, prep_handle_def)
+; the marks of a %define's parameter (src/frontend/preproc/macro.s, prep_handle_def)
 %define PF_EVAL                0x01        ; =x: evaluated as a number
 %define PF_STR                 0x02        ; &x: made a quoted string
 %define PF_CONDSTR             0x04        ; &&x: ... unless it is one
@@ -1795,7 +1795,7 @@
 %define DW_FORM_sec_offset             0x17
 
 ; ============================================================================
-; UBF -- UTKARSHA BOOT FORMAT (backend/output/ubf, tattvaos boot/stage2/fs/ubf.asm)
+; UBF -- UTKARSHA BOOT FORMAT (src/object/ubf, tattvaos boot/stage2/fs/ubf.asm)
 ; ============================================================================
 %define UBF_MAGIC              0x54414D524F465255  ; "UBFORMAT"
 %define UBF_VERSION            1
@@ -1859,13 +1859,13 @@
 ; Each phase maps to one slot in the PROFENTRY array.
 ; Values 0x01–0x08 are reserved for top-level pipeline phases.
 ; Values 0x09–0x3F are reserved for future sub-phase expansion.
-%define PHASE_LEXER            0x01        ; frontend/lexer/* token scanning
-%define PHASE_PREPROCESSOR     0x02        ; frontend/macro/* expansion
-%define PHASE_PARSER           0x03        ; frontend/parser/* AST construction
-%define PHASE_SEMANTIC         0x04        ; middle/semantic/* validation
-%define PHASE_ENCODER          0x05        ; backend/encoder/* instruction encoding
-%define PHASE_LINKER           0x06        ; backend/linker/* relocation + layout
-%define PHASE_OUTPUT           0x07        ; backend/output/* binary emission
+%define PHASE_LEXER            0x01        ; src/frontend/lexer/* token scanning
+%define PHASE_PREPROCESSOR     0x02        ; src/frontend/preproc/* expansion
+%define PHASE_PARSER           0x03        ; src/frontend/syntax/* AST construction
+%define PHASE_SEMANTIC         0x04        ; src/semantic/* validation
+%define PHASE_ENCODER          0x05        ; src/encode/* instruction encoding
+%define PHASE_LINKER           0x06        ; src/link/* relocation + layout
+%define PHASE_OUTPUT           0x07        ; src/object/* binary emission
 %define PHASE_TOTAL            0x08        ; virtual: entire pipeline (init → finalize)
 
 ; ── Limits ──
