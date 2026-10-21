@@ -1,6 +1,6 @@
 ;
 ; ============================================
-; File     : src/core/preprocessor.s
+; File     : src/frontend/preproc/macro.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
