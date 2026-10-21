@@ -39,7 +39,8 @@
 %define NAME_STBIND         6       ; ELF64_ST_BIND(st_info)
 %define NAME_STVIS          7       ; ELF64_ST_VISIBILITY(st_other)
 %define NAME_R_X86_64       8       ; x86-64 relocation types
-%define NAME_KIND_COUNT     9
+%define NAME_R_386          9       ; i386 relocation types
+%define NAME_KIND_COUNT     10
 
 ; Output line buffer. Longer lines are cut off (never overflowed).
 %define INSPECT_LINE_MAX    512
