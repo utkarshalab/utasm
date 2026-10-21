@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/barrier.s
+// TEST: tests/asm/amd64/barrier.s
 // Suite: AMD64 Core
 // Purpose: Memory barrier and synchronization instruction coverage.
 //   Covers: MFENCE, SFENCE, LFENCE, PAUSE, LOCK prefix, XCHG implicit lock,
