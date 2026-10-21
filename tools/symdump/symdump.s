@@ -352,10 +352,16 @@ symdump_relocs:
     INS_HEX [r14 + RELA_INFO], 16
     INS_PAD 38
     mov     rax, [rbx + INSPCTX_buf]
+    cmp     word [rax + EHDR_MACHINE], EM_386
+    je      .r386_type
     cmp     word [rax + EHDR_MACHINE], EM_X86_64
     jne     .raw_type
     mov     eax, [r14 + RELA_INFO]         ; ELF64_R_TYPE = low 32 bits
     INS_NAME NAME_R_X86_64, rax
+    jmp     .type_done
+.r386_type:                                ; (an ELF32 i386 file, widened)
+    mov     eax, [r14 + RELA_INFO]
+    INS_NAME NAME_R_386, rax
     jmp     .type_done
 .raw_type:
     mov     eax, [r14 + RELA_INFO]
