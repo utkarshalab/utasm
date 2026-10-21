@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : profiler/strings.s
+; File        : src/profile/strings.s
 ; Project     : utasm
 ; Author      : Utkarsha Lab
 ; License     : Apache-2.0
@@ -9,13 +9,13 @@
 ; Centralized .rodata for the profiler — phase names, report borders,
 ; column headers, formatting atoms, and footer text.
 ;
-; Every profiler/*.s file that needs string data externs from here.
+; Every src/profile/*.s file that needs string data externs from here.
 ; ============================================================================
 ;
 
 bits 64
 
-%include "include/constant.inc"
+%include "src/include/constant.inc"
 
 [SECTION .rodata]
 
