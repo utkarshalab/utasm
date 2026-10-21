@@ -16,7 +16,7 @@
 ; Hot path logic is in hotpath.s + rank.s.
 ; Report output is in report.s.
 ;
-; See docs/profiler_architecture.md §5, §6.1 for lifecycle details.
+; See src/profile/README.md for lifecycle details.
 ; ============================================================================
 ;
 
