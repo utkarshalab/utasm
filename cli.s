@@ -236,6 +236,13 @@ cli_parse:
     test    rax, rax
     jz      .handle_bits
 
+    ; --org ADDR: --disasm of a raw file: its first byte's address
+    mov     rdi, r14
+    lea     rsi, [rel .flag_org]
+    call    str_cmp
+    test    rax, rax
+    jz      .handle_org
+
     ; --ubf-add TYPE=FILE[@ADDR]: another component of a UBF image
     mov     rdi, r14
     lea     rsi, [rel .flag_ubf_add]
@@ -349,6 +356,18 @@ cli_parse:
     call    str_cmp
     test    rax, rax
     jz      .handle_disasm
+
+    ; -r / --reloc: --disasm writes each instruction's relocations
+    mov     rdi, r14
+    lea     rsi, [rel .flag_r]
+    call    str_cmp
+    test    rax, rax
+    jz      .handle_r
+    mov     rdi, r14
+    lea     rsi, [rel .flag_reloc]
+    call    str_cmp
+    test    rax, rax
+    jz      .handle_r
 
     ; NASM's options (-I, -D, -U, -p, -E, -M..., -w, -X, -s, -Z, ...)
     cmp     byte [r14], '-'
@@ -580,6 +599,19 @@ cli_parse:
     mov     [rel cli_bits], al
     jmp     .next_arg
 
+.handle_org:
+    dec     r12
+    jle     .missing_val
+    add     r13, 8
+    mov     r14, [r13]
+    mov     rdi, r14
+    call    str_to_int
+    test    rax, rax
+    jnz     .unknown_val
+    extern  disasm_org
+    mov     [rel disasm_org], rdx
+    jmp     .next_arg
+
 .handle_ubf_add:
     dec     r12
     jle     .missing_val
@@ -623,6 +655,11 @@ cli_parse:
 
 .handle_disasm:
     or      byte [rbx + ASMCTX_inspect], INSPECT_DISASM
+    jmp     .next_arg
+
+.handle_r:
+    extern  disasm_relocs
+    mov     byte [rel disasm_relocs], 1
     jmp     .next_arg
 
 .handle_inspect_only:
@@ -1432,6 +1469,7 @@ cli_parse.val_win64:    db "win64", 0
 cli_parse.val_ubf:      db "ubf", 0
 cli_parse.flag_ubf_add: db "--ubf-add", 0
 cli_parse.flag_bits: db "--bits", 0
+cli_parse.flag_org:  db "--org", 0
 cli_parse.suffix_ubf:   db ".ubf", 0
 cli_parse.val_amd64:    db "amd64", 0
 cli_parse.val_aarch64:  db "aarch64", 0
@@ -1456,6 +1494,8 @@ cli_parse.msg_newline: db 10, 0
 cli_parse.flag_inspect: db "--inspect", 0
 cli_parse.flag_inspect_only: db "--inspect-only", 0
 cli_parse.flag_disasm: db "--disasm", 0
+cli_parse.flag_r:      db "-r", 0
+cli_parse.flag_reloc:  db "--reloc", 0
 cli_nasm_option.s_define:     db "%define ", 0
 cli_nasm_option.s_undef:      db "%undef ", 0
 cli_nasm_option.s_include:    db "%include ", 34, 0
@@ -1476,6 +1516,7 @@ cli_nasm_option.s_keep_all:   db "--keep-all", 0
 cli_write_deps.s_dot_d:       db ".d", 0
 
 [SECTION .bss]
+global cli_bits
 cli_bits:       resb 1              ; --bits 16 / 32 / 64, or 0
 global cli_mode
 global cli_prelude
