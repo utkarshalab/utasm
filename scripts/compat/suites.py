@@ -317,8 +317,18 @@ def _parse(text, ours):
     return res
 
 
+DISASM_OBJDUMP = (2, 47)    # the reference: older ones print default segments
+                            # (es:[rdi]), {evex} where no VEX form exists, (bad)
+                            # for the 0F 1A / 1B hint nops and for udb
+
+
 def disasm(utasm, verbose=False, objects=()):
     s = Suite("disassembler", verbose)
+    v = re.search(r"(\d+)\.(\d+)", (run(["objdump", "--version"]).stdout or "").split("\n")[0])
+    if not v or (int(v.group(1)), int(v.group(2))) < DISASM_OBJDUMP:
+        s.result("objdump %d.%d or later" % DISASM_OBJDUMP, False,
+                 "objdump %s on PATH: put a newer one first" % (v.group(0) if v else "?"))
+        return s
     with tempdir() as d:
         src = os.path.join(d, "cov.s")
         open(src, "w").write(corpus.coverage_source())
