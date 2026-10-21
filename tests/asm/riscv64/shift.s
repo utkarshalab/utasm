@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/shift.s
+// TEST: tests/asm/riscv64/shift.s
 // Suite: RISC-V 64 Core
 // Purpose: Shift instruction coverage.
 //   Covers: SLL, SRL, SRA, SLLI, SRLI, SRAI — RV64I,
