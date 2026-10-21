@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : backend/encoder/shape.s
+; File        : src/encode/x86/shape.s
 ; Project     : utasm
 ; Description : Operand shapes of the general-purpose integer instructions.
 ;
@@ -18,8 +18,8 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
 
 ; operand classes
 %define K_R     1
