@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : src/arch/amd64.s
+; File        : src/encode/x86/isa.s
 ; Project     : utasm
 ; Description : AMD64 Mnemonic and Register Lookup Tables.
 ; ============================================================================
