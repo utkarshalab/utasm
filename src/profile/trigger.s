@@ -12,7 +12,7 @@
 ; Currently the self-patch engine is stubbed, so triggers log a
 ; diagnostic message to stderr and return without applying patches.
 ;
-; See docs/profiler_architecture.md §10 for trigger protocol.
+; See src/profile/README.md for trigger protocol.
 ; ============================================================================
 ;
 
