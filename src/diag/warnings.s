@@ -1,14 +1,14 @@
 ;
 ; ============================================
-; File     : error/warnings.s
+; File     : src/diag/warnings.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
 
 DEFAULT REL
 
@@ -33,7 +33,7 @@ DEFAULT REL
 ;   warn_option rdi = a -w / -W option: sets the classes it names
 ;
 ; Warnings are held, not written, until an error is reported or utasm
-; exits (warn_flush): when a second pass follows (core/known.s runs utasm
+; exits (warn_flush): when a second pass follows (src/core/known.s runs utasm
 ; again), the first pass's warnings are dropped with it and each warning
 ; is given once, as NASM gives it.
 
@@ -201,7 +201,7 @@ warn_begin:
 ; ---- warn_hint ----------------------------
 ;
 ; warn_hint
-; After a warning, the pending "hint: did you mean" line (error/hints.s),
+; After a warning, the pending "hint: did you mean" line (src/diag/hints.s),
 ; held with it; dropped when the warning's class is off.
 ; Clobbers : rax, rcx, rdx, rsi, rdi, r8-r11
 ;
