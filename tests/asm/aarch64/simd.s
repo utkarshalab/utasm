@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/simd.s
+// TEST: tests/asm/aarch64/simd.s
 // Suite: AArch64 NEON/AdvSIMD
 // Purpose: NEON Advanced SIMD instruction coverage.
 //   Covers: Vector arithmetic, logic, load/store, permute, compare,
