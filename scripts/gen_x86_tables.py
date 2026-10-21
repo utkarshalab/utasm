@@ -155,6 +155,7 @@ op(map1, 0xCA, "retf", "SFXWI")
 op(map1, 0xCF, "iret", "SFXW")
 op(map1, 0xD7, "xlat", "XLAT")
 op(map1, 0xF1, "int1", "NONE")
+op(map1, 0xD6, "udb", "NONE")                          # (salc outside 64-bit mode; #UD in it)
 for code in (0xE4, 0xE5, 0xEC, 0xED):
     op(map1, code, "in", "IO")
 for code in (0xE6, 0xE7, 0xEE, 0xEF):
@@ -500,6 +501,7 @@ for code, n in ((0x28, "pmuldq"), (0x29, "pcmpeqq"), (0x2B, "packusdw"), (0x37, 
 sse("38", 0x2A, "66", "movntdqa", "VM", "x")
 sse("38", 0x41, "66", "phminposuw", "VW", "x"); sse("38", 0xDB, "66", "aesimc", "VW", "x")
 sse_int("38", 0xF0, "np", "movbe", "GvEv"); sse_int("38", 0xF1, "np", "movbe", "EvGv")
+sse_int("38", 0x8A, "np", "movrs", "GbEb", F_MODRM | F_BYTE); sse_int("38", 0x8B, "np", "movrs", "GvEv")
 sse_int("38", 0xF0, "F2", "crc32", "CRC"); sse_int("38", 0xF1, "F2", "crc32", "CRC")
 sse_int("38", 0xF6, "66", "adcx", "GvEv"); sse_int("38", 0xF6, "F3", "adox", "GvEv")
 # (with a register, F2 / F3 0F 38 F8 are urdmsr / uwrmsr: x86_apx.inc's dx_umsr)
@@ -1003,6 +1005,7 @@ GEN_OVER = {"v4fmaddps", "v4fnmaddps", "v4dpwssd", "v4dpwssds",   # (and AVX512_
             "vpgatherqd", "vpgatherqq", "vscatterdps", "vscatterdpd", "vscatterqps", "vscatterqpd",
             "vpscatterdd", "vpscatterdq", "vpscatterqd", "vpscatterqq"}
 gen_report = []
+DIS_XMM_ONLY = {"v4fmaddss", "v4fnmaddss"}  # read as Intel's xmm forms only
 
 def gen_entries(E, enc, wanted, report):
     """the entries of the encoder's forms of encoding enc whose key
@@ -1024,6 +1027,8 @@ def gen_entries(E, enc, wanted, report):
         if not wanted(key, name, mapn, opcode, pfx):
             continue
         ty = [T_[t] for t in types]
+        if name in DIS_XMM_ONLY and any(t[1] == E.C_ZMM for t in ty):
+            continue                         # (NASM's zmm spelling of a scalar)
         rm = [t for t, r in zip(ty, roles) if r == E.R_RM]
         can_mem = not fixed and any(t[4] != E.NOMEM for t in rm)
         can_reg = fixed or not rm or any(t[1] != 0 for t in rm)
@@ -1122,6 +1127,9 @@ def mk_entry(E, lines):
             novec = not any(x[1] in (E.C_XMM, E.C_YMM, E.C_ZMM) for x in types)
             if r == E.R_RM and rclass == 0 and (msz == 0 or (novec and msz < 0x8000 and msz // 8 > 32)):
                 lt.append({"M"})                     # (memory of no size: tileloadd, ldtilecfg)
+                if not novec and n8 in MS_FIX:       # (... or the tuple's: the 4FMAPS /
+                    m = {MS_FIX[n8]}                 # 4VNNIW m128, disp8 * 16)
+                    msc = m if msc is None else msc & m
                 continue
             if r == E.R_REG:
                 if vec:
