@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : profiler/phase.s
+; File        : src/profile/phase.s
 ; Project     : utasm
 ; Author      : Utkarsha Lab
 ; License     : Apache-2.0
@@ -17,8 +17,8 @@
 
 bits 64
 
-%include "include/constant.inc"
-%include "include/type.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
 
 DEFAULT REL
 
