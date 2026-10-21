@@ -63,56 +63,48 @@ bash tests/run.sh unit/encoder/amd64/<mnemonic>
 
 ## Adding a New Error Code
 
-Error codes are grouped by stage:
+utasm's errors are NASM-style messages, `file:line: error: <message>`,
+chosen by an exit code: a function that finds the problem returns an
+`EXIT_*` code in `rax`, and `src/diag/codes.s` turns it into the message
+at the statement's line (see `src/diag/README.md`). The full list is in
+`docs/user/errors.md`.
 
-| Range  | Stage           |
-| ------ | --------------- |
-| E101–E199 | Lexer        |
-| E201–E299 | Parser       |
-| E301–E399 | Preprocessor |
-| E401–E499 | Symbol table |
-| E501–E599 | Encoder      |
-| E601–E699 | Linker       |
-| E701–E799 | Output       |
-| E901–E999 | Internal     |
+### 1. The code
 
-### 1. Reserve the code
-
-File: `docs/user/errors.md` — add a row to the appropriate stage table.
-
-### 2. Add the message string
-
-File: `src/diag/table.s`
+File: `src/include/constant.inc`, *EXIT CODES* — the next free number:
 
 ```asm
-err_E<NNN>:
-    db  "E<NNN>: <message text>", 0
+%define EXIT_MY_PROBLEM        182 ; what it means
 ```
 
-Add a pointer to it in the dispatch table at the bottom of the file.
+### 2. The message
 
-### 3. Emit the error
+File: `src/diag/codes.s` — the text, and a row in `code_table`:
 
-At the detection point in the source:
 ```asm
-    mov     rdi, E<NNN>
-    mov     rsi, [cur_line]
-    mov     rdx, [cur_col]
-    call    error_emit
-    check_err
+m_my_problem:   db "what went wrong", 0
+t_my_problem:   db "what went wrong with `^'", 0   ; optional: ^ = the subject
+    ...
+    code_msg EXIT_MY_PROBLEM,        m_my_problem, t_my_problem
 ```
 
-### 4. Add a regression test
+### 3. Return it
 
-File: `tests/error/E<NNN>/trigger.s` — source that must produce exactly this error code.
-
-```sh
-bash tests/run.sh error/E<NNN>
+```asm
+    lea     rdi, [rel the_name]        ; when the message names something
+    call    error_set_subject
+    mov     eax, EXIT_MY_PROBLEM
+    ret
 ```
 
-Verify: correct code fires, correct line/col reported, assembly continues (recovery) or stops (fatal).
+The caller passes it up; `main/utasm.s` reports it, undoes the statement
+and goes on to the next one.
 
----
+### 4. Document and test it
+
+Add it to `docs/user/errors.md`, and a case to `tests/compat/cases.py`
+(*diagnostics* if NASM rejects the same source, *rejections* /
+`ISA_ERRORS` if only utasm refuses it); run `tests/compat/run_all.py`.
 
 ## Adding a New CPU Profile
 
