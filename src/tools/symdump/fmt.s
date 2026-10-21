@@ -1,17 +1,17 @@
 ;
 ; ============================================
-; File     : tools/symdump/fmt.s
+; File     : src/tools/symdump/fmt.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
-%include "include/elf.inc"
-%include "include/inspect.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
+%include "src/include/elf.inc"
+%include "src/include/inspect.inc"
 
 DEFAULT REL
 
@@ -19,7 +19,7 @@ DEFAULT REL
 ; DUMP FORMATTING HELPERS
 ; ============================================================================
 ; Column layout and symbolic names for the ELF inspector and symbol dumper.
-; Everything here writes into a FmtBuf (lib/fmt.s), so output is always
+; Everything here writes into a FmtBuf (src/lib/fmt.s), so output is always
 ; bounded by the caller's line buffer.
 ;
 ;   dump_pad_to      pad a line to a column (at least one space)
@@ -36,7 +36,7 @@ DEFAULT REL
 ;
 ; Calling convention (AMD64):
 ;   args  : rdi = FmtBuf (except dump_name), then rsi, rdx, rcx
-;   return: as lib/fmt.s - rax = EXIT_OK or EXIT_ERROR (truncated)
+;   return: as src/lib/fmt.s - rax = EXIT_OK or EXIT_ERROR (truncated)
 ;   callee saved: rbx, r12-r15, rbp
 
 %define NAMEENT_SIZE    32
