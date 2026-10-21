@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/store.s
+// TEST: tests/asm/riscv64/store.s
 // Suite: RISC-V 64 Core
 // Purpose: Store instruction coverage.
 //   Covers: SB, SH, SW, SD — all sizes, all offset ranges.
