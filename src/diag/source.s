@@ -1,14 +1,14 @@
 ;
 ; ============================================
-; File     : error/format/source.s
+; File     : src/diag/source.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
 
 DEFAULT REL
 
@@ -1036,7 +1036,7 @@ diag_describe:
     cmp     eax, OP_REG
     jne     .other
     movzx   eax, byte [rbx + OPERAND_reg]
-    ; the parser's numbers (include/arch/amd64.inc, as dispatch.s reads
+    ; the parser's numbers (src/include/arch/amd64.inc, as dispatch.s reads
     ; them): general 0-31 (16-31 APX's), control 32-47, debug 48-63,
     ; segment 64-69, mask
     ; 72-79, vector 80-111, x87 112-119, MMX 120-127, tile 128-135, bound
