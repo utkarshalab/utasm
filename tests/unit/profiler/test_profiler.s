@@ -1,9 +1,9 @@
 ;
 ; ============================================================================
-; File        : tests/unit/test_profiler.s
+; File        : tests/unit/profiler/test_profiler.s
 ; Project     : utasm
-; Description : Standalone test of the profiler subsystem (profiler/*.s),
-;               built and run by scripts/test_profiler.sh.
+; Description : Standalone test of the profiler subsystem (src/profile/*.s),
+;               built and run by tests/run_profiler.sh.
 ;
 ;   It drives the public API the way the assembler does - init, a
 ;   start/end pair per phase, finalize, report - and checks the state it
@@ -12,9 +12,9 @@
 ; ============================================================================
 ;
 
-%include "include/macro.inc"
-%include "include/constant.inc"
-%include "include/type.inc"
+%include "src/include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
 
 extern  arena_init
 extern  profiler_init
@@ -218,7 +218,7 @@ fail:
     mov     edi, 1
     syscall
 
-; ---- the output helpers the profiler report uses (utasm.s has its own) ----
+; ---- the output helpers the profiler report uses (src/main/utasm.s has its own) ----
 
 ; print_str: write the NUL-terminated string RSI to fd RDI
 global print_str
