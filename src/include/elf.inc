@@ -3,10 +3,10 @@
 
 ;
 ; ============================================================================
-; File        : include/elf.s
+; File        : src/include/elf.inc
 ; Project     : utasm
 ; Description : ELF64 format constants, header offsets, and section/segment
-;               type definitions. Used by src/linker/elf64.s to emit valid
+;               type definitions. Used by src/object/elf/elf64.s to emit valid
 ;               ELF64 object files and executables.
 ; ============================================================================
 ;
