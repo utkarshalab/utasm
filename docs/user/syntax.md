@@ -1240,7 +1240,7 @@ ljmp $0x10, $start           ; jmp 0x10:start
 `.intel_syntax` turns it off again. GCC's AT&T output (`gcc -S`) assembles
 to the object GNU `as` makes of it, section by section and relocation by
 relocation, at `-O0` to `-O3`, `-Os` and `-fPIC`
-(`scripts/compat/suites.py`, `att`). `.att_syntax noprefix` takes
+(`tests/compat/suites.py`, `att`). `.att_syntax noprefix` takes
 registers without their `%` (a name that is a register is then the
 register). `-g` output too: the line table comes from `.loc` (see Line
 tables above). Over NASM's own C sources compiled by GCC (`-O0` to `-O3`,
@@ -1441,7 +1441,7 @@ POINT`, `.IF sdword ...`). `ENDS` with no `STRUCT` open ends a segment.
 
 A procedure is a label with checks between it and its `endproc`. utasm
 adds no code - the pushes and pops are written as ever - but follows the
-stack and the preserved registers (rbx, rbp, r12-r15: docs/abi.md)
+stack and the preserved registers (rbx, rbp, r12-r15: docs/reference/abi.md)
 through the procedure as it is written:
 
 ```asm
