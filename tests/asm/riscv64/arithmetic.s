@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/arithmetic.s
+// TEST: tests/asm/riscv64/arithmetic.s
 // Suite: RISC-V 64 Core
 // Purpose: Exhaustive arithmetic instruction coverage.
 //   Covers: ADD, ADDI, SUB, LUI, AUIPC — RV64I base,
