@@ -195,6 +195,7 @@
 %define EXIT_NS_SHADOW         177 ; a name taken from outside, then defined inside
 %define EXIT_TMM_SAME          178 ; an AMX dot product with a tile register twice
 %define EXIT_GATHER_SAME       179 ; a gather's destination, index and mask not distinct
+%define EXIT_VSIB_NO_MASK      180 ; an EVEX gather / scatter with no write mask (k0)
 
 ; debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
