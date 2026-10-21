@@ -1,9 +1,9 @@
 ;
 ; ============================================================================
-; File        : include/arch/aarch64.s
+; File        : src/include/arch/aarch64.inc
 ; Project     : utasm
 ; Description : AArch64 Architecture Constants and Register IDs.
-;                Aligned with src/isa/aarch64.s IDs.
+;                Aligned with src/encode/aarch64/isa.s IDs.
 ; ============================================================================
 ;
 
@@ -24,7 +24,7 @@
 %define SHIFT_ROR              3
 
 ; ---- Mnemonic IDs (AArch64 Specific) -----
-; These must match the IDs in src/isa/aarch64.s exactly.
+; These must match the IDs in src/encode/aarch64/isa.s exactly.
 %define ID_AARCH64_ABS         2000
 %define ID_AARCH64_ADCLB       2001
 %define ID_AARCH64_ADCLT       2002
