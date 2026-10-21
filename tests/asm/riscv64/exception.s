@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/exception.s
+// TEST: tests/asm/riscv64/exception.s
 // Suite: RISC-V 64 Core
 // Purpose: Exception-class instruction and handler idiom encoding.
 //   Covers: ECALL, EBREAK, illegal instruction trap idioms,
