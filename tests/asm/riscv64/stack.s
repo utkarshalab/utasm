@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/stack.s
+// TEST: tests/asm/riscv64/stack.s
 // Suite: RISC-V 64 Core
 // Purpose: Stack operation coverage for RISC-V 64.
 //   RISC-V has no PUSH/POP — uses ADDI SP and SD/LD.
