@@ -8,20 +8,20 @@ Practical step-by-step procedures for extending utasm.
 
 ### 1. Add the opcode entry to the ISA table
 
-File: `backend/isa/<arch>.s`
+File: `src/encode/<arch>.s`
 
 Each entry is a fixed-width record:
 ```asm
 ; format: mnemonic_hash, opcode_bytes, encoding_flags, operand_template
 db  "MNEMONIC", 0       ; null-terminated mnemonic string
 dw  OPCODE              ; primary opcode word(s)
-db  ENC_FLAGS           ; encoding class flags (see include/type.inc)
+db  ENC_FLAGS           ; encoding class flags (see src/include/type.inc)
 db  OP_TEMPLATE         ; operand template id
 ```
 
 ### 2. Add the encoding handler
 
-File: `backend/encoder/<arch>/` — pick the appropriate sub-file by instruction class (alu, branch, load_store, simd, etc.).
+File: `src/encode/<arch>/` — pick the appropriate sub-file by instruction class (alu, branch, load_store, simd, etc.).
 
 Follow the existing pattern:
 ```asm
@@ -34,7 +34,7 @@ encode_<mnemonic>:
     epilogue
 ```
 
-Register an entry in the dispatch table at the top of `backend/encoder/<arch>/encoder.s`.
+Register an entry in the dispatch table at the top of `src/encode/<arch>/encoder.s`.
 
 ### 3. Add a unit test
 
@@ -56,7 +56,7 @@ nasm -f bin -o /tmp/ref.bin tests/unit/encoder/amd64/<mnemonic>.s
 cmp /tmp/ref.bin /tmp/out.bin
 
 # Or run the unit test directly
-bash scripts/test.sh unit/encoder/amd64/<mnemonic>
+bash tests/run.sh unit/encoder/amd64/<mnemonic>
 ```
 
 ---
@@ -78,11 +78,11 @@ Error codes are grouped by stage:
 
 ### 1. Reserve the code
 
-File: `docs/error_reference.md` — add a row to the appropriate stage table.
+File: `docs/user/errors.md` — add a row to the appropriate stage table.
 
 ### 2. Add the message string
 
-File: `error/table.s`
+File: `src/diag/table.s`
 
 ```asm
 err_E<NNN>:
@@ -107,7 +107,7 @@ At the detection point in the source:
 File: `tests/error/E<NNN>/trigger.s` — source that must produce exactly this error code.
 
 ```sh
-bash scripts/test.sh error/E<NNN>
+bash tests/run.sh error/E<NNN>
 ```
 
 Verify: correct code fires, correct line/col reported, assembly continues (recovery) or stops (fatal).
@@ -120,23 +120,23 @@ CPU profiles gate which instructions are legal for a given target chip.
 
 ### 1. Create the profile file
 
-File: `cpu/profiles/<name>.s`
+File: `src/planned/cpu/profiles/<name>.s`
 
 ```asm
-; cpu/profiles/<name>.s
+; src/planned/cpu/profiles/<name>.s
 ; Feature flags for <chip name>
 
 cpu_profile_<name>:
     db  CPU_HAS_SSE2    ; always on for x86-64 baseline
     db  CPU_HAS_AVX2
     db  CPU_HAS_AVX512F
-    ; ... flags from include/type.inc CPU_HAS_* constants
+    ; ... flags from src/include/type.inc CPU_HAS_* constants
     db  0               ; terminator
 ```
 
 ### 2. Register the profile
 
-File: `cpu/profiles/profiles.s` — add an entry to the profile table:
+File: `src/planned/cpu/profiles/profiles.s` — add an entry to the profile table:
 
 ```asm
     dq  cpu_profile_<name>
@@ -145,11 +145,11 @@ File: `cpu/profiles/profiles.s` — add an entry to the profile table:
 
 ### 3. Add feature flags if needed
 
-File: `cpu/features.s` — if the new profile requires a feature flag that doesn't exist yet, add it here and define the corresponding `CPU_HAS_*` constant in `include/type.inc`.
+File: `src/planned/cpu/features.s` — if the new profile requires a feature flag that doesn't exist yet, add it here and define the corresponding `CPU_HAS_*` constant in `src/include/type.inc`.
 
 ### 4. Document the profile
 
-File: `docs/error_reference.md` — add a row to the CPU Profiles table at the bottom.
+File: `docs/user/errors.md` — add a row to the CPU Profiles table at the bottom.
 
 ---
 
@@ -157,7 +157,7 @@ File: `docs/error_reference.md` — add a row to the CPU Profiles table at the b
 
 ### 1. Create the entry point
 
-File: `backend/output/<format>/out.s`
+File: `src/object/<format>/out.s`
 
 ```asm
 ;*
@@ -174,7 +174,7 @@ File: `backend/output/<format>/out.s`
 
 ### 2. Register the format in the dispatcher
 
-File: `backend/linker/linker.s` (the output dispatch, by `ASMCTX_fmt`)
+File: `src/link/linker.s` (the output dispatch, by `ASMCTX_fmt`)
 
 Add a dispatch entry:
 ```asm
@@ -182,12 +182,12 @@ Add a dispatch entry:
     je      .emit_<format>
 ```
 
-Add the `FMT_<FORMAT>` constant to `include/constant.inc` (next to
+Add the `FMT_<FORMAT>` constant to `src/include/constant.inc` (next to
 `FMT_ELF64` and `FMT_BIN`).
 
 ### 3. Add the CLI option
 
-File: `utasm.s` (CLI parser section)
+File: `src/main/utasm.s` (CLI parser section)
 
 ```asm
     ; -f <format>
@@ -200,7 +200,7 @@ File: `utasm.s` (CLI parser section)
 Directory: `tests/integration/<format>/`
 
 ```sh
-bash scripts/test.sh integration/<format>
+bash tests/run.sh integration/<format>
 ```
 
 ---
@@ -220,10 +220,10 @@ The parity check (`cmp gen0 gen1`) is the invariant that proves self-hosting is 
 ## Running a Specific Test
 
 ```sh
-bash scripts/test.sh unit/encoder/amd64/mov
-bash scripts/test.sh error/E201
-bash scripts/test.sh integration/hello/amd64
-bash scripts/test.sh regression/R042
+bash tests/run.sh unit/encoder/amd64/mov
+bash tests/run.sh error/E201
+bash tests/run.sh integration/hello/amd64
+bash tests/run.sh regression/R042
 ```
 
 ---
