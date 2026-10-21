@@ -1,0 +1,17 @@
+# Every text file is stored and checked out with LF line endings, on every
+# platform: the sources are assembled byte for byte, and the generators'
+# --check compares their output with the committed files exactly.
+* text=auto eol=lf
+
+*.s     text eol=lf
+*.inc   text eol=lf
+*.sh    text eol=lf
+*.py    text eol=lf
+*.md    text eol=lf
+*.dat   text eol=lf
+Makefile text eol=lf
+
+# built or binary inputs
+*.o     binary
+*.bin   binary
+*.ubf   binary
