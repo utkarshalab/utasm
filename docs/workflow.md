@@ -4,6 +4,15 @@
 > Every phase, every file, every task, every gate.
 > Nothing skipped. Nothing assumed.
 
+> **Note (2026-10-21):** this is the original phase plan. Its per-file steps
+> name the files Phase 0 scaffolded; the work was done in fewer, larger
+> files instead (`frontend/parser/parser.s`, `frontend/macro/macro.s`,
+> `backend/encoder/encoder.s` with the generated
+> `backend/encoder/tables/opcode.s`, ...), and the empty placeholders for
+> what is done were removed. Placeholders remain only for what is not done:
+> the AArch64 / RISC-V encoders, PE / UPK output, self-patching, the CPU
+> profiles' files and the multi-object linker.
+
 ---
 
 ## The Law
