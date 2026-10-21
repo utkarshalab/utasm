@@ -37,7 +37,8 @@ XBCAST XINS XEXT XIS4 BGBE BGEB BBE XMLD XMST BRORX XZERO
 X87 EVEX G9
 GaM WRSS G64MO G64M IO SREGW SREGR FSGS GvMp IwIb XLAT SFXW SFXD GEwv SFXWI D3NOW
 BGE BBM BMB BM MB SSE4AI SSE4AR CRC VQ PW
-SEGOP BOUND ARPL AP MOFFS MP""".split()
+SEGOP BOUND ARPL AP MOFFS MP CRDR GvMv MvGv Mb
+PADLOCK KLW KLV KLE SFX66 XABEG""".split()
 FM = {name: i for i, name in enumerate(FORMS)}
 
 # ---- flags (keep in sync with FL_* in tools/disasm/x86.s) ----
@@ -69,10 +70,10 @@ alu = ["add", "or", "adc", "sbb", "and", "sub", "xor", "cmp"]
 group("g1", [(n, None, 0) for n in alu])
 group("g1a", [("pop", None, F_D64)] + [None] * 7)
 group("g2", [("rol", None, 0), ("ror", None, 0), ("rcl", None, 0), ("rcr", None, 0),
-             ("shl", None, 0), ("shr", None, 0), None, ("sar", None, 0)])
-group("g3b", [("test", "EbIb", 0), None, ("not", "Eb", 0), ("neg", "Eb", 0),
+             ("shl", None, 0), ("shr", None, 0), ("shl", None, 0), ("sar", None, 0)])
+group("g3b", [("test", "EbIb", 0), ("test", "EbIb", 0), ("not", "Eb", 0), ("neg", "Eb", 0),
               ("mul", "Eb", 0), ("imul", "Eb", 0), ("div", "Eb", 0), ("idiv", "Eb", 0)])
-group("g3v", [("test", "EvIz", 0), None, ("not", "Ev", 0), ("neg", "Ev", 0),
+group("g3v", [("test", "EvIz", 0), ("test", "EvIz", 0), ("not", "Ev", 0), ("neg", "Ev", 0),
               ("mul", "Ev", 0), ("imul", "Ev", 0), ("div", "Ev", 0), ("idiv", "Ev", 0)])
 group("g4", [("inc", None, 0), ("dec", None, 0)] + [None] * 6)
 group("g5", [("inc", "Ev", 0), ("dec", "Ev", 0), ("call", "Ev", F_F64), ("call", "MP", 0),
@@ -80,14 +81,18 @@ group("g5", [("inc", "Ev", 0), ("dec", "Ev", 0), ("call", "Ev", F_F64), ("call",
 group("g8", [None] * 4 + [("bt", None, 0), ("bts", None, 0), ("btr", None, 0), ("btc", None, 0)])
 group("g11", [("mov", None, 0)] + [None] * 7)
 group("gnop", [("nop", None, 0)] * 8)      # 0F 19 / 1D / 1E / 1F: hint nops, any ModRM.reg
-group("g11b", [("mov", None, 0)] + [None] * 6 + [("xabort", "IbU", 0)])   # C6 /7: xabort
+group("g11b", [("mov", None, 0)] + [None] * 6 + [("xabort", "XABEG", 0)])   # C6 /7: xabort
+group("g11v", [("mov", None, 0)] + [None] * 6 + [("xbegin", "XABEG", 0)])   # C7 /7: xbegin
 group("g1c", [("cldemote", "Eb", F_BYTE)] + [("nop", "Ev", 0)] * 7)
 group("g0d", [("prefetch", None, 0), ("prefetchw", None, 0), ("prefetchwt1", None, 0)] +
       [("prefetch", None, 0)] * 5)
 # VIA PadLock (0F A6 / 0F A7, register forms; objdump keeps their F3 as repz)
-group("ga6", [("montmul", None, 0), ("xsha1", None, 0), ("xsha256", None, 0)] + [None] * 5)
-group("ga7", [("xstore-rng", None, 0), ("xcrypt-ecb", None, 0), ("xcrypt-cbc", None, 0),
-              ("xcrypt-ctr", None, 0), ("xcrypt-cfb", None, 0), ("xcrypt-ofb", None, 0), None, None])
+group("ga6", [("montmul", "PADLOCK", 0), ("xsha1", "PADLOCK", 0), ("xsha256", "PADLOCK", 0), ("xsha384", "PADLOCK", 0),
+              ("xsha512", "PADLOCK", 0), ("sm3", "PADLOCK", 0), ("montmul2", "PADLOCK", 0),
+              ("xmodexp", "PADLOCK", 0)])                # (sm3, sm4: F3's alone - x86.s)
+group("ga7", [("xstore-rng", "PADLOCK", 0), ("xcrypt-ecb", "PADLOCK", 0), ("xcrypt-cbc", "PADLOCK", 0),
+              ("xcrypt-ctr", "PADLOCK", 0), ("xcrypt-cfb", "PADLOCK", 0), ("xcrypt-ofb", "PADLOCK", 0),
+              ("sm4", "PADLOCK", 0), ("xrng2", "PADLOCK", 0)])
 group("g6", [("sldt", None, 0), ("str", None, 0), ("lldt", None, 0), ("ltr", None, 0),
              ("verr", None, 0), ("verw", None, 0), None, None])
 # 0F 01 and 0F AE mix register-only and memory-only encodings that do not
@@ -146,8 +151,8 @@ grp_op(map1, 0xC1, "g2", "EvIbU")
 op(map1, 0xC2, "ret", "SFXWI")              # retw with 66 (objdump)
 op(map1, 0xC3, "ret", "SFXW")
 grp_op(map1, 0xC6, "g11b", "EbIb", F_BYTE)
-grp_op(map1, 0xC7, "g11", "EvIz")
-op(map1, 0xC9, "leave", "NONE")
+grp_op(map1, 0xC7, "g11v", "EvIz")
+op(map1, 0xC9, "leave", "SFX66")
 # A0-A3: mov al / eax, moffs and back (an offset as wide as the address)
 op(map1, 0xA0, "mov", "MOFFS", F_BYTE); op(map1, 0xA1, "mov", "MOFFS")
 op(map1, 0xA2, "mov", "MOFFS", F_BYTE); op(map1, 0xA3, "mov", "MOFFS")
@@ -201,6 +206,8 @@ op(map2, 0x01, "(0f01)", "G7", F_MODRM)
 op(map2, 0x05, "syscall", "NONE")
 op(map2, 0x07, "sysret", "SFXD")
 op(map2, 0x0B, "ud2", "NONE")
+for code in (0x20, 0x21, 0x22, 0x23, 0x24, 0x26):     # mov r, cr / dr / tr and back
+    op(map2, code, "mov", "CRDR", F_MODRM)
 op(map2, 0x02, "lar", "GEwv", F_MODRM)
 op(map2, 0x03, "lsl", "GEwv", F_MODRM)
 op(map2, 0x06, "clts", "NONE")
@@ -227,7 +234,7 @@ grp_op(map2, 0x1F, "gnop", "Ev")
 for code in (0x19, 0x1D, 0x1E):
     grp_op(map2, code, "gnop", "Ev")
 grp_op(map2, 0x1C, "g1c", "Ev")
-grp_op(map2, 0x0D, "g0d", "Eb", F_BYTE)
+grp_op(map2, 0x0D, "g0d", "Mb", F_BYTE)
 grp_op(map2, 0xA6, "ga6", "NONE")
 grp_op(map2, 0xA7, "ga7", "NONE")
 op(map2, 0x0F, "(3dnow)", "D3NOW", F_MODRM)          # the opcode in the imm8 after
@@ -474,7 +481,7 @@ sse("0f", 0x7F, "np", "movq", "WV", "q", S_MMX | S_NOVEX)
 sse("0f", 0x7F, "66", "movdqa", "WV", "x"); sse("0f", 0x7F, "F3", "movdqu", "WV", "x")
 for p, suf, m in (("np", "ps", "x"), ("66", "pd", "x"), ("F3", "ss", "d"), ("F2", "sd", "q")):
     sse("0f", 0xC2, p, "cmp" + suf, "CMPS", m, S_NDS)
-sse_int("0f", 0xC3, "np", "movnti", "EvGv", F_MODRM | F_X32)
+sse_int("0f", 0xC3, "np", "movnti", "MvGv", F_MODRM | F_X32)
 sse("0f", 0xC4, "np", "pinsrw", "VEI", "w", S_MMX | S_NOVEX); sse("0f", 0xC4, "66", "pinsrw", "VEI", "w", S_NDS)
 sse("0f", 0xC5, "np", "pextrw", "GUI", "", S_MMX | S_NOVEX); sse("0f", 0xC5, "66", "pextrw", "GUI", "")
 sse("0f", 0xC6, "np", "shufps", "VWI", "x", S_NDS); sse("0f", 0xC6, "66", "shufpd", "VWI", "x", S_NDS)
@@ -529,22 +536,27 @@ for code, n in ((0x28, "pmuldq"), (0x29, "pcmpeqq"), (0x2B, "packusdw"), (0x37, 
     sse("38", code, "66", n, "VW", "x", S_NDS)
 sse("38", 0x2A, "66", "movntdqa", "VM", "x")
 sse("38", 0x41, "66", "phminposuw", "VW", "x"); sse("38", 0xDB, "66", "aesimc", "VW", "x")
-sse_int("38", 0xF0, "np", "movbe", "GvEv"); sse_int("38", 0xF1, "np", "movbe", "EvGv")
-sse_int("38", 0x8A, "np", "movrs", "GbEb", F_MODRM | F_BYTE | F_O64); sse_int("38", 0x8B, "np", "movrs", "GvEv", F_MODRM | F_O64)
+sse_int("38", 0xF0, "np", "movbe", "GvMv"); sse_int("38", 0xF1, "np", "movbe", "MvGv")
+sse_int("38", 0x8A, "np", "movrs", "GvMv", F_MODRM | F_BYTE | F_O64); sse_int("38", 0x8B, "np", "movrs", "GvMv", F_MODRM | F_O64)
 sse_int("38", 0xF0, "F2", "crc32", "CRC"); sse_int("38", 0xF1, "F2", "crc32", "CRC")
 sse_int("38", 0xF6, "66", "adcx", "GvEv", F_MODRM | F_X32); sse_int("38", 0xF6, "F3", "adox", "GvEv", F_MODRM | F_X32)
 # (with a register, F2 / F3 0F 38 F8 are urdmsr / uwrmsr: x86_apx.inc's dx_umsr)
 sse_int("38", 0xF8, "F2", "enqcmd", "GaM"); sse_int("38", 0xF8, "F3", "enqcmds", "GaM")
 sse_int("38", 0xF8, "66", "movdir64b", "GaM")
-sse_int("38", 0xF9, "np", "movdiri", "EvGv", F_MODRM | F_X32)
+sse_int("38", 0xF9, "np", "movdiri", "MvGv", F_MODRM | F_X32)
 sse_int("38", 0xF5, "66", "wruss", "WRSS"); sse_int("38", 0xF6, "np", "wrss", "WRSS")
-sse_int("38", 0xFC, "np", "aadd", "EvGv"); sse_int("38", 0xFC, "66", "aand", "EvGv")
-sse_int("38", 0xFC, "F2", "aor", "EvGv"); sse_int("38", 0xFC, "F3", "axor", "EvGv")
+sse_int("38", 0xFC, "np", "aadd", "MvGv", F_MODRM | F_X32); sse_int("38", 0xFC, "66", "aand", "MvGv", F_MODRM | F_X32)
+sse_int("38", 0xFC, "F2", "aor", "MvGv", F_MODRM | F_X32); sse_int("38", 0xFC, "F3", "axor", "MvGv", F_MODRM | F_X32)
 sse_int("38", 0x80, "66", "invept", "G64MO"); sse_int("38", 0x81, "66", "invvpid", "G64MO")
 sse_int("38", 0x82, "66", "invpcid", "G64M")
 sse_int("0f", 0x09, "F3", "wbnoinvd", "NONE", 0)
 sse_int("0f", 0x00, "F2", "lkgs", "Ewv")              # (FRED: F2 0F 00 /6)
 sse_int("3a", 0xF0, "F3", "hreset", "IbU")
+# Key Locker (F3 0F 38): D8 /0-3 the wide forms, DC-DF one block, FA / FB
+sse_int("38", 0xD8, "F3", "(keylocker)", "KLW")
+sse_int("38", 0xDC, "F3", "aesenc128kl", "KLV"); sse_int("38", 0xDD, "F3", "aesdec128kl", "KLV")
+sse_int("38", 0xDE, "F3", "aesenc256kl", "KLV"); sse_int("38", 0xDF, "F3", "aesdec256kl", "KLV")
+sse_int("38", 0xFA, "F3", "encodekey128", "KLE"); sse_int("38", 0xFB, "F3", "encodekey256", "KLE")
 # MPX (0F 1A / 1B by prefix): bnd registers
 sse_int("0f", 0x1A, "F3", "bndcl", "BGE"); sse_int("0f", 0x1A, "F2", "bndcu", "BGE")
 sse_int("0f", 0x1B, "F2", "bndcn", "BGE"); sse_int("0f", 0x1B, "F3", "bndmk", "BM")
@@ -594,7 +606,8 @@ def vex(tab, code, pfx, name, form, mem, flags=0):
 def vex_grp(tab, code, pfx, gname, form):
     vex_tabs[tab][code * 4 + PFX[pfx]] = (group_ids[gname], FM[form], 0)
 
-vex("0f", 0x77, "np", "vzeroupper", "XZERO", "")
+for pfx in ("np", "66", "F3", "F2"):                  # (objdump: pp ignored)
+    vex("0f", 0x77, pfx, "vzeroupper", "XZERO", "")
 for code, n, form, m, f in (
         (0x0C, "vpermilps", "VW", "x", S_NDS), (0x0D, "vpermilpd", "VW", "x", S_NDS),
         (0x0E, "vtestps", "VW", "x", 0), (0x0F, "vtestpd", "VW", "x", 0),
@@ -663,13 +676,15 @@ X87_MEM = {
 }
 X87_REG = {
     0xD8: [("fadd", 1), ("fmul", 1), ("fcom", 3), ("fcomp", 3), ("fsub", 1), ("fsubr", 1), ("fdiv", 1), ("fdivr", 1)],
-    0xD9: [("fld", 3), ("fxch", 3), None, ("fstp1", 3), None, None, None, None],
+    0xD9: [("fld", 3), ("fxch", 3), None, None, None, None, None, None],
     0xDA: [("fcmovb", 1), ("fcmove", 1), ("fcmovbe", 1), ("fcmovu", 1), None, None, None, None],
     0xDB: [("fcmovnb", 1), ("fcmovne", 1), ("fcmovnbe", 1), ("fcmovnu", 1), None, ("fucomi", 1), ("fcomi", 1), None],
-    0xDC: [("fadd", 2), ("fmul", 2), ("fcom2", 3), ("fcomp3", 3), ("fsubr", 2), ("fsub", 2), ("fdivr", 2), ("fdiv", 2)],
-    0xDD: [("ffree", 3), ("fxch4", 3), ("fst", 3), ("fstp", 3), ("fucom", 3), ("fucomp", 3), None, None],
-    0xDE: [("faddp", 2), ("fmulp", 2), ("fcomp5", 3), None, ("fsubrp", 2), ("fsubp", 2), ("fdivrp", 2), ("fdivp", 2)],
-    0xDF: [("ffreep", 3), ("fxch7", 3), ("fstp8", 3), ("fstp9", 3), None, ("fucomip", 1), ("fcomip", 1), None],
+    # (fcom2, fcomp3, fxch4, fcomp5, fxch7, fstp1 / 8 / 9: undocumented
+    # aliases objdump 2.47 reads as (bad))
+    0xDC: [("fadd", 2), ("fmul", 2), None, None, ("fsubr", 2), ("fsub", 2), ("fdivr", 2), ("fdiv", 2)],
+    0xDD: [("ffree", 3), None, ("fst", 3), ("fstp", 3), ("fucom", 3), ("fucomp", 3), None, None],
+    0xDE: [("faddp", 2), ("fmulp", 2), None, None, ("fsubrp", 2), ("fsubp", 2), ("fdivrp", 2), ("fdivp", 2)],
+    0xDF: [("ffreep", 3), None, None, None, None, ("fucomip", 1), ("fcomip", 1), None],
 }
 X87_FIX = [(0xD9, 0xD0, "fnop", 0)] + [(0xD9, 0xE0 + i, n, 0) for i, n in enumerate(
     "fchs fabs - - ftst fxam - - fld1 fldl2t fldl2e fldpi fldlg2 fldln2 fldz - "
@@ -1023,6 +1038,8 @@ def vex_names():
 def has_vex(name, shape, vn, key):
     """a VEX form of the same opcode reads the same as this EVEX one"""
     mapn, opcode, pp = key >> 24, (key >> 16) & 0xFF, (key >> 8) & 3
+    if name == "vpermpd" and (mapn, opcode) == (3, 0x16):
+        return True                      # (objdump's "{evex} vpermpd ymm": its VEX table's 0F 38 16)
     return ((name, mapn, opcode, pp) in vn and name not in VEX_LATER
             and "K" not in shape and "k" not in shape)
 GEN_SKIP = set()  # mnemonics whose forms give no single entry (gen_report)
