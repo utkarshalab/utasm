@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/float.s
+// TEST: tests/asm/amd64/float.s
 // Suite: AMD64 Core
 // Purpose: x87 FPU instruction coverage.
 //   Covers: FLD/FST/FSTP, FADD/FSUB/FMUL/FDIV, FCOM/FUCOM,
