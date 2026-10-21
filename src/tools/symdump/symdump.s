@@ -1,17 +1,17 @@
 ;
 ; ============================================
-; File     : tools/symdump/symdump.s
+; File     : src/tools/symdump/symdump.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
-%include "include/elf.inc"
-%include "include/inspect.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
+%include "src/include/elf.inc"
+%include "src/include/inspect.inc"
 
 DEFAULT REL
 
@@ -20,7 +20,7 @@ DEFAULT REL
 ; ============================================================================
 ; Prints every symbol table (SHT_SYMTAB, SHT_DYNSYM) and every relocation
 ; section (SHT_RELA, SHT_REL) of an ELF image already validated by
-; inspect_validate (tools/inspector/inspector.s).
+; inspect_validate (src/tools/inspect/inspector.s).
 ;
 ; Validation guarantees each section's bytes are inside the image. This
 ; file still checks everything that is an *index*: entry sizes, sh_link
