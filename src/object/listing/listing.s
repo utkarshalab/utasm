@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : backend/output/listing/listing.s
+; File        : src/object/listing/listing.s
 ; Project     : utasm
 ; Description : The listing file (-l): each source line with the offset and
 ;               the bytes it produced, in NASM's layout.
@@ -28,8 +28,8 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
 
 extern  io_open
 extern  io_close
@@ -41,7 +41,7 @@ extern  str_cmp
 extern  global_ctx
 extern  relax_map_offset
 
-%include "include/listing.inc"
+%include "src/include/listing.inc"
 
 %define LST_MAX     1000000         ; entries (the mapping is committed lazily)
 %define LST_FILES   64              ; files read back at once
@@ -333,7 +333,7 @@ lst_note:
     jnz     .named
     ret
 .named:
-    ; a GNU macro's or repetition's text (frontend/parser/gas_macro.s): no
+    ; a GNU macro's or repetition's text (src/frontend/syntax/gas/gas_macro.s): no
     ; lines of its own - its bytes are the calling line's, as NASM lists a
     ; .nolist macro
     push    rax
@@ -593,7 +593,7 @@ lst_close:
     ret
 
 ; lst_mark_pad: the current line holds padding the jump optimizer can grow
-; (optimizer/jump.s, relax_note). Preserves every register.
+; (src/optimize/jump.s, relax_note). Preserves every register.
 global lst_mark_pad
 lst_mark_pad:
     push    rax
