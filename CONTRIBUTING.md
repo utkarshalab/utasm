@@ -113,11 +113,11 @@ Stack must be 16-byte aligned before any `call`.
 
 ## Adding a New Error Code
 
-1. Reserve the code in `docs/user/errors.md`
-2. Add the message string to `src/diag/table.s`
-3. Emit it from the correct stage with `error_emit`
-4. Add a test at `tests/error/E<Nxx>/E<NNN>.s`
-5. Verify: correct code fires, correct line/col, recovery continues
+1. Add `EXIT_<NAME>` with the next free number to `src/include/constant.inc` (*EXIT CODES*)
+2. Add its message to `src/diag/codes.s`: a string, and a `code_msg EXIT_<NAME>, m_<name>[, t_<name>]` row in `code_table` (`t_` is the form that names the subject: `^` is replaced by it)
+3. Return it from the function that finds the problem (`mov eax, EXIT_<NAME>`); `error_set_subject` first when the message names something
+4. Document it in `docs/user/errors.md`
+5. Add a case to `tests/compat/cases.py` (*diagnostics* when NASM rejects it too, *rejections* / `ISA_ERRORS` when utasm refuses what NASM takes) and run `tests/compat/run_all.py`
 
 ---
 
