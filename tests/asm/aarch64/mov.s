@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/mov.s
+// TEST: tests/asm/aarch64/mov.s
 // Suite: AArch64 Core
 // Purpose: Data movement instruction coverage.
 //   Covers: MOV (alias of ORR/MOVN/MOVZ), MOVZ, MOVN, MOVK,
