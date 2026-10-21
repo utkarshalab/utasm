@@ -185,13 +185,33 @@ What the CPU would refuse is shown, as objdump shows it:
   EVEX instruction whose unused vvvv is not 1111 too;
 - `/(bad)` after a gather's destination, index and mask that are one
   register (or an EVEX gather with no mask), `vmovw` with a mask; `(bad)`
-  for a complex FP16 multiply's destination that is a source.
+  for a complex FP16 multiply's destination that is a source;
+- an operand the encoding cannot have is `(bad)` in its place, and decoding
+  goes on after the opcode's first byte, as objdump's does: `call (bad)`
+  (FF /3 with a register), `cmpxchg8b (bad)`, `psrlw (bad),0x71`,
+  `bndldx (bad),(bad)` (MPX with `[rip]`);
+- a prefix that selects an instruction of the opcode's and finds none there
+  is taken by it: `66 0f ae 20` is `(bad)`, not `data16 (bad)` (0F 00 /6,
+  0F 01, 0F 18, 0F 71-73, 0F A6 / A7, 0F AE, 0F C7, as objdump's prefix
+  tables have it); a prefix with no part in the opcode is still named;
+- a REX followed by another prefix, a REX, `D5` or `9B` does nothing: it is
+  an instruction of its own (`data16 rex`); before a VEX it is named
+  (`rex vzeroupper`); with a 66 that REX.W overrides, both are named
+  where W changes nothing (`data16 rex.W push rdi`, `data16 rex.W jl`);
+- `9B` (fwait) before an x87 instruction is part of it - `fstenv`, `fsave`,
+  `fstsw`, `fclex` (no `n`), any other as it is; with a 66 the
+  environment forms are `fldenvw` / `fnsavew` (16-bit mode: `fldenvd`);
+- outside 64-bit mode an EVEX prefix that cannot be one is `(bad)` after
+  62 (map 4) or after P1 with P2's mask: `(bad) {k2}`.
 
 It is checked against objdump 2.47 (the disassembler suite needs it, see
 `docs/tests.md`): every form of NASM's instruction tables, in all three
 modes, a 64-bit, a 32-bit and a 16-bit corpus of each; utasm's own
 objects (with their relocations); an ELF32 object. Every instruction is
-identical: bytes, text, symbol annotation. Of the system's own binaries,
+identical: bytes, text, symbol annotation. Beyond the forms any assembler
+writes, `scripts/compat/disasm_scan.py` runs the opcode space itself - each
+prefix (none, 66, F3, F2), map, opcode and 33 ModRM bytes, 133,320 cases
+a mode - and none differs in 16, 32 or 64-bit mode. Of the system's own binaries,
 the instructions all read the same - what differs in a shared library is
 the names objdump makes up from GNU's symbol versions and the PLT
 (`<abort@@GLIBC_2.2.5>`, `<__sigsetjmp@plt>`), which utasm does not read.
