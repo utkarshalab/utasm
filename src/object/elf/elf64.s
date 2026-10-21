@@ -8,10 +8,10 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
-%include "include/elf.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
+%include "src/include/elf.inc"
 
 [SECTION .text]
     extern  mem_zero
@@ -1057,7 +1057,7 @@ elf64_resolve_entry:
 
     mov     rdi, r12               ; symbol_find takes the AsmCtx
     lea     rsi, [rel .str_start]
-    ; FASM's "entry NAME" (frontend/parser/fasm.s) instead
+    ; FASM's "entry NAME" (src/frontend/syntax/fasm/fasm.s) instead
     extern  fasm_entry_name
     cmp     qword [rel fasm_entry_name], 0
     je      .entry_named
@@ -1488,7 +1488,7 @@ elf64_secsym_base:
 elf64_file_name:
     xor     edx, edx
     mov     rax, [r12 + ASMCTX_input]
-    ; GNU's .file "NAME" names it (frontend/parser/gas.s)
+    ; GNU's .file "NAME" names it (src/frontend/syntax/gas/gas.s)
     extern  gas_file_name
     cmp     qword [rel gas_file_name], 0
     je      .named
