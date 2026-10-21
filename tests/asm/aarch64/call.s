@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/call.s
+// TEST: tests/asm/aarch64/call.s
 // Suite: AArch64 Core
 // Purpose: Function call instruction coverage.
 //   Covers: BL, BLR, RET, AAPCS64 prologue/epilogue idioms.
