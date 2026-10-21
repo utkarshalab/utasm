@@ -2,9 +2,8 @@
 
 `utasm --profile prog.s` (or `-P`) prints, on stderr after assembling, how
 many CPU cycles each phase of utasm took, measured with the time-stamp
-counter. This README is also the profiler's design document (older
-comments in the code point to a `docs/profiler_architecture.md` that was
-never written; they mean this file).
+counter. This README is also the profiler's design document; the code's
+comments point here.
 
 ## What is measured
 
