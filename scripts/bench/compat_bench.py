@@ -9,7 +9,7 @@
   sources    utasm's own sources, one run each (NASM with the Makefile's
              -d__NASM__=1 -I./)
 
-usage: scripts/compat/bench.py [utasm-binary] [--scale N] [--only NAME]
+usage: scripts/bench/compat_bench.py [utasm-binary] [--scale N] [--only NAME]
        --scale  input sizes times N (default 1: about a second for NASM)
 
 Prints each time, the ratio, and whether the code is the same (objdump of
