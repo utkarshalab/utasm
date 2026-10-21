@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/logic.s
+// TEST: tests/asm/riscv64/logic.s
 // Suite: RISC-V 64 Core
 // Purpose: Logical/bitwise instruction coverage.
 //   Covers: AND, ANDI, OR, ORI, XOR, XORI, NOT — all forms.
