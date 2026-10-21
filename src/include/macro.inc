@@ -3,7 +3,7 @@
 
 ;
 ; ============================================
-; File     : include/macro.s
+; File     : src/include/macro.inc
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
