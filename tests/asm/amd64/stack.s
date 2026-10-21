@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/stack.s
+// TEST: tests/asm/amd64/stack.s
 // Suite: AMD64 Core
 // Purpose: Stack operation coverage.
 //   Covers: PUSH (reg, imm, mem), POP (reg, mem),
