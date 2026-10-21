@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/barrier.s
+// TEST: tests/asm/aarch64/barrier.s
 // Suite: AArch64 System
 // Purpose: Memory barrier and synchronization instruction coverage.
 //   Covers: ISB, DMB, DSB (all domains and types), LDAXR, STLXR,
