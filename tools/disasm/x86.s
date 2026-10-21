@@ -138,6 +138,9 @@ DEFAULT REL
 %define FM_BM       95
 %define FM_MB       96
 %define FM_SSE4AI   97
+%define FM_CRC      99          ; crc32: r32 / r64 (REX.W), r/m8 (F0) or r/m16/32/64
+%define FM_VQ       100         ; xmm, mm/m (cvtpi2ps, movq2dq)
+%define FM_PW       101         ; mm, xmm/m (cvtps2pi, movdq2q)
 %define FM_SSE4AR   98
 %define FM_GEwv     89          ; lar / lsl: a register at the operand size, memory WORD
 %define FM_SFXD     88
@@ -1002,6 +1005,12 @@ x86_decode:
     call    dx_fwait_combo
     test    eax, eax
     jz      .not_wait
+    cmp     eax, 3
+    jne     .wait_rex2
+    call    dx_rd8                         ; the REX
+    mov     [rel dx_rex], al
+    jmp     .wait_op
+.wait_rex2:
     cmp     eax, 2
     jne     .wait_op
     call    dx_rd8                         ; D5
@@ -1086,6 +1095,21 @@ x86_decode:
     mov     byte [rel dx_flags], 0         ; emms: no ModRM
     jmp     .entry_loaded
 .sse_none:
+    ; 66 and no entry for it: an integer instruction's own no-prefix one,
+    ; the 66 its operand size (movbe cx, [rax])
+    cmp     ecx, 1
+    jne     .sse_none_map
+    cmp     byte [rel dx_map], 3
+    jb      .sse_none_map
+    movzx   eax, word [rdx - 4]
+    cmp     eax, 0xFFFF
+    je      .sse_none_map
+    test    byte [rdx - 4 + 3], SF_INT
+    jz      .sse_none_map
+    lea     r12, [rdx - 4]
+    mov     r13d, eax
+    jmp     .sse_c4
+.sse_none_map:
     cmp     byte [rel dx_map], 2
     jne     .bad                           ; nothing else in 0F 38 / 0F 3A
     lea     r12, [rel x86_map2]
@@ -2018,12 +2042,50 @@ dx_x87:
     mov     [rel dx_mnem], rax
     call    dx_x87_wait
     movzx   esi, byte [rbx + 15]
+    cmp     esi, 2
+    jae     .fix_only
     call    dx_mnemonic
     cmp     byte [rbx + 15], 0
     je      .done
     xor     esi, esi                       ; fnstsw ax
     mov     edi, 16
     call    dx_reg
+    jmp     .done
+.fix_only:                                 ; fneni(8087 only), fnsetpm(287 only)
+    lea     rdx, [rel s_8087_only]
+    cmp     esi, 2
+    je      .only_put
+    lea     rdx, [rel s_287_only]
+.only_put:
+    mov     rsi, [rel dx_mnem]
+    lea     rdi, [rel dx_namebuf]
+    cmp     rsi, rdi
+    je      .only_end                      ; (dx_x87_wait put it there)
+.only_copy:
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    test    al, al
+    jnz     .only_copy
+    dec     rdi
+    jmp     .only_cat
+.only_end:
+    cmp     byte [rdi], 0
+    je      .only_cat
+    inc     rdi
+    jmp     .only_end
+.only_cat:
+    mov     al, [rdx]
+    mov     [rdi], al
+    inc     rdx
+    inc     rdi
+    test    al, al
+    jnz     .only_cat
+    lea     rax, [rel dx_namebuf]
+    mov     [rel dx_mnem], rax
+    xor     esi, esi
+    call    dx_mnemonic
     jmp     .done
 
 .fail:
@@ -2068,9 +2130,26 @@ dx_x87_wait:
 
 ; dx_fwait_combo: eax = 1 when the bytes after a 9B are one of the "fn"
 ; instructions objdump folds it into: fnstenv/fnstcw (D9 /6 /7), fnsave/
-; fnstsw (DD /6 /7), fnclex/fninit (DB E2/E3), fnstsw ax (DF E0)
+; fnstsw (DD /6 /7), fnclex/fninit/fneni/fndisi/fnsetpm (DB E0-E4), fnstsw
+; ax (DF E0); after a REX (eax = 3: "9b 41 dd 33", fsave [r11]) or a REX2
 dx_fwait_combo:
     mov     rcx, [rel dx_cur]
+    ; a REX before it
+    lea     rdx, [rcx + 3]
+    cmp     rdx, [rel dx_end]
+    ja      .no_rex
+    movzx   eax, byte [rcx]
+    and     eax, 0xF0
+    cmp     eax, 0x40
+    jne     .no_rex
+    inc     rcx
+    call    .no_rex2
+    test    eax, eax
+    jz      .rex_ret
+    mov     eax, 3
+.rex_ret:
+    ret
+.no_rex:
     ; a REX2 (map 0) before it: "fstsw WORD PTR [r16]" (eax = 2 then)
     lea     rdx, [rcx + 4]
     cmp     rdx, [rel dx_end]
@@ -2109,10 +2188,10 @@ dx_fwait_combo:
     jae     .yes
     jmp     .no
 .db:
-    cmp     edx, 0xE2
-    je      .yes
-    cmp     edx, 0xE3
-    je      .yes
+    cmp     edx, 0xE0
+    jb      .no
+    cmp     edx, 0xE4
+    jbe     .yes
     jmp     .no
 .df:
     cmp     edx, 0xE0
@@ -3149,6 +3228,8 @@ dx_operands:
     je      .f_SSE4AI
     cmp     eax, FM_SSE4AR
     je      .f_SSE4AR
+    cmp     eax, FM_CRC
+    je      .f_CRC
     cmp     eax, FM_VW
     jb      .unknown_form
     call    dx_sse_operands
@@ -3482,13 +3563,17 @@ dx_operands:
 .bnd_rmreg:
     movzx   esi, byte [rel dx_rmreg]
 .bnd_put:
-    and     esi, 3
+    cmp     esi, 3                         ; bnd4-15 (REX.R / B): none
+    ja      .bnd_bad
     push    rsi
     lea     rsi, [rel s_bnd_reg]
     call    dx_puts
     pop     rsi
     add     esi, '0'
     jmp     dx_putc
+.bnd_bad:
+    lea     rsi, [rel s_bad_opnd]
+    jmp     dx_puts
 ; ---- SSE4a: extrq / insertq ----
 .f_SSE4AI:                                 ; 78: extrq xmm, ib, ib / insertq xmm, xmm, ib, ib
     cmp     byte [rel dx_mod], 3
@@ -3517,6 +3602,23 @@ dx_operands:
     call    dx_sep
     mov     rsi, [rel dx_port]
     call    dx_hex
+    jmp     .done
+.f_CRC:                                    ; crc32 r32/r64, r/m8 / r/m16/32/64
+    mov     esi, 1
+    call    dx_mnemonic
+    mov     edi, 32
+    test    byte [rel dx_rex], 8
+    jz      .crc_g
+    mov     edi, 64
+.crc_g:
+    call    dx_greg
+    call    dx_sep
+    mov     edi, 8
+    cmp     byte [rel dx_op], 0xF0
+    je      .crc_e
+    mov     edi, ebx                       ; (66: a word)
+.crc_e:
+    call    dx_rm
     jmp     .done
 .f_SSE4AR:                                 ; 79: extrq / insertq xmm, xmm
     cmp     byte [rel dx_mod], 3
@@ -4165,6 +4267,10 @@ dx_sse_operands:
     je      .GW
     cmp     eax, FM_GU
     je      .GU
+    cmp     eax, FM_VQ
+    je      .VQ
+    cmp     eax, FM_PW
+    je      .PW
     cmp     eax, FM_UI
     je      .UI
     cmp     eax, FM_VM
@@ -4255,7 +4361,7 @@ dx_sse_operands:
     cmp     byte [rel dx_mod], 3
     jne     .fail
     call    .mn
-    mov     edi, 32
+    call    .gu_size
     call    dx_greg
     call    dx_sep
     call    dx_opW
@@ -4328,11 +4434,60 @@ dx_sse_operands:
     cmp     byte [rel dx_mod], 3
     jne     .fail
     call    .mn
-    mov     edi, 32
+    call    .gu_size
     call    dx_greg
     call    dx_sep
     call    dx_opW
     jmp     .imm8
+.VQ:                                       ; xmm, mm/m64 (movq2dq: registers only)
+    cmp     byte [rel dx_mod], 3
+    je      .vq_go
+    cmp     byte [rel dx_op], 0xD6
+    je      .fail
+.vq_go:
+    call    .mn
+    mov     edi, 1
+    movzx   esi, byte [rel dx_regno]
+    call    dx_vecreg_c
+    call    dx_sep
+    cmp     byte [rel dx_mod], 3
+    jne     .mix_mem
+    xor     edi, edi
+    movzx   esi, byte [rel dx_rmreg]
+    and     esi, 7
+    call    dx_vecreg_c
+    jmp     .done
+.PW:                                       ; mm, xmm/m (movdq2q: registers only)
+    cmp     byte [rel dx_mod], 3
+    je      .pw_go
+    cmp     byte [rel dx_op], 0xD6
+    je      .fail
+.pw_go:
+    call    .mn
+    xor     edi, edi
+    movzx   esi, byte [rel dx_regno]
+    and     esi, 7
+    call    dx_vecreg_c
+    call    dx_sep
+    cmp     byte [rel dx_mod], 3
+    jne     .mix_mem
+    mov     edi, 1
+    movzx   esi, byte [rel dx_rmreg]
+    call    dx_vecreg_c
+    jmp     .done
+.mix_mem:
+    call    dx_memsize
+    call    dx_mem
+    jmp     .done
+.gu_size:                                  ; movmskps / pmovmskb / pextrw's r32,
+    mov     edi, 32                        ; r64 with REX.W (not VEX's W)
+    cmp     byte [rel dx_vex], 0
+    jne     .gu_ret
+    test    byte [rel dx_rex], 8
+    jz      .gu_ret
+    mov     edi, 64
+.gu_ret:
+    ret
 .VW0:
     call    .mn
     call    dx_opV
@@ -5074,6 +5229,9 @@ s_tmm:      db "tmm", 0
 s_rstorssp: db "rstorssp", 0
 s_vexp:     db "{vex} ", 0
 s_1to:      db "{1to", 0
+s_8087_only: db "(8087 only)", 0
+s_bad_opnd: db "(bad)", 0
+s_287_only: db "(287 only)", 0
 s_bnd_reg:  db "bnd", 0
 ; 3DNow!'s opcodes (the imm8 after the operands) and names, 12-byte slots
 d3now_names:
