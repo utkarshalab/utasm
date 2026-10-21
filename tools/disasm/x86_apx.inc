@@ -18,6 +18,7 @@ d4_nf:      resb 1
 d4_sc:      resb 1              ; P2's low 4 bits: ccmp / ctest's condition
 d4_osz:     resb 1              ; the operation's size
 d4_map7:    resb 1              ; EVEX map 7 (MSR_IMM, USER_MSR)
+d4_p2:      resb 1              ; P2 as written
 dx_evexp:   resb 1              ; "{evex} " before the mnemonic
 [SECTION .text]
 
@@ -44,6 +45,9 @@ dx_vex7:
     mov     byte [rel d4_nf], 0
     call    dx_rd8                         ; the opcode
     mov     [rel dx_op], al
+    mov     rcx, [rel dx_cur]              ; (none: "(bad)" through it)
+    mov     [rel dx_opend], rcx
+    mov     byte [rel dx_vexpath], 1
     cmp     byte [rel dx_fail], 0
     jne     dx_evex4.fail
     jmp     dx_evex4.map7
@@ -53,6 +57,8 @@ dx_vex7:
 ; when it is one (printed; dx_fail if it went wrong), 0: not one
 dx_umsr:
     xor     eax, eax
+    cmp     byte [rel dx_mode], 64         ; (64-bit mode's alone)
+    jne     .ret
     cmp     byte [rel dx_repne], 0
     setne   cl
     cmp     byte [rel dx_rep], 0
@@ -170,12 +176,16 @@ dx_evex4:
     shr     ecx, 2
     and     ecx, 1
     mov     [rel d4_nf], cl
+    mov     [rel d4_p2], al
     test    al, 8
     jnz     .p2_v4
     or      byte [rel d4_vvvv], 16
 .p2_v4:
     call    dx_rd8                         ; the opcode
     mov     [rel dx_op], al
+    mov     rcx, [rel dx_cur]              ; (none: "(bad)" through it)
+    mov     [rel dx_opend], rcx
+    mov     byte [rel dx_vexpath], 1
     cmp     byte [rel dx_fail], 0
     jne     .fail
     cmp     byte [rel d4_map7], 0
@@ -199,6 +209,22 @@ dx_evex4:
     cmp     eax, 0x3B
     jbe     .ccmp
 .not_ccmp:
+    mov     ecx, eax                       ; (80-85 / F6 / F7: maybe ccmp /
+    and     ecx, 0xFC                      ; ctest, the SC in P2 - checked there)
+    cmp     ecx, 0x80
+    je      .p2_bits_ok
+    cmp     eax, 0x84
+    je      .p2_bits_ok
+    cmp     eax, 0x85
+    je      .p2_bits_ok
+    cmp     ecx, 0xF4
+    jne     .p2_bits
+    cmp     eax, 0xF6
+    jae     .p2_bits_ok
+.p2_bits:
+    test    byte [rel d4_p2], 0xE3         ; (z, L'L, the mask bits: 0 - else
+    jnz     .fail                          ; no instruction)
+.p2_bits_ok:
     cmp     eax, 0x3F
     jbe     .alu
     cmp     eax, 0x4F
@@ -526,6 +552,8 @@ dx_evex4:
     and     eax, 7
     cmp     eax, 7
     je      .ccmp
+    test    byte [rel d4_p2], 0xE3         ; (not ccmp: P2's z / L'L / mask 0)
+    jnz     .fail
     mov     ebx, eax
     xor     edi, edi
     call    .begin
@@ -581,6 +609,8 @@ dx_evex4:
     jz      .ctest_imm
     cmp     eax, 1
     je      .fail
+    test    byte [rel d4_p2], 0xE3         ; (not ctest: P2's z / L'L / mask 0)
+    jnz     .fail
     lea     rcx, [rel d4_grp3]
     mov     rsi, [rcx + rax * 8]
     cmp     eax, 4
