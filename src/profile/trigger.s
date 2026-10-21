@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : profiler/trigger.s
+; File        : src/profile/trigger.s
 ; Project     : utasm
 ; Author      : Utkarsha Lab
 ; License     : Apache-2.0
@@ -18,8 +18,8 @@
 
 bits 64
 
-%include "include/constant.inc"
-%include "include/type.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
 
 DEFAULT REL
 
