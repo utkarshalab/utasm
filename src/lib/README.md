@@ -46,15 +46,12 @@ splitmix64 finalizer, used inside hash.s).
 | File | What |
 | --- | --- |
 | `vec.s` | a growable array in the arena (`vec_init`, `vec_push`, `vec_get`, `vec_reserve`); capacity doubles; used by optimize/jump.s |
-| `list.s` | a doubly linked list in the arena — **unused** |
-| `sort.s` | `sort_stable` (an insertion sort with a comparator), `bsearch_u64` — **unused** (its header also describes a heapsort it does not export) |
 
 ## Numbers
 
 | File | What |
 | --- | --- |
 | `float.s` | `float_encode`: a float constant's text (`1.5`, `1.0e3`, `0x1.8p3`, `Inf`, `NaN`) to IEEE 754 binary16 / 32 / 64 / 128, x87's 80-bit, NASM's 8-bit float and bfloat16 — correctly rounded (NASM's `dw` .. `dt` / `do`, `__?float32?__` & co.) |
-| `math.s` | alignment, power-of-two, fits-in-N-bits, overflow-checked add / sub / mul — **unused** (the same checks are written inline where they are needed) |
 
 ## Time (`time.s`)
 
@@ -79,10 +76,7 @@ digests (object/ubf).
 | `fmt.s` | 380 | the bounded string builder |
 | `hash.s` | 202 | FNV-1a, CRC-32, splitmix64 |
 | `vec.s` | 406 | growable arrays |
-| `list.s` | 358 | linked lists (unused) |
-| `sort.s` | 272 | sorting and binary search (unused) |
 | `float.s` | 1,108 | float constants to IEEE 754 / x87 bits |
-| `math.s` | 334 | integer helpers (unused) |
 | `time.s` | 464 | the time of assembly, time zones |
 | `sha256.s` | 513 | SHA-256 |
 
@@ -106,8 +100,7 @@ platform/ (`mmap` for the arena and the heap), main/.
 
 ## What is left
 
-Remove what is unused, or use it: `list.s`, `math.s` and `sort.s` entirely; in
-`string.s`: `hex_to_byte`, `mem_cmp`, `mem_move`, `mem_set`,
+Remove what is unused, or use it: in `string.s`: `hex_to_byte`, `mem_cmp`, `mem_move`, `mem_set`,
 `path_get_extension`, `path_get_filename`, `str_cmp_n`, `str_copy_n`,
 `str_find_char`, `str_find_str`, `str_free`, `str_hash`, `str_is_alnum`,
 `str_split_char`, `str_to_lower`, `str_to_upper`, `str_trim`,
