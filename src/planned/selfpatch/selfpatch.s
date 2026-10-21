@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : selfpatch/selfpatch.s
+; File        : src/planned/selfpatch/selfpatch.s
 ; Description : Runtime binary self-modification engine
 ; ============================================================================
 ;
