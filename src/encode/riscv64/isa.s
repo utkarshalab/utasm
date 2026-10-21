@@ -6,9 +6,9 @@
 ; ============================================================================
 ;
 
-%include "include/macro.inc"
-%include "include/constant.inc"
-%include "include/arch/riscv64.inc"
+%include "src/include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/arch/riscv64.inc"
 
 section .data
 global mnc_tb_rv64
