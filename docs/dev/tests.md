@@ -853,6 +853,13 @@ says so when it starts matching, so the entry can be removed. The suites
 need `nasm`, `readelf`, `objdump` and `objcopy`; without them they are
 skipped with a note.
 
+### The module READMEs
+
+`python3 scripts/check_readmes.py` checks that every module README under
+`src/` lists exactly the files of its folder (and of subfolders without a
+README of their own), and that no folder with files is left without one.
+`tests/run.sh` runs it first.
+
 ### The opcode-space scan
 
 The disassembler suite reads what assemblers write. What they never write -
