@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/shift.s
+// TEST: tests/asm/amd64/shift.s
 // Suite: AMD64 Core
 // Purpose: Shift and rotate instruction coverage.
 //   Covers: SHL, SHR, SAR, ROL, ROR, RCL, RCR — all operand sizes,
