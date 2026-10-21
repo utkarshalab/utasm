@@ -18,6 +18,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Makefile — development command shortcuts
 - `docs/error_reference.md` — full error code table
 - `docs/dev_guide.md` — developer guide for adding instructions, errors, CPU profiles
+- `--disasm`: 16- and 32-bit mode (`--bits`), raw files (`--org`), ELF32 input, `-r` relocations, objdump's symbol annotations and `# addr <sym>` after `[rip]` operands
+- `scripts/compat/disasm_scan.py` — the opcode space (prefix × map × opcode × ModRM, 133,320 cases a mode) against objdump 2.47
+- EXIT_MASK_REFUSED (181): a write mask / `{z}` the instruction does not take is refused (#UD)
+
+### Fixed
+- `--disasm` reads every encoding as objdump 2.47 does, in all three modes: unused prefixes named, prefixes an opcode's prefix table takes, `(bad)` operands, a REX before a prefix, `9B` folded into x87 instructions, 66 with REX.W, VEX / EVEX that cannot be one — no difference left on NASM's every form or the opcode-space scan
 
 ### Changed
 - Project restructured from `src/` flat layout to layered architecture
