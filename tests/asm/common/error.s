@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/common/error.s
+// TEST: tests/asm/common/error.s
 // Suite: Common Preprocessor
 // Purpose: Intentional error coverage (verifies diagnostics).
 // Expected: EXIT_FAILURE or specific error code.
