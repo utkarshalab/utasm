@@ -7,8 +7,8 @@
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
 
 extern error_new_from_errno
 
