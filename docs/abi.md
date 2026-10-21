@@ -1389,7 +1389,7 @@ Before marking any function complete, verify:
 
 utasm is currently single-threaded. No locking is needed.
 
-Global state is centralized in `core/globals.s`. Any function that modifies global state must be documented as doing so.
+Global state lives in the `.bss` / `.data` of the module that owns it, next to its code (see *Global State Access Rules*). Any function that modifies global state must be documented as doing so.
 
 When parallel assembly is added (Phase 20), this section will be updated with locking rules.
 
@@ -1991,65 +1991,46 @@ rule applies to encoder buffers, output buffers, and large temporary arrays.
 
 ## Global State Access Rules
 
-All global mutable state lives in `core/globals.s`. Access rules:
+Each module's mutable state is declared in that module's own `.bss` /
+`.data`, next to the code that owns it (the symbol table in
+`middle/symtable/symtable.s`, the relocations in
+`backend/linker/reloc/reloc.s`, the diagnostics in `error/`). Access rules:
 
 ### Reading Global State
 
-Any module may read global state directly using RIP-relative addressing:
+Any module may read another's state directly (RIP-relative), through the
+`extern` the owner exports:
 
 ```asm
-; reading a global:
-mov rax, [rel current_file_id]
-mov rax, [rel error_count]
+extern  ubf_enabled
+cmp     byte [rel ubf_enabled], 0
 ```
 
 ### Writing Global State
 
-Only the module that **owns** the global may write to it directly.
-Other modules must call the owner's setter function.
-
-```asm
-; ownership table (defined in core/globals.s header):
-; current_file_id  → owned by core/asmctx.s
-; error_count      → owned by error/count.s
-; pass_number      → owned by utasm.s (main)
-
-; WRONG — error module writing to a field it doesn't own:
-; (from inside lexer.s)
-mov [rel error_count], rax      ; WRONG — error/count.s owns this
-
-; CORRECT — call the owner's setter:
-call count_error                 ; error/count.s's public function
-```
+Only the module that **owns** a variable writes it directly. Other modules
+call the owner's function for it; a module that writes someone else's
+variable is a bug even when it works.
 
 ### Global State Initialization Order
 
-Modules initialize in this exact order. Each module's `_init` function must
-be called exactly once by `utasm.s` before any other function of that module:
+`utasm.s` initializes the modules once, in this order, before reading the
+command line's sources:
 
 ```
-1.  lib/arena.s         → arena_init()
-2.  lib/string.s        → (no init needed — pure functions)
-3.  lib/hash.s          → (no init needed — pure functions)
-4.  host/syscall.s      → (no init needed — pure wrappers)
-5.  io/mem.s            → mem_init()
-6.  io/file.s           → (no init needed)
-7.  error/error.s       → error_init()       ← must be before anything that reports errors
-8.  core/globals.s      → globals_init()
-9.  core/asmctx.s       → ctx_init()
-10. cpu/cpu.s           → cpu_init()
-11. middle/symtable/    → symtable_init()
-12. frontend/lexer/     → (initialized per-file by lexer_init())
-13. frontend/macro/     → macro_init()
-14. frontend/parser/    → (initialized per-file by parser_init())
-15. middle/semantic/    → semantic_init()
-16. backend/encoder/    → encoder_init()
-17. backend/linker/     → linker_init()
-18. backend/output/     → (initialized per-format)
+1. core/known.s                     → known_init()     (pass bookkeeping)
+2. lib/arena.s                      → arena_init()
+3. middle/symtable/symtable.s       → symbol_init()
+4. error/format/source.s            → diag_init()      ← before anything reports errors
+5. profiler/profiler.s              → profiler_init()
+6. backend/linker/reloc/reloc.s     → reloc_init()
+7. frontend/lexer/lexer.s           → lexer_init()
+8. frontend/macro/macro.s           → prep_init()
 ```
 
-No module may call any function of a module that appears later in this list
-during its own initialization.
+The other modules need no init (pure functions, or state set up per use).
+No module may call a module later in this list during its own
+initialization.
 
 ---
 
