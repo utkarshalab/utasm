@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/exception.s
+// TEST: tests/asm/aarch64/exception.s
 // Suite: AArch64 System
 // Purpose: Exception-class instruction and handler idiom encoding.
 //   Covers: All exception classes, ESR decode patterns, FAR usage,
