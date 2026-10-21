@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/load.s
+// TEST: tests/asm/amd64/load.s
 // Suite: AMD64 Core
 // Purpose: All load instruction forms: MOV (load), MOVZX, MOVSX, MOVSXD,
 //          LODSx, CMOVcc loads, all size prefixes.
