@@ -36,15 +36,19 @@ VW WV VWI VE EV GW GU UI VM MV V12 EVI VEI GUI VW0 CMPS PCLMUL ENDBR
 XBCAST XINS XEXT XIS4 BGBE BGEB BBE XMLD XMST BRORX XZERO
 X87 EVEX G9
 GaM WRSS G64MO G64M IO SREGW SREGR FSGS GvMp IwIb XLAT SFXW SFXD GEwv SFXWI D3NOW
-BGE BBM BMB BM MB SSE4AI SSE4AR CRC VQ PW""".split()
+BGE BBM BMB BM MB SSE4AI SSE4AR CRC VQ PW
+SEGOP BOUND ARPL AP MOFFS MP""".split()
 FM = {name: i for i, name in enumerate(FORMS)}
 
 # ---- flags (keep in sync with FL_* in tools/disasm/x86.s) ----
 F_MODRM, F_GROUP, F_BYTE, F_D64, F_F64 = 1, 2, 4, 8, 16
+F_X32 = 32           # 32 bits outside 64-bit mode whatever 66 says (vmread)
+F_O64 = 64           # 64-bit mode's alone: no instruction in 16 / 32-bit mode
 
 CC = ["o", "no", "b", "ae", "e", "ne", "be", "a", "s", "ns", "p", "np", "l", "ge", "le", "g"]
 
 map1, map2 = {}, {}
+map1l = {}           # one-byte opcodes of 16 / 32-bit mode, over map1 there
 groups = []          # list of 8-entry lists: (name, form or None, flags)
 group_ids = {}
 
@@ -71,8 +75,8 @@ group("g3b", [("test", "EbIb", 0), None, ("not", "Eb", 0), ("neg", "Eb", 0),
 group("g3v", [("test", "EvIz", 0), None, ("not", "Ev", 0), ("neg", "Ev", 0),
               ("mul", "Ev", 0), ("imul", "Ev", 0), ("div", "Ev", 0), ("idiv", "Ev", 0)])
 group("g4", [("inc", None, 0), ("dec", None, 0)] + [None] * 6)
-group("g5", [("inc", "Ev", 0), ("dec", "Ev", 0), ("call", "Ev", F_F64), None,
-             ("jmp", "Ev", F_F64), None, ("push", "Ev", F_D64), None])
+group("g5", [("inc", "Ev", 0), ("dec", "Ev", 0), ("call", "Ev", F_F64), ("call", "MP", 0),
+             ("jmp", "Ev", F_F64), ("jmp", "MP", 0), ("push", "Ev", F_D64), None])
 group("g8", [None] * 4 + [("bt", None, 0), ("bts", None, 0), ("btr", None, 0), ("btc", None, 0)])
 group("g11", [("mov", None, 0)] + [None] * 7)
 group("gnop", [("nop", None, 0)] * 8)      # 0F 19 / 1D / 1E / 1F: hint nops, any ModRM.reg
@@ -144,6 +148,9 @@ op(map1, 0xC3, "ret", "SFXW")
 grp_op(map1, 0xC6, "g11b", "EbIb", F_BYTE)
 grp_op(map1, 0xC7, "g11", "EvIz")
 op(map1, 0xC9, "leave", "NONE")
+# A0-A3: mov al / eax, moffs and back (an offset as wide as the address)
+op(map1, 0xA0, "mov", "MOFFS", F_BYTE); op(map1, 0xA1, "mov", "MOFFS")
+op(map1, 0xA2, "mov", "MOFFS", F_BYTE); op(map1, 0xA3, "mov", "MOFFS")
 # system, I/O, segments (the disassembler's: the encoder reads no map1/map2)
 op(map1, 0x9C, "pushf", "SFXW", F_D64)
 op(map1, 0x9D, "popf", "SFXW", F_D64)
@@ -224,8 +231,29 @@ grp_op(map2, 0x0D, "g0d", "Eb", F_BYTE)
 grp_op(map2, 0xA6, "ga6", "NONE")
 grp_op(map2, 0xA7, "ga7", "NONE")
 op(map2, 0x0F, "(3dnow)", "D3NOW", F_MODRM)          # the opcode in the imm8 after
-op(map2, 0x78, "vmread", "EvGv", F_MODRM | F_D64)
-op(map2, 0x79, "vmwrite", "GvEv", F_MODRM | F_D64)
+op(map2, 0x78, "vmread", "EvGv", F_MODRM | F_D64 | F_X32)
+op(map2, 0x79, "vmwrite", "GvEv", F_MODRM | F_D64 | F_X32)
+# ---- 16 / 32-bit mode's own (x86_map1l): invalid, or another, in 64-bit mode ----
+for code in (0x06, 0x0E, 0x16, 0x1E):
+    op(map1l, code, "push", "SEGOP")
+for code in (0x07, 0x17, 0x1F):
+    op(map1l, code, "pop", "SEGOP")
+for code, n in ((0x27, "daa"), (0x2F, "das"), (0x37, "aaa"), (0x3F, "aas"), (0xCE, "into"), (0xD6, "salc")):
+    op(map1l, code, n, "NONE")
+for r in range(8):
+    op(map1l, 0x40 + r, "inc", "Zv")
+    op(map1l, 0x48 + r, "dec", "Zv")
+op(map1l, 0x60, "pusha", "SFXW")
+op(map1l, 0x61, "popa", "SFXW")
+op(map1l, 0x62, "bound", "BOUND", F_MODRM)
+op(map1l, 0x63, "arpl", "ARPL", F_MODRM)
+grp_op(map1l, 0x82, "g1", "EbIb", F_BYTE)
+op(map1l, 0x9A, "call", "AP")
+op(map1l, 0xEA, "jmp", "AP")
+op(map1l, 0xC4, "les", "GvMp", F_MODRM)
+op(map1l, 0xC5, "lds", "GvMp", F_MODRM)
+op(map1l, 0xD4, "aam", "IbU")
+op(map1l, 0xD5, "aad", "IbU")
 op(map2, 0x31, "rdtsc", "NONE")
 for i, c in enumerate(CC):
     op(map2, 0x40 + i, "cmov" + c, "GvEv", F_MODRM)
@@ -292,7 +320,7 @@ def render() -> str:
 
     # Build every table first: that is what fills the name list, which is
     # written out ahead of the tables.
-    t1, t2 = table(map1), table(map2)
+    t1, t2, t1l = table(map1), table(map2), table(map1l)
     ts0f, ts38, ts3a = sse_table(sse_tabs["0f"]), sse_table(sse_tabs["38"]), sse_table(sse_tabs["3a"])
     tv0f, tv38, tv3a = sse_table(vex_tabs["0f"]), sse_table(vex_tabs["38"]), sse_table(vex_tabs["3a"])
     tg = []
@@ -331,6 +359,7 @@ def render() -> str:
     lines.append("")
     lines += rows(t1, "x86_map1") + [""]
     lines += rows(t2, "x86_map2") + [""]
+    lines += rows(t1l, "x86_map1l") + [""]
     lines += rows(ts0f, "x86_sse0f") + [""]
     lines += rows(ts38, "x86_sse38") + [""]
     lines += rows(ts3a, "x86_sse3a") + [""]
@@ -445,7 +474,7 @@ sse("0f", 0x7F, "np", "movq", "WV", "q", S_MMX | S_NOVEX)
 sse("0f", 0x7F, "66", "movdqa", "WV", "x"); sse("0f", 0x7F, "F3", "movdqu", "WV", "x")
 for p, suf, m in (("np", "ps", "x"), ("66", "pd", "x"), ("F3", "ss", "d"), ("F2", "sd", "q")):
     sse("0f", 0xC2, p, "cmp" + suf, "CMPS", m, S_NDS)
-sse_int("0f", 0xC3, "np", "movnti", "EvGv")
+sse_int("0f", 0xC3, "np", "movnti", "EvGv", F_MODRM | F_X32)
 sse("0f", 0xC4, "np", "pinsrw", "VEI", "w", S_MMX | S_NOVEX); sse("0f", 0xC4, "66", "pinsrw", "VEI", "w", S_NDS)
 sse("0f", 0xC5, "np", "pextrw", "GUI", "", S_MMX | S_NOVEX); sse("0f", 0xC5, "66", "pextrw", "GUI", "")
 sse("0f", 0xC6, "np", "shufps", "VWI", "x", S_NDS); sse("0f", 0xC6, "66", "shufpd", "VWI", "x", S_NDS)
@@ -501,13 +530,13 @@ for code, n in ((0x28, "pmuldq"), (0x29, "pcmpeqq"), (0x2B, "packusdw"), (0x37, 
 sse("38", 0x2A, "66", "movntdqa", "VM", "x")
 sse("38", 0x41, "66", "phminposuw", "VW", "x"); sse("38", 0xDB, "66", "aesimc", "VW", "x")
 sse_int("38", 0xF0, "np", "movbe", "GvEv"); sse_int("38", 0xF1, "np", "movbe", "EvGv")
-sse_int("38", 0x8A, "np", "movrs", "GbEb", F_MODRM | F_BYTE); sse_int("38", 0x8B, "np", "movrs", "GvEv")
+sse_int("38", 0x8A, "np", "movrs", "GbEb", F_MODRM | F_BYTE | F_O64); sse_int("38", 0x8B, "np", "movrs", "GvEv", F_MODRM | F_O64)
 sse_int("38", 0xF0, "F2", "crc32", "CRC"); sse_int("38", 0xF1, "F2", "crc32", "CRC")
-sse_int("38", 0xF6, "66", "adcx", "GvEv"); sse_int("38", 0xF6, "F3", "adox", "GvEv")
+sse_int("38", 0xF6, "66", "adcx", "GvEv", F_MODRM | F_X32); sse_int("38", 0xF6, "F3", "adox", "GvEv", F_MODRM | F_X32)
 # (with a register, F2 / F3 0F 38 F8 are urdmsr / uwrmsr: x86_apx.inc's dx_umsr)
 sse_int("38", 0xF8, "F2", "enqcmd", "GaM"); sse_int("38", 0xF8, "F3", "enqcmds", "GaM")
 sse_int("38", 0xF8, "66", "movdir64b", "GaM")
-sse_int("38", 0xF9, "np", "movdiri", "EvGv")
+sse_int("38", 0xF9, "np", "movdiri", "EvGv", F_MODRM | F_X32)
 sse_int("38", 0xF5, "66", "wruss", "WRSS"); sse_int("38", 0xF6, "np", "wrss", "WRSS")
 sse_int("38", 0xFC, "np", "aadd", "EvGv"); sse_int("38", 0xFC, "66", "aand", "EvGv")
 sse_int("38", 0xFC, "F2", "aor", "EvGv"); sse_int("38", 0xFC, "F3", "axor", "EvGv")
