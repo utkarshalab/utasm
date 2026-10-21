@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/common/stress_nesting.s
+// TEST: tests/asm/common/stress_nesting.s
 // Suite: Common Preprocessor Stress
 // Purpose: Extreme nesting of conditionals to verify skip_depth stability.
 // Expected: Only specific values emitted.
