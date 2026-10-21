@@ -845,7 +845,7 @@ python3 scripts/compat/run_all.py build/gen1/utasm -v       # also list known di
 | robustness | inputs that crashed or hung utasm before (found by `fuzz.py`, see *Fuzz Tests*): it must finish, with no internal error, and accept or reject each as NASM does |
 | encoder corpus | every instruction of `corpus.py` alone, byte for byte |
 | operand shapes | ~1,700 pairings of register and memory sizes for the general-purpose instructions: the same bytes as NASM, or rejected where NASM rejects them |
-| disassembler | `utasm --disasm` against `objdump -d -M intel` (binutils 2.47 or later: older ones fail the suite) on the gen1 objects and the corpus |
+| disassembler | `utasm --disasm` against `objdump -d -M intel` (binutils 2.47 or later: older ones fail the suite) on the gen1 objects, the corpus, NASM's every form in 64, 32 and 16-bit mode and an ELF32 object: bytes, text and symbol annotation of every instruction |
 
 The sources live in `scripts/compat/cases.py` and `corpus.py`. A difference
 that is deliberate or not implemented yet goes in `common.KNOWN` with the
@@ -853,6 +853,27 @@ reason: it is reported as *known* and does not fail the run, and the suite
 says so when it starts matching, so the entry can be removed. The suites
 need `nasm`, `readelf`, `objdump` and `objcopy`; without them they are
 skipped with a note.
+
+### The opcode-space scan
+
+The disassembler suite reads what assemblers write. What they never write -
+a prefix an opcode has no instruction for, a register where only memory
+goes, an EVEX prefix in 32-bit mode - is covered by a separate run over the
+opcode space:
+
+```sh
+PATH=/path/to/binutils-2.47/bin:$PATH \
+    python3 scripts/compat/disasm_scan.py build/gen1/utasm            # 133,320 cases a mode
+python3 scripts/compat/disasm_scan.py build/gen1/utasm --quick --bits 64   # 16,160
+```
+
+Each case is a prefix (none, 66, F3, F2), a map (one-byte, 0F, 0F 38,
+0F 3A), an opcode and a ModRM byte, followed by filler bytes for whatever
+the instruction reads after it. The first instruction utasm decodes is
+compared with objdump's (`-D -b binary`): its length and its text. It
+prints every difference and exits 1 if there is one. Today it finds none in
+16, 32 or 64-bit mode. It takes a few minutes a mode, so it is not part of
+`run_all.py`; run it after changing `tools/disasm/` or the tables.
 
 ---
 
