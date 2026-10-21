@@ -35,7 +35,8 @@ Ewv G7 GAE
 VW WV VWI VE EV GW GU UI VM MV V12 EVI VEI GUI VW0 CMPS PCLMUL ENDBR
 XBCAST XINS XEXT XIS4 BGBE BGEB BBE XMLD XMST BRORX XZERO
 X87 EVEX G9
-GaM WRSS G64MO G64M IO SREGW SREGR FSGS GvMp IwIb XLAT SFXW SFXD GEwv SFXWI""".split()
+GaM WRSS G64MO G64M IO SREGW SREGR FSGS GvMp IwIb XLAT SFXW SFXD GEwv SFXWI D3NOW
+BGE BBM BMB BM MB SSE4AI SSE4AR""".split()
 FM = {name: i for i, name in enumerate(FORMS)}
 
 # ---- flags (keep in sync with FL_* in tools/disasm/x86.s) ----
@@ -74,7 +75,15 @@ group("g5", [("inc", "Ev", 0), ("dec", "Ev", 0), ("call", "Ev", F_F64), None,
              ("jmp", "Ev", F_F64), None, ("push", "Ev", F_D64), None])
 group("g8", [None] * 4 + [("bt", None, 0), ("bts", None, 0), ("btr", None, 0), ("btc", None, 0)])
 group("g11", [("mov", None, 0)] + [None] * 7)
-group("gnop", [("nop", None, 0)] + [None] * 7)
+group("gnop", [("nop", None, 0)] * 8)      # 0F 19 / 1D / 1E / 1F: hint nops, any ModRM.reg
+group("g11b", [("mov", None, 0)] + [None] * 6 + [("xabort", "IbU", 0)])   # C6 /7: xabort
+group("g1c", [("cldemote", "Eb", F_BYTE)] + [("nop", "Ev", 0)] * 7)
+group("g0d", [("prefetch", None, 0), ("prefetchw", None, 0), ("prefetchwt1", None, 0)] +
+      [("prefetch", None, 0)] * 5)
+# VIA PadLock (0F A6 / 0F A7, register forms; objdump keeps their F3 as repz)
+group("ga6", [("montmul", None, 0), ("xsha1", None, 0), ("xsha256", None, 0)] + [None] * 5)
+group("ga7", [("xstore-rng", None, 0), ("xcrypt-ecb", None, 0), ("xcrypt-cbc", None, 0),
+              ("xcrypt-ctr", None, 0), ("xcrypt-cfb", None, 0), ("xcrypt-ofb", None, 0), None, None])
 group("g6", [("sldt", None, 0), ("str", None, 0), ("lldt", None, 0), ("ltr", None, 0),
              ("verr", None, 0), ("verw", None, 0), None, None])
 # 0F 01 and 0F AE mix register-only and memory-only encodings that do not
@@ -132,7 +141,7 @@ grp_op(map1, 0xC0, "g2", "EbIbU", F_BYTE)
 grp_op(map1, 0xC1, "g2", "EvIbU")
 op(map1, 0xC2, "ret", "SFXWI")              # retw with 66 (objdump)
 op(map1, 0xC3, "ret", "SFXW")
-grp_op(map1, 0xC6, "g11", "EbIb", F_BYTE)
+grp_op(map1, 0xC6, "g11b", "EbIb", F_BYTE)
 grp_op(map1, 0xC7, "g11", "EvIz")
 op(map1, 0xC9, "leave", "NONE")
 # system, I/O, segments (the disassembler's: the encoder reads no map1/map2)
@@ -142,6 +151,7 @@ op(map1, 0x9E, "sahf", "NONE")
 op(map1, 0x9F, "lahf", "NONE")
 op(map1, 0xC8, "enter", "IwIb")
 op(map1, 0xCB, "retf", "SFXW")
+op(map1, 0xCA, "retf", "SFXWI")
 op(map1, 0xCF, "iret", "SFXW")
 op(map1, 0xD7, "xlat", "XLAT")
 op(map1, 0xF1, "int1", "NONE")
@@ -206,6 +216,15 @@ op(map2, 0xB5, "lgs", "GvMp", F_MODRM)
 op(map2, 0xB9, "ud1", "GvEv", F_MODRM)
 op(map2, 0xFF, "ud0", "GvEv", F_MODRM)
 grp_op(map2, 0x1F, "gnop", "Ev")
+for code in (0x19, 0x1D, 0x1E):
+    grp_op(map2, code, "gnop", "Ev")
+grp_op(map2, 0x1C, "g1c", "Ev")
+grp_op(map2, 0x0D, "g0d", "Eb", F_BYTE)
+grp_op(map2, 0xA6, "ga6", "NONE")
+grp_op(map2, 0xA7, "ga7", "NONE")
+op(map2, 0x0F, "(3dnow)", "D3NOW", F_MODRM)          # the opcode in the imm8 after
+op(map2, 0x78, "vmread", "EvGv", F_MODRM | F_D64)
+op(map2, 0x79, "vmwrite", "GvEv", F_MODRM | F_D64)
 op(map2, 0x31, "rdtsc", "NONE")
 for i, c in enumerate(CC):
     op(map2, 0x40 + i, "cmov" + c, "GvEv", F_MODRM)
@@ -300,6 +319,9 @@ def render() -> str:
         "; x86-64 opcode tables for tools/disasm/x86.s. Entry: dw name offset",
         "; (or group number with F_GROUP; 0xFFFF = invalid), db form, db flags.",
         "; " + "=" * 76,
+        "",
+        # the hint-nop group (x86.s: 0F 18 / 0F 1C with a register are nops)
+        "x86_group_gnop: dd %d" % group_ids["gnop"],
         "",
         "x86_names:",
     ]
@@ -482,6 +504,16 @@ sse_int("38", 0xFC, "F2", "aor", "EvGv"); sse_int("38", 0xFC, "F3", "axor", "EvG
 sse_int("38", 0x80, "66", "invept", "G64MO"); sse_int("38", 0x81, "66", "invvpid", "G64MO")
 sse_int("38", 0x82, "66", "invpcid", "G64M")
 sse_int("0f", 0x09, "F3", "wbnoinvd", "NONE", 0)
+sse_int("0f", 0x00, "F2", "lkgs", "Ewv")              # (FRED: F2 0F 00 /6)
+sse_int("3a", 0xF0, "F3", "hreset", "IbU")
+# MPX (0F 1A / 1B by prefix): bnd registers
+sse_int("0f", 0x1A, "F3", "bndcl", "BGE"); sse_int("0f", 0x1A, "F2", "bndcu", "BGE")
+sse_int("0f", 0x1B, "F2", "bndcn", "BGE"); sse_int("0f", 0x1B, "F3", "bndmk", "BM")
+sse_int("0f", 0x1A, "66", "bndmov", "BBM"); sse_int("0f", 0x1B, "66", "bndmov", "BMB")
+sse_int("0f", 0x1A, "np", "bndldx", "BM"); sse_int("0f", 0x1B, "np", "bndstx", "MB")
+# SSE4a: extrq / insertq (66 / F2 0F 78 ib ib, 0F 79); with no prefix vmread / vmwrite
+sse_int("0f", 0x78, "66", "extrq", "SSE4AI"); sse_int("0f", 0x78, "F2", "insertq", "SSE4AI")
+sse_int("0f", 0x79, "66", "extrq", "SSE4AR"); sse_int("0f", 0x79, "F2", "insertq", "SSE4AR")
 # SHA extensions (legacy encoding only)
 for code, n in ((0xC8, "sha1nexte"), (0xC9, "sha1msg1"), (0xCA, "sha1msg2"),
                 (0xCC, "sha256msg1"), (0xCD, "sha256msg2")):
@@ -625,9 +657,9 @@ def x87_tables():
     return out
 
 # ---- integer extras in the 0F map ----
-group("g16", [("prefetchnta", "Eb", 0), ("prefetcht0", "Eb", 0), ("prefetcht1", "Eb", 0), ("prefetcht2", "Eb", 0),
-              None, None, None, None])
-grp_op(map2, 0x18, "g16", "Eb", F_BYTE)
+group("g16", [("prefetchnta", "Eb", F_BYTE), ("prefetcht0", "Eb", F_BYTE), ("prefetcht1", "Eb", F_BYTE),
+              ("prefetcht2", "Eb", F_BYTE), ("prefetchrst2", "Eb", F_BYTE)] + [("nop", "Ev", 0)] * 3)
+grp_op(map2, 0x18, "g16", "Eb")
 
 
 # ============================================================================
