@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/float.s
+// TEST: tests/asm/aarch64/float.s
 // Suite: AArch64 FP
 // Purpose: AArch64 scalar floating-point instruction coverage.
 //   Covers: FADD, FSUB, FMUL, FDIV, FMADD, FMSUB, FNMADD, FNMSUB,
