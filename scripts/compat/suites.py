@@ -443,8 +443,6 @@ def disasm(utasm, verbose=False, objects=()):
                     o = ours.get(k)
                     if o and o[0] == rb and o[1] == rt:
                         s.ok += 1
-                    elif rt.startswith("{evex} vpermpd ymm"):
-                        s.known += 1           # (objdump's: no VEX form reads as it)
                     else:
                         mn = "%d:%s" % (bits, rt.split(" ")[0] if rt else "?")
                         bad[mn] += 1
