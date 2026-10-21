@@ -845,7 +845,7 @@ python3 scripts/compat/run_all.py build/gen1/utasm -v       # also list known di
 | robustness | inputs that crashed or hung utasm before (found by `fuzz.py`, see *Fuzz Tests*): it must finish, with no internal error, and accept or reject each as NASM does |
 | encoder corpus | every instruction of `corpus.py` alone, byte for byte |
 | operand shapes | ~1,700 pairings of register and memory sizes for the general-purpose instructions: the same bytes as NASM, or rejected where NASM rejects them |
-| disassembler | `utasm --disasm` against `objdump -d -M intel` on the gen1 objects and the corpus |
+| disassembler | `utasm --disasm` against `objdump -d -M intel` (binutils 2.47 or later: older ones fail the suite) on the gen1 objects and the corpus |
 
 The sources live in `scripts/compat/cases.py` and `corpus.py`. A difference
 that is deliberate or not implemented yet goes in `common.KNOWN` with the
