@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/macros.s
+// TEST: tests/asm/riscv64/macros.s
 // Suite: RISC-V 64 Preprocessor
 // Purpose: Macro definition and expansion for RISC-V.
 // Expected: EXIT_OK.
