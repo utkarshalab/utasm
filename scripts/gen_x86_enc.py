@@ -854,7 +854,11 @@ NASM_WRONG = {"vcvtqq2ph", "vcvtuqq2ph", "vp2intersectd",
               # "zword [rax]" refused, "word [rax]" taken, {1toN} refused
               "vaddph", "vcmpph",
               # retw imm: no o16 (66) - NASM 3's has it
-              "retw"}
+              "retw",
+              # vmovw: NASM's takes a mask (#UD: it has none) and no r32
+              # (Intel's and GNU's "vmovw xmm1, eax"); below without the
+              # mask, with r32 and NASM's r16
+              "vmovw"}
 # (v4fmaddss / v4fnmaddss: NASM's zmm spelling kept, Intel's xmm one added below)
 # NASM's VCVTPS2PH of map 5 (no imm8) is Intel's VCVTPS2PHX: NASM's lines are
 # wrong in their destinations, those below are right; the F16C / AVX-512
@@ -868,6 +872,10 @@ CONDITIONS = [("o", 0), ("no", 1), ("b", 2), ("c", 2), ("nae", 2), ("ae", 3), ("
 # forms NASM has wrong or not at all, from Intel's manual, in insns.dat's
 # notation
 EXTRA_INSNS = '''
+VMOVW		xmmreg,rm16			[rm:t1s: evex.128.66.map5.wig 6e /r]	AVX512FP16,FUTURE
+VMOVW		xmmreg,reg32			[rm:t1s: evex.128.66.map5.wig 6e /r]	AVX512FP16,FUTURE
+VMOVW		rm16,xmmreg			[mr:t1s: evex.128.66.map5.wig 7e /r]	AVX512FP16,FUTURE
+VMOVW		reg32,xmmreg			[mr:t1s: evex.128.66.map5.wig 7e /r]	AVX512FP16,FUTURE
 AOR	   	mem32,reg32				[mr:	norexw f2 0f 38 fc /r	]	RAOINT,FUTURE,SD
 AOR	   	mem64,reg64				[mr:	o64 f2 0f 38 fc /r	]	RAOINT,FUTURE,SQ,LONG
 PMULHRW		mmxreg,mmxrm			[rm:	o64nw 0f 0f /r b7]			PENT,3DNOW,SQ
@@ -1138,6 +1146,7 @@ def nasm_form(name, ops, enc, flags=()):
         fl |= F_W
 
     types, roles, bc, er_at, stars = [], [], 0, None, []
+    deco0 = opl[0].split("|")[1:] if opl else []   # (the first operand's: |mask, |z)
     for i, (o, letter) in enumerate(zip(opl, order.replace("j", "i"))):
         base, *deco = o.split("|")
         if base.endswith("*"):
@@ -1230,6 +1239,10 @@ def nasm_form(name, ops, enc, flags=()):
     vl = L | (0x80 if "SIB" in flags else 0)
     if encn == ENC_VEX and "LATEVEX" in flags:
         vl |= 0x40                               # (dispatch.s: {vex} / cpu latevex)
+    if encn == ENC_EVEX:
+        # an EVEX form NASM gives no |mask / |z: none ({k1} on vcomiss,
+        # vmovd, vpextrd: #UD; NASM refuses them) - FM_VL 0x04 / 0x08
+        vl |= (0 if "mask" in deco0 else 0x04) | (0 if "z" in deco0 else 0x08)
     def add(ts, rs, f, ix=None):
         if len(ts) > 4:
             return
@@ -1387,6 +1400,12 @@ def nasm_forms():
     for name, ops, enc, flags in lines:
         flags = flags.split(",")
         NASM_SEEN.add(name)
+        if "evex." in enc:
+            # does any of its EVEX forms take a mask / {z} (NASM's |mask, |z
+            # on the first operand)? (the hand-written forms: as NASM says)
+            d0 = ops.split(",")[0].split("|")[1:]
+            EV_MASK_OK[name] = EV_MASK_OK.get(name, False) or "mask" in d0
+            EV_Z_OK[name] = EV_Z_OK.get(name, False) or "z" in d0
         if "AVX10_2" in flags and "evex." in enc:
             AVX10_EVEX.add(name)
         # its CPU level: the lowest any of its forms has (x86_cpu_level)
@@ -1411,7 +1430,18 @@ def nasm_forms():
                     forms.append(("vcmp" + p + name[4:], f[1][:-1], f[2], f[3], f[4], f[5], f[6][:-1],
                                   f[7] | F_FIXIMM, imm) + f[9:])
 
+EV_MASK_OK, EV_Z_OK = {}, {}
 nasm_forms()
+# the hand-written EVEX forms (evex_forms) of an instruction NASM lists:
+# its mask / {z} as NASM's lines take them (FM_VL 0x04 / 0x08)
+for i, f in enumerate(forms):
+    if f[10] == ENC_EVEX and f[0] in EV_MASK_OK:
+        L = f[11]
+        if not EV_MASK_OK[f[0]]:
+            L |= 0x04
+        if not EV_Z_OK[f[0]]:
+            L |= 0x08
+        forms[i] = f[:11] + (L,) + f[12:]
 
 # NASM's LATEVEX (the VEX form only with {vex} / "cpu latevex"): for a
 # mnemonic with an EVEX form to take instead. With none (AVX-NE-CONVERT's
