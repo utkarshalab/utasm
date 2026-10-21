@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/common/nested.s
+// TEST: tests/asm/common/nested.s
 // Suite: Common Preprocessor
 // Purpose: Nested macro and conditional coverage.
 // Expected: EXIT_OK.
