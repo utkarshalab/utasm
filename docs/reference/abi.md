@@ -275,424 +275,109 @@ utasm does NOT use the red zone (128 bytes below RSP). Kernel code and signal ha
 
 ## Error Handling
 
-This is one of the most critical sections of this document. Every function
-that can fail must follow these conventions exactly. Inconsistent error
-handling is how bugs stay hidden for months.
+How utasm's own functions report failure, and how a problem in the user's
+source reaches the user. (The messages themselves are listed in
+`docs/user/errors.md`; the machinery is described in `src/diag/README.md`.)
 
 ---
 
-### The Fundamental Contract
+### The Contract
 
 ```
-RAX = 0          →  success. result in RDX if applicable.
-RAX = non-zero   →  failure. RAX is the error code. RDX is undefined.
+RAX = EXIT_OK (0)   →  success; a second result in RDX if the function has one
+RAX = EXIT_*        →  failure; RAX is the code (include/constant.inc)
 ```
 
-No exceptions. No other return conventions for errors. Always RAX.
+Always RAX, always a named `EXIT_*` constant — never -1 or a bare number.
+A function that cannot fail says so in its comment and returns its result
+in RAX.
 
 ---
 
-### Error Return Convention
+### A Problem in the Source
 
-Every function that can fail follows this exact pattern:
+A function that finds something wrong in the source **returns its code and
+prints nothing**:
 
 ```asm
-; ─── SUCCESS PATH ───
-.success:
-    xor rax, rax            ; RAX = 0 = ERR_NONE
-    ret                     ; result already in RDX if needed
-
-; ─── FAILURE PATH ───
-.fail_undefined_symbol:
-    mov rax, E401           ; specific error code — never a generic one
-    ret
-
-.fail_redefinition:
-    mov rax, E402
+    lea     rdi, [rel name]
+    call    error_set_subject          ; when the message names something
+    mov     eax, EXIT_UNDEF_SYMBOL     ; "symbol `name' not defined"
     ret
 ```
 
-**Rules:**
-- Use the most specific error code available
-- Never use a generic E8xx internal error when a real code exists
-- Never return -1 or other ad-hoc values — only defined E codes
-- Never leave RAX undefined on any return path
+Callers check and pass it up unchanged:
+
+```asm
+    call    parser_parse_operand
+    test    eax, eax
+    jnz     .ret                       ; propagate - do not report
+```
+
+The code reaches the assembly loop in `src/main/utasm.s`, which:
+
+1. reports it once, at the line of the statement it came from
+   (`error_report_code`, src/diag/codes.s) — for a statement from a macro,
+   the call's line plus "... from macro `m' defined here"; on a terminal,
+   the source line with the place marked and notes on the operands;
+2. undoes the statement (`rc_failed`: the section's bytes, relocations and
+   jump records go back to before it) and skips the rest of its line;
+3. reads on, so **every error in a file is reported** — up to 100, then
+   "too many errors (100), stopping";
+4. writes no output file and exits with the first error's status.
+
+An error found after the statement was read (a relocation that cannot be
+expressed, a value checked once the code is laid out) is placed at its
+statement with `error_set_location` before it is reported.
 
 ---
 
-### Infallible Functions
+### Fatal Errors
 
-Functions that cannot fail must document this explicitly and
-must not be called with error checking:
+Some codes leave nothing sensible to read on with (`rc_fatal`): out of
+memory, I/O errors, an internal error, a failed assertion, runaway macro
+recursion, and the file errors (no such file, permission denied, read /
+write errors, invalid format). These stop assembly at once, after the
+message. `%fatal` stops it too; `%error` is reported and assembly goes on,
+failing at the end.
 
-```asm
-; INFALLIBLE — always succeeds, no error check needed
-; Returns: RAX → hash value
-hash_fnv1a:
-    ; ...
-    ret
-```
-
-Calling error_report() is itself infallible. The error engine
-must never fail — it is the last resort.
+A fault inside utasm itself (a segmentation fault, a bad instruction) is
+caught by the crash handler (src/core/crash.s) and reported as an internal
+error at the statement being read.
 
 ---
 
-### Error Checking at Call Sites
+### Warnings
 
-**Every fallible call must be checked. No exceptions.**
-
-```asm
-; ─── PATTERN 1: branch on error ───
-call parse_operand
-test rax, rax
-jnz .handle_error           ; non-zero = failure
-
-; success path continues here
-
-; ─── PATTERN 2: propagate immediately ───
-call lex_next
-test rax, rax
-jnz .propagate              ; bubble up unchanged
-
-; ─── PATTERN 3: handle specific errors differently ───
-call sym_insert
-test rax, rax
-jz .inserted_ok             ; zero = success
-cmp rax, E402
-je .handle_redef            ; E402 = redefinition — we can recover
-jmp .propagate              ; anything else — propagate
-
-; ─── PATTERN 4: ignore intentionally ───
-call log_debug              ; documented as infallible
-; no check — intentionally omitted, must be documented in comment
-```
-
-**Never do this:**
-```asm
-call parse_operand
-; (no check — silent error ignore)   ← BUG — forbidden
-```
-
-If you genuinely don't care about an error, say so explicitly:
+A warning does not change the return value. It is given where it is found:
 
 ```asm
-call flush_log              ; intentionally ignore flush errors — best effort only
+    mov     edi, WC_NUMBER_OVERFLOW
+    call    warn_begin                 ; eax = 0 when the class is off
+    lea     rsi, [rel s_text]
+    call    warn_text
+    call    warn_end
 ```
+
+Warnings are held until an error is printed or utasm exits, so a second
+pass (src/core/known.s) does not give them twice; `-Werror` turns them into
+errors at the end.
 
 ---
 
-### Propagating Errors
+### Function Comments
 
-When a callee fails and the caller cannot recover, propagate immediately.
-Do not call error_report() again — the callee already reported it.
-
-```asm
-my_func:
-    push rbx
-    push r12
-    sub rsp, 8
-
-    call lex_next
-    test rax, rax
-    jnz .fail               ; propagate — lex_next already reported
-
-    call parse_instr
-    test rax, rax
-    jnz .fail               ; propagate — parse_instr already reported
-
-    ; ... success path ...
-    xor rax, rax
-    jmp .done
-
-.fail:
-    ; rax already holds the error code from the callee
-    ; do NOT call error_report() here — it was already called
-    ; do NOT zero rax — preserve the error code
-
-.done:
-    add rsp, 8
-    pop r12
-    pop rbx
-    ret                     ; rax = 0 (success) or error code (failure)
-```
-
-**The double-report trap:**
-```asm
-; WRONG — reports the error twice:
-call sym_insert
-test rax, rax
-jz .ok
-mov rdi, rax
-call error_report           ; WRONG — sym_insert already called error_report
-jmp .fail
-
-; CORRECT — just propagate:
-call sym_insert
-test rax, rax
-jnz .fail                   ; propagate silently — already reported
-```
-
----
-
-### When to Call error_report() Directly
-
-Call error_report() only when **your function** detects the error condition
-directly — not when a callee returns an error code.
+Every function says what it takes and gives, in this form:
 
 ```asm
-; CORRECT — this function detected the problem:
-parse_register:
-    call lex_next
-    test rax, rax
-    jnz .fail               ; lex error — propagate, do not report
-
-    ; check what we got:
-    cmp [rel cur_token.type], T_REG
-    je .is_register
-
-    ; WE detected this problem — WE report it:
-    mov rdi, E203           ; expected register
-    mov rsi, [rel cur_token_ptr]
-    xor rdx, rdx            ; no hint
-    call error_report
-
-    mov rax, E203           ; return error code
-    ret
-
-.is_register:
-    xor rax, rax
-    ret
-```
-
----
-
-### Error + Valid Result
-
-When a function needs to return both a result and an error status:
-
-```asm
-; Convention: RAX = 0 (success), RDX = result value
-;             RAX = Exxx (failure), RDX = 0 (undefined)
-
-sym_lookup:
-    ; found:
-    xor rax, rax            ; success
-    mov rdx, [rbx + Symbol.value]  ; result in RDX
-    ret
-
-    ; not found:
-    mov rax, E401           ; undefined symbol
-    xor rdx, rdx            ; RDX = 0 on failure — always
-    ret
-
-; caller:
-    call sym_lookup
-    test rax, rax
-    jnz .not_found
-    ; rdx = symbol value — valid only because rax == 0
-    mov r12, rdx
-```
-
-**Rule:** RDX is only valid when RAX == 0. On any failure, RDX is always
-zeroed before returning. Callers must never read RDX after a failed call.
-
----
-
-### Recoverable vs Fatal Errors
-
-Not all errors are equal. Classify explicitly:
-
-**Recoverable** — assembly continues, more errors may be found:
-```asm
-; lexer recovers by skipping to next line
-; parser recovers by skipping to next instruction
-; encoder recovers by skipping current instruction
-; → call error_report(), then continue
-```
-
-**Fatal** — assembly must stop immediately:
-```asm
-; E812 out of memory — cannot continue without memory
-; E8xx internal errors — state is corrupt
-; E3207 %fatal directive — user explicitly stopped
-; → call error_report(), then call sys_exit(EXIT_ENCODER_ERROR)
-```
-
-```asm
-; fatal error pattern:
-.out_of_memory:
-    mov rdi, E812
-    xor rsi, rsi            ; no token
-    xor rdx, rdx            ; no hint
-    call error_report
-    mov rdi, EXIT_OOM
-    call sys_exit           ; does not return
-```
-
-**Deferred** — error recorded but not reported until end of pass:
-```asm
-; forward reference errors — cannot report until pass 2 resolves
-; → store in error buffer, report in error_flush()
-```
-
----
-
-### Error Accumulation Limit
-
-utasm stops accumulating errors after MAX_ERRORS (100 by default).
-After this limit, error_report() silently discards new errors and
-error_flush() prints the first 100 plus a count of suppressed errors.
-
-```
-"100 errors reported. 47 additional errors suppressed.
- Fix the first errors first."
-```
-
-This prevents error avalanches where one root cause generates thousands
-of downstream errors.
-
----
-
-### Error Codes Must Be Constants
-
-Error codes in function bodies must always be symbolic constants.
-Never use raw numbers.
-
-```asm
-; WRONG:
-mov rax, 501            ; what is 501? no idea without looking it up
-
-; CORRECT:
-mov rax, E501           ; operand size mismatch — immediately clear
-```
-
-All constants defined in `src/diag/table.s` and referenced via `src/include/constant.inc`.
-
----
-
-### Logging vs Error Reporting
-
-Two separate systems. Do not confuse them.
-
-**error_report()** — for source errors found during assembly.
-Fires exactly once per error. Goes to stderr. Counted. Affects exit code.
-
-**log_debug()** — for utasm's own internal diagnostics.
-Never shown to users. Only active in DEBUG builds. Never affects exit code.
-
-```asm
-; for user-facing source errors:
-mov rdi, E501
-mov rsi, token_ptr
-call error_report
-
-; for internal utasm debugging:
-%ifdef DEBUG
-    lea rdi, [rel .msg]
-    call log_debug
-    .msg: db "entered sym_insert, rbx=", 0
-%endif
-```
-
-Never call log_debug() in release builds. The %ifdef DEBUG guard is mandatory.
-
----
-
-### Error Handling in Initialization Functions
-
-Init functions (called once at startup) use a stricter pattern.
-Any failure is immediately fatal — there is no partial initialization.
-
-```asm
-error_init:
-    ; allocate error record buffer
-    mov rdi, ERROR_RECORD_POOL_SIZE
-    call mem_alloc
-    test rax, rax
-    jz .oom                 ; allocation failed
-
-    mov [rel error_pool_ptr], rax
-
-    ; allocate dedup table
-    mov rdi, ERROR_DEDUP_SIZE
-    call mem_alloc
-    test rax, rax
-    jz .oom
-
-    mov [rel error_dedup_ptr], rax
-
-    xor rax, rax            ; success
-    ret
-
-.oom:
-    ; cannot call error_report — error engine not yet initialized
-    ; write directly to stderr and abort
-    lea rdi, [rel .oom_msg]
-    mov rsi, .oom_msg_len
-    call sys_write_stderr
-    mov rdi, EXIT_OOM
-    call sys_exit
-
-.oom_msg: db "utasm: fatal: out of memory during initialization", 10
-.oom_msg_len equ $ - .oom_msg
-```
-
-**Rule:** Never partially initialize a module. Either fully initialize and
-return 0, or fail completely and abort.
-
----
-
-### Error Handling Template
-
-Copy this template for every non-trivial fallible function:
-
-```asm
-; ─────────────────────────────────────────────────────────────────
-; function_name
+; ---- name ------------------------------
 ;
-; One-line description of what this function does.
+; name
+; What it does, in a sentence or two.
+; Input    : rdi = ..., rsi = ...
+; Output   : rax = EXIT_OK or an error, rdx = ...
+; Clobbers : rcx, r8
 ;
-; Arguments:
-;   RDI  →  arg1_name  [const]  description
-;   RSI  →  arg2_name           description
-;
-; Returns:
-;   RAX  →  0 on success, E4xx on failure
-;   RDX  →  result (valid only when RAX == 0)
-;
-; Errors:
-;   E401  →  symbol not found (recoverable)
-;   E402  →  symbol redefined (recoverable)
-;   E812  →  out of memory (fatal)
-;
-; Calls error_report() directly: YES / NO
-; Calls error_report() via callees: YES / NO
-; ─────────────────────────────────────────────────────────────────
-function_name:
-    push rbx
-    push r12
-    sub rsp, 8              ; alignment
-
-    ; ... body ...
-
-    xor rax, rax            ; success
-    jmp .done
-
-.fail_not_found:
-    mov rax, E401
-    xor rdx, rdx
-    jmp .done
-
-.fail_redef:
-    mov rax, E402
-    xor rdx, rdx
-
-.done:
-    add rsp, 8
-    pop r12
-    pop rbx
-    ret
 ```
 
 ---
@@ -930,7 +615,7 @@ Every non-trivial function must have a comment header:
 ;   R9   →  line        (source line number)
 ;
 ; Returns:
-;   RAX  →  0 on success, E402 on redefinition, E414 on name too long
+;   RAX  →  EXIT_OK, or an EXIT_* code
 ;
 ; Preserves: RBX R12 R13 R14 R15
 ; Clobbers:  RAX RCX RDX RSI RDI R8 R9 R10 R11
@@ -1225,42 +910,11 @@ String operations must respect buffer boundaries.
 
 ---
 
-### Use-After-Free Detection (Debug Mode)
+### Use-After-Free and Double-Free
 
-In DEBUG builds, freed memory is poisoned with 0xDEADBEEFDEADBEEF.
-Any read of this value during debugging indicates use-after-free.
-
-```asm
-%ifdef DEBUG
-mem_free:
-    ; before unmapping, poison the memory:
-    mov rdi, [rsp+8]        ; ptr
-    mov rsi, [rsp+16]       ; size
-    mov rax, 0xDEADBEEFDEADBEEF
-    ; fill with poison value
-    call mem_poison
-%endif
-    ; then unmap normally
-```
-
----
-
-### Double-Free Detection (Debug Mode)
-
-In DEBUG builds, freed pointers are tracked in a freed-set.
-Freeing the same pointer twice triggers E813.
-
-```asm
-%ifdef DEBUG
-; before freeing, check if already freed:
-    mov rdi, ptr_to_free
-    call freed_set_check    ; returns 1 if already freed
-    test rax, rax
-    jnz .double_free_detected
-%endif
-```
-
----
+They cannot happen: utasm never frees. Everything comes from the arena
+(`src/lib/arena.s`) and lives until utasm exits, so a pointer stays valid
+for the whole run. (There is no DEBUG build with poisoning or a freed-set.)
 
 ### Memory Initialization Rules
 
@@ -1411,8 +1065,8 @@ When parallel assembly is added (Phase 20), this section will be updated with lo
 │ SIMD         │ all scratch, no preservation         │
 │ VZEROUPPER   │ required before calling non-SIMD     │
 │ Flags        │ not preserved across calls           │
-│ Error return │ RAX = 0 (ok) or error code (E1xx+)  │
-│ Syscalls     │ via src/platform/syscall.s wrappers only     │
+│ Error return │ RAX = 0 (EXIT_OK) or an EXIT_* code  │
+│ Syscalls     │ via src/platform/ (io.s, mem.s) wrappers │
 └──────────────┴──────────────────────────────────────┘
 ```
 
@@ -1546,7 +1200,8 @@ movzx rax, al       ; correct — RAX = zero-extended AL
 ; or use 32-bit write:
 movzx eax, al       ; also correct — 32-bit write zero-extends to 64-bit
 
-; AH/BH/CH/DH cannot be used with REX prefix — E514 fires:
+; AH/BH/CH/DH cannot be used with a REX prefix — utasm refuses it
+; ("invalid combination of opcode and operands"):
 mov ah, [r8]        ; INVALID — REX required for R8, conflicts with AH
 ```
 
@@ -1689,18 +1344,10 @@ it accepts null.
 Functions that say "must not be null" do NOT check for null at runtime in
 release builds. The caller is responsible.
 
-Debug builds (when DEBUG equ 1) add null checks:
-
-```asm
-%ifdef DEBUG
-    test rdi, rdi
-    jnz .ptr_ok
-    mov rdi, E810       ; E810: unexpected null pointer
-    call error_report
-    ret
-.ptr_ok:
-%endif
-```
+There are no debug builds that add null checks; a null where none is
+allowed is a bug, which the crash handler reports as an internal error at
+the statement being read (src/core/crash.s), and the fuzzer
+(`tests/compat/fuzz.py`) looks for.
 
 ### Pointer Range
 
@@ -1978,10 +1625,6 @@ mov [rsp], rax              ; touch first new page
 sub rsp, 4096
 mov [rsp], rax              ; touch second new page
 
-; or use the stack probe helper:
-mov rdi, 8192               ; bytes needed
-call stack_probe            ; in src/lib/math.s — probes all pages
-sub rsp, 8192               ; now safe to allocate
 ```
 
 **In practice:** Most utasm functions allocate well under 4096 bytes. This
