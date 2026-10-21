@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/label.s
+// TEST: tests/asm/riscv64/label.s
 // Suite: RISC-V 64 Core
 // Purpose: Label and symbol definition coverage for RISC-V 64.
 // Expected: EXIT_OK.
