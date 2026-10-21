@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : src/linker/reloc.s
+; File        : src/link/reloc/reloc.s
 ; Project     : utasm
 ; Description : Relocation engine for the utasm linker.
 ;                Records, resolves, and applies x86_64 relocations across
