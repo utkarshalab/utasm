@@ -878,7 +878,9 @@ print_num:
                    db "  --inspect                 inspect an ELF file instead of assembling", 10
                    db "  --inspect-only <parts>    inspect only: header,sections,segments,", 10
                    db "                            symbols,relocs,all,disasm (comma-separated)", 10
-                   db "  --disasm                  disassemble an ELF file's code (x86-64)", 10
+                   db "  --disasm                  disassemble an ELF file's code, or a raw file", 10
+                   db "                            (--bits 16|32|64, --org ADDR: its address)", 10
+                   db "  -r, --reloc               with --disasm: each instruction's relocations", 10
                    db "  -h, --help                show this help", 10
                    db "  -v, --version             show version", 10, 0
     msg_insp_pre:   db "utasm: cannot inspect '", 0
