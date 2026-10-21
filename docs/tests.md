@@ -791,8 +791,7 @@ bash scripts/test.sh --timeout 30       ; timeout override (default 5s)
 ; Expects:  token stream matches fixtures/expect/lex_ident.bin
 ```
 
-4. Add to runner manifest in `utasm.toml`
-5. Run `bash scripts/test.sh unit/lexer/ident` and verify it passes
+4. Run `bash scripts/test.sh unit/lexer/ident` and verify it passes (`test.sh` finds every `.s` under `tests/` itself)
 
 ---
 
