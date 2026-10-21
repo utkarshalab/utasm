@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : src/arch/riscv64.s
+; File        : src/encode/riscv64/isa.s
 ; Project     : utasm
 ; Description : RISCV64 Mnemonic and Register Lookup Tables.
 ; ============================================================================
