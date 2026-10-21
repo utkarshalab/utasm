@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : middle/semantic/proc.s
+; File        : src/semantic/proc.s
 ; Project     : utasm
 ; Description : Procedures and their checks (amd64).
 ;
@@ -9,7 +9,7 @@
 ;     endproc
 ;
 ;   NAME is a label as any other. Between the two utasm follows the stack
-;   and the preserved registers (docs/abi.md: rbx rbp r12-r15) through the
+;   and the preserved registers (docs/reference/abi.md: rbx rbp r12-r15) through the
 ;   code as it is written - no code is added:
 ;   - proc-stack (an error): the stack not back where it was at a ret, or
 ;     at a label two paths reach with different depths;
@@ -25,9 +25,9 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 DEFAULT REL
 
