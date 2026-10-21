@@ -17,8 +17,8 @@ all: gen1
 ## Stage 0: build using NASM
 gen0: $(GEN0)
 
-# linked as scripts/bootstrap.sh links it: utasm.ld is an empty placeholder,
-# and "ld -T" with it produced a binary that crashed on every command
+# linked as scripts/bootstrap.sh links it: plain ld, no linker script (an
+# empty one, given with -T, produced a binary that crashed on every command)
 $(GEN0): $(GEN0_OBJS)
 	@mkdir -p $(dir $@)
 	$(LD) -o $@ $^
