@@ -174,15 +174,16 @@ File: `backend/output/<format>/out.s`
 
 ### 2. Register the format in the dispatcher
 
-File: `backend/output/output.s`
+File: `backend/linker/linker.s` (the output dispatch, by `ASMCTX_fmt`)
 
 Add a dispatch entry:
 ```asm
-    cmp     rdi, FORMAT_<FORMAT>
-    je      <format>_emit
+    cmp     eax, FMT_<FORMAT>
+    je      .emit_<format>
 ```
 
-Add the `FORMAT_<FORMAT>` constant to `include/type.inc`.
+Add the `FMT_<FORMAT>` constant to `include/constant.inc` (next to
+`FMT_ELF64` and `FMT_BIN`).
 
 ### 3. Add the CLI option
 
