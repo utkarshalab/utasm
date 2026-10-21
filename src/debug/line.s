@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : debug/line.s
+; File        : src/debug/line.s
 ; Project     : utasm
 ; Description : The line table GNU's .file and .loc directives give (GCC's
 ;               -g output): .debug_line, as GNU as 2.43 writes it.
@@ -30,9 +30,9 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 DEFAULT REL
 
@@ -586,7 +586,7 @@ line_emit:
     mov     [r12 + GR_RANK], al            ; (after those paddings only)
     ; a view that depends on padding: GNU as works it out once the code is
     ; laid out (after the row before, nothing but padding - or the same
-    ; place as a row before that does). Pass 2 has its value (core/known.s)
+    ; place as a row before that does). Pass 2 has its value (src/core/known.s)
     cmp     byte [r12 + GR_VKIND], GLV_RESET
     je      .sure                          ; (0 whatever comes between)
     mov     rax, [r8 + FS_LAST]
@@ -849,7 +849,7 @@ view_next:
     ret
 
 ; view_key: key_buf = "\x03" and the view's name rdi: its record handed to
-; pass 2 (core/known.s). Preserves the others but rcx
+; pass 2 (src/core/known.s). Preserves the others but rcx
 view_key:
     push    rdi
     push    rsi
@@ -875,7 +875,7 @@ view_key:
 ;*
 ; * [line_views_records]
 ; * Purpose: Pass 1, the code laid out: the views padding decides, worked
-; *          out again, as records for pass 2 (core/known.s): the value,
+; *          out again, as records for pass 2 (src/core/known.s): the value,
 ; *          then "\x03" and the name.
 ; * Input  : RDI = the records, RSI = their length, RDX = the most it may be
 ; * Output : RAX = the length now, RDX = the records added
