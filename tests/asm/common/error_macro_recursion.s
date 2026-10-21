@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/common/error_macro_recursion.s
+// TEST: tests/asm/common/error_macro_recursion.s
 // Suite: Common Preprocessor Error
 // Purpose: Verify detection of infinite macro recursion.
 //          A %macro does not call itself (its name inside it is a label, as
