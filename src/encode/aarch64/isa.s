@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : src/arch/aarch64.s
+; File        : src/encode/aarch64/isa.s
 ; Project     : utasm
 ; Description : AArch64 Mnemonic and Register Lookup Tables.
 ; ============================================================================
