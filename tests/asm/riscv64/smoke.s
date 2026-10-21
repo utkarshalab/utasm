@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/smoke.s
+// TEST: tests/asm/riscv64/smoke.s
 // Suite: RISC-V 64 Core
 // Purpose: Minimal smoke test — verifies the RISC-V 64 pipeline does not
 //          crash on the simplest possible instruction sequence.
