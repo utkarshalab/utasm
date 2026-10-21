@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/logic.s
+// TEST: tests/asm/amd64/logic.s
 // Suite: AMD64 Core
 // Purpose: Pure logical / bitwise operation coverage.
 //   Covers: AND, OR, XOR, NOT, TEST, BT/BTS/BTR/BTC, BSF, BSR,
