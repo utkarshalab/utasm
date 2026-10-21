@@ -1,11 +1,11 @@
 ;
 ; ============================================================================
-; File        : backend/output/ubf/out.s
+; File        : src/object/ubf/ubf.s
 ; Project     : utasm
 ; Description : UBF -- Utkarsha Boot Format -- boot image output (-f ubf)
 ; ============================================================================
 ;
-; A UBF image is the container the Tattva OS stage-2 loader reads
+; A UBF image is the container the Utkarsha OS stage-2 loader reads
 ; (tattvaos boot/stage2/fs/ubf.asm): a 1024-byte header, then the
 ; components, each starting on a 512-byte sector.
 ;
@@ -32,9 +32,9 @@
 ; components (initrd, dtb, config, module, firmware) from files.
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 DEFAULT REL
 
