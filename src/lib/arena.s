@@ -1,6 +1,6 @@
 ;
 ; ============================================
-; File     : src/core/arena.s
+; File     : src/lib/arena.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
