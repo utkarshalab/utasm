@@ -1,4 +1,4 @@
-; backend/linker/map.s
+; src/link/map.s
 ; Phase 12 — map file emitter
 ; stub — not yet implemented
 bits 64
