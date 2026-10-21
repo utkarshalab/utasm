@@ -8,11 +8,11 @@ from another seed; directives, operators, odd bytes and nesting inserted)
 and assembles the result as bin, elf64, elf32 or win64, sometimes with -l,
 -g, -E, -O0, --bits 16 / 32 or --cet --noexecstack.
 A run fails when utasm reports an internal error (a fault, caught by
-core/crash.s) or dies of a signal, takes more than 10 s, or uses more than
+src/core/crash.s) or dies of a signal, takes more than 10 s, or uses more than
 2 GB. Each failing input is saved, then cut down - lines, then characters -
 to the smallest that fails at the same place, and printed once per place.
 
-usage: scripts/compat/fuzz.py [utasm-binary] [runs] [seed] [--out DIR]
+usage: tests/compat/fuzz.py [utasm-binary] [runs] [seed] [--out DIR]
        (defaults: build/gen1/utasm, 2000 runs, seed 1, $TMPDIR/utasm-fuzz)
 
 Exits 1 when a run failed. The runs are reproducible: the same seed gives
@@ -57,7 +57,7 @@ FORMATS = [("bin", []), ("elf64", []), ("elf64", ["-l", "x.lst"]), ("elf64", ["-
 
 
 def seeds():
-    out = [open(f, errors="replace").read() for f in sorted(glob.glob(os.path.join(ROOT, "tests", "amd64", "*.s")))]
+    out = [open(f, errors="replace").read() for f in sorted(glob.glob(os.path.join(ROOT, "tests", "asm", "amd64", "*.s")))]
     out += [s if s.startswith(("bits", "org", "[")) else "bits 64\n" + s for s in cases.BIN_PROBES.values()]
     out += list(cases.ELF_PROBES.values()) + list(cases.EXPR_BIN.values()) + list(cases.EXPR_ELF.values())
     out += [s for s, files, fmt in cases.limit_cases().values() if not files and len(s) < 20000]
