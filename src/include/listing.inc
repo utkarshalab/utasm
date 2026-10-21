@@ -1,10 +1,10 @@
 ;
 ; ============================================================================
-; File        : include/listing.inc
+; File        : src/include/listing.inc
 ; Project     : utasm
 ; Description : The per-line entries the listing (-l) and the DWARF line
-;               table (-g) are made from: backend/output/listing/listing.s
-;               gathers them, debug/dwarf.s reads them too.
+;               table (-g) are made from: src/object/listing/listing.s
+;               gathers them, src/debug/dwarf.s reads them too.
 ; ============================================================================
 ;
 
