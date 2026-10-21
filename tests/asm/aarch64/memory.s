@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/memory.s
+// TEST: tests/asm/aarch64/memory.s
 // Suite: AArch64 Core
 // Purpose: Memory addressing mode exhaustion.
 //   Covers: Base, Base+Offset, Base+Register, STP/LDP patterns,
