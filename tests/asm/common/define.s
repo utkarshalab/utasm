@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/common/define.s
+// TEST: tests/asm/common/define.s
 // Suite: Common Preprocessor
 // Purpose: %define and %undef coverage.
 // Expected: EXIT_OK.
