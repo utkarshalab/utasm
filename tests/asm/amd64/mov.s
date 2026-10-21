@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/mov.s
+// TEST: tests/asm/amd64/mov.s
 // Suite: AMD64 Core
 // Purpose: Exhaustive MOV, MOVZX, MOVSX, MOVSXD, XCHG, CMOV coverage.
 //   All operand sizes: 8, 16, 32, 64 bits.
