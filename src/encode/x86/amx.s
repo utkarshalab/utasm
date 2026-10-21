@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : backend/encoder/simd/amx.s
+; File        : src/encode/x86/amx.s
 ; Project     : utasm
 ; Description : AMX's operand rule (amd64): the tile dot products.
 ;
@@ -12,9 +12,9 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 DEFAULT REL
 
