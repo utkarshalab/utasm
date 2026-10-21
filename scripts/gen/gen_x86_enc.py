@@ -500,6 +500,8 @@ YMM_ONLY = {"vpermps", "vpermd", "vpermq", "vpermpd", "vperm2f128", "vperm2i128"
 def vex_only():
     for tab, mp in (("0f", "0f"), ("38", "38"), ("3a", "3a")):
         for key, (name, fm, fl) in sorted(T.vex_tabs[tab].items()):
+            if (tab, key) in T.DIS_ONLY:                 # (the disassembler's alone)
+                continue
             opcode, pfx = key // 4, ("np", "66", "F3", "F2")[key % 4]
             f = FORM_NAME[fm]
             msz = MSZ[fl & 7]
