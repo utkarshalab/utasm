@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : debug/dwarf.s
+; File        : src/debug/dwarf.s
 ; Project     : utasm
 ; Description : DWARF debug information (-g, -F dwarf) for ELF objects.
 ;
@@ -22,15 +22,15 @@
 ;   .debug_aranges  the address ranges of every code section
 ;
 ;   The rows come from the per-line entries the listing is made from
-;   (include/listing.inc): they already follow the code as jump shortening
+;   (src/include/listing.inc): they already follow the code as jump shortening
 ;   moved it. Addresses and section offsets are relocations against the
 ;   sections' own symbols (RELOC_FLAG_SECTION), so the linker places them.
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/listing.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/listing.inc"
 
 extern  asmctx_emit_byte
 extern  asm_ctx_create_section
@@ -47,7 +47,7 @@ extern  elf32_enabled
 [SECTION .bss]
 alignb 8
 global dbg_enabled
-global dw_ctx                       ; (debug/line.s writes with these too)
+global dw_ctx                       ; (src/debug/line.s writes with these too)
 global dw_u8, dw_u16, dw_u32, dw_uleb, dw_sleb, dw_sec_reloc
 global dw_addr_size, dw_addr_type, dw_address, dw_cstr
 dw_ctx:         resq 1
@@ -84,7 +84,7 @@ dwarf_generate:
     xor     eax, eax
     ret
 .on:
-    ; GNU's .file N / .loc give the line table (debug/line.s), and the
+    ; GNU's .file N / .loc give the line table (src/debug/line.s), and the
     ; compiler the rest, as GNU as takes them over -g
     extern  line_active
     cmp     byte [rel line_active], 0
