@@ -21,7 +21,7 @@
 ; All number formatting is delegated to fmt.s.
 ; All string constants come from strings.s.
 ;
-; See docs/profiler_architecture.md §9 for report format spec.
+; See src/profile/README.md for report format spec.
 ; ============================================================================
 ;
 
