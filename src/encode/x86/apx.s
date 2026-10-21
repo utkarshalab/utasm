@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : backend/encoder/apx.s
+; File        : src/encode/x86/apx.s
 ; Project     : utasm
 ; Description : APX's EVEX-encoded integer instructions (map 4).
 ;
@@ -12,13 +12,13 @@
 ;   vvvv is the new data destination ("add rax, rbx, rcx"); NF ({nf})
 ;   keeps the flags. amd64_apx_claim says, before the legacy checks,
 ;   whether an instruction is one of these; amd64_apx_encode writes it
-;   once the legacy prefixes are out (backend/encoder/encoder.s). Forms
+;   once the legacy prefixes are out (src/encode/x86/encoder.s). Forms
 ;   and bytes are NASM 3's.
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
 
 extern  asm_bits
 extern  amd64_emit_byte, amd64_emit_word, amd64_emit_dword
