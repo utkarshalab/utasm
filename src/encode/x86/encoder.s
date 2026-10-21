@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : src/encoder/amd64.s
+; File        : src/encode/x86/encoder.s
 ; Project     : utasm
 ; Description : AMD64 Instruction Encoder Logic.
 ; ============================================================================
