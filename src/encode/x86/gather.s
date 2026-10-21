@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : backend/encoder/simd/gather.s
+; File        : src/encode/x86/gather.s
 ; Project     : utasm
 ; Description : The gathers' operand rule (amd64).
 ;
@@ -19,10 +19,10 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
-%include "include/arch/amd64.inc"          ; (REG_ZMM0: the parser's 80)
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
+%include "src/include/arch/amd64.inc"          ; (REG_ZMM0: the parser's 80)
 
 DEFAULT REL
 
