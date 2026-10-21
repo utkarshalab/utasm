@@ -36,7 +36,7 @@ VW WV VWI VE EV GW GU UI VM MV V12 EVI VEI GUI VW0 CMPS PCLMUL ENDBR
 XBCAST XINS XEXT XIS4 BGBE BGEB BBE XMLD XMST BRORX XZERO
 X87 EVEX G9
 GaM WRSS G64MO G64M IO SREGW SREGR FSGS GvMp IwIb XLAT SFXW SFXD GEwv SFXWI D3NOW
-BGE BBM BMB BM MB SSE4AI SSE4AR""".split()
+BGE BBM BMB BM MB SSE4AI SSE4AR CRC VQ PW""".split()
 FM = {name: i for i, name in enumerate(FORMS)}
 
 # ---- flags (keep in sync with FL_* in tools/disasm/x86.s) ----
@@ -412,15 +412,15 @@ sse("0f", 0x5A, "F3", "cvtss2sd", "VW", "d", S_NDS); sse("0f", 0x5A, "F2", "cvts
 sse("0f", 0x5B, "np", "cvtdq2ps", "VW", "x"); sse("0f", 0x5B, "66", "cvtps2dq", "VW", "x")
 sse("0f", 0x5B, "F3", "cvttps2dq", "VW", "x")
 
-def mmx_sse(code, name, tab="0f", nds=True, mmx=True):
+def mmx_sse(code, name, tab="0f", nds=True, mmx=True, mm_mem="q"):
     """Integer SIMD op: no prefix = MMX (mm, QWORD), 66 = SSE2 (xmm, XMMWORD)."""
     if mmx:
-        sse(tab, code, "np", name, "VW", "q", S_MMX | S_NOVEX)
+        sse(tab, code, "np", name, "VW", mm_mem, S_MMX | S_NOVEX)
     sse(tab, code, "66", name, "VW", "x", S_NDS if nds else 0)
 
 for i, n in enumerate("punpcklbw punpcklwd punpckldq packsswb pcmpgtb pcmpgtw pcmpgtd packuswb "
                       "punpckhbw punpckhwd punpckhdq packssdw".split()):
-    mmx_sse(0x60 + i, n)
+    mmx_sse(0x60 + i, n, mm_mem="d" if i < 3 else "q")    # (punpckl* mm: the low half, DWORD)
 mmx_sse(0x6C, "punpcklqdq", mmx=False); mmx_sse(0x6D, "punpckhqdq", mmx=False)
 sse("0f", 0x6E, "np", "movd", "VE", "", S_MMX | S_WQ | S_NOVEX); sse("0f", 0x6E, "66", "movd", "VE", "", S_WQ)
 sse("0f", 0x6F, "np", "movq", "VW", "q", S_MMX | S_NOVEX)
@@ -465,6 +465,14 @@ sse("0f", 0xE6, "F2", "cvtpd2dq", "VW", "x")
 sse("0f", 0xE7, "np", "movntq", "MV", "q", S_MMX | S_NOVEX); sse("0f", 0xE7, "66", "movntdq", "MV", "x")
 sse("0f", 0xF0, "F2", "lddqu", "VM", "")
 sse("0f", 0xF7, "66", "maskmovdqu", "VW", "x")
+sse("0f", 0xF7, "np", "maskmovq", "VW", "q", S_MMX | S_NOVEX)
+# MMX <-> SSE (legacy only): xmm, mm/m (VQ) and mm, xmm/m (PW)
+sse("0f", 0x2A, "np", "cvtpi2ps", "VQ", "q", S_NOVEX); sse("0f", 0x2A, "66", "cvtpi2pd", "VQ", "q", S_NOVEX)
+sse("0f", 0x2C, "np", "cvttps2pi", "PW", "q", S_NOVEX); sse("0f", 0x2C, "66", "cvttpd2pi", "PW", "x", S_NOVEX)
+sse("0f", 0x2D, "np", "cvtps2pi", "PW", "q", S_NOVEX); sse("0f", 0x2D, "66", "cvtpd2pi", "PW", "x", S_NOVEX)
+sse("0f", 0xD6, "F3", "movq2dq", "VQ", "", S_NOVEX); sse("0f", 0xD6, "F2", "movdq2q", "PW", "", S_NOVEX)
+# SSE4a: movntss / movntsd
+sse("0f", 0x2B, "F3", "movntss", "MV", "d", S_NOVEX); sse("0f", 0x2B, "F2", "movntsd", "MV", "q", S_NOVEX)
 sse("0f", 0x1E, "F3", "endbr64", "ENDBR", "", S_NOVEX)
 sse_int("0f", 0xB8, "F3", "popcnt", "GvEv")
 sse_int("0f", 0xBC, "F3", "tzcnt", "GvEv")
@@ -492,7 +500,7 @@ for code, n in ((0x28, "pmuldq"), (0x29, "pcmpeqq"), (0x2B, "packusdw"), (0x37, 
 sse("38", 0x2A, "66", "movntdqa", "VM", "x")
 sse("38", 0x41, "66", "phminposuw", "VW", "x"); sse("38", 0xDB, "66", "aesimc", "VW", "x")
 sse_int("38", 0xF0, "np", "movbe", "GvEv"); sse_int("38", 0xF1, "np", "movbe", "EvGv")
-sse_int("38", 0xF0, "F2", "crc32", "GvEb"); sse_int("38", 0xF1, "F2", "crc32", "GvEv")
+sse_int("38", 0xF0, "F2", "crc32", "CRC"); sse_int("38", 0xF1, "F2", "crc32", "CRC")
 sse_int("38", 0xF6, "66", "adcx", "GvEv"); sse_int("38", 0xF6, "F3", "adox", "GvEv")
 # (with a register, F2 / F3 0F 38 F8 are urdmsr / uwrmsr: x86_apx.inc's dx_umsr)
 sse_int("38", 0xF8, "F2", "enqcmd", "GaM"); sse_int("38", 0xF8, "F3", "enqcmds", "GaM")
@@ -637,7 +645,9 @@ X87_FIX = [(0xD9, 0xD0, "fnop", 0)] + [(0xD9, 0xE0 + i, n, 0) for i, n in enumer
     "f2xm1 fyl2x fptan fpatan fxtract fprem1 fdecstp fincstp fprem fyl2xp1 fsqrt fsincos "
     "frndint fscale fsin fcos".split()) if n != "-"] + [
     (0xDA, 0xE9, "fucompp", 0), (0xDB, 0xE2, "fnclex", 0), (0xDB, 0xE3, "fninit", 0),
-    (0xDE, 0xD9, "fcompp", 0), (0xDF, 0xE0, "fnstsw", 1)]
+    (0xDE, 0xD9, "fcompp", 0), (0xDF, 0xE0, "fnstsw", 1),
+    # the 8087's / 287's own (nops since): 2 = "(8087 only)", 3 = "(287 only)"
+    (0xDB, 0xE0, "fneni", 2), (0xDB, 0xE1, "fndisi", 2), (0xDB, 0xE4, "fnsetpm", 3)]
 
 def x87_tables():
     out = ["x87_mem:"]
@@ -964,7 +974,7 @@ EV2_DUP = 16     # vmovddup: at 128 bits the memory is 8 bytes
 EV2_PCOM = 128   # XOP's vpcom: objdump names the imm8's predicate (vpcomltb)
 EV2_PFPBF = 64   # vcmpbf16: objdump puts the predicate after "vcmpbf" (vcmpbfeq16)
 # a name the disassembler prints over its alias (Intel's / objdump's)
-DIS_PREFER = {"vbcstnebf162ps"}
+DIS_PREFER = {"vbcstnebf162ps", "vp4dpwssd", "vp4dpwssds"}   # (objdump's names)
 EV2_HASVEX = 32  # a VEX form reads the same: objdump writes "{evex}" when no
                  # EVEX-only part is used (mask, zeroing, broadcast, 512 bits,
                  # registers 16-31)
