@@ -63,27 +63,6 @@ struc VEC
 endstruc
 
 ; ============================================================================
-; STRUCT: List / ListNode  (src/lib/list.s)
-; ============================================================================
-; Doubly linked list of 64-bit values (integers or pointers).
-; Nodes are allocated from an Arena; removed nodes are not reclaimed.
-
-struc LIST
-    field tag,      1       ; always TAG_LIST
-    field pad0,     7       ; alignment padding
-    field head,     8       ; first LISTNODE or 0
-    field tail,     8       ; last LISTNODE or 0
-    field count,    8       ; number of nodes
-    field arena,    8       ; Arena used for node allocation
-endstruc
-
-struc LISTNODE
-    field next,     8       ; next node or 0
-    field prev,     8       ; previous node or 0
-    field value,    8       ; payload
-endstruc
-
-; ============================================================================
 ; STRUCT: FmtBuf  (src/lib/fmt.s)
 ; ============================================================================
 ; Bounded string builder over a caller-supplied buffer. One byte is always
@@ -332,22 +311,6 @@ struc LEXER
     field pad2,     7       ; alignment padding
     field ctx,      8       ; pointer to AsmCtx
     field arena,    8       ; pointer to Arena
-endstruc
-
-; ============================================================================
-; STRUCT: Archive
-; ============================================================================
-
-struc ARCHIVE
-    field tag,          1       ; TAG_ARCHIVE
-    field pad0,         7       ; alignment padding
-    field buf,          8       ; pointer to mapped library
-    field size,         8       ; total size in bytes
-    field curr,         8       ; current iterator position pointer
-    field symtab,       8       ; pointer to '/' member (symbols)
-    field strtab,       8       ; pointer to ';' member (long names)
-    field nmembers,     4       ; total members found
-    field pad1,         4       ; alignment padding
 endstruc
 
 ; ============================================================================
