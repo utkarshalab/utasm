@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/stack.s
+// TEST: tests/asm/aarch64/stack.s
 // Suite: AArch64 Core
 // Purpose: Stack operation coverage for AArch64.
 //   AArch64 has no PUSH/POP — uses STP/LDP with pre/post-index.
