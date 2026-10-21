@@ -25,7 +25,9 @@ x86_names:
     db "setns", 0, "setp", 0, "setnp", 0, "setl", 0, "setge", 0, "setle", 0, "setg", 0, "cpuid", 0
     db "bt", 0, "shld", 0, "rsm", 0, "bts", 0, "shrd", 0, "(0fae)", 0, "cmpxchg", 0, "lss", 0
     db "btr", 0, "lfs", 0, "lgs", 0, "movzx", 0, "ud1", 0, "btc", 0, "bsf", 0, "bsr", 0
-    db "movsx", 0, "xadd", 0, "(0fc7)", 0, "bswap", 0, "ud0", 0, "lkgs", 0, "wbnoinvd", 0, "movups", 0
+    db "movsx", 0, "xadd", 0, "(0fc7)", 0, "bswap", 0, "ud0", 0, "daa", 0, "das", 0, "aaa", 0
+    db "aas", 0, "inc", 0, "dec", 0, "pusha", 0, "popa", 0, "bound", 0, "arpl", 0, "les", 0
+    db "lds", 0, "into", 0, "aam", 0, "aad", 0, "salc", 0, "lkgs", 0, "wbnoinvd", 0, "movups", 0
     db "movupd", 0, "movss", 0, "movsd", 0, "movlps", 0, "movlpd", 0, "movsldup", 0, "movddup", 0, "unpcklps", 0
     db "unpcklpd", 0, "unpckhps", 0, "unpckhpd", 0, "movhps", 0, "movhpd", 0, "movshdup", 0, "bndldx", 0, "bndmov", 0
     db "bndcl", 0, "bndcu", 0, "bndstx", 0, "bndmk", 0, "bndcn", 0, "endbr64", 0, "movaps", 0, "movapd", 0
@@ -73,119 +75,119 @@ x86_names:
     db "shrx", 0, "vpermq", 0, "vpermpd", 0, "vpblendd", 0, "vperm2f128", 0, "vinsertf128", 0, "vextractf128", 0, "vinserti128", 0
     db "vextracti128", 0, "vperm2i128", 0, "vblendvps", 0, "vblendvpd", 0, "vpblendvb", 0, "rorx", 0, "rol", 0, "ror", 0
     db "rcl", 0, "rcr", 0, "shl", 0, "shr", 0, "sar", 0, "not", 0, "neg", 0, "mul", 0
-    db "div", 0, "idiv", 0, "inc", 0, "dec", 0, "xabort", 0, "cldemote", 0, "prefetch", 0, "prefetchw", 0
-    db "prefetchwt1", 0, "montmul", 0, "xsha1", 0, "xsha256", 0, "xstore-rng", 0, "xcrypt-ecb", 0, "xcrypt-cbc", 0, "xcrypt-ctr", 0
-    db "xcrypt-cfb", 0, "xcrypt-ofb", 0, "sldt", 0, "str", 0, "lldt", 0, "ltr", 0, "verr", 0, "verw", 0
-    db "psrldq", 0, "pslldq", 0, "blsr", 0, "blsmsk", 0, "blsi", 0, "prefetchnta", 0, "prefetcht0", 0, "prefetcht1", 0
-    db "prefetcht2", 0, "prefetchrst2", 0, "vmovups", 0, "vmovupd", 0, "vmovss", 0, "vmovsd", 0, "vmovsldup", 0, "vunpcklps", 0
-    db "vunpcklpd", 0, "vunpckhps", 0, "vunpckhpd", 0, "vmovshdup", 0, "vmovaps", 0, "vmovapd", 0, "vcvtsi2ss", 0, "vcvtsi2sd", 0
-    db "vmovntps", 0, "vmovntpd", 0, "vcvttss2si", 0, "vcvttsd2si", 0, "vcvtss2si", 0, "vcvtsd2si", 0, "vucomiss", 0, "vucomisd", 0
-    db "vcomiss", 0, "vcomisd", 0, "vsqrtps", 0, "vsqrtpd", 0, "vsqrtss", 0, "vsqrtsd", 0, "vandps", 0, "vandpd", 0
-    db "vandnps", 0, "vandnpd", 0, "vorps", 0, "vorpd", 0, "vxorps", 0, "vxorpd", 0, "vaddps", 0, "vaddpd", 0
-    db "vaddss", 0, "vaddsd", 0, "vmulps", 0, "vmulpd", 0, "vmulss", 0, "vmulsd", 0, "vcvtps2pd", 0, "vcvtpd2ps", 0
-    db "vcvtss2sd", 0, "vcvtsd2ss", 0, "vcvtdq2ps", 0, "vcvtqq2ps", 0, "vcvtps2dq", 0, "vcvttps2dq", 0, "vsubps", 0, "vsubpd", 0
-    db "vsubss", 0, "vsubsd", 0, "vminps", 0, "vminpd", 0, "vminss", 0, "vminsd", 0, "vdivps", 0, "vdivpd", 0
-    db "vdivss", 0, "vdivsd", 0, "vmaxps", 0, "vmaxpd", 0, "vmaxss", 0, "vmaxsd", 0, "vpunpcklbw", 0, "vpunpcklwd", 0
-    db "vpunpckldq", 0, "vpacksswb", 0, "vpcmpgtb", 0, "vpcmpgtw", 0, "vpcmpgtd", 0, "vpackuswb", 0, "vpunpckhbw", 0, "vpunpckhwd", 0
-    db "vpunpckhdq", 0, "vpackssdw", 0, "vpunpcklqdq", 0, "vpunpckhqdq", 0, "vmovd", 0, "vmovq", 0, "vmovdqa32", 0, "vmovdqa64", 0
-    db "vmovdqu32", 0, "vmovdqu64", 0, "vmovdqu8", 0, "vmovdqu16", 0, "vpshufd", 0, "vpshufhw", 0, "vpshuflw", 0, "vpsrlw", 0
-    db "vpsraw", 0, "vpsllw", 0, "vprord", 0, "vprold", 0, "vpsrld", 0, "vpsrad", 0, "vpslld", 0, "vprorq", 0
-    db "vprolq", 0, "vpsraq", 0, "vpsrldq", 0, "vpslldq", 0, "vpsrlq", 0, "vpsllq", 0, "vpcmpeqb", 0, "vpcmpeqw", 0
-    db "vpcmpeqd", 0, "vcmpps", 0, "vcmppd", 0, "vcmpss", 0, "vcmpsd", 0, "vpinsrw", 0, "vpextrw", 0, "vshufps", 0
-    db "vshufpd", 0, "vpaddq", 0, "vpmullw", 0, "vpsubusb", 0, "vpsubusw", 0, "vpminub", 0, "vpandd", 0, "vpandq", 0
-    db "vpaddusb", 0, "vpaddusw", 0, "vpmaxub", 0, "vpandnd", 0, "vpandnq", 0, "vpavgb", 0, "vpavgw", 0, "vpmulhuw", 0
-    db "vpmulhw", 0, "vcvttpd2dq", 0, "vcvtdq2pd", 0, "vcvtqq2pd", 0, "vcvtpd2dq", 0, "vmovntdq", 0, "vpsubsb", 0, "vpsubsw", 0
-    db "vpminsw", 0, "vpord", 0, "vporq", 0, "vpaddsb", 0, "vpaddsw", 0, "vpmaxsw", 0, "vpxord", 0, "vpxorq", 0
-    db "vpmuludq", 0, "vpmaddwd", 0, "vpsadbw", 0, "vpsubb", 0, "vpsubw", 0, "vpsubd", 0, "vpsubq", 0, "vpaddb", 0
-    db "vpaddw", 0, "vpaddd", 0, "vpshufb", 0, "vpmaddubsw", 0, "vpmulhrsw", 0, "vpsrlvw", 0, "vpmovuswb", 0, "vpsravw", 0
-    db "vpmovusdb", 0, "vpsllvw", 0, "vpmovusqb", 0, "vpmovusdw", 0, "vpmovusqw", 0, "vpmovusqd", 0, "vbroadcastf32x2", 0, "vbroadcastf32x4", 0
-    db "vbroadcastf64x2", 0, "vbroadcastf32x8", 0, "vbroadcastf64x4", 0, "vpabsb", 0, "vpabsw", 0, "vpabsd", 0, "vpabsq", 0, "vpmovsxbw", 0
-    db "vpmovswb", 0, "vpmovsxbd", 0, "vpmovsdb", 0, "vpmovsxbq", 0, "vpmovsqb", 0, "vpmovsxwd", 0, "vpmovsdw", 0, "vpmovsxwq", 0
-    db "vpmovsqw", 0, "vpmovsxdq", 0, "vpmovsqd", 0, "vptestmb", 0, "vptestmw", 0, "vptestnmb", 0, "vptestnmw", 0, "vptestmd", 0
-    db "vptestmq", 0, "vptestnmd", 0, "vptestnmq", 0, "vpmuldq", 0, "vpmovm2b", 0, "vpmovm2w", 0, "vpcmpeqq", 0, "vpmovb2m", 0
-    db "vpmovw2m", 0, "vmovntdqa", 0, "vpackusdw", 0, "vscalefps", 0, "vscalefpd", 0, "vpmovzxbw", 0, "vpmovwb", 0, "vpmovzxbd", 0
-    db "vpmovdb", 0, "vpmovzxbq", 0, "vpmovqb", 0, "vpmovzxwd", 0, "vpmovdw", 0, "vpmovzxwq", 0, "vpmovqw", 0, "vpmovzxdq", 0
-    db "vpmovqd", 0, "vpcmpgtq", 0, "vpminsb", 0, "vpmovm2d", 0, "vpmovm2q", 0, "vpminsd", 0, "vpminsq", 0, "vpmovd2m", 0
-    db "vpmovq2m", 0, "vpminuw", 0, "vpminud", 0, "vpminuq", 0, "vpmaxsb", 0, "vpmaxsd", 0, "vpmaxsq", 0, "vpmaxuw", 0
-    db "vpmaxud", 0, "vpmaxuq", 0, "vpmulld", 0, "vpmullq", 0, "vgetexpps", 0, "vgetexppd", 0, "vplzcntd", 0, "vplzcntq", 0
-    db "vpsrlvq", 0, "vpsravq", 0, "vpsllvq", 0, "vrcp14ps", 0, "vrcp14pd", 0, "vrcp14ss", 0, "vrcp14sd", 0, "vrsqrt14ps", 0
-    db "vrsqrt14pd", 0, "vrsqrt14ss", 0, "vrsqrt14sd", 0, "vpdpbusd", 0, "vpdpbusds", 0, "vpdpwssd", 0, "vpdpwssds", 0, "vbroadcasti32x2", 0
-    db "vbroadcasti32x4", 0, "vbroadcasti64x2", 0, "vbroadcasti32x8", 0, "vbroadcasti64x4", 0, "vpblendmd", 0, "vpblendmq", 0, "vblendmps", 0, "vblendmpd", 0
-    db "vpblendmb", 0, "vpblendmw", 0, "vpermi2b", 0, "vpermi2w", 0, "vpermi2d", 0, "vpermi2q", 0, "vpermi2ps", 0, "vpermi2pd", 0
-    db "vpermt2b", 0, "vpermt2w", 0, "vpermt2d", 0, "vpermt2q", 0, "vpermt2ps", 0, "vpermt2pd", 0, "vexpandps", 0, "vexpandpd", 0
-    db "vpexpandd", 0, "vpexpandq", 0, "vcompressps", 0, "vcompresspd", 0, "vpcompressd", 0, "vpcompressq", 0, "vpermb", 0, "vpermw", 0
-    db "vfmaddsub132pd", 0, "vfmsubadd132pd", 0, "vfmadd132pd", 0, "vfmadd132sd", 0, "vfmsub132pd", 0, "vfmsub132sd", 0, "vfnmadd132pd", 0, "vfnmadd132sd", 0
-    db "vfnmsub132pd", 0, "vfnmsub132sd", 0, "vfmaddsub213pd", 0, "vfmsubadd213pd", 0, "vfmadd213pd", 0, "vfmadd213sd", 0, "vfmsub213pd", 0, "vfmsub213sd", 0
-    db "vfnmadd213pd", 0, "vfnmadd213sd", 0, "vfnmsub213pd", 0, "vfnmsub213sd", 0, "vpmadd52luq", 0, "vpmadd52huq", 0, "vfmaddsub231pd", 0, "vfmsubadd231pd", 0
-    db "vfmadd231pd", 0, "vfmadd231sd", 0, "vfmsub231pd", 0, "vfmsub231sd", 0, "vfnmadd231pd", 0, "vfnmadd231sd", 0, "vfnmsub231pd", 0, "vfnmsub231sd", 0
-    db "vpconflictd", 0, "vpconflictq", 0, "vgf2p8mulb", 0, "vaesenc", 0, "vaesenclast", 0, "vaesdec", 0, "vaesdeclast", 0, "valignd", 0
-    db "valignq", 0, "vrndscaleps", 0, "vrndscalepd", 0, "vrndscaless", 0, "vrndscalesd", 0, "vpalignr", 0, "vpextrb", 0, "vpextrd", 0
-    db "vpextrq", 0, "vextractps", 0, "vinsertf32x4", 0, "vinsertf64x2", 0, "vextractf32x4", 0, "vextractf64x2", 0, "vinsertf32x8", 0, "vinsertf64x4", 0
-    db "vextractf32x8", 0, "vextractf64x4", 0, "vpcmpud", 0, "vpcmpuq", 0, "vpcmpd", 0, "vpcmpq", 0, "vpinsrb", 0, "vinsertps", 0
-    db "vpinsrd", 0, "vpinsrq", 0, "vshuff32x4", 0, "vshuff64x2", 0, "vpternlogd", 0, "vpternlogq", 0, "vinserti32x4", 0, "vinserti64x2", 0
-    db "vextracti32x4", 0, "vextracti64x2", 0, "vinserti32x8", 0, "vinserti64x4", 0, "vextracti32x8", 0, "vextracti64x4", 0, "vpcmpub", 0, "vpcmpuw", 0
-    db "vpcmpb", 0, "vpcmpw", 0, "vdbpsadbw", 0, "vshufi32x4", 0, "vshufi64x2", 0, "vpclmulqdq", 0, "vgf2p8affineqb", 0, "vgf2p8affineinvqb", 0
-    db "vmovhlps", 0, "vmovlps", 0, "vmovlpd", 0, "vmovddup", 0, "vmovhps", 0, "vmovlhps", 0, "vmovhpd", 0, "vucomxss", 0
-    db "vucomxsd", 0, "vcomxss", 0, "vcomxsd", 0, "vcvttps2udq", 0, "vcvttpd2udq", 0, "vcvttps2uqq", 0, "vcvttpd2uqq", 0, "vcvttss2usi", 0
-    db "vcvttsd2usi", 0, "vcvtps2udq", 0, "vcvtpd2udq", 0, "vcvtps2uqq", 0, "vcvtpd2uqq", 0, "vcvtss2usi", 0, "vcvtsd2usi", 0, "vcvttps2qq", 0
-    db "vcvttpd2qq", 0, "vcvtudq2pd", 0, "vcvtuqq2pd", 0, "vcvtudq2ps", 0, "vcvtuqq2ps", 0, "vcvtps2qq", 0, "vcvtpd2qq", 0, "vcvtusi2ss", 0
-    db "vcvtusi2sd", 0, "vcvtph2ps", 0, "vprorvd", 0, "vprorvq", 0, "vprolvd", 0, "vprolvq", 0, "vpbroadcastmb2q", 0, "vscalefss", 0
-    db "vscalefsd", 0, "vpbroadcastmw2d", 0, "vgetexpss", 0, "vgetexpsd", 0, "tilemovrow", 0, "tcvtrowd2ps", 0, "vpdpbuud", 0, "vpdpbsud", 0
-    db "vpdpbssd", 0, "vpdpbuuds", 0, "vpdpbsuds", 0, "vpdpbssds", 0, "vdpphps", 0, "vdpbf16ps", 0, "vp4dpwssd", 0, "vp4dpwssds", 0
-    db "vpopcntb", 0, "vpopcntw", 0, "vpopcntd", 0, "vpopcntq", 0, "vpexpandb", 0, "vpexpandw", 0, "vpcompressb", 0, "vpcompressw", 0
-    db "vcvt2ps2phx", 0, "vp2intersectd", 0, "vp2intersectq", 0, "tcvtrowps2phh", 0, "tcvtrowps2phl", 0, "tcvtrowps2bf16l", 0, "tcvtrowps2bf16h", 0, "vpshldvw", 0
-    db "vpshldvd", 0, "vpshldvq", 0, "vpshrdvw", 0, "vcvtneps2bf16", 0, "vcvtne2ps2bf16", 0, "vpshrdvd", 0, "vpshrdvq", 0, "vcvtbiasph2bf8", 0
-    db "vcvtph2bf8", 0, "vcvt2ph2bf8", 0, "vpmultishiftqb", 0, "vpshufbitqmb", 0, "vpgatherdd", 0, "vpgatherdq", 0, "vpgatherqd", 0, "vpgatherqq", 0
-    db "vgatherdps", 0, "vgatherdpd", 0, "vgatherqps", 0, "vgatherqpd", 0, "v4fmaddps", 0, "v4fmaddss", 0, "vpscatterdd", 0, "vpscatterdq", 0
-    db "vpscatterqd", 0, "vpscatterqq", 0, "vscatterdps", 0, "vscatterdpd", 0, "vscatterqps", 0, "vscatterqpd", 0, "v4fnmaddps", 0, "v4fnmaddss", 0
-    db "vgatherpf0dps", 0, "vgatherpf1dps", 0, "vscatterpf0dps", 0, "vscatterpf1dps", 0, "vgatherpf0dpd", 0, "vgatherpf1dpd", 0, "vscatterpf0dpd", 0, "vscatterpf1dpd", 0
-    db "vgatherpf0qps", 0, "vgatherpf1qps", 0, "vscatterpf0qps", 0, "vscatterpf1qps", 0, "vgatherpf0qpd", 0, "vgatherpf1qpd", 0, "vscatterpf0qpd", 0, "vscatterpf1qpd", 0
-    db "vexp2ps", 0, "vexp2pd", 0, "vrcp28ps", 0, "vrcp28pd", 0, "vrcp28ss", 0, "vrcp28sd", 0, "vrsqrt28ps", 0, "vrsqrt28pd", 0
-    db "vrsqrt28ss", 0, "vrsqrt28sd", 0, "vpdpwuud", 0, "vpdpwusd", 0, "vpdpwsud", 0, "vpdpwuuds", 0, "vpdpwusds", 0, "vpdpwsuds", 0
-    db "vsm4key4", 0, "vsm4rnds4", 0, "vrndscaleph", 0, "vrndscalebf16", 0, "vrndscalesh", 0, "vcvtps2ph", 0, "vgetmantph", 0, "vgetmantps", 0
-    db "vgetmantpd", 0, "vgetmantbf16", 0, "vgetmantsh", 0, "vgetmantss", 0, "vgetmantsd", 0, "vmpsadbw", 0, "vrangeps", 0, "vrangepd", 0
-    db "vrangess", 0, "vrangesd", 0, "vminmaxph", 0, "vminmaxps", 0, "vminmaxpd", 0, "vminmaxbf16", 0, "vminmaxsh", 0, "vminmaxss", 0
-    db "vminmaxsd", 0, "vfixupimmps", 0, "vfixupimmpd", 0, "vfixupimmss", 0, "vfixupimmsd", 0, "vreduceph", 0, "vreduceps", 0, "vreducepd", 0
-    db "vreducebf16", 0, "vreducesh", 0, "vreducess", 0, "vreducesd", 0, "vfpclassph", 0, "vfpclassps", 0, "vfpclasspd", 0, "vfpclassbf16", 0
-    db "vfpclasssh", 0, "vfpclassss", 0, "vfpclasssd", 0, "vpshldw", 0, "vpshldd", 0, "vpshldq", 0, "vpshrdw", 0, "vpshrdd", 0
-    db "vpshrdq", 0, "vcmpph", 0, "vcmpsh", 0, "vcmpbf16", 0, "vmovsh", 0, "vcvtbiasph2hf8", 0, "vcvtph2hf8", 0, "vcvt2ph2hf8", 0
-    db "vcvtbiasph2hf8s", 0, "vcvtph2hf8s", 0, "vcvt2ph2hf8s", 0, "vcvtss2sh", 0, "vcvtps2phx", 0, "vcvthf82ph", 0, "vcvtsi2sh", 0, "vcvttsh2si", 0
-    db "vcvtsh2si", 0, "vucomish", 0, "vucomxsh", 0, "vcomish", 0, "vcomisbf16", 0, "vcomxsh", 0, "vsqrtph", 0, "vsqrtbf16", 0
-    db "vsqrtsh", 0, "vaddph", 0, "vaddbf16", 0, "vaddsh", 0, "vmulph", 0, "vmulbf16", 0, "vmulsh", 0, "vcvtph2pd", 0
-    db "vcvtpd2ph", 0, "vcvtsh2sd", 0, "vcvtsd2sh", 0, "vcvtdq2ph", 0, "vcvtqq2ph", 0, "vcvtph2dq", 0, "vcvttph2dq", 0, "vsubph", 0
-    db "vsubbf16", 0, "vsubsh", 0, "vminph", 0, "vminbf16", 0, "vminsh", 0, "vdivph", 0, "vdivbf16", 0, "vdivsh", 0
-    db "vmaxph", 0, "vmaxbf16", 0, "vmaxsh", 0, "vcvttph2ibs", 0, "vcvttps2ibs", 0, "vcvttbf162ibs", 0, "vcvtph2ibs", 0, "vcvtps2ibs", 0
-    db "vcvtbf162ibs", 0, "vcvttph2iubs", 0, "vcvttps2iubs", 0, "vcvttbf162iubs", 0, "vcvtph2iubs", 0, "vcvtps2iubs", 0, "vcvtbf162iubs", 0, "vcvttps2udqs", 0
-    db "vcvttpd2udqs", 0, "vcvttps2uqqs", 0, "vcvttpd2uqqs", 0, "vcvttss2usis", 0, "vcvttsd2usis", 0, "vcvttps2dqs", 0, "vcvttpd2dqs", 0, "vcvttps2qqs", 0
-    db "vcvttpd2qqs", 0, "vcvttss2sis", 0, "vcvttsd2sis", 0, "vmovw", 0, "vmovrsd", 0, "vmovrsq", 0, "vmovrsb", 0, "vmovrsw", 0
-    db "vcvtbiasph2bf8s", 0, "vcvtph2bf8s", 0, "vcvt2ph2bf8s", 0, "vcvttph2udq", 0, "vcvttph2uqq", 0, "vcvttsh2usi", 0, "vcvtph2udq", 0, "vcvtph2uqq", 0
-    db "vcvtsh2usi", 0, "vcvttph2qq", 0, "vcvtudq2ph", 0, "vcvtuqq2ph", 0, "vcvtph2qq", 0, "vcvtusi2sh", 0, "vcvttph2uw", 0, "vcvttph2w", 0
-    db "vcvtph2uw", 0, "vcvtph2w", 0, "vcvtw2ph", 0, "vcvtuw2ph", 0, "vcvtsh2ss", 0, "vcvtph2psx", 0, "vscalefbf16", 0, "vscalefph", 0
-    db "vscalefsh", 0, "vgetexpbf16", 0, "vgetexpph", 0, "vgetexpsh", 0, "vrcpbf16", 0, "vrcpph", 0, "vrcpsh", 0, "vrsqrtbf16", 0
-    db "vrsqrtph", 0, "vrsqrtsh", 0, "vfmaddcph", 0, "vfcmaddcph", 0, "vfmaddcsh", 0, "vfcmaddcsh", 0, "vfmaddsub132ph", 0, "vfmsubadd132ph", 0
-    db "vfmadd132bf16", 0, "vfmadd132ph", 0, "vfmadd132sh", 0, "vfmsub132bf16", 0, "vfmsub132ph", 0, "vfmsub132sh", 0, "vfnmadd132bf16", 0, "vfnmadd132ph", 0
-    db "vfnmadd132sh", 0, "vfnmsub132bf16", 0, "vfnmsub132ph", 0, "vfnmsub132sh", 0, "vfmaddsub213ph", 0, "vfmsubadd213ph", 0, "vfmadd213bf16", 0, "vfmadd213ph", 0
-    db "vfmadd213sh", 0, "vfmsub213bf16", 0, "vfmsub213ph", 0, "vfmsub213sh", 0, "vfnmadd213bf16", 0, "vfnmadd213ph", 0, "vfnmadd213sh", 0, "vfnmsub213bf16", 0
-    db "vfnmsub213ph", 0, "vfnmsub213sh", 0, "vfmaddsub231ph", 0, "vfmsubadd231ph", 0, "vfmadd231bf16", 0, "vfmadd231ph", 0, "vfmadd231sh", 0, "vfmsub231bf16", 0
-    db "vfmsub231ph", 0, "vfmsub231sh", 0, "vfnmadd231bf16", 0, "vfnmadd231ph", 0, "vfnmadd231sh", 0, "vfnmsub231bf16", 0, "vfnmsub231ph", 0, "vfnmsub231sh", 0
-    db "vfmulcph", 0, "vfcmulcph", 0, "vfmulcsh", 0, "vfcmulcsh", 0, "tilerelease", 0, "ldtilecfg", 0, "sttilecfg", 0, "tilezero", 0
-    db "tileloaddrst1", 0, "tileloaddrs", 0, "tileloaddt1", 0, "tilestored", 0, "tileloadd", 0, "tdpbf16ps", 0, "tdpfp16ps", 0, "tdpbuud", 0
-    db "tdpbusd", 0, "tdpbsud", 0, "tdpbssd", 0, "tcmmrlfp16ps", 0, "tcmmimfp16ps", 0, "vcvtneoph2ps", 0, "vcvtneeph2ps", 0, "vcvtneebf162ps", 0
-    db "vcvtneobf162ps", 0, "vbcstnesh2ps", 0, "vbcstnebf162ps", 0, "vsha512rnds2", 0, "vsha512msg1", 0, "vsha512msg2", 0, "vsm3msg1", 0, "vsm3msg2", 0
-    db "cmpoxadd", 0, "cmpnoxadd", 0, "cmpbxadd", 0, "cmpaexadd", 0, "cmpexadd", 0, "cmpnexadd", 0, "cmpbexadd", 0, "cmpaxadd", 0
-    db "cmpsxadd", 0, "cmpnsxadd", 0, "cmppxadd", 0, "cmpnpxadd", 0, "cmplxadd", 0, "cmpgexadd", 0, "cmplexadd", 0, "cmpgxadd", 0
-    db "vfmaddsubps", 0, "vfmaddsubpd", 0, "vfmsubaddps", 0, "vfmsubaddpd", 0, "vfmaddps", 0, "vfmaddpd", 0, "vfmaddss", 0, "vfmaddsd", 0
-    db "vfmsubps", 0, "vfmsubpd", 0, "vfmsubss", 0, "vfmsubsd", 0, "vfnmaddps", 0, "vfnmaddpd", 0, "vfnmaddss", 0, "vfnmaddsd", 0
-    db "vfnmsubps", 0, "vfnmsubpd", 0, "vfnmsubss", 0, "vfnmsubsd", 0, "vsm3rnds2", 0, "tdpbf8ps", 0, "tdphf8ps", 0, "tdphbf8ps", 0
-    db "tdpbhf8ps", 0, "vpmacssww", 0, "vpmacsswd", 0, "vpmacssdql", 0, "vpmacssdd", 0, "vpmacssdqh", 0, "vpmacsww", 0, "vpmacswd", 0
-    db "vpmacsdql", 0, "vpmacsdd", 0, "vpmacsdqh", 0, "vpcmov", 0, "vpperm", 0, "vpmadcsswd", 0, "vpmadcswd", 0, "vprotb", 0
-    db "vprotw", 0, "vprotd", 0, "vprotq", 0, "vpcomb", 0, "vpcomw", 0, "vpcomd", 0, "vpcomq", 0, "vpcomub", 0
-    db "vpcomuw", 0, "vpcomud", 0, "vpcomuq", 0, "blcfill", 0, "blsfill", 0, "blcs", 0, "tzmsk", 0, "blcic", 0
-    db "blsic", 0, "t1mskc", 0, "blcmsk", 0, "blci", 0, "llwpcb", 0, "slwpcb", 0, "vfrczps", 0, "vfrczpd", 0
-    db "vfrczss", 0, "vfrczsd", 0, "vpshlb", 0, "vpshlw", 0, "vpshld", 0, "vpshlq", 0, "vpshab", 0, "vpshaw", 0
-    db "vpshad", 0, "vpshaq", 0, "vphaddbw", 0, "vphaddbd", 0, "vphaddbq", 0, "vphaddwd", 0, "vphaddwq", 0, "vphadddq", 0
-    db "vphaddubw", 0, "vphaddubd", 0, "vphaddubq", 0, "vphadduwd", 0, "vphadduwq", 0, "vphaddudq", 0, "vphsubbw", 0, "vphsubwd", 0
-    db "vphsubdq", 0, "lwpins", 0, "lwpval", 0
+    db "div", 0, "idiv", 0, "xabort", 0, "cldemote", 0, "prefetch", 0, "prefetchw", 0, "prefetchwt1", 0, "montmul", 0
+    db "xsha1", 0, "xsha256", 0, "xstore-rng", 0, "xcrypt-ecb", 0, "xcrypt-cbc", 0, "xcrypt-ctr", 0, "xcrypt-cfb", 0, "xcrypt-ofb", 0
+    db "sldt", 0, "str", 0, "lldt", 0, "ltr", 0, "verr", 0, "verw", 0, "psrldq", 0, "pslldq", 0
+    db "blsr", 0, "blsmsk", 0, "blsi", 0, "prefetchnta", 0, "prefetcht0", 0, "prefetcht1", 0, "prefetcht2", 0, "prefetchrst2", 0
+    db "vmovups", 0, "vmovupd", 0, "vmovss", 0, "vmovsd", 0, "vmovsldup", 0, "vunpcklps", 0, "vunpcklpd", 0, "vunpckhps", 0
+    db "vunpckhpd", 0, "vmovshdup", 0, "vmovaps", 0, "vmovapd", 0, "vcvtsi2ss", 0, "vcvtsi2sd", 0, "vmovntps", 0, "vmovntpd", 0
+    db "vcvttss2si", 0, "vcvttsd2si", 0, "vcvtss2si", 0, "vcvtsd2si", 0, "vucomiss", 0, "vucomisd", 0, "vcomiss", 0, "vcomisd", 0
+    db "vsqrtps", 0, "vsqrtpd", 0, "vsqrtss", 0, "vsqrtsd", 0, "vandps", 0, "vandpd", 0, "vandnps", 0, "vandnpd", 0
+    db "vorps", 0, "vorpd", 0, "vxorps", 0, "vxorpd", 0, "vaddps", 0, "vaddpd", 0, "vaddss", 0, "vaddsd", 0
+    db "vmulps", 0, "vmulpd", 0, "vmulss", 0, "vmulsd", 0, "vcvtps2pd", 0, "vcvtpd2ps", 0, "vcvtss2sd", 0, "vcvtsd2ss", 0
+    db "vcvtdq2ps", 0, "vcvtqq2ps", 0, "vcvtps2dq", 0, "vcvttps2dq", 0, "vsubps", 0, "vsubpd", 0, "vsubss", 0, "vsubsd", 0
+    db "vminps", 0, "vminpd", 0, "vminss", 0, "vminsd", 0, "vdivps", 0, "vdivpd", 0, "vdivss", 0, "vdivsd", 0
+    db "vmaxps", 0, "vmaxpd", 0, "vmaxss", 0, "vmaxsd", 0, "vpunpcklbw", 0, "vpunpcklwd", 0, "vpunpckldq", 0, "vpacksswb", 0
+    db "vpcmpgtb", 0, "vpcmpgtw", 0, "vpcmpgtd", 0, "vpackuswb", 0, "vpunpckhbw", 0, "vpunpckhwd", 0, "vpunpckhdq", 0, "vpackssdw", 0
+    db "vpunpcklqdq", 0, "vpunpckhqdq", 0, "vmovd", 0, "vmovq", 0, "vmovdqa32", 0, "vmovdqa64", 0, "vmovdqu32", 0, "vmovdqu64", 0
+    db "vmovdqu8", 0, "vmovdqu16", 0, "vpshufd", 0, "vpshufhw", 0, "vpshuflw", 0, "vpsrlw", 0, "vpsraw", 0, "vpsllw", 0
+    db "vprord", 0, "vprold", 0, "vpsrld", 0, "vpsrad", 0, "vpslld", 0, "vprorq", 0, "vprolq", 0, "vpsraq", 0
+    db "vpsrldq", 0, "vpslldq", 0, "vpsrlq", 0, "vpsllq", 0, "vpcmpeqb", 0, "vpcmpeqw", 0, "vpcmpeqd", 0, "vcmpps", 0
+    db "vcmppd", 0, "vcmpss", 0, "vcmpsd", 0, "vpinsrw", 0, "vpextrw", 0, "vshufps", 0, "vshufpd", 0, "vpaddq", 0
+    db "vpmullw", 0, "vpsubusb", 0, "vpsubusw", 0, "vpminub", 0, "vpandd", 0, "vpandq", 0, "vpaddusb", 0, "vpaddusw", 0
+    db "vpmaxub", 0, "vpandnd", 0, "vpandnq", 0, "vpavgb", 0, "vpavgw", 0, "vpmulhuw", 0, "vpmulhw", 0, "vcvttpd2dq", 0
+    db "vcvtdq2pd", 0, "vcvtqq2pd", 0, "vcvtpd2dq", 0, "vmovntdq", 0, "vpsubsb", 0, "vpsubsw", 0, "vpminsw", 0, "vpord", 0
+    db "vporq", 0, "vpaddsb", 0, "vpaddsw", 0, "vpmaxsw", 0, "vpxord", 0, "vpxorq", 0, "vpmuludq", 0, "vpmaddwd", 0
+    db "vpsadbw", 0, "vpsubb", 0, "vpsubw", 0, "vpsubd", 0, "vpsubq", 0, "vpaddb", 0, "vpaddw", 0, "vpaddd", 0
+    db "vpshufb", 0, "vpmaddubsw", 0, "vpmulhrsw", 0, "vpsrlvw", 0, "vpmovuswb", 0, "vpsravw", 0, "vpmovusdb", 0, "vpsllvw", 0
+    db "vpmovusqb", 0, "vpmovusdw", 0, "vpmovusqw", 0, "vpmovusqd", 0, "vbroadcastf32x2", 0, "vbroadcastf32x4", 0, "vbroadcastf64x2", 0, "vbroadcastf32x8", 0
+    db "vbroadcastf64x4", 0, "vpabsb", 0, "vpabsw", 0, "vpabsd", 0, "vpabsq", 0, "vpmovsxbw", 0, "vpmovswb", 0, "vpmovsxbd", 0
+    db "vpmovsdb", 0, "vpmovsxbq", 0, "vpmovsqb", 0, "vpmovsxwd", 0, "vpmovsdw", 0, "vpmovsxwq", 0, "vpmovsqw", 0, "vpmovsxdq", 0
+    db "vpmovsqd", 0, "vptestmb", 0, "vptestmw", 0, "vptestnmb", 0, "vptestnmw", 0, "vptestmd", 0, "vptestmq", 0, "vptestnmd", 0
+    db "vptestnmq", 0, "vpmuldq", 0, "vpmovm2b", 0, "vpmovm2w", 0, "vpcmpeqq", 0, "vpmovb2m", 0, "vpmovw2m", 0, "vmovntdqa", 0
+    db "vpackusdw", 0, "vscalefps", 0, "vscalefpd", 0, "vpmovzxbw", 0, "vpmovwb", 0, "vpmovzxbd", 0, "vpmovdb", 0, "vpmovzxbq", 0
+    db "vpmovqb", 0, "vpmovzxwd", 0, "vpmovdw", 0, "vpmovzxwq", 0, "vpmovqw", 0, "vpmovzxdq", 0, "vpmovqd", 0, "vpcmpgtq", 0
+    db "vpminsb", 0, "vpmovm2d", 0, "vpmovm2q", 0, "vpminsd", 0, "vpminsq", 0, "vpmovd2m", 0, "vpmovq2m", 0, "vpminuw", 0
+    db "vpminud", 0, "vpminuq", 0, "vpmaxsb", 0, "vpmaxsd", 0, "vpmaxsq", 0, "vpmaxuw", 0, "vpmaxud", 0, "vpmaxuq", 0
+    db "vpmulld", 0, "vpmullq", 0, "vgetexpps", 0, "vgetexppd", 0, "vplzcntd", 0, "vplzcntq", 0, "vpsrlvq", 0, "vpsravq", 0
+    db "vpsllvq", 0, "vrcp14ps", 0, "vrcp14pd", 0, "vrcp14ss", 0, "vrcp14sd", 0, "vrsqrt14ps", 0, "vrsqrt14pd", 0, "vrsqrt14ss", 0
+    db "vrsqrt14sd", 0, "vpdpbusd", 0, "vpdpbusds", 0, "vpdpwssd", 0, "vpdpwssds", 0, "vbroadcasti32x2", 0, "vbroadcasti32x4", 0, "vbroadcasti64x2", 0
+    db "vbroadcasti32x8", 0, "vbroadcasti64x4", 0, "vpblendmd", 0, "vpblendmq", 0, "vblendmps", 0, "vblendmpd", 0, "vpblendmb", 0, "vpblendmw", 0
+    db "vpermi2b", 0, "vpermi2w", 0, "vpermi2d", 0, "vpermi2q", 0, "vpermi2ps", 0, "vpermi2pd", 0, "vpermt2b", 0, "vpermt2w", 0
+    db "vpermt2d", 0, "vpermt2q", 0, "vpermt2ps", 0, "vpermt2pd", 0, "vexpandps", 0, "vexpandpd", 0, "vpexpandd", 0, "vpexpandq", 0
+    db "vcompressps", 0, "vcompresspd", 0, "vpcompressd", 0, "vpcompressq", 0, "vpermb", 0, "vpermw", 0, "vfmaddsub132pd", 0, "vfmsubadd132pd", 0
+    db "vfmadd132pd", 0, "vfmadd132sd", 0, "vfmsub132pd", 0, "vfmsub132sd", 0, "vfnmadd132pd", 0, "vfnmadd132sd", 0, "vfnmsub132pd", 0, "vfnmsub132sd", 0
+    db "vfmaddsub213pd", 0, "vfmsubadd213pd", 0, "vfmadd213pd", 0, "vfmadd213sd", 0, "vfmsub213pd", 0, "vfmsub213sd", 0, "vfnmadd213pd", 0, "vfnmadd213sd", 0
+    db "vfnmsub213pd", 0, "vfnmsub213sd", 0, "vpmadd52luq", 0, "vpmadd52huq", 0, "vfmaddsub231pd", 0, "vfmsubadd231pd", 0, "vfmadd231pd", 0, "vfmadd231sd", 0
+    db "vfmsub231pd", 0, "vfmsub231sd", 0, "vfnmadd231pd", 0, "vfnmadd231sd", 0, "vfnmsub231pd", 0, "vfnmsub231sd", 0, "vpconflictd", 0, "vpconflictq", 0
+    db "vgf2p8mulb", 0, "vaesenc", 0, "vaesenclast", 0, "vaesdec", 0, "vaesdeclast", 0, "valignd", 0, "valignq", 0, "vrndscaleps", 0
+    db "vrndscalepd", 0, "vrndscaless", 0, "vrndscalesd", 0, "vpalignr", 0, "vpextrb", 0, "vpextrd", 0, "vpextrq", 0, "vextractps", 0
+    db "vinsertf32x4", 0, "vinsertf64x2", 0, "vextractf32x4", 0, "vextractf64x2", 0, "vinsertf32x8", 0, "vinsertf64x4", 0, "vextractf32x8", 0, "vextractf64x4", 0
+    db "vpcmpud", 0, "vpcmpuq", 0, "vpcmpd", 0, "vpcmpq", 0, "vpinsrb", 0, "vinsertps", 0, "vpinsrd", 0, "vpinsrq", 0
+    db "vshuff32x4", 0, "vshuff64x2", 0, "vpternlogd", 0, "vpternlogq", 0, "vinserti32x4", 0, "vinserti64x2", 0, "vextracti32x4", 0, "vextracti64x2", 0
+    db "vinserti32x8", 0, "vinserti64x4", 0, "vextracti32x8", 0, "vextracti64x4", 0, "vpcmpub", 0, "vpcmpuw", 0, "vpcmpb", 0, "vpcmpw", 0
+    db "vdbpsadbw", 0, "vshufi32x4", 0, "vshufi64x2", 0, "vpclmulqdq", 0, "vgf2p8affineqb", 0, "vgf2p8affineinvqb", 0, "vmovhlps", 0, "vmovlps", 0
+    db "vmovlpd", 0, "vmovddup", 0, "vmovhps", 0, "vmovlhps", 0, "vmovhpd", 0, "vucomxss", 0, "vucomxsd", 0, "vcomxss", 0
+    db "vcomxsd", 0, "vcvttps2udq", 0, "vcvttpd2udq", 0, "vcvttps2uqq", 0, "vcvttpd2uqq", 0, "vcvttss2usi", 0, "vcvttsd2usi", 0, "vcvtps2udq", 0
+    db "vcvtpd2udq", 0, "vcvtps2uqq", 0, "vcvtpd2uqq", 0, "vcvtss2usi", 0, "vcvtsd2usi", 0, "vcvttps2qq", 0, "vcvttpd2qq", 0, "vcvtudq2pd", 0
+    db "vcvtuqq2pd", 0, "vcvtudq2ps", 0, "vcvtuqq2ps", 0, "vcvtps2qq", 0, "vcvtpd2qq", 0, "vcvtusi2ss", 0, "vcvtusi2sd", 0, "vcvtph2ps", 0
+    db "vprorvd", 0, "vprorvq", 0, "vprolvd", 0, "vprolvq", 0, "vpbroadcastmb2q", 0, "vscalefss", 0, "vscalefsd", 0, "vpbroadcastmw2d", 0
+    db "vgetexpss", 0, "vgetexpsd", 0, "tilemovrow", 0, "tcvtrowd2ps", 0, "vpdpbuud", 0, "vpdpbsud", 0, "vpdpbssd", 0, "vpdpbuuds", 0
+    db "vpdpbsuds", 0, "vpdpbssds", 0, "vdpphps", 0, "vdpbf16ps", 0, "vp4dpwssd", 0, "vp4dpwssds", 0, "vpopcntb", 0, "vpopcntw", 0
+    db "vpopcntd", 0, "vpopcntq", 0, "vpexpandb", 0, "vpexpandw", 0, "vpcompressb", 0, "vpcompressw", 0, "vcvt2ps2phx", 0, "vp2intersectd", 0
+    db "vp2intersectq", 0, "tcvtrowps2phh", 0, "tcvtrowps2phl", 0, "tcvtrowps2bf16l", 0, "tcvtrowps2bf16h", 0, "vpshldvw", 0, "vpshldvd", 0, "vpshldvq", 0
+    db "vpshrdvw", 0, "vcvtneps2bf16", 0, "vcvtne2ps2bf16", 0, "vpshrdvd", 0, "vpshrdvq", 0, "vcvtbiasph2bf8", 0, "vcvtph2bf8", 0, "vcvt2ph2bf8", 0
+    db "vpmultishiftqb", 0, "vpshufbitqmb", 0, "vpgatherdd", 0, "vpgatherdq", 0, "vpgatherqd", 0, "vpgatherqq", 0, "vgatherdps", 0, "vgatherdpd", 0
+    db "vgatherqps", 0, "vgatherqpd", 0, "v4fmaddps", 0, "v4fmaddss", 0, "vpscatterdd", 0, "vpscatterdq", 0, "vpscatterqd", 0, "vpscatterqq", 0
+    db "vscatterdps", 0, "vscatterdpd", 0, "vscatterqps", 0, "vscatterqpd", 0, "v4fnmaddps", 0, "v4fnmaddss", 0, "vgatherpf0dps", 0, "vgatherpf1dps", 0
+    db "vscatterpf0dps", 0, "vscatterpf1dps", 0, "vgatherpf0dpd", 0, "vgatherpf1dpd", 0, "vscatterpf0dpd", 0, "vscatterpf1dpd", 0, "vgatherpf0qps", 0, "vgatherpf1qps", 0
+    db "vscatterpf0qps", 0, "vscatterpf1qps", 0, "vgatherpf0qpd", 0, "vgatherpf1qpd", 0, "vscatterpf0qpd", 0, "vscatterpf1qpd", 0, "vexp2ps", 0, "vexp2pd", 0
+    db "vrcp28ps", 0, "vrcp28pd", 0, "vrcp28ss", 0, "vrcp28sd", 0, "vrsqrt28ps", 0, "vrsqrt28pd", 0, "vrsqrt28ss", 0, "vrsqrt28sd", 0
+    db "vpdpwuud", 0, "vpdpwusd", 0, "vpdpwsud", 0, "vpdpwuuds", 0, "vpdpwusds", 0, "vpdpwsuds", 0, "vsm4key4", 0, "vsm4rnds4", 0
+    db "vrndscaleph", 0, "vrndscalebf16", 0, "vrndscalesh", 0, "vcvtps2ph", 0, "vgetmantph", 0, "vgetmantps", 0, "vgetmantpd", 0, "vgetmantbf16", 0
+    db "vgetmantsh", 0, "vgetmantss", 0, "vgetmantsd", 0, "vmpsadbw", 0, "vrangeps", 0, "vrangepd", 0, "vrangess", 0, "vrangesd", 0
+    db "vminmaxph", 0, "vminmaxps", 0, "vminmaxpd", 0, "vminmaxbf16", 0, "vminmaxsh", 0, "vminmaxss", 0, "vminmaxsd", 0, "vfixupimmps", 0
+    db "vfixupimmpd", 0, "vfixupimmss", 0, "vfixupimmsd", 0, "vreduceph", 0, "vreduceps", 0, "vreducepd", 0, "vreducebf16", 0, "vreducesh", 0
+    db "vreducess", 0, "vreducesd", 0, "vfpclassph", 0, "vfpclassps", 0, "vfpclasspd", 0, "vfpclassbf16", 0, "vfpclasssh", 0, "vfpclassss", 0
+    db "vfpclasssd", 0, "vpshldw", 0, "vpshldd", 0, "vpshldq", 0, "vpshrdw", 0, "vpshrdd", 0, "vpshrdq", 0, "vcmpph", 0
+    db "vcmpsh", 0, "vcmpbf16", 0, "vmovsh", 0, "vcvtbiasph2hf8", 0, "vcvtph2hf8", 0, "vcvt2ph2hf8", 0, "vcvtbiasph2hf8s", 0, "vcvtph2hf8s", 0
+    db "vcvt2ph2hf8s", 0, "vcvtss2sh", 0, "vcvtps2phx", 0, "vcvthf82ph", 0, "vcvtsi2sh", 0, "vcvttsh2si", 0, "vcvtsh2si", 0, "vucomish", 0
+    db "vucomxsh", 0, "vcomish", 0, "vcomisbf16", 0, "vcomxsh", 0, "vsqrtph", 0, "vsqrtbf16", 0, "vsqrtsh", 0, "vaddph", 0
+    db "vaddbf16", 0, "vaddsh", 0, "vmulph", 0, "vmulbf16", 0, "vmulsh", 0, "vcvtph2pd", 0, "vcvtpd2ph", 0, "vcvtsh2sd", 0
+    db "vcvtsd2sh", 0, "vcvtdq2ph", 0, "vcvtqq2ph", 0, "vcvtph2dq", 0, "vcvttph2dq", 0, "vsubph", 0, "vsubbf16", 0, "vsubsh", 0
+    db "vminph", 0, "vminbf16", 0, "vminsh", 0, "vdivph", 0, "vdivbf16", 0, "vdivsh", 0, "vmaxph", 0, "vmaxbf16", 0
+    db "vmaxsh", 0, "vcvttph2ibs", 0, "vcvttps2ibs", 0, "vcvttbf162ibs", 0, "vcvtph2ibs", 0, "vcvtps2ibs", 0, "vcvtbf162ibs", 0, "vcvttph2iubs", 0
+    db "vcvttps2iubs", 0, "vcvttbf162iubs", 0, "vcvtph2iubs", 0, "vcvtps2iubs", 0, "vcvtbf162iubs", 0, "vcvttps2udqs", 0, "vcvttpd2udqs", 0, "vcvttps2uqqs", 0
+    db "vcvttpd2uqqs", 0, "vcvttss2usis", 0, "vcvttsd2usis", 0, "vcvttps2dqs", 0, "vcvttpd2dqs", 0, "vcvttps2qqs", 0, "vcvttpd2qqs", 0, "vcvttss2sis", 0
+    db "vcvttsd2sis", 0, "vmovw", 0, "vmovrsd", 0, "vmovrsq", 0, "vmovrsb", 0, "vmovrsw", 0, "vcvtbiasph2bf8s", 0, "vcvtph2bf8s", 0
+    db "vcvt2ph2bf8s", 0, "vcvttph2udq", 0, "vcvttph2uqq", 0, "vcvttsh2usi", 0, "vcvtph2udq", 0, "vcvtph2uqq", 0, "vcvtsh2usi", 0, "vcvttph2qq", 0
+    db "vcvtudq2ph", 0, "vcvtuqq2ph", 0, "vcvtph2qq", 0, "vcvtusi2sh", 0, "vcvttph2uw", 0, "vcvttph2w", 0, "vcvtph2uw", 0, "vcvtph2w", 0
+    db "vcvtw2ph", 0, "vcvtuw2ph", 0, "vcvtsh2ss", 0, "vcvtph2psx", 0, "vscalefbf16", 0, "vscalefph", 0, "vscalefsh", 0, "vgetexpbf16", 0
+    db "vgetexpph", 0, "vgetexpsh", 0, "vrcpbf16", 0, "vrcpph", 0, "vrcpsh", 0, "vrsqrtbf16", 0, "vrsqrtph", 0, "vrsqrtsh", 0
+    db "vfmaddcph", 0, "vfcmaddcph", 0, "vfmaddcsh", 0, "vfcmaddcsh", 0, "vfmaddsub132ph", 0, "vfmsubadd132ph", 0, "vfmadd132bf16", 0, "vfmadd132ph", 0
+    db "vfmadd132sh", 0, "vfmsub132bf16", 0, "vfmsub132ph", 0, "vfmsub132sh", 0, "vfnmadd132bf16", 0, "vfnmadd132ph", 0, "vfnmadd132sh", 0, "vfnmsub132bf16", 0
+    db "vfnmsub132ph", 0, "vfnmsub132sh", 0, "vfmaddsub213ph", 0, "vfmsubadd213ph", 0, "vfmadd213bf16", 0, "vfmadd213ph", 0, "vfmadd213sh", 0, "vfmsub213bf16", 0
+    db "vfmsub213ph", 0, "vfmsub213sh", 0, "vfnmadd213bf16", 0, "vfnmadd213ph", 0, "vfnmadd213sh", 0, "vfnmsub213bf16", 0, "vfnmsub213ph", 0, "vfnmsub213sh", 0
+    db "vfmaddsub231ph", 0, "vfmsubadd231ph", 0, "vfmadd231bf16", 0, "vfmadd231ph", 0, "vfmadd231sh", 0, "vfmsub231bf16", 0, "vfmsub231ph", 0, "vfmsub231sh", 0
+    db "vfnmadd231bf16", 0, "vfnmadd231ph", 0, "vfnmadd231sh", 0, "vfnmsub231bf16", 0, "vfnmsub231ph", 0, "vfnmsub231sh", 0, "vfmulcph", 0, "vfcmulcph", 0
+    db "vfmulcsh", 0, "vfcmulcsh", 0, "tilerelease", 0, "ldtilecfg", 0, "sttilecfg", 0, "tilezero", 0, "tileloaddrst1", 0, "tileloaddrs", 0
+    db "tileloaddt1", 0, "tilestored", 0, "tileloadd", 0, "tdpbf16ps", 0, "tdpfp16ps", 0, "tdpbuud", 0, "tdpbusd", 0, "tdpbsud", 0
+    db "tdpbssd", 0, "tcmmrlfp16ps", 0, "tcmmimfp16ps", 0, "vcvtneoph2ps", 0, "vcvtneeph2ps", 0, "vcvtneebf162ps", 0, "vcvtneobf162ps", 0, "vbcstnesh2ps", 0
+    db "vbcstnebf162ps", 0, "vsha512rnds2", 0, "vsha512msg1", 0, "vsha512msg2", 0, "vsm3msg1", 0, "vsm3msg2", 0, "cmpoxadd", 0, "cmpnoxadd", 0
+    db "cmpbxadd", 0, "cmpaexadd", 0, "cmpexadd", 0, "cmpnexadd", 0, "cmpbexadd", 0, "cmpaxadd", 0, "cmpsxadd", 0, "cmpnsxadd", 0
+    db "cmppxadd", 0, "cmpnpxadd", 0, "cmplxadd", 0, "cmpgexadd", 0, "cmplexadd", 0, "cmpgxadd", 0, "vfmaddsubps", 0, "vfmaddsubpd", 0
+    db "vfmsubaddps", 0, "vfmsubaddpd", 0, "vfmaddps", 0, "vfmaddpd", 0, "vfmaddss", 0, "vfmaddsd", 0, "vfmsubps", 0, "vfmsubpd", 0
+    db "vfmsubss", 0, "vfmsubsd", 0, "vfnmaddps", 0, "vfnmaddpd", 0, "vfnmaddss", 0, "vfnmaddsd", 0, "vfnmsubps", 0, "vfnmsubpd", 0
+    db "vfnmsubss", 0, "vfnmsubsd", 0, "vsm3rnds2", 0, "tdpbf8ps", 0, "tdphf8ps", 0, "tdphbf8ps", 0, "tdpbhf8ps", 0, "vpmacssww", 0
+    db "vpmacsswd", 0, "vpmacssdql", 0, "vpmacssdd", 0, "vpmacssdqh", 0, "vpmacsww", 0, "vpmacswd", 0, "vpmacsdql", 0, "vpmacsdd", 0
+    db "vpmacsdqh", 0, "vpcmov", 0, "vpperm", 0, "vpmadcsswd", 0, "vpmadcswd", 0, "vprotb", 0, "vprotw", 0, "vprotd", 0
+    db "vprotq", 0, "vpcomb", 0, "vpcomw", 0, "vpcomd", 0, "vpcomq", 0, "vpcomub", 0, "vpcomuw", 0, "vpcomud", 0
+    db "vpcomuq", 0, "blcfill", 0, "blsfill", 0, "blcs", 0, "tzmsk", 0, "blcic", 0, "blsic", 0, "t1mskc", 0
+    db "blcmsk", 0, "blci", 0, "llwpcb", 0, "slwpcb", 0, "vfrczps", 0, "vfrczpd", 0, "vfrczss", 0, "vfrczsd", 0
+    db "vpshlb", 0, "vpshlw", 0, "vpshld", 0, "vpshlq", 0, "vpshab", 0, "vpshaw", 0, "vpshad", 0, "vpshaq", 0
+    db "vphaddbw", 0, "vphaddbd", 0, "vphaddbq", 0, "vphaddwd", 0, "vphaddwq", 0, "vphadddq", 0, "vphaddubw", 0, "vphaddubd", 0
+    db "vphaddubq", 0, "vphadduwd", 0, "vphadduwq", 0, "vphaddudq", 0, "vphsubbw", 0, "vphsubwd", 0, "vphsubdq", 0, "lwpins", 0
+    db "lwpval", 0
 
 x86_map1:
     dw 0x0006
@@ -508,14 +510,14 @@ x86_map1:
     db  0, 0x00        ; 9e
     dw 0x00b0
     db  0, 0x00        ; 9f
-    dw 0xffff
-    db  0, 0x00        ; a0
-    dw 0xffff
-    db  0, 0x00        ; a1
-    dw 0xffff
-    db  0, 0x00        ; a2
-    dw 0xffff
-    db  0, 0x00        ; a3
+    dw 0x0085
+    db 106, 0x04        ; a0
+    dw 0x0085
+    db 106, 0x00        ; a1
+    dw 0x0085
+    db 106, 0x04        ; a2
+    dw 0x0085
+    db 106, 0x00        ; a3
     dw 0x00b5
     db 37, 0x04        ; a4
     dw 0x00b5
@@ -943,9 +945,9 @@ x86_map2:
     dw 0xffff
     db  0, 0x00        ; 77
     dw 0x0226
-    db  2, 0x09        ; 78
+    db  2, 0x29        ; 78
     dw 0x022d
-    db  4, 0x09        ; 79
+    db  4, 0x29        ; 79
     dw 0xffff
     db  0, 0x00        ; 7a
     dw 0xffff
@@ -1215,6 +1217,520 @@ x86_map2:
     dw 0x02f5
     db  4, 0x01        ; ff
 
+x86_map1l:
+    dw 0xffff
+    db  0, 0x00        ; 00
+    dw 0xffff
+    db  0, 0x00        ; 01
+    dw 0xffff
+    db  0, 0x00        ; 02
+    dw 0xffff
+    db  0, 0x00        ; 03
+    dw 0xffff
+    db  0, 0x00        ; 04
+    dw 0xffff
+    db  0, 0x00        ; 05
+    dw 0x0025
+    db 102, 0x00        ; 06
+    dw 0x002a
+    db 102, 0x00        ; 07
+    dw 0xffff
+    db  0, 0x00        ; 08
+    dw 0xffff
+    db  0, 0x00        ; 09
+    dw 0xffff
+    db  0, 0x00        ; 0a
+    dw 0xffff
+    db  0, 0x00        ; 0b
+    dw 0xffff
+    db  0, 0x00        ; 0c
+    dw 0xffff
+    db  0, 0x00        ; 0d
+    dw 0x0025
+    db 102, 0x00        ; 0e
+    dw 0xffff
+    db  0, 0x00        ; 0f
+    dw 0xffff
+    db  0, 0x00        ; 10
+    dw 0xffff
+    db  0, 0x00        ; 11
+    dw 0xffff
+    db  0, 0x00        ; 12
+    dw 0xffff
+    db  0, 0x00        ; 13
+    dw 0xffff
+    db  0, 0x00        ; 14
+    dw 0xffff
+    db  0, 0x00        ; 15
+    dw 0x0025
+    db 102, 0x00        ; 16
+    dw 0x002a
+    db 102, 0x00        ; 17
+    dw 0xffff
+    db  0, 0x00        ; 18
+    dw 0xffff
+    db  0, 0x00        ; 19
+    dw 0xffff
+    db  0, 0x00        ; 1a
+    dw 0xffff
+    db  0, 0x00        ; 1b
+    dw 0xffff
+    db  0, 0x00        ; 1c
+    dw 0xffff
+    db  0, 0x00        ; 1d
+    dw 0x0025
+    db 102, 0x00        ; 1e
+    dw 0x002a
+    db 102, 0x00        ; 1f
+    dw 0xffff
+    db  0, 0x00        ; 20
+    dw 0xffff
+    db  0, 0x00        ; 21
+    dw 0xffff
+    db  0, 0x00        ; 22
+    dw 0xffff
+    db  0, 0x00        ; 23
+    dw 0xffff
+    db  0, 0x00        ; 24
+    dw 0xffff
+    db  0, 0x00        ; 25
+    dw 0xffff
+    db  0, 0x00        ; 26
+    dw 0x02f9
+    db  0, 0x00        ; 27
+    dw 0xffff
+    db  0, 0x00        ; 28
+    dw 0xffff
+    db  0, 0x00        ; 29
+    dw 0xffff
+    db  0, 0x00        ; 2a
+    dw 0xffff
+    db  0, 0x00        ; 2b
+    dw 0xffff
+    db  0, 0x00        ; 2c
+    dw 0xffff
+    db  0, 0x00        ; 2d
+    dw 0xffff
+    db  0, 0x00        ; 2e
+    dw 0x02fd
+    db  0, 0x00        ; 2f
+    dw 0xffff
+    db  0, 0x00        ; 30
+    dw 0xffff
+    db  0, 0x00        ; 31
+    dw 0xffff
+    db  0, 0x00        ; 32
+    dw 0xffff
+    db  0, 0x00        ; 33
+    dw 0xffff
+    db  0, 0x00        ; 34
+    dw 0xffff
+    db  0, 0x00        ; 35
+    dw 0xffff
+    db  0, 0x00        ; 36
+    dw 0x0301
+    db  0, 0x00        ; 37
+    dw 0xffff
+    db  0, 0x00        ; 38
+    dw 0xffff
+    db  0, 0x00        ; 39
+    dw 0xffff
+    db  0, 0x00        ; 3a
+    dw 0xffff
+    db  0, 0x00        ; 3b
+    dw 0xffff
+    db  0, 0x00        ; 3c
+    dw 0xffff
+    db  0, 0x00        ; 3d
+    dw 0xffff
+    db  0, 0x00        ; 3e
+    dw 0x0305
+    db  0, 0x00        ; 3f
+    dw 0x0309
+    db  7, 0x00        ; 40
+    dw 0x0309
+    db  7, 0x00        ; 41
+    dw 0x0309
+    db  7, 0x00        ; 42
+    dw 0x0309
+    db  7, 0x00        ; 43
+    dw 0x0309
+    db  7, 0x00        ; 44
+    dw 0x0309
+    db  7, 0x00        ; 45
+    dw 0x0309
+    db  7, 0x00        ; 46
+    dw 0x0309
+    db  7, 0x00        ; 47
+    dw 0x030d
+    db  7, 0x00        ; 48
+    dw 0x030d
+    db  7, 0x00        ; 49
+    dw 0x030d
+    db  7, 0x00        ; 4a
+    dw 0x030d
+    db  7, 0x00        ; 4b
+    dw 0x030d
+    db  7, 0x00        ; 4c
+    dw 0x030d
+    db  7, 0x00        ; 4d
+    dw 0x030d
+    db  7, 0x00        ; 4e
+    dw 0x030d
+    db  7, 0x00        ; 4f
+    dw 0xffff
+    db  0, 0x00        ; 50
+    dw 0xffff
+    db  0, 0x00        ; 51
+    dw 0xffff
+    db  0, 0x00        ; 52
+    dw 0xffff
+    db  0, 0x00        ; 53
+    dw 0xffff
+    db  0, 0x00        ; 54
+    dw 0xffff
+    db  0, 0x00        ; 55
+    dw 0xffff
+    db  0, 0x00        ; 56
+    dw 0xffff
+    db  0, 0x00        ; 57
+    dw 0xffff
+    db  0, 0x00        ; 58
+    dw 0xffff
+    db  0, 0x00        ; 59
+    dw 0xffff
+    db  0, 0x00        ; 5a
+    dw 0xffff
+    db  0, 0x00        ; 5b
+    dw 0xffff
+    db  0, 0x00        ; 5c
+    dw 0xffff
+    db  0, 0x00        ; 5d
+    dw 0xffff
+    db  0, 0x00        ; 5e
+    dw 0xffff
+    db  0, 0x00        ; 5f
+    dw 0x0311
+    db 87, 0x00        ; 60
+    dw 0x0317
+    db 87, 0x00        ; 61
+    dw 0x031c
+    db 103, 0x01        ; 62
+    dw 0x0322
+    db 104, 0x01        ; 63
+    dw 0xffff
+    db  0, 0x00        ; 64
+    dw 0xffff
+    db  0, 0x00        ; 65
+    dw 0xffff
+    db  0, 0x00        ; 66
+    dw 0xffff
+    db  0, 0x00        ; 67
+    dw 0xffff
+    db  0, 0x00        ; 68
+    dw 0xffff
+    db  0, 0x00        ; 69
+    dw 0xffff
+    db  0, 0x00        ; 6a
+    dw 0xffff
+    db  0, 0x00        ; 6b
+    dw 0xffff
+    db  0, 0x00        ; 6c
+    dw 0xffff
+    db  0, 0x00        ; 6d
+    dw 0xffff
+    db  0, 0x00        ; 6e
+    dw 0xffff
+    db  0, 0x00        ; 6f
+    dw 0xffff
+    db  0, 0x00        ; 70
+    dw 0xffff
+    db  0, 0x00        ; 71
+    dw 0xffff
+    db  0, 0x00        ; 72
+    dw 0xffff
+    db  0, 0x00        ; 73
+    dw 0xffff
+    db  0, 0x00        ; 74
+    dw 0xffff
+    db  0, 0x00        ; 75
+    dw 0xffff
+    db  0, 0x00        ; 76
+    dw 0xffff
+    db  0, 0x00        ; 77
+    dw 0xffff
+    db  0, 0x00        ; 78
+    dw 0xffff
+    db  0, 0x00        ; 79
+    dw 0xffff
+    db  0, 0x00        ; 7a
+    dw 0xffff
+    db  0, 0x00        ; 7b
+    dw 0xffff
+    db  0, 0x00        ; 7c
+    dw 0xffff
+    db  0, 0x00        ; 7d
+    dw 0xffff
+    db  0, 0x00        ; 7e
+    dw 0xffff
+    db  0, 0x00        ; 7f
+    dw 0xffff
+    db  0, 0x00        ; 80
+    dw 0xffff
+    db  0, 0x00        ; 81
+    dw 0x0000
+    db 14, 0x07        ; 82
+    dw 0xffff
+    db  0, 0x00        ; 83
+    dw 0xffff
+    db  0, 0x00        ; 84
+    dw 0xffff
+    db  0, 0x00        ; 85
+    dw 0xffff
+    db  0, 0x00        ; 86
+    dw 0xffff
+    db  0, 0x00        ; 87
+    dw 0xffff
+    db  0, 0x00        ; 88
+    dw 0xffff
+    db  0, 0x00        ; 89
+    dw 0xffff
+    db  0, 0x00        ; 8a
+    dw 0xffff
+    db  0, 0x00        ; 8b
+    dw 0xffff
+    db  0, 0x00        ; 8c
+    dw 0xffff
+    db  0, 0x00        ; 8d
+    dw 0xffff
+    db  0, 0x00        ; 8e
+    dw 0xffff
+    db  0, 0x00        ; 8f
+    dw 0xffff
+    db  0, 0x00        ; 90
+    dw 0xffff
+    db  0, 0x00        ; 91
+    dw 0xffff
+    db  0, 0x00        ; 92
+    dw 0xffff
+    db  0, 0x00        ; 93
+    dw 0xffff
+    db  0, 0x00        ; 94
+    dw 0xffff
+    db  0, 0x00        ; 95
+    dw 0xffff
+    db  0, 0x00        ; 96
+    dw 0xffff
+    db  0, 0x00        ; 97
+    dw 0xffff
+    db  0, 0x00        ; 98
+    dw 0xffff
+    db  0, 0x00        ; 99
+    dw 0x011f
+    db 105, 0x00        ; 9a
+    dw 0xffff
+    db  0, 0x00        ; 9b
+    dw 0xffff
+    db  0, 0x00        ; 9c
+    dw 0xffff
+    db  0, 0x00        ; 9d
+    dw 0xffff
+    db  0, 0x00        ; 9e
+    dw 0xffff
+    db  0, 0x00        ; 9f
+    dw 0xffff
+    db  0, 0x00        ; a0
+    dw 0xffff
+    db  0, 0x00        ; a1
+    dw 0xffff
+    db  0, 0x00        ; a2
+    dw 0xffff
+    db  0, 0x00        ; a3
+    dw 0xffff
+    db  0, 0x00        ; a4
+    dw 0xffff
+    db  0, 0x00        ; a5
+    dw 0xffff
+    db  0, 0x00        ; a6
+    dw 0xffff
+    db  0, 0x00        ; a7
+    dw 0xffff
+    db  0, 0x00        ; a8
+    dw 0xffff
+    db  0, 0x00        ; a9
+    dw 0xffff
+    db  0, 0x00        ; aa
+    dw 0xffff
+    db  0, 0x00        ; ab
+    dw 0xffff
+    db  0, 0x00        ; ac
+    dw 0xffff
+    db  0, 0x00        ; ad
+    dw 0xffff
+    db  0, 0x00        ; ae
+    dw 0xffff
+    db  0, 0x00        ; af
+    dw 0xffff
+    db  0, 0x00        ; b0
+    dw 0xffff
+    db  0, 0x00        ; b1
+    dw 0xffff
+    db  0, 0x00        ; b2
+    dw 0xffff
+    db  0, 0x00        ; b3
+    dw 0xffff
+    db  0, 0x00        ; b4
+    dw 0xffff
+    db  0, 0x00        ; b5
+    dw 0xffff
+    db  0, 0x00        ; b6
+    dw 0xffff
+    db  0, 0x00        ; b7
+    dw 0xffff
+    db  0, 0x00        ; b8
+    dw 0xffff
+    db  0, 0x00        ; b9
+    dw 0xffff
+    db  0, 0x00        ; ba
+    dw 0xffff
+    db  0, 0x00        ; bb
+    dw 0xffff
+    db  0, 0x00        ; bc
+    dw 0xffff
+    db  0, 0x00        ; bd
+    dw 0xffff
+    db  0, 0x00        ; be
+    dw 0xffff
+    db  0, 0x00        ; bf
+    dw 0xffff
+    db  0, 0x00        ; c0
+    dw 0xffff
+    db  0, 0x00        ; c1
+    dw 0xffff
+    db  0, 0x00        ; c2
+    dw 0xffff
+    db  0, 0x00        ; c3
+    dw 0x0327
+    db 84, 0x01        ; c4
+    dw 0x032b
+    db 84, 0x01        ; c5
+    dw 0xffff
+    db  0, 0x00        ; c6
+    dw 0xffff
+    db  0, 0x00        ; c7
+    dw 0xffff
+    db  0, 0x00        ; c8
+    dw 0xffff
+    db  0, 0x00        ; c9
+    dw 0xffff
+    db  0, 0x00        ; ca
+    dw 0xffff
+    db  0, 0x00        ; cb
+    dw 0xffff
+    db  0, 0x00        ; cc
+    dw 0xffff
+    db  0, 0x00        ; cd
+    dw 0x032f
+    db  0, 0x00        ; ce
+    dw 0xffff
+    db  0, 0x00        ; cf
+    dw 0xffff
+    db  0, 0x00        ; d0
+    dw 0xffff
+    db  0, 0x00        ; d1
+    dw 0xffff
+    db  0, 0x00        ; d2
+    dw 0xffff
+    db  0, 0x00        ; d3
+    dw 0x0334
+    db 29, 0x00        ; d4
+    dw 0x0338
+    db 29, 0x00        ; d5
+    dw 0x033c
+    db  0, 0x00        ; d6
+    dw 0xffff
+    db  0, 0x00        ; d7
+    dw 0xffff
+    db  0, 0x00        ; d8
+    dw 0xffff
+    db  0, 0x00        ; d9
+    dw 0xffff
+    db  0, 0x00        ; da
+    dw 0xffff
+    db  0, 0x00        ; db
+    dw 0xffff
+    db  0, 0x00        ; dc
+    dw 0xffff
+    db  0, 0x00        ; dd
+    dw 0xffff
+    db  0, 0x00        ; de
+    dw 0xffff
+    db  0, 0x00        ; df
+    dw 0xffff
+    db  0, 0x00        ; e0
+    dw 0xffff
+    db  0, 0x00        ; e1
+    dw 0xffff
+    db  0, 0x00        ; e2
+    dw 0xffff
+    db  0, 0x00        ; e3
+    dw 0xffff
+    db  0, 0x00        ; e4
+    dw 0xffff
+    db  0, 0x00        ; e5
+    dw 0xffff
+    db  0, 0x00        ; e6
+    dw 0xffff
+    db  0, 0x00        ; e7
+    dw 0xffff
+    db  0, 0x00        ; e8
+    dw 0xffff
+    db  0, 0x00        ; e9
+    dw 0x0124
+    db 105, 0x00        ; ea
+    dw 0xffff
+    db  0, 0x00        ; eb
+    dw 0xffff
+    db  0, 0x00        ; ec
+    dw 0xffff
+    db  0, 0x00        ; ed
+    dw 0xffff
+    db  0, 0x00        ; ee
+    dw 0xffff
+    db  0, 0x00        ; ef
+    dw 0xffff
+    db  0, 0x00        ; f0
+    dw 0xffff
+    db  0, 0x00        ; f1
+    dw 0xffff
+    db  0, 0x00        ; f2
+    dw 0xffff
+    db  0, 0x00        ; f3
+    dw 0xffff
+    db  0, 0x00        ; f4
+    dw 0xffff
+    db  0, 0x00        ; f5
+    dw 0xffff
+    db  0, 0x00        ; f6
+    dw 0xffff
+    db  0, 0x00        ; f7
+    dw 0xffff
+    db  0, 0x00        ; f8
+    dw 0xffff
+    db  0, 0x00        ; f9
+    dw 0xffff
+    db  0, 0x00        ; fa
+    dw 0xffff
+    db  0, 0x00        ; fb
+    dw 0xffff
+    db  0, 0x00        ; fc
+    dw 0xffff
+    db  0, 0x00        ; fd
+    dw 0xffff
+    db  0, 0x00        ; fe
+    dw 0xffff
+    db  0, 0x00        ; ff
+
 x86_sse0f:
     dw 0xffff
     db  0, 0x00        ; 00
@@ -1222,7 +1738,7 @@ x86_sse0f:
     db  0, 0x00        ; 01
     dw 0xffff
     db  0, 0x00        ; 02
-    dw 0x02f9
+    dw 0x0341
     db 41, 0x81        ; 03
     dw 0xffff
     db  0, 0x00        ; 04
@@ -1292,7 +1808,7 @@ x86_sse0f:
     db  0, 0x00        ; 24
     dw 0xffff
     db  0, 0x00        ; 25
-    dw 0x02fe
+    dw 0x0346
     db  0, 0x80        ; 26
     dw 0xffff
     db  0, 0x00        ; 27
@@ -1344,65 +1860,65 @@ x86_sse0f:
     db  0, 0x00        ; 3e
     dw 0xffff
     db  0, 0x00        ; 3f
-    dw 0x0307
+    dw 0x034f
     db 44, 0x05        ; 40
-    dw 0x030e
+    dw 0x0356
     db 44, 0x05        ; 41
-    dw 0x0315
+    dw 0x035d
     db 44, 0x23        ; 42
-    dw 0x031b
+    dw 0x0363
     db 44, 0x24        ; 43
-    dw 0x0307
+    dw 0x034f
     db 45, 0x05        ; 44
-    dw 0x030e
+    dw 0x0356
     db 45, 0x05        ; 45
-    dw 0x0315
+    dw 0x035d
     db 45, 0x03        ; 46
-    dw 0x031b
+    dw 0x0363
     db 45, 0x04        ; 47
-    dw 0x0321
+    dw 0x0369
     db 54, 0x24        ; 48
-    dw 0x0328
+    dw 0x0370
     db 52, 0x24        ; 49
-    dw 0x032f
+    dw 0x0377
     db 44, 0x05        ; 4a
-    dw 0x0338
+    dw 0x0380
     db 44, 0x04        ; 4b
-    dw 0x0321
+    dw 0x0369
     db 53, 0x04        ; 4c
-    dw 0x0328
+    dw 0x0370
     db 53, 0x04        ; 4d
     dw 0xffff
     db  0, 0x00        ; 4e
     dw 0xffff
     db  0, 0x00        ; 4f
-    dw 0x0340
+    dw 0x0388
     db 44, 0x25        ; 50
-    dw 0x0349
+    dw 0x0391
     db 44, 0x25        ; 51
     dw 0xffff
     db  0, 0x00        ; 52
     dw 0xffff
     db  0, 0x00        ; 53
-    dw 0x0352
+    dw 0x039a
     db 44, 0x25        ; 54
-    dw 0x035b
+    dw 0x03a3
     db 44, 0x25        ; 55
     dw 0xffff
     db  0, 0x00        ; 56
     dw 0xffff
     db  0, 0x00        ; 57
-    dw 0x0364
+    dw 0x03ac
     db 54, 0x24        ; 58
-    dw 0x036b
+    dw 0x03b3
     db 52, 0x24        ; 59
-    dw 0x0372
+    dw 0x03ba
     db 44, 0x05        ; 5a
     dw 0xffff
     db  0, 0x00        ; 5b
-    dw 0x0364
+    dw 0x03ac
     db 53, 0x04        ; 5c
-    dw 0x036b
+    dw 0x03b3
     db 53, 0x04        ; 5d
     dw 0xffff
     db  0, 0x00        ; 5e
@@ -1424,21 +1940,21 @@ x86_sse0f:
     db  0, 0x00        ; 66
     dw 0xffff
     db  0, 0x00        ; 67
-    dw 0x037b
+    dw 0x03c3
     db 95, 0x81        ; 68
-    dw 0x0382
+    dw 0x03ca
     db 93, 0x81        ; 69
-    dw 0x0389
+    dw 0x03d1
     db 92, 0x81        ; 6a
-    dw 0x038f
+    dw 0x03d7
     db 92, 0x81        ; 6b
-    dw 0x0395
+    dw 0x03dd
     db 96, 0x81        ; 6c
-    dw 0x0382
+    dw 0x03ca
     db 94, 0x81        ; 6d
-    dw 0x039c
+    dw 0x03e4
     db 95, 0x81        ; 6e
-    dw 0x03a2
+    dw 0x03ea
     db 92, 0x81        ; 6f
     dw 0xffff
     db  0, 0x00        ; 70
@@ -1460,7 +1976,7 @@ x86_sse0f:
     db  0, 0x00        ; 78
     dw 0xffff
     db  0, 0x00        ; 79
-    dw 0x03a8
+    dw 0x03f0
     db 61, 0x40        ; 7a
     dw 0xffff
     db  0, 0x00        ; 7b
@@ -1536,65 +2052,65 @@ x86_sse0f:
     db  0, 0x00        ; 9e
     dw 0xffff
     db  0, 0x00        ; 9f
-    dw 0x03b0
+    dw 0x03f8
     db 44, 0x05        ; a0
-    dw 0x03b7
+    dw 0x03ff
     db 44, 0x05        ; a1
     dw 0xffff
     db  0, 0x00        ; a2
     dw 0xffff
     db  0, 0x00        ; a3
-    dw 0x03b0
+    dw 0x03f8
     db 45, 0x05        ; a4
-    dw 0x03b7
+    dw 0x03ff
     db 45, 0x05        ; a5
     dw 0xffff
     db  0, 0x00        ; a6
     dw 0xffff
     db  0, 0x00        ; a7
-    dw 0x03be
+    dw 0x0406
     db 100, 0x44        ; a8
-    dw 0x03c7
+    dw 0x040f
     db 100, 0x44        ; a9
-    dw 0x03d0
+    dw 0x0418
     db 47, 0x20        ; aa
-    dw 0x03d9
+    dw 0x0421
     db 47, 0x20        ; ab
-    dw 0x03e2
-    db 53, 0x05        ; ac
-    dw 0x03ea
-    db 53, 0x05        ; ad
-    dw 0x03f2
-    db 53, 0x43        ; ae
-    dw 0x03fa
-    db 53, 0x44        ; af
-    dw 0x0402
-    db 101, 0x44        ; b0
-    dw 0x040c
-    db 101, 0x45        ; b1
-    dw 0x0416
-    db 49, 0x03        ; b2
-    dw 0x0420
-    db 49, 0x04        ; b3
     dw 0x042a
+    db 53, 0x05        ; ac
+    dw 0x0432
+    db 53, 0x05        ; ad
+    dw 0x043a
+    db 53, 0x43        ; ae
+    dw 0x0442
+    db 53, 0x44        ; af
+    dw 0x044a
+    db 101, 0x44        ; b0
+    dw 0x0454
+    db 101, 0x45        ; b1
+    dw 0x045e
+    db 49, 0x03        ; b2
+    dw 0x0468
+    db 49, 0x04        ; b3
+    dw 0x0472
     db 101, 0x44        ; b4
-    dw 0x0433
+    dw 0x047b
     db 101, 0x45        ; b5
-    dw 0x043c
+    dw 0x0484
     db 49, 0x03        ; b6
-    dw 0x0445
+    dw 0x048d
     db 49, 0x04        ; b7
-    dw 0x044e
+    dw 0x0496
     db 44, 0x03        ; b8
-    dw 0x0456
+    dw 0x049e
     db 44, 0x04        ; b9
     dw 0xffff
     db  0, 0x00        ; ba
     dw 0xffff
     db  0, 0x00        ; bb
-    dw 0x045e
+    dw 0x04a6
     db 44, 0x03        ; bc
-    dw 0x0465
+    dw 0x04ad
     db 44, 0x04        ; bd
     dw 0xffff
     db  0, 0x00        ; be
@@ -1856,225 +2372,225 @@ x86_sse0f:
     db  0, 0x00        ; 13e
     dw 0xffff
     db  0, 0x00        ; 13f
-    dw 0x046c
+    dw 0x04b4
     db 50, 0x00        ; 140
-    dw 0x0475
+    dw 0x04bd
     db 50, 0x00        ; 141
     dw 0xffff
     db  0, 0x00        ; 142
     dw 0xffff
     db  0, 0x00        ; 143
-    dw 0x047e
+    dw 0x04c6
     db 44, 0x05        ; 144
-    dw 0x0485
+    dw 0x04cd
     db 44, 0x05        ; 145
-    dw 0x048c
+    dw 0x04d4
     db 44, 0x23        ; 146
-    dw 0x0493
+    dw 0x04db
     db 44, 0x24        ; 147
-    dw 0x049a
+    dw 0x04e2
     db 44, 0x05        ; 148
     dw 0xffff
     db  0, 0x00        ; 149
-    dw 0x04a2
+    dw 0x04ea
     db 44, 0x23        ; 14a
     dw 0xffff
     db  0, 0x00        ; 14b
-    dw 0x04aa
+    dw 0x04f2
     db 44, 0x05        ; 14c
     dw 0xffff
     db  0, 0x00        ; 14d
-    dw 0x04b0
+    dw 0x04f8
     db 44, 0x23        ; 14e
     dw 0xffff
     db  0, 0x00        ; 14f
-    dw 0x04b6
+    dw 0x04fe
     db 44, 0x25        ; 150
-    dw 0x04bc
+    dw 0x0504
     db 44, 0x25        ; 151
     dw 0xffff
     db  0, 0x00        ; 152
     dw 0xffff
     db  0, 0x00        ; 153
-    dw 0x04c2
+    dw 0x050a
     db 44, 0x25        ; 154
-    dw 0x04c9
+    dw 0x0511
     db 44, 0x25        ; 155
     dw 0xffff
     db  0, 0x00        ; 156
     dw 0xffff
     db  0, 0x00        ; 157
-    dw 0x04d0
+    dw 0x0518
     db 44, 0x25        ; 158
-    dw 0x04d5
+    dw 0x051d
     db 44, 0x25        ; 159
     dw 0xffff
     db  0, 0x00        ; 15a
     dw 0xffff
     db  0, 0x00        ; 15b
-    dw 0x04da
+    dw 0x0522
     db 44, 0x25        ; 15c
-    dw 0x04e0
+    dw 0x0528
     db 44, 0x25        ; 15d
     dw 0xffff
     db  0, 0x00        ; 15e
     dw 0xffff
     db  0, 0x00        ; 15f
-    dw 0x04e6
+    dw 0x052e
     db 44, 0x25        ; 160
-    dw 0x04ec
+    dw 0x0534
     db 44, 0x25        ; 161
-    dw 0x04f2
-    db 44, 0x23        ; 162
-    dw 0x04f8
-    db 44, 0x24        ; 163
-    dw 0x04fe
-    db 44, 0x25        ; 164
-    dw 0x0504
-    db 44, 0x25        ; 165
-    dw 0x050a
-    db 44, 0x23        ; 166
-    dw 0x0510
-    db 44, 0x24        ; 167
-    dw 0x0516
-    db 44, 0x04        ; 168
-    dw 0x051f
-    db 44, 0x05        ; 169
-    dw 0x0528
-    db 44, 0x23        ; 16a
-    dw 0x0531
-    db 44, 0x24        ; 16b
     dw 0x053a
-    db 44, 0x05        ; 16c
-    dw 0x0543
-    db 44, 0x05        ; 16d
+    db 44, 0x23        ; 162
+    dw 0x0540
+    db 44, 0x24        ; 163
+    dw 0x0546
+    db 44, 0x25        ; 164
     dw 0x054c
+    db 44, 0x25        ; 165
+    dw 0x0552
+    db 44, 0x23        ; 166
+    dw 0x0558
+    db 44, 0x24        ; 167
+    dw 0x055e
+    db 44, 0x04        ; 168
+    dw 0x0567
+    db 44, 0x05        ; 169
+    dw 0x0570
+    db 44, 0x23        ; 16a
+    dw 0x0579
+    db 44, 0x24        ; 16b
+    dw 0x0582
+    db 44, 0x05        ; 16c
+    dw 0x058b
+    db 44, 0x05        ; 16d
+    dw 0x0594
     db 44, 0x05        ; 16e
     dw 0xffff
     db  0, 0x00        ; 16f
-    dw 0x0556
-    db 44, 0x25        ; 170
-    dw 0x055c
-    db 44, 0x25        ; 171
-    dw 0x0562
-    db 44, 0x23        ; 172
-    dw 0x0568
-    db 44, 0x24        ; 173
-    dw 0x056e
-    db 44, 0x25        ; 174
-    dw 0x0574
-    db 44, 0x25        ; 175
-    dw 0x057a
-    db 44, 0x23        ; 176
-    dw 0x0580
-    db 44, 0x24        ; 177
-    dw 0x0586
-    db 44, 0x25        ; 178
-    dw 0x058c
-    db 44, 0x25        ; 179
-    dw 0x0592
-    db 44, 0x23        ; 17a
-    dw 0x0598
-    db 44, 0x24        ; 17b
     dw 0x059e
-    db 44, 0x25        ; 17c
+    db 44, 0x25        ; 170
     dw 0x05a4
-    db 44, 0x25        ; 17d
+    db 44, 0x25        ; 171
     dw 0x05aa
-    db 44, 0x23        ; 17e
+    db 44, 0x23        ; 172
     dw 0x05b0
+    db 44, 0x24        ; 173
+    dw 0x05b6
+    db 44, 0x25        ; 174
+    dw 0x05bc
+    db 44, 0x25        ; 175
+    dw 0x05c2
+    db 44, 0x23        ; 176
+    dw 0x05c8
+    db 44, 0x24        ; 177
+    dw 0x05ce
+    db 44, 0x25        ; 178
+    dw 0x05d4
+    db 44, 0x25        ; 179
+    dw 0x05da
+    db 44, 0x23        ; 17a
+    dw 0x05e0
+    db 44, 0x24        ; 17b
+    dw 0x05e6
+    db 44, 0x25        ; 17c
+    dw 0x05ec
+    db 44, 0x25        ; 17d
+    dw 0x05f2
+    db 44, 0x23        ; 17e
+    dw 0x05f8
     db 44, 0x24        ; 17f
-    dw 0x05b6
+    dw 0x05fe
     db 44, 0x4b        ; 180
-    dw 0x05b6
+    dw 0x05fe
     db 44, 0x25        ; 181
     dw 0xffff
     db  0, 0x00        ; 182
     dw 0xffff
     db  0, 0x00        ; 183
-    dw 0x05c0
+    dw 0x0608
     db 44, 0x4b        ; 184
-    dw 0x05c0
+    dw 0x0608
     db 44, 0x25        ; 185
     dw 0xffff
     db  0, 0x00        ; 186
     dw 0xffff
     db  0, 0x00        ; 187
-    dw 0x05ca
+    dw 0x0612
     db 44, 0x4b        ; 188
-    dw 0x05ca
+    dw 0x0612
     db 44, 0x25        ; 189
     dw 0xffff
     db  0, 0x00        ; 18a
     dw 0xffff
     db  0, 0x00        ; 18b
-    dw 0x05d4
+    dw 0x061c
     db 44, 0x4c        ; 18c
-    dw 0x05d4
+    dw 0x061c
     db 44, 0x25        ; 18d
     dw 0xffff
     db  0, 0x00        ; 18e
     dw 0xffff
     db  0, 0x00        ; 18f
-    dw 0x05dd
+    dw 0x0625
     db 44, 0x4c        ; 190
-    dw 0x05dd
+    dw 0x0625
     db 44, 0x25        ; 191
     dw 0xffff
     db  0, 0x00        ; 192
     dw 0xffff
     db  0, 0x00        ; 193
-    dw 0x05e5
+    dw 0x062d
     db 44, 0x4c        ; 194
-    dw 0x05e5
+    dw 0x062d
     db 44, 0x25        ; 195
     dw 0xffff
     db  0, 0x00        ; 196
     dw 0xffff
     db  0, 0x00        ; 197
-    dw 0x05ed
+    dw 0x0635
     db 44, 0x4c        ; 198
-    dw 0x05ed
+    dw 0x0635
     db 44, 0x25        ; 199
     dw 0xffff
     db  0, 0x00        ; 19a
     dw 0xffff
     db  0, 0x00        ; 19b
-    dw 0x05f5
+    dw 0x063d
     db 44, 0x4c        ; 19c
-    dw 0x05f5
+    dw 0x063d
     db 44, 0x25        ; 19d
     dw 0xffff
     db  0, 0x00        ; 19e
     dw 0xffff
     db  0, 0x00        ; 19f
-    dw 0x05fe
+    dw 0x0646
     db 44, 0x4c        ; 1a0
-    dw 0x05fe
+    dw 0x0646
     db 44, 0x25        ; 1a1
     dw 0xffff
     db  0, 0x00        ; 1a2
     dw 0xffff
     db  0, 0x00        ; 1a3
-    dw 0x0608
+    dw 0x0650
     db 44, 0x4c        ; 1a4
-    dw 0x0608
+    dw 0x0650
     db 44, 0x25        ; 1a5
     dw 0xffff
     db  0, 0x00        ; 1a6
     dw 0xffff
     db  0, 0x00        ; 1a7
-    dw 0x0612
+    dw 0x065a
     db 44, 0x4c        ; 1a8
-    dw 0x0612
+    dw 0x065a
     db 44, 0x25        ; 1a9
     dw 0xffff
     db  0, 0x00        ; 1aa
     dw 0xffff
     db  0, 0x00        ; 1ab
-    dw 0x061c
+    dw 0x0664
     db 44, 0x4c        ; 1ac
-    dw 0x061c
+    dw 0x0664
     db 44, 0x25        ; 1ad
     dw 0xffff
     db  0, 0x00        ; 1ae
@@ -2082,7 +2598,7 @@ x86_sse0f:
     db  0, 0x00        ; 1af
     dw 0xffff
     db  0, 0x00        ; 1b0
-    dw 0x0625
+    dw 0x066d
     db 44, 0x25        ; 1b1
     dw 0xffff
     db  0, 0x00        ; 1b2
@@ -2090,35 +2606,35 @@ x86_sse0f:
     db  0, 0x00        ; 1b3
     dw 0xffff
     db  0, 0x00        ; 1b4
-    dw 0x0630
+    dw 0x0678
     db 44, 0x25        ; 1b5
     dw 0xffff
     db  0, 0x00        ; 1b6
     dw 0xffff
     db  0, 0x00        ; 1b7
-    dw 0x063b
+    dw 0x0683
     db 47, 0x58        ; 1b8
-    dw 0x063b
+    dw 0x0683
     db 47, 0x10        ; 1b9
     dw 0xffff
     db  0, 0x00        ; 1ba
     dw 0xffff
     db  0, 0x00        ; 1bb
-    dw 0x0640
+    dw 0x0688
     db 44, 0x4c        ; 1bc
-    dw 0x0645
+    dw 0x068d
     db 44, 0x05        ; 1bd
-    dw 0x064c
+    dw 0x0694
     db 44, 0x05        ; 1be
     dw 0xffff
     db  0, 0x00        ; 1bf
-    dw 0x0653
+    dw 0x069b
     db 46, 0x4c        ; 1c0
-    dw 0x065a
+    dw 0x06a2
     db 46, 0x05        ; 1c1
-    dw 0x0661
+    dw 0x06a9
     db 46, 0x05        ; 1c2
-    dw 0x0669
+    dw 0x06b1
     db 46, 0x05        ; 1c3
     dw 0x0010
     db 51, 0x48        ; 1c4
@@ -2144,31 +2660,31 @@ x86_sse0f:
     db  0, 0x00        ; 1ce
     dw 0xffff
     db  0, 0x00        ; 1cf
-    dw 0x0671
+    dw 0x06b9
     db 44, 0x4c        ; 1d0
-    dw 0x0671
+    dw 0x06b9
     db 44, 0x25        ; 1d1
     dw 0xffff
     db  0, 0x00        ; 1d2
     dw 0xffff
     db  0, 0x00        ; 1d3
-    dw 0x0679
+    dw 0x06c1
     db 44, 0x4c        ; 1d4
-    dw 0x0679
+    dw 0x06c1
     db 44, 0x25        ; 1d5
     dw 0xffff
     db  0, 0x00        ; 1d6
     dw 0xffff
     db  0, 0x00        ; 1d7
-    dw 0x0681
+    dw 0x06c9
     db 44, 0x4c        ; 1d8
-    dw 0x0681
+    dw 0x06c9
     db 44, 0x25        ; 1d9
     dw 0xffff
     db  0, 0x00        ; 1da
     dw 0xffff
     db  0, 0x00        ; 1db
-    dw 0x0689
+    dw 0x06d1
     db  0, 0x00        ; 1dc
     dw 0xffff
     db  0, 0x00        ; 1dd
@@ -2178,19 +2694,19 @@ x86_sse0f:
     db  0, 0x00        ; 1df
     dw 0xffff
     db  0, 0x00        ; 1e0
-    dw 0x068e
+    dw 0x06d6
     db 97, 0x81        ; 1e1
     dw 0xffff
     db  0, 0x00        ; 1e2
-    dw 0x0694
+    dw 0x06dc
     db 97, 0x81        ; 1e3
     dw 0xffff
     db  0, 0x00        ; 1e4
-    dw 0x068e
+    dw 0x06d6
     db 98, 0x81        ; 1e5
     dw 0xffff
     db  0, 0x00        ; 1e6
-    dw 0x0694
+    dw 0x06dc
     db 98, 0x81        ; 1e7
     dw 0xffff
     db  0, 0x00        ; 1e8
@@ -2210,33 +2726,33 @@ x86_sse0f:
     db  0, 0x00        ; 1ef
     dw 0xffff
     db  0, 0x00        ; 1f0
-    dw 0x069c
+    dw 0x06e4
     db 44, 0x25        ; 1f1
     dw 0xffff
     db  0, 0x00        ; 1f2
-    dw 0x06a3
+    dw 0x06eb
     db 44, 0x25        ; 1f3
     dw 0xffff
     db  0, 0x00        ; 1f4
-    dw 0x06aa
+    dw 0x06f2
     db 44, 0x25        ; 1f5
     dw 0xffff
     db  0, 0x00        ; 1f6
-    dw 0x06b1
+    dw 0x06f9
     db 44, 0x25        ; 1f7
-    dw 0x063b
+    dw 0x0683
     db 48, 0x58        ; 1f8
-    dw 0x063b
+    dw 0x0683
     db 48, 0x10        ; 1f9
-    dw 0x0640
+    dw 0x0688
     db 44, 0x04        ; 1fa
     dw 0xffff
     db  0, 0x00        ; 1fb
-    dw 0x0640
+    dw 0x0688
     db 45, 0x4c        ; 1fc
-    dw 0x0645
+    dw 0x068d
     db 45, 0x05        ; 1fd
-    dw 0x064c
+    dw 0x0694
     db 45, 0x05        ; 1fe
     dw 0xffff
     db  0, 0x00        ; 1ff
@@ -2692,7 +3208,7 @@ x86_sse0f:
     db  0, 0x00        ; 2e0
     dw 0xffff
     db  0, 0x00        ; 2e1
-    dw 0x06b8
+    dw 0x0700
     db  4, 0x81        ; 2e2
     dw 0xffff
     db  0, 0x00        ; 2e3
@@ -2724,7 +3240,7 @@ x86_sse0f:
     db  0, 0x00        ; 2f0
     dw 0xffff
     db  0, 0x00        ; 2f1
-    dw 0x06bf
+    dw 0x0707
     db  4, 0x81        ; 2f2
     dw 0xffff
     db  0, 0x00        ; 2f3
@@ -2732,7 +3248,7 @@ x86_sse0f:
     db  0, 0x00        ; 2f4
     dw 0xffff
     db  0, 0x00        ; 2f5
-    dw 0x06c5
+    dw 0x070d
     db  4, 0x81        ; 2f6
     dw 0xffff
     db  0, 0x00        ; 2f7
@@ -2768,41 +3284,41 @@ x86_sse0f:
     db  0, 0x00        ; 306
     dw 0xffff
     db  0, 0x00        ; 307
-    dw 0x06cb
+    dw 0x0713
     db 59, 0x25        ; 308
-    dw 0x06d1
+    dw 0x0719
     db 59, 0x25        ; 309
-    dw 0x06d7
+    dw 0x071f
     db 59, 0x23        ; 30a
-    dw 0x06dd
+    dw 0x0725
     db 59, 0x24        ; 30b
-    dw 0x06e3
-    db  2, 0x81        ; 30c
+    dw 0x072b
+    db  2, 0xa1        ; 30c
     dw 0xffff
     db  0, 0x00        ; 30d
     dw 0xffff
     db  0, 0x00        ; 30e
     dw 0xffff
     db  0, 0x00        ; 30f
-    dw 0x06ea
+    dw 0x0732
     db 56, 0x4a        ; 310
-    dw 0x06ea
+    dw 0x0732
     db 56, 0x22        ; 311
     dw 0xffff
     db  0, 0x00        ; 312
     dw 0xffff
     db  0, 0x00        ; 313
-    dw 0x06f1
+    dw 0x0739
     db 57, 0x48        ; 314
-    dw 0x06f1
+    dw 0x0739
     db 57, 0x00        ; 315
     dw 0xffff
     db  0, 0x00        ; 316
     dw 0xffff
     db  0, 0x00        ; 317
-    dw 0x06f8
+    dw 0x0740
     db 46, 0x25        ; 318
-    dw 0x06ff
+    dw 0x0747
     db 46, 0x25        ; 319
     dw 0xffff
     db  0, 0x00        ; 31a
@@ -2882,47 +3398,47 @@ x86_sse0f:
     db  0, 0x00        ; 33f
     dw 0xffff
     db  0, 0x00        ; 340
-    dw 0x0706
+    dw 0x074e
     db 44, 0x25        ; 341
     dw 0xffff
     db  0, 0x00        ; 342
-    dw 0x070f
+    dw 0x0757
     db 44, 0x25        ; 343
-    dw 0x0718
+    dw 0x0760
     db 44, 0x4c        ; 344
-    dw 0x0718
+    dw 0x0760
     db 44, 0x25        ; 345
     dw 0xffff
     db  0, 0x00        ; 346
     dw 0xffff
     db  0, 0x00        ; 347
-    dw 0x071e
+    dw 0x0766
     db 44, 0x4c        ; 348
-    dw 0x071e
+    dw 0x0766
     db 44, 0x25        ; 349
     dw 0xffff
     db  0, 0x00        ; 34a
     dw 0xffff
     db  0, 0x00        ; 34b
-    dw 0x0724
+    dw 0x076c
     db 44, 0x4c        ; 34c
-    dw 0x0724
+    dw 0x076c
     db 44, 0x25        ; 34d
     dw 0xffff
     db  0, 0x00        ; 34e
     dw 0xffff
     db  0, 0x00        ; 34f
-    dw 0x072a
+    dw 0x0772
     db 44, 0x4c        ; 350
-    dw 0x072a
+    dw 0x0772
     db 44, 0x25        ; 351
     dw 0xffff
     db  0, 0x00        ; 352
     dw 0xffff
     db  0, 0x00        ; 353
-    dw 0x0730
+    dw 0x0778
     db 44, 0x4c        ; 354
-    dw 0x0730
+    dw 0x0778
     db 44, 0x25        ; 355
     dw 0xffff
     db  0, 0x00        ; 356
@@ -2930,127 +3446,127 @@ x86_sse0f:
     db  0, 0x00        ; 357
     dw 0xffff
     db  0, 0x00        ; 358
-    dw 0x0640
+    dw 0x0688
     db 45, 0x04        ; 359
-    dw 0x0737
+    dw 0x077f
     db 100, 0x40        ; 35a
-    dw 0x073f
+    dw 0x0787
     db 101, 0x40        ; 35b
-    dw 0x0747
+    dw 0x078f
     db 50, 0x48        ; 35c
-    dw 0x0747
+    dw 0x078f
     db 50, 0x00        ; 35d
     dw 0xffff
     db  0, 0x00        ; 35e
     dw 0xffff
     db  0, 0x00        ; 35f
-    dw 0x0750
+    dw 0x0798
     db 44, 0x4c        ; 360
-    dw 0x0750
+    dw 0x0798
     db 44, 0x25        ; 361
     dw 0xffff
     db  0, 0x00        ; 362
     dw 0xffff
     db  0, 0x00        ; 363
-    dw 0x0758
+    dw 0x07a0
     db 44, 0x4c        ; 364
-    dw 0x0758
+    dw 0x07a0
     db 44, 0x25        ; 365
     dw 0xffff
     db  0, 0x00        ; 366
     dw 0xffff
     db  0, 0x00        ; 367
-    dw 0x0760
+    dw 0x07a8
     db 44, 0x4c        ; 368
-    dw 0x0760
+    dw 0x07a8
     db 44, 0x25        ; 369
     dw 0xffff
     db  0, 0x00        ; 36a
     dw 0xffff
     db  0, 0x00        ; 36b
-    dw 0x0767
+    dw 0x07af
     db 44, 0x4c        ; 36c
-    dw 0x0767
+    dw 0x07af
     db 44, 0x25        ; 36d
     dw 0xffff
     db  0, 0x00        ; 36e
     dw 0xffff
     db  0, 0x00        ; 36f
-    dw 0x076c
+    dw 0x07b4
     db 44, 0x4c        ; 370
-    dw 0x076c
+    dw 0x07b4
     db 44, 0x25        ; 371
     dw 0xffff
     db  0, 0x00        ; 372
     dw 0xffff
     db  0, 0x00        ; 373
-    dw 0x0774
+    dw 0x07bc
     db 44, 0x4c        ; 374
-    dw 0x0774
+    dw 0x07bc
     db 44, 0x25        ; 375
     dw 0xffff
     db  0, 0x00        ; 376
     dw 0xffff
     db  0, 0x00        ; 377
-    dw 0x077c
+    dw 0x07c4
     db 44, 0x4c        ; 378
-    dw 0x077c
+    dw 0x07c4
     db 44, 0x25        ; 379
     dw 0xffff
     db  0, 0x00        ; 37a
     dw 0xffff
     db  0, 0x00        ; 37b
-    dw 0x0783
+    dw 0x07cb
     db 44, 0x4c        ; 37c
-    dw 0x0783
+    dw 0x07cb
     db 44, 0x25        ; 37d
     dw 0xffff
     db  0, 0x00        ; 37e
     dw 0xffff
     db  0, 0x00        ; 37f
-    dw 0x0789
+    dw 0x07d1
     db 44, 0x4c        ; 380
-    dw 0x0789
+    dw 0x07d1
     db 44, 0x25        ; 381
     dw 0xffff
     db  0, 0x00        ; 382
     dw 0xffff
     db  0, 0x00        ; 383
-    dw 0x078f
+    dw 0x07d7
     db 44, 0x4c        ; 384
-    dw 0x078f
+    dw 0x07d7
     db 44, 0x25        ; 385
     dw 0xffff
     db  0, 0x00        ; 386
     dw 0xffff
     db  0, 0x00        ; 387
-    dw 0x0795
+    dw 0x07dd
     db 44, 0x4c        ; 388
-    dw 0x0795
+    dw 0x07dd
     db 44, 0x25        ; 389
     dw 0xffff
     db  0, 0x00        ; 38a
     dw 0xffff
     db  0, 0x00        ; 38b
-    dw 0x079b
+    dw 0x07e3
     db 44, 0x4c        ; 38c
-    dw 0x079b
+    dw 0x07e3
     db 44, 0x25        ; 38d
     dw 0xffff
     db  0, 0x00        ; 38e
     dw 0xffff
     db  0, 0x00        ; 38f
-    dw 0x07a1
+    dw 0x07e9
     db 44, 0x4c        ; 390
-    dw 0x07a1
+    dw 0x07e9
     db 44, 0x25        ; 391
     dw 0xffff
     db  0, 0x00        ; 392
     dw 0xffff
     db  0, 0x00        ; 393
-    dw 0x07a9
+    dw 0x07f1
     db 44, 0x4c        ; 394
-    dw 0x07a9
+    dw 0x07f1
     db 44, 0x25        ; 395
     dw 0xffff
     db  0, 0x00        ; 396
@@ -3058,79 +3574,79 @@ x86_sse0f:
     db  0, 0x00        ; 397
     dw 0xffff
     db  0, 0x00        ; 398
-    dw 0x07b0
+    dw 0x07f8
     db 44, 0x05        ; 399
-    dw 0x07ba
+    dw 0x0802
     db 44, 0x04        ; 39a
-    dw 0x07c3
+    dw 0x080b
     db 44, 0x05        ; 39b
-    dw 0x07cc
+    dw 0x0814
     db 53, 0x4c        ; 39c
-    dw 0x07d3
+    dw 0x081b
     db 53, 0x05        ; 39d
     dw 0xffff
     db  0, 0x00        ; 39e
     dw 0xffff
     db  0, 0x00        ; 39f
-    dw 0x07db
+    dw 0x0823
     db 44, 0x4c        ; 3a0
-    dw 0x07db
+    dw 0x0823
     db 44, 0x25        ; 3a1
     dw 0xffff
     db  0, 0x00        ; 3a2
     dw 0xffff
     db  0, 0x00        ; 3a3
-    dw 0x07e2
+    dw 0x082a
     db 44, 0x4c        ; 3a4
-    dw 0x07e2
+    dw 0x082a
     db 44, 0x25        ; 3a5
     dw 0xffff
     db  0, 0x00        ; 3a6
     dw 0xffff
     db  0, 0x00        ; 3a7
-    dw 0x07e9
+    dw 0x0831
     db 44, 0x4c        ; 3a8
-    dw 0x07e9
+    dw 0x0831
     db 44, 0x25        ; 3a9
     dw 0xffff
     db  0, 0x00        ; 3aa
     dw 0xffff
     db  0, 0x00        ; 3ab
-    dw 0x07f0
+    dw 0x0838
     db 44, 0x4c        ; 3ac
-    dw 0x07f0
+    dw 0x0838
     db 44, 0x25        ; 3ad
     dw 0xffff
     db  0, 0x00        ; 3ae
     dw 0xffff
     db  0, 0x00        ; 3af
-    dw 0x07f4
+    dw 0x083c
     db 44, 0x4c        ; 3b0
-    dw 0x07f4
+    dw 0x083c
     db 44, 0x25        ; 3b1
     dw 0xffff
     db  0, 0x00        ; 3b2
     dw 0xffff
     db  0, 0x00        ; 3b3
-    dw 0x07fb
+    dw 0x0843
     db 44, 0x4c        ; 3b4
-    dw 0x07fb
+    dw 0x0843
     db 44, 0x25        ; 3b5
     dw 0xffff
     db  0, 0x00        ; 3b6
     dw 0xffff
     db  0, 0x00        ; 3b7
-    dw 0x0802
+    dw 0x084a
     db 44, 0x4c        ; 3b8
-    dw 0x0802
+    dw 0x084a
     db 44, 0x25        ; 3b9
     dw 0xffff
     db  0, 0x00        ; 3ba
     dw 0xffff
     db  0, 0x00        ; 3bb
-    dw 0x0809
+    dw 0x0851
     db 44, 0x4c        ; 3bc
-    dw 0x0809
+    dw 0x0851
     db 44, 0x25        ; 3bd
     dw 0xffff
     db  0, 0x00        ; 3be
@@ -3142,115 +3658,115 @@ x86_sse0f:
     db  0, 0x00        ; 3c1
     dw 0xffff
     db  0, 0x00        ; 3c2
-    dw 0x080e
+    dw 0x0856
     db 52, 0x00        ; 3c3
-    dw 0x0814
+    dw 0x085c
     db 44, 0x4c        ; 3c4
-    dw 0x0814
+    dw 0x085c
     db 44, 0x25        ; 3c5
     dw 0xffff
     db  0, 0x00        ; 3c6
     dw 0xffff
     db  0, 0x00        ; 3c7
-    dw 0x081a
+    dw 0x0862
     db 44, 0x4c        ; 3c8
-    dw 0x081a
+    dw 0x0862
     db 44, 0x25        ; 3c9
     dw 0xffff
     db  0, 0x00        ; 3ca
     dw 0xffff
     db  0, 0x00        ; 3cb
-    dw 0x0820
+    dw 0x0868
     db 44, 0x4c        ; 3cc
-    dw 0x0820
+    dw 0x0868
     db 44, 0x25        ; 3cd
     dw 0xffff
     db  0, 0x00        ; 3ce
     dw 0xffff
     db  0, 0x00        ; 3cf
-    dw 0x0826
+    dw 0x086e
     db 44, 0x4c        ; 3d0
-    dw 0x0826
+    dw 0x086e
     db 44, 0x25        ; 3d1
     dw 0xffff
     db  0, 0x00        ; 3d2
     dw 0xffff
     db  0, 0x00        ; 3d3
-    dw 0x082e
+    dw 0x0876
     db 44, 0x4c        ; 3d4
-    dw 0x082e
+    dw 0x0876
     db 44, 0x25        ; 3d5
     dw 0xffff
     db  0, 0x00        ; 3d6
     dw 0xffff
     db  0, 0x00        ; 3d7
-    dw 0x0836
+    dw 0x087e
     db 44, 0x4c        ; 3d8
-    dw 0x0836
+    dw 0x087e
     db 44, 0x25        ; 3d9
     dw 0xffff
     db  0, 0x00        ; 3da
     dw 0xffff
     db  0, 0x00        ; 3db
-    dw 0x083d
+    dw 0x0885
     db 44, 0x4c        ; 3dc
-    dw 0x0846
+    dw 0x088e
     db 44, 0x05        ; 3dd
     dw 0xffff
     db  0, 0x00        ; 3de
     dw 0xffff
     db  0, 0x00        ; 3df
-    dw 0x0851
+    dw 0x0899
     db 44, 0x4c        ; 3e0
-    dw 0x0851
+    dw 0x0899
     db 44, 0x25        ; 3e1
     dw 0xffff
     db  0, 0x00        ; 3e2
     dw 0xffff
     db  0, 0x00        ; 3e3
-    dw 0x0857
+    dw 0x089f
     db 44, 0x4c        ; 3e4
-    dw 0x0857
+    dw 0x089f
     db 44, 0x25        ; 3e5
     dw 0xffff
     db  0, 0x00        ; 3e6
     dw 0xffff
     db  0, 0x00        ; 3e7
-    dw 0x085d
+    dw 0x08a5
     db 44, 0x4c        ; 3e8
-    dw 0x085d
+    dw 0x08a5
     db 44, 0x25        ; 3e9
     dw 0xffff
     db  0, 0x00        ; 3ea
     dw 0xffff
     db  0, 0x00        ; 3eb
-    dw 0x0863
+    dw 0x08ab
     db 44, 0x4c        ; 3ec
-    dw 0x0863
+    dw 0x08ab
     db 44, 0x25        ; 3ed
     dw 0xffff
     db  0, 0x00        ; 3ee
     dw 0xffff
     db  0, 0x00        ; 3ef
-    dw 0x0869
+    dw 0x08b1
     db 44, 0x4c        ; 3f0
-    dw 0x0869
+    dw 0x08b1
     db 44, 0x25        ; 3f1
     dw 0xffff
     db  0, 0x00        ; 3f2
     dw 0xffff
     db  0, 0x00        ; 3f3
-    dw 0x086f
+    dw 0x08b7
     db 44, 0x4c        ; 3f4
-    dw 0x086f
+    dw 0x08b7
     db 44, 0x25        ; 3f5
     dw 0xffff
     db  0, 0x00        ; 3f6
     dw 0xffff
     db  0, 0x00        ; 3f7
-    dw 0x0875
+    dw 0x08bd
     db 44, 0x4c        ; 3f8
-    dw 0x0875
+    dw 0x08bd
     db 44, 0x25        ; 3f9
     dw 0xffff
     db  0, 0x00        ; 3fa
@@ -3266,97 +3782,97 @@ x86_sse0f:
     db  0, 0x00        ; 3ff
 
 x86_sse38:
-    dw 0x087b
+    dw 0x08c3
     db 44, 0x4c        ; 00
-    dw 0x087b
+    dw 0x08c3
     db 44, 0x25        ; 01
     dw 0xffff
     db  0, 0x00        ; 02
     dw 0xffff
     db  0, 0x00        ; 03
-    dw 0x0882
+    dw 0x08ca
     db 44, 0x4c        ; 04
-    dw 0x0882
+    dw 0x08ca
     db 44, 0x25        ; 05
     dw 0xffff
     db  0, 0x00        ; 06
     dw 0xffff
     db  0, 0x00        ; 07
-    dw 0x0889
+    dw 0x08d1
     db 44, 0x4c        ; 08
-    dw 0x0889
+    dw 0x08d1
     db 44, 0x25        ; 09
     dw 0xffff
     db  0, 0x00        ; 0a
     dw 0xffff
     db  0, 0x00        ; 0b
-    dw 0x0890
+    dw 0x08d8
     db 44, 0x4c        ; 0c
-    dw 0x0890
+    dw 0x08d8
     db 44, 0x25        ; 0d
     dw 0xffff
     db  0, 0x00        ; 0e
     dw 0xffff
     db  0, 0x00        ; 0f
-    dw 0x0898
+    dw 0x08e0
     db 44, 0x4c        ; 10
-    dw 0x0898
+    dw 0x08e0
     db 44, 0x25        ; 11
     dw 0xffff
     db  0, 0x00        ; 12
     dw 0xffff
     db  0, 0x00        ; 13
-    dw 0x08a2
+    dw 0x08ea
     db 44, 0x4c        ; 14
-    dw 0x08a2
+    dw 0x08ea
     db 44, 0x25        ; 15
     dw 0xffff
     db  0, 0x00        ; 16
     dw 0xffff
     db  0, 0x00        ; 17
-    dw 0x08a9
+    dw 0x08f1
     db 44, 0x4c        ; 18
-    dw 0x08a9
+    dw 0x08f1
     db 44, 0x25        ; 19
     dw 0xffff
     db  0, 0x00        ; 1a
     dw 0xffff
     db  0, 0x00        ; 1b
-    dw 0x08b0
+    dw 0x08f8
     db 44, 0x4c        ; 1c
-    dw 0x08b0
+    dw 0x08f8
     db 44, 0x25        ; 1d
     dw 0xffff
     db  0, 0x00        ; 1e
     dw 0xffff
     db  0, 0x00        ; 1f
-    dw 0x08b8
+    dw 0x0900
     db 44, 0x4c        ; 20
-    dw 0x08b8
+    dw 0x0900
     db 44, 0x25        ; 21
     dw 0xffff
     db  0, 0x00        ; 22
     dw 0xffff
     db  0, 0x00        ; 23
-    dw 0x08bf
+    dw 0x0907
     db 44, 0x4c        ; 24
-    dw 0x08bf
+    dw 0x0907
     db 44, 0x25        ; 25
     dw 0xffff
     db  0, 0x00        ; 26
     dw 0xffff
     db  0, 0x00        ; 27
-    dw 0x08c6
+    dw 0x090e
     db 44, 0x4c        ; 28
-    dw 0x08c6
+    dw 0x090e
     db 44, 0x25        ; 29
     dw 0xffff
     db  0, 0x00        ; 2a
     dw 0xffff
     db  0, 0x00        ; 2b
-    dw 0x08cd
+    dw 0x0915
     db 44, 0x4c        ; 2c
-    dw 0x08cd
+    dw 0x0915
     db 44, 0x25        ; 2d
     dw 0xffff
     db  0, 0x00        ; 2e
@@ -3396,7 +3912,7 @@ x86_sse38:
     db  0, 0x00        ; 3f
     dw 0xffff
     db  0, 0x00        ; 40
-    dw 0x08d6
+    dw 0x091e
     db 58, 0x45        ; 41
     dw 0xffff
     db  0, 0x00        ; 42
@@ -3428,7 +3944,7 @@ x86_sse38:
     db  0, 0x00        ; 4f
     dw 0xffff
     db  0, 0x00        ; 50
-    dw 0x08df
+    dw 0x0927
     db 58, 0x45        ; 51
     dw 0xffff
     db  0, 0x00        ; 52
@@ -3436,7 +3952,7 @@ x86_sse38:
     db  0, 0x00        ; 53
     dw 0xffff
     db  0, 0x00        ; 54
-    dw 0x08e8
+    dw 0x0930
     db 58, 0x45        ; 55
     dw 0xffff
     db  0, 0x00        ; 56
@@ -3452,7 +3968,7 @@ x86_sse38:
     db  0, 0x00        ; 5b
     dw 0xffff
     db  0, 0x00        ; 5c
-    dw 0x08f1
+    dw 0x0939
     db 44, 0x05        ; 5d
     dw 0xffff
     db  0, 0x00        ; 5e
@@ -3490,25 +4006,25 @@ x86_sse38:
     db  0, 0x00        ; 6e
     dw 0xffff
     db  0, 0x00        ; 6f
-    dw 0x08f7
+    dw 0x093f
     db 44, 0x4c        ; 70
-    dw 0x08f7
+    dw 0x093f
     db 44, 0x05        ; 71
     dw 0xffff
     db  0, 0x00        ; 72
     dw 0xffff
     db  0, 0x00        ; 73
-    dw 0x08fd
+    dw 0x0945
     db 44, 0x4c        ; 74
-    dw 0x08fd
+    dw 0x0945
     db 44, 0x05        ; 75
     dw 0xffff
     db  0, 0x00        ; 76
     dw 0xffff
     db  0, 0x00        ; 77
-    dw 0x0903
+    dw 0x094b
     db 44, 0x4c        ; 78
-    dw 0x0903
+    dw 0x094b
     db 44, 0x05        ; 79
     dw 0xffff
     db  0, 0x00        ; 7a
@@ -3524,7 +4040,7 @@ x86_sse38:
     db  0, 0x00        ; 7f
     dw 0xffff
     db  0, 0x00        ; 80
-    dw 0x0909
+    dw 0x0951
     db 44, 0x04        ; 81
     dw 0xffff
     db  0, 0x00        ; 82
@@ -3532,7 +4048,7 @@ x86_sse38:
     db  0, 0x00        ; 83
     dw 0xffff
     db  0, 0x00        ; 84
-    dw 0x0912
+    dw 0x095a
     db 44, 0x03        ; 85
     dw 0xffff
     db  0, 0x00        ; 86
@@ -3540,7 +4056,7 @@ x86_sse38:
     db  0, 0x00        ; 87
     dw 0xffff
     db  0, 0x00        ; 88
-    dw 0x091b
+    dw 0x0963
     db 44, 0x02        ; 89
     dw 0xffff
     db  0, 0x00        ; 8a
@@ -3548,7 +4064,7 @@ x86_sse38:
     db  0, 0x00        ; 8b
     dw 0xffff
     db  0, 0x00        ; 8c
-    dw 0x0924
+    dw 0x096c
     db 44, 0x04        ; 8d
     dw 0xffff
     db  0, 0x00        ; 8e
@@ -3556,7 +4072,7 @@ x86_sse38:
     db  0, 0x00        ; 8f
     dw 0xffff
     db  0, 0x00        ; 90
-    dw 0x092d
+    dw 0x0975
     db 44, 0x03        ; 91
     dw 0xffff
     db  0, 0x00        ; 92
@@ -3564,7 +4080,7 @@ x86_sse38:
     db  0, 0x00        ; 93
     dw 0xffff
     db  0, 0x00        ; 94
-    dw 0x0936
+    dw 0x097e
     db 44, 0x04        ; 95
     dw 0xffff
     db  0, 0x00        ; 96
@@ -3588,7 +4104,7 @@ x86_sse38:
     db  0, 0x00        ; 9f
     dw 0xffff
     db  0, 0x00        ; a0
-    dw 0x093f
+    dw 0x0987
     db 44, 0x25        ; a1
     dw 0xffff
     db  0, 0x00        ; a2
@@ -3596,7 +4112,7 @@ x86_sse38:
     db  0, 0x00        ; a3
     dw 0xffff
     db  0, 0x00        ; a4
-    dw 0x0946
+    dw 0x098e
     db 44, 0x25        ; a5
     dw 0xffff
     db  0, 0x00        ; a6
@@ -3604,7 +4120,7 @@ x86_sse38:
     db  0, 0x00        ; a7
     dw 0xffff
     db  0, 0x00        ; a8
-    dw 0x094e
+    dw 0x0996
     db 52, 0x05        ; a9
     dw 0xffff
     db  0, 0x00        ; aa
@@ -3612,7 +4128,7 @@ x86_sse38:
     db  0, 0x00        ; ab
     dw 0xffff
     db  0, 0x00        ; ac
-    dw 0x0957
+    dw 0x099f
     db 44, 0x25        ; ad
     dw 0xffff
     db  0, 0x00        ; ae
@@ -3652,7 +4168,7 @@ x86_sse38:
     db  0, 0x00        ; bf
     dw 0xffff
     db  0, 0x00        ; c0
-    dw 0x0960
+    dw 0x09a8
     db 44, 0x04        ; c1
     dw 0xffff
     db  0, 0x00        ; c2
@@ -3660,7 +4176,7 @@ x86_sse38:
     db  0, 0x00        ; c3
     dw 0xffff
     db  0, 0x00        ; c4
-    dw 0x0969
+    dw 0x09b1
     db 44, 0x03        ; c5
     dw 0xffff
     db  0, 0x00        ; c6
@@ -3668,7 +4184,7 @@ x86_sse38:
     db  0, 0x00        ; c7
     dw 0xffff
     db  0, 0x00        ; c8
-    dw 0x0972
+    dw 0x09ba
     db 44, 0x02        ; c9
     dw 0xffff
     db  0, 0x00        ; ca
@@ -3676,7 +4192,7 @@ x86_sse38:
     db  0, 0x00        ; cb
     dw 0xffff
     db  0, 0x00        ; cc
-    dw 0x097b
+    dw 0x09c3
     db 44, 0x04        ; cd
     dw 0xffff
     db  0, 0x00        ; ce
@@ -3684,7 +4200,7 @@ x86_sse38:
     db  0, 0x00        ; cf
     dw 0xffff
     db  0, 0x00        ; d0
-    dw 0x0984
+    dw 0x09cc
     db 44, 0x03        ; d1
     dw 0xffff
     db  0, 0x00        ; d2
@@ -3692,7 +4208,7 @@ x86_sse38:
     db  0, 0x00        ; d3
     dw 0xffff
     db  0, 0x00        ; d4
-    dw 0x098d
+    dw 0x09d5
     db 44, 0x04        ; d5
     dw 0xffff
     db  0, 0x00        ; d6
@@ -3708,7 +4224,7 @@ x86_sse38:
     db  0, 0x00        ; db
     dw 0xffff
     db  0, 0x00        ; dc
-    dw 0x0996
+    dw 0x09de
     db 44, 0x25        ; dd
     dw 0xffff
     db  0, 0x00        ; de
@@ -3716,7 +4232,7 @@ x86_sse38:
     db  0, 0x00        ; df
     dw 0xffff
     db  0, 0x00        ; e0
-    dw 0x099e
+    dw 0x09e6
     db 44, 0x25        ; e1
     dw 0xffff
     db  0, 0x00        ; e2
@@ -3724,7 +4240,7 @@ x86_sse38:
     db  0, 0x00        ; e3
     dw 0xffff
     db  0, 0x00        ; e4
-    dw 0x09a5
+    dw 0x09ed
     db 44, 0x25        ; e5
     dw 0xffff
     db  0, 0x00        ; e6
@@ -3732,7 +4248,7 @@ x86_sse38:
     db  0, 0x00        ; e7
     dw 0xffff
     db  0, 0x00        ; e8
-    dw 0x09ac
+    dw 0x09f4
     db 44, 0x25        ; e9
     dw 0xffff
     db  0, 0x00        ; ea
@@ -3740,7 +4256,7 @@ x86_sse38:
     db  0, 0x00        ; eb
     dw 0xffff
     db  0, 0x00        ; ec
-    dw 0x09b3
+    dw 0x09fb
     db 44, 0x25        ; ed
     dw 0xffff
     db  0, 0x00        ; ee
@@ -3748,7 +4264,7 @@ x86_sse38:
     db  0, 0x00        ; ef
     dw 0xffff
     db  0, 0x00        ; f0
-    dw 0x09ba
+    dw 0x0a02
     db 44, 0x25        ; f1
     dw 0xffff
     db  0, 0x00        ; f2
@@ -3756,7 +4272,7 @@ x86_sse38:
     db  0, 0x00        ; f3
     dw 0xffff
     db  0, 0x00        ; f4
-    dw 0x09c1
+    dw 0x0a09
     db 44, 0x25        ; f5
     dw 0xffff
     db  0, 0x00        ; f6
@@ -3764,7 +4280,7 @@ x86_sse38:
     db  0, 0x00        ; f7
     dw 0xffff
     db  0, 0x00        ; f8
-    dw 0x09c8
+    dw 0x0a10
     db 44, 0x25        ; f9
     dw 0xffff
     db  0, 0x00        ; fa
@@ -3772,7 +4288,7 @@ x86_sse38:
     db  0, 0x00        ; fb
     dw 0xffff
     db  0, 0x00        ; fc
-    dw 0x09cf
+    dw 0x0a17
     db 44, 0x25        ; fd
     dw 0xffff
     db  0, 0x00        ; fe
@@ -3780,7 +4296,7 @@ x86_sse38:
     db  0, 0x00        ; ff
     dw 0xffff
     db  0, 0x00        ; 100
-    dw 0x09d6
+    dw 0x0a1e
     db 44, 0x25        ; 101
     dw 0xffff
     db  0, 0x00        ; 102
@@ -3788,7 +4304,7 @@ x86_sse38:
     db  0, 0x00        ; 103
     dw 0xffff
     db  0, 0x00        ; 104
-    dw 0x09dd
+    dw 0x0a25
     db 44, 0x05        ; 105
     dw 0xffff
     db  0, 0x00        ; 106
@@ -4292,7 +4808,7 @@ x86_sse38:
     db  0, 0x00        ; 1ff
     dw 0xffff
     db  0, 0x00        ; 200
-    dw 0x09e8
+    dw 0x0a30
     db 78, 0x81        ; 201
     dw 0xffff
     db  0, 0x00        ; 202
@@ -4300,7 +4816,7 @@ x86_sse38:
     db  0, 0x00        ; 203
     dw 0xffff
     db  0, 0x00        ; 204
-    dw 0x09ef
+    dw 0x0a37
     db 78, 0x81        ; 205
     dw 0xffff
     db  0, 0x00        ; 206
@@ -4308,7 +4824,7 @@ x86_sse38:
     db  0, 0x00        ; 207
     dw 0xffff
     db  0, 0x00        ; 208
-    dw 0x09f7
+    dw 0x0a3f
     db 79, 0x81        ; 209
     dw 0xffff
     db  0, 0x00        ; 20a
@@ -4370,16 +4886,16 @@ x86_sse38:
     db  0, 0x00        ; 226
     dw 0xffff
     db  0, 0x00        ; 227
-    dw 0x09ff
-    db  3, 0x85        ; 228
+    dw 0x0a47
+    db  3, 0xc5        ; 228
     dw 0xffff
     db  0, 0x00        ; 229
     dw 0xffff
     db  0, 0x00        ; 22a
     dw 0xffff
     db  0, 0x00        ; 22b
-    dw 0x09ff
-    db  4, 0x81        ; 22c
+    dw 0x0a47
+    db  4, 0xc1        ; 22c
     dw 0xffff
     db  0, 0x00        ; 22d
     dw 0xffff
@@ -4866,7 +5382,7 @@ x86_sse38:
     db  0, 0x00        ; 31e
     dw 0xffff
     db  0, 0x00        ; 31f
-    dw 0x0a05
+    dw 0x0a4d
     db 44, 0x45        ; 320
     dw 0xffff
     db  0, 0x00        ; 321
@@ -4874,7 +5390,7 @@ x86_sse38:
     db  0, 0x00        ; 322
     dw 0xffff
     db  0, 0x00        ; 323
-    dw 0x0a0f
+    dw 0x0a57
     db 44, 0x45        ; 324
     dw 0xffff
     db  0, 0x00        ; 325
@@ -4882,7 +5398,7 @@ x86_sse38:
     db  0, 0x00        ; 326
     dw 0xffff
     db  0, 0x00        ; 327
-    dw 0x0a18
+    dw 0x0a60
     db 44, 0x45        ; 328
     dw 0xffff
     db  0, 0x00        ; 329
@@ -4890,7 +5406,7 @@ x86_sse38:
     db  0, 0x00        ; 32a
     dw 0xffff
     db  0, 0x00        ; 32b
-    dw 0x0a21
+    dw 0x0a69
     db 58, 0x45        ; 32c
     dw 0xffff
     db  0, 0x00        ; 32d
@@ -4898,7 +5414,7 @@ x86_sse38:
     db  0, 0x00        ; 32e
     dw 0xffff
     db  0, 0x00        ; 32f
-    dw 0x0a2d
+    dw 0x0a75
     db 44, 0x45        ; 330
     dw 0xffff
     db  0, 0x00        ; 331
@@ -4906,7 +5422,7 @@ x86_sse38:
     db  0, 0x00        ; 332
     dw 0xffff
     db  0, 0x00        ; 333
-    dw 0x0a38
+    dw 0x0a80
     db 44, 0x45        ; 334
     dw 0xffff
     db  0, 0x00        ; 335
@@ -4924,7 +5440,7 @@ x86_sse38:
     db  0, 0x00        ; 33b
     dw 0xffff
     db  0, 0x00        ; 33c
-    dw 0x0a43
+    dw 0x0a8b
     db 44, 0x25        ; 33d
     dw 0xffff
     db  0, 0x00        ; 33e
@@ -5020,7 +5536,7 @@ x86_sse38:
     db  0, 0x00        ; 36b
     dw 0xffff
     db  0, 0x00        ; 36c
-    dw 0x0a4d
+    dw 0x0a95
     db 44, 0x05        ; 36d
     dw 0xffff
     db  0, 0x00        ; 36e
@@ -5028,7 +5544,7 @@ x86_sse38:
     db  0, 0x00        ; 36f
     dw 0xffff
     db  0, 0x00        ; 370
-    dw 0x0a54
+    dw 0x0a9c
     db 44, 0x25        ; 371
     dw 0xffff
     db  0, 0x00        ; 372
@@ -5036,7 +5552,7 @@ x86_sse38:
     db  0, 0x00        ; 373
     dw 0xffff
     db  0, 0x00        ; 374
-    dw 0x0a5b
+    dw 0x0aa3
     db 44, 0x25        ; 375
     dw 0xffff
     db  0, 0x00        ; 376
@@ -5044,7 +5560,7 @@ x86_sse38:
     db  0, 0x00        ; 377
     dw 0xffff
     db  0, 0x00        ; 378
-    dw 0x0a66
+    dw 0x0aae
     db 44, 0x25        ; 379
     dw 0xffff
     db  0, 0x00        ; 37a
@@ -5052,7 +5568,7 @@ x86_sse38:
     db  0, 0x00        ; 37b
     dw 0xffff
     db  0, 0x00        ; 37c
-    dw 0x0a6d
+    dw 0x0ab5
     db 44, 0x25        ; 37d
     dw 0xffff
     db  0, 0x00        ; 37e
@@ -5186,21 +5702,21 @@ x86_sse38:
     db  0, 0x00        ; 3be
     dw 0xffff
     db  0, 0x00        ; 3bf
-    dw 0x0a78
+    dw 0x0ac0
     db  4, 0x81        ; 3c0
     dw 0xffff
     db  0, 0x00        ; 3c1
     dw 0xffff
     db  0, 0x00        ; 3c2
-    dw 0x0a7e
+    dw 0x0ac6
     db 99, 0x81        ; 3c3
-    dw 0x0a78
+    dw 0x0ac0
     db  2, 0x81        ; 3c4
     dw 0xffff
     db  0, 0x00        ; 3c5
     dw 0xffff
     db  0, 0x00        ; 3c6
-    dw 0x0a7e
+    dw 0x0ac6
     db 99, 0x81        ; 3c7
     dw 0xffff
     db  0, 0x00        ; 3c8
@@ -5228,18 +5744,18 @@ x86_sse38:
     db  0, 0x00        ; 3d3
     dw 0xffff
     db  0, 0x00        ; 3d4
-    dw 0x0a84
+    dw 0x0acc
     db 77, 0x81        ; 3d5
     dw 0xffff
     db  0, 0x00        ; 3d6
     dw 0xffff
     db  0, 0x00        ; 3d7
-    dw 0x0a8a
+    dw 0x0ad2
     db 77, 0x81        ; 3d8
-    dw 0x0a8f
-    db  4, 0x81        ; 3d9
-    dw 0x0a94
-    db  4, 0x81        ; 3da
+    dw 0x0ad7
+    db  4, 0xa1        ; 3d9
+    dw 0x0adc
+    db  4, 0xa1        ; 3da
     dw 0xffff
     db  0, 0x00        ; 3db
     dw 0xffff
@@ -5252,14 +5768,14 @@ x86_sse38:
     db  0, 0x00        ; 3df
     dw 0xffff
     db  0, 0x00        ; 3e0
-    dw 0x0a99
+    dw 0x0ae1
     db 76, 0x81        ; 3e1
-    dw 0x0aa3
+    dw 0x0aeb
     db 76, 0x81        ; 3e2
-    dw 0x0aab
+    dw 0x0af3
     db 76, 0x81        ; 3e3
-    dw 0x0ab2
-    db  2, 0x81        ; 3e4
+    dw 0x0afa
+    db  2, 0xa1        ; 3e4
     dw 0xffff
     db  0, 0x00        ; 3e5
     dw 0xffff
@@ -5282,13 +5798,13 @@ x86_sse38:
     db  0, 0x00        ; 3ee
     dw 0xffff
     db  0, 0x00        ; 3ef
-    dw 0x0aba
+    dw 0x0b02
     db  2, 0x81        ; 3f0
-    dw 0x0abf
+    dw 0x0b07
     db  2, 0x81        ; 3f1
-    dw 0x0ac4
+    dw 0x0b0c
     db  2, 0x81        ; 3f2
-    dw 0x0ac9
+    dw 0x0b11
     db  2, 0x81        ; 3f3
     dw 0xffff
     db  0, 0x00        ; 3f4
@@ -5382,7 +5898,7 @@ x86_sse3a:
     db  0, 0x00        ; 1f
     dw 0xffff
     db  0, 0x00        ; 20
-    dw 0x0acd
+    dw 0x0b15
     db 46, 0x05        ; 21
     dw 0xffff
     db  0, 0x00        ; 22
@@ -5390,7 +5906,7 @@ x86_sse3a:
     db  0, 0x00        ; 23
     dw 0xffff
     db  0, 0x00        ; 24
-    dw 0x0ad5
+    dw 0x0b1d
     db 46, 0x05        ; 25
     dw 0xffff
     db  0, 0x00        ; 26
@@ -5398,7 +5914,7 @@ x86_sse3a:
     db  0, 0x00        ; 27
     dw 0xffff
     db  0, 0x00        ; 28
-    dw 0x0add
+    dw 0x0b25
     db 46, 0x23        ; 29
     dw 0xffff
     db  0, 0x00        ; 2a
@@ -5406,7 +5922,7 @@ x86_sse3a:
     db  0, 0x00        ; 2b
     dw 0xffff
     db  0, 0x00        ; 2c
-    dw 0x0ae5
+    dw 0x0b2d
     db 46, 0x24        ; 2d
     dw 0xffff
     db  0, 0x00        ; 2e
@@ -5414,7 +5930,7 @@ x86_sse3a:
     db  0, 0x00        ; 2f
     dw 0xffff
     db  0, 0x00        ; 30
-    dw 0x0aed
+    dw 0x0b35
     db 46, 0x25        ; 31
     dw 0xffff
     db  0, 0x00        ; 32
@@ -5422,7 +5938,7 @@ x86_sse3a:
     db  0, 0x00        ; 33
     dw 0xffff
     db  0, 0x00        ; 34
-    dw 0x0af5
+    dw 0x0b3d
     db 46, 0x25        ; 35
     dw 0xffff
     db  0, 0x00        ; 36
@@ -5430,15 +5946,15 @@ x86_sse3a:
     db  0, 0x00        ; 37
     dw 0xffff
     db  0, 0x00        ; 38
-    dw 0x0afd
+    dw 0x0b45
     db 46, 0x25        ; 39
     dw 0xffff
     db  0, 0x00        ; 3a
     dw 0xffff
     db  0, 0x00        ; 3b
-    dw 0x0b05
+    dw 0x0b4d
     db 46, 0x4c        ; 3c
-    dw 0x0b05
+    dw 0x0b4d
     db 46, 0x25        ; 3d
     dw 0xffff
     db  0, 0x00        ; 3e
@@ -5478,7 +5994,7 @@ x86_sse3a:
     db  0, 0x00        ; 4f
     dw 0xffff
     db  0, 0x00        ; 50
-    dw 0x0b0d
+    dw 0x0b55
     db 55, 0x01        ; 51
     dw 0xffff
     db  0, 0x00        ; 52
@@ -5486,7 +6002,7 @@ x86_sse3a:
     db  0, 0x00        ; 53
     dw 0xffff
     db  0, 0x00        ; 54
-    dw 0x06f1
+    dw 0x0739
     db 55, 0x02        ; 55
     dw 0xffff
     db  0, 0x00        ; 56
@@ -5494,7 +6010,7 @@ x86_sse3a:
     db  0, 0x00        ; 57
     dw 0xffff
     db  0, 0x00        ; 58
-    dw 0x0b14
+    dw 0x0b5c
     db 55, 0x13        ; 59
     dw 0xffff
     db  0, 0x00        ; 5a
@@ -5502,7 +6018,7 @@ x86_sse3a:
     db  0, 0x00        ; 5b
     dw 0xffff
     db  0, 0x00        ; 5c
-    dw 0x0b1b
+    dw 0x0b63
     db 55, 0x03        ; 5d
     dw 0xffff
     db  0, 0x00        ; 5e
@@ -5574,7 +6090,7 @@ x86_sse3a:
     db  0, 0x00        ; 7f
     dw 0xffff
     db  0, 0x00        ; 80
-    dw 0x0b25
+    dw 0x0b6d
     db 56, 0x21        ; 81
     dw 0xffff
     db  0, 0x00        ; 82
@@ -5582,7 +6098,7 @@ x86_sse3a:
     db  0, 0x00        ; 83
     dw 0xffff
     db  0, 0x00        ; 84
-    dw 0x0b2c
+    dw 0x0b74
     db 46, 0x23        ; 85
     dw 0xffff
     db  0, 0x00        ; 86
@@ -5590,7 +6106,7 @@ x86_sse3a:
     db  0, 0x00        ; 87
     dw 0xffff
     db  0, 0x00        ; 88
-    dw 0x0b35
+    dw 0x0b7d
     db 56, 0x33        ; 89
     dw 0xffff
     db  0, 0x00        ; 8a
@@ -5830,7 +6346,7 @@ x86_sse3a:
     db  0, 0x00        ; ff
     dw 0xffff
     db  0, 0x00        ; 100
-    dw 0x0b3c
+    dw 0x0b84
     db 46, 0x25        ; 101
     dw 0xffff
     db  0, 0x00        ; 102
@@ -5838,7 +6354,7 @@ x86_sse3a:
     db  0, 0x00        ; 103
     dw 0xffff
     db  0, 0x00        ; 104
-    dw 0x0b41
+    dw 0x0b89
     db 46, 0x25        ; 105
     dw 0xffff
     db  0, 0x00        ; 106
@@ -5846,7 +6362,7 @@ x86_sse3a:
     db  0, 0x00        ; 107
     dw 0xffff
     db  0, 0x00        ; 108
-    dw 0x0b46
+    dw 0x0b8e
     db 46, 0x25        ; 109
     dw 0xffff
     db  0, 0x00        ; 10a
@@ -5862,7 +6378,7 @@ x86_sse3a:
     db  0, 0x00        ; 10f
     dw 0xffff
     db  0, 0x00        ; 110
-    dw 0x0b4e
+    dw 0x0b96
     db 60, 0x25        ; 111
     dw 0xffff
     db  0, 0x00        ; 112
@@ -6086,7 +6602,7 @@ x86_sse3a:
     db  0, 0x00        ; 17f
     dw 0xffff
     db  0, 0x00        ; 180
-    dw 0x0b58
+    dw 0x0ba0
     db 46, 0x05        ; 181
     dw 0xffff
     db  0, 0x00        ; 182
@@ -6094,7 +6610,7 @@ x86_sse3a:
     db  0, 0x00        ; 183
     dw 0xffff
     db  0, 0x00        ; 184
-    dw 0x0b62
+    dw 0x0baa
     db 46, 0x05        ; 185
     dw 0xffff
     db  0, 0x00        ; 186
@@ -6102,7 +6618,7 @@ x86_sse3a:
     db  0, 0x00        ; 187
     dw 0xffff
     db  0, 0x00        ; 188
-    dw 0x0b6c
+    dw 0x0bb4
     db 46, 0x05        ; 189
     dw 0xffff
     db  0, 0x00        ; 18a
@@ -6110,7 +6626,7 @@ x86_sse3a:
     db  0, 0x00        ; 18b
     dw 0xffff
     db  0, 0x00        ; 18c
-    dw 0x0b76
+    dw 0x0bbe
     db 46, 0x05        ; 18d
     dw 0xffff
     db  0, 0x00        ; 18e
@@ -6948,7 +7464,7 @@ x86_sse3a:
     db  0, 0x00        ; 32e
     dw 0xffff
     db  0, 0x00        ; 32f
-    dw 0x0b80
+    dw 0x0bc8
     db 46, 0x45        ; 330
     dw 0xffff
     db  0, 0x00        ; 331
@@ -6966,7 +7482,7 @@ x86_sse3a:
     db  0, 0x00        ; 337
     dw 0xffff
     db  0, 0x00        ; 338
-    dw 0x0b8a
+    dw 0x0bd2
     db 46, 0x25        ; 339
     dw 0xffff
     db  0, 0x00        ; 33a
@@ -6974,7 +7490,7 @@ x86_sse3a:
     db  0, 0x00        ; 33b
     dw 0xffff
     db  0, 0x00        ; 33c
-    dw 0x0b98
+    dw 0x0be0
     db 46, 0x25        ; 33d
     dw 0xffff
     db  0, 0x00        ; 33e
@@ -7102,7 +7618,7 @@ x86_sse3a:
     db  0, 0x00        ; 37b
     dw 0xffff
     db  0, 0x00        ; 37c
-    dw 0x0ba9
+    dw 0x0bf1
     db 46, 0x05        ; 37d
     dw 0xffff
     db  0, 0x00        ; 37e
@@ -7240,7 +7756,7 @@ x86_sse3a:
     db  0, 0x00        ; 3c0
     dw 0xffff
     db  0, 0x00        ; 3c1
-    dw 0x0bb9
+    dw 0x0c01
     db 29, 0x81        ; 3c2
     dw 0xffff
     db  0, 0x00        ; 3c3
@@ -8318,7 +8834,7 @@ x86_vex0f:
     db  0, 0x00        ; 1da
     dw 0xffff
     db  0, 0x00        ; 1db
-    dw 0x0bc0
+    dw 0x0c08
     db 72, 0x00        ; 1dc
     dw 0xffff
     db  0, 0x00        ; 1dd
@@ -9514,7 +10030,7 @@ x86_vex38:
     db  0, 0x00        ; 2f
     dw 0xffff
     db  0, 0x00        ; 30
-    dw 0x0bcb
+    dw 0x0c13
     db 44, 0x25        ; 31
     dw 0xffff
     db  0, 0x00        ; 32
@@ -9522,7 +10038,7 @@ x86_vex38:
     db  0, 0x00        ; 33
     dw 0xffff
     db  0, 0x00        ; 34
-    dw 0x0bd5
+    dw 0x0c1d
     db 44, 0x25        ; 35
     dw 0xffff
     db  0, 0x00        ; 36
@@ -9530,7 +10046,7 @@ x86_vex38:
     db  0, 0x00        ; 37
     dw 0xffff
     db  0, 0x00        ; 38
-    dw 0x0bdf
+    dw 0x0c27
     db 44, 0x05        ; 39
     dw 0xffff
     db  0, 0x00        ; 3a
@@ -9538,7 +10054,7 @@ x86_vex38:
     db  0, 0x00        ; 3b
     dw 0xffff
     db  0, 0x00        ; 3c
-    dw 0x0be7
+    dw 0x0c2f
     db 44, 0x05        ; 3d
     dw 0xffff
     db  0, 0x00        ; 3e
@@ -9594,7 +10110,7 @@ x86_vex38:
     db  0, 0x00        ; 57
     dw 0xffff
     db  0, 0x00        ; 58
-    dw 0x0bef
+    dw 0x0c37
     db 44, 0x25        ; 59
     dw 0xffff
     db  0, 0x00        ; 5a
@@ -9610,7 +10126,7 @@ x86_vex38:
     db  0, 0x00        ; 5f
     dw 0xffff
     db  0, 0x00        ; 60
-    dw 0x0bf7
+    dw 0x0c3f
     db 62, 0x03        ; 61
     dw 0xffff
     db  0, 0x00        ; 62
@@ -9618,7 +10134,7 @@ x86_vex38:
     db  0, 0x00        ; 63
     dw 0xffff
     db  0, 0x00        ; 64
-    dw 0x0c04
+    dw 0x0c4c
     db 62, 0x04        ; 65
     dw 0xffff
     db  0, 0x00        ; 66
@@ -9626,7 +10142,7 @@ x86_vex38:
     db  0, 0x00        ; 67
     dw 0xffff
     db  0, 0x00        ; 68
-    dw 0x0c11
+    dw 0x0c59
     db 62, 0x05        ; 69
     dw 0xffff
     db  0, 0x00        ; 6a
@@ -9770,7 +10286,7 @@ x86_vex38:
     db  0, 0x00        ; af
     dw 0xffff
     db  0, 0x00        ; b0
-    dw 0x0c20
+    dw 0x0c68
     db 69, 0x05        ; b1
     dw 0xffff
     db  0, 0x00        ; b2
@@ -9778,7 +10294,7 @@ x86_vex38:
     db  0, 0x00        ; b3
     dw 0xffff
     db  0, 0x00        ; b4
-    dw 0x0c2b
+    dw 0x0c73
     db 69, 0x05        ; b5
     dw 0xffff
     db  0, 0x00        ; b6
@@ -9786,7 +10302,7 @@ x86_vex38:
     db  0, 0x00        ; b7
     dw 0xffff
     db  0, 0x00        ; b8
-    dw 0x0c20
+    dw 0x0c68
     db 70, 0x05        ; b9
     dw 0xffff
     db  0, 0x00        ; ba
@@ -9794,7 +10310,7 @@ x86_vex38:
     db  0, 0x00        ; bb
     dw 0xffff
     db  0, 0x00        ; bc
-    dw 0x0c2b
+    dw 0x0c73
     db 70, 0x05        ; bd
     dw 0xffff
     db  0, 0x00        ; be
@@ -9850,7 +10366,7 @@ x86_vex38:
     db  0, 0x00        ; d7
     dw 0xffff
     db  0, 0x00        ; d8
-    dw 0x0c36
+    dw 0x0c7e
     db 44, 0x25        ; d9
     dw 0xffff
     db  0, 0x00        ; da
@@ -9970,7 +10486,7 @@ x86_vex38:
     db  0, 0x00        ; 113
     dw 0xffff
     db  0, 0x00        ; 114
-    dw 0x0c3d
+    dw 0x0c85
     db 44, 0x35        ; 115
     dw 0xffff
     db  0, 0x00        ; 116
@@ -9978,7 +10494,7 @@ x86_vex38:
     db  0, 0x00        ; 117
     dw 0xffff
     db  0, 0x00        ; 118
-    dw 0x0c45
+    dw 0x0c8d
     db 44, 0x25        ; 119
     dw 0xffff
     db  0, 0x00        ; 11a
@@ -9986,7 +10502,7 @@ x86_vex38:
     db  0, 0x00        ; 11b
     dw 0xffff
     db  0, 0x00        ; 11c
-    dw 0x0c4d
+    dw 0x0c95
     db 44, 0x35        ; 11d
     dw 0xffff
     db  0, 0x00        ; 11e
@@ -10122,7 +10638,7 @@ x86_vex38:
     db  0, 0x00        ; 15f
     dw 0xffff
     db  0, 0x00        ; 160
-    dw 0x0c55
+    dw 0x0c9d
     db 62, 0x03        ; 161
     dw 0xffff
     db  0, 0x00        ; 162
@@ -10130,7 +10646,7 @@ x86_vex38:
     db  0, 0x00        ; 163
     dw 0xffff
     db  0, 0x00        ; 164
-    dw 0x0c62
+    dw 0x0caa
     db 62, 0x04        ; 165
     dw 0xffff
     db  0, 0x00        ; 166
@@ -10138,7 +10654,7 @@ x86_vex38:
     db  0, 0x00        ; 167
     dw 0xffff
     db  0, 0x00        ; 168
-    dw 0x0c6f
+    dw 0x0cb7
     db 62, 0x05        ; 169
     dw 0xffff
     db  0, 0x00        ; 16a
@@ -10378,7 +10894,7 @@ x86_vex38:
     db  0, 0x00        ; 1df
     dw 0xffff
     db  0, 0x00        ; 1e0
-    dw 0x0c7e
+    dw 0x0cc6
     db 62, 0x01        ; 1e1
     dw 0xffff
     db  0, 0x00        ; 1e2
@@ -10386,7 +10902,7 @@ x86_vex38:
     db  0, 0x00        ; 1e3
     dw 0xffff
     db  0, 0x00        ; 1e4
-    dw 0x0c8b
+    dw 0x0cd3
     db 62, 0x02        ; 1e5
     dw 0xffff
     db  0, 0x00        ; 1e6
@@ -10538,7 +11054,7 @@ x86_vex38:
     db  0, 0x00        ; 22f
     dw 0xffff
     db  0, 0x00        ; 230
-    dw 0x0c98
+    dw 0x0ce0
     db 69, 0x15        ; 231
     dw 0xffff
     db  0, 0x00        ; 232
@@ -10554,7 +11070,7 @@ x86_vex38:
     db  0, 0x00        ; 237
     dw 0xffff
     db  0, 0x00        ; 238
-    dw 0x0c98
+    dw 0x0ce0
     db 70, 0x15        ; 239
     dw 0xffff
     db  0, 0x00        ; 23a
@@ -10618,7 +11134,7 @@ x86_vex38:
     db  0, 0x00        ; 257
     dw 0xffff
     db  0, 0x00        ; 258
-    dw 0x0ca3
+    dw 0x0ceb
     db 44, 0x2d        ; 259
     dw 0xffff
     db  0, 0x00        ; 25a
@@ -10626,7 +11142,7 @@ x86_vex38:
     db  0, 0x00        ; 25b
     dw 0xffff
     db  0, 0x00        ; 25c
-    dw 0x0cb2
+    dw 0x0cfa
     db 44, 0x2d        ; 25d
     dw 0xffff
     db  0, 0x00        ; 25e
@@ -10634,7 +11150,7 @@ x86_vex38:
     db  0, 0x00        ; 25f
     dw 0xffff
     db  0, 0x00        ; 260
-    dw 0x0cc1
+    dw 0x0d09
     db 44, 0x2d        ; 261
     dw 0xffff
     db  0, 0x00        ; 262
@@ -10642,7 +11158,7 @@ x86_vex38:
     db  0, 0x00        ; 263
     dw 0xffff
     db  0, 0x00        ; 264
-    dw 0x0ccd
+    dw 0x0d15
     db 44, 0x2b        ; 265
     dw 0xffff
     db  0, 0x00        ; 266
@@ -10650,7 +11166,7 @@ x86_vex38:
     db  0, 0x00        ; 267
     dw 0xffff
     db  0, 0x00        ; 268
-    dw 0x0cd9
+    dw 0x0d21
     db 44, 0x2d        ; 269
     dw 0xffff
     db  0, 0x00        ; 26a
@@ -10658,7 +11174,7 @@ x86_vex38:
     db  0, 0x00        ; 26b
     dw 0xffff
     db  0, 0x00        ; 26c
-    dw 0x0ce5
+    dw 0x0d2d
     db 44, 0x2b        ; 26d
     dw 0xffff
     db  0, 0x00        ; 26e
@@ -10666,7 +11182,7 @@ x86_vex38:
     db  0, 0x00        ; 26f
     dw 0xffff
     db  0, 0x00        ; 270
-    dw 0x0cf1
+    dw 0x0d39
     db 44, 0x2d        ; 271
     dw 0xffff
     db  0, 0x00        ; 272
@@ -10674,7 +11190,7 @@ x86_vex38:
     db  0, 0x00        ; 273
     dw 0xffff
     db  0, 0x00        ; 274
-    dw 0x0cfe
+    dw 0x0d46
     db 44, 0x2b        ; 275
     dw 0xffff
     db  0, 0x00        ; 276
@@ -10682,7 +11198,7 @@ x86_vex38:
     db  0, 0x00        ; 277
     dw 0xffff
     db  0, 0x00        ; 278
-    dw 0x0d0b
+    dw 0x0d53
     db 44, 0x2d        ; 279
     dw 0xffff
     db  0, 0x00        ; 27a
@@ -10690,7 +11206,7 @@ x86_vex38:
     db  0, 0x00        ; 27b
     dw 0xffff
     db  0, 0x00        ; 27c
-    dw 0x0d18
+    dw 0x0d60
     db 44, 0x2b        ; 27d
     dw 0xffff
     db  0, 0x00        ; 27e
@@ -10746,7 +11262,7 @@ x86_vex38:
     db  0, 0x00        ; 297
     dw 0xffff
     db  0, 0x00        ; 298
-    dw 0x0d25
+    dw 0x0d6d
     db 44, 0x2d        ; 299
     dw 0xffff
     db  0, 0x00        ; 29a
@@ -10754,7 +11270,7 @@ x86_vex38:
     db  0, 0x00        ; 29b
     dw 0xffff
     db  0, 0x00        ; 29c
-    dw 0x0d34
+    dw 0x0d7c
     db 44, 0x2d        ; 29d
     dw 0xffff
     db  0, 0x00        ; 29e
@@ -10762,7 +11278,7 @@ x86_vex38:
     db  0, 0x00        ; 29f
     dw 0xffff
     db  0, 0x00        ; 2a0
-    dw 0x0d43
+    dw 0x0d8b
     db 44, 0x2d        ; 2a1
     dw 0xffff
     db  0, 0x00        ; 2a2
@@ -10770,7 +11286,7 @@ x86_vex38:
     db  0, 0x00        ; 2a3
     dw 0xffff
     db  0, 0x00        ; 2a4
-    dw 0x0d4f
+    dw 0x0d97
     db 44, 0x2b        ; 2a5
     dw 0xffff
     db  0, 0x00        ; 2a6
@@ -10778,7 +11294,7 @@ x86_vex38:
     db  0, 0x00        ; 2a7
     dw 0xffff
     db  0, 0x00        ; 2a8
-    dw 0x0d5b
+    dw 0x0da3
     db 44, 0x2d        ; 2a9
     dw 0xffff
     db  0, 0x00        ; 2aa
@@ -10786,7 +11302,7 @@ x86_vex38:
     db  0, 0x00        ; 2ab
     dw 0xffff
     db  0, 0x00        ; 2ac
-    dw 0x0d67
+    dw 0x0daf
     db 44, 0x2b        ; 2ad
     dw 0xffff
     db  0, 0x00        ; 2ae
@@ -10794,7 +11310,7 @@ x86_vex38:
     db  0, 0x00        ; 2af
     dw 0xffff
     db  0, 0x00        ; 2b0
-    dw 0x0d73
+    dw 0x0dbb
     db 44, 0x2d        ; 2b1
     dw 0xffff
     db  0, 0x00        ; 2b2
@@ -10802,7 +11318,7 @@ x86_vex38:
     db  0, 0x00        ; 2b3
     dw 0xffff
     db  0, 0x00        ; 2b4
-    dw 0x0d80
+    dw 0x0dc8
     db 44, 0x2b        ; 2b5
     dw 0xffff
     db  0, 0x00        ; 2b6
@@ -10810,7 +11326,7 @@ x86_vex38:
     db  0, 0x00        ; 2b7
     dw 0xffff
     db  0, 0x00        ; 2b8
-    dw 0x0d8d
+    dw 0x0dd5
     db 44, 0x2d        ; 2b9
     dw 0xffff
     db  0, 0x00        ; 2ba
@@ -10818,7 +11334,7 @@ x86_vex38:
     db  0, 0x00        ; 2bb
     dw 0xffff
     db  0, 0x00        ; 2bc
-    dw 0x0d9a
+    dw 0x0de2
     db 44, 0x2b        ; 2bd
     dw 0xffff
     db  0, 0x00        ; 2be
@@ -10874,7 +11390,7 @@ x86_vex38:
     db  0, 0x00        ; 2d7
     dw 0xffff
     db  0, 0x00        ; 2d8
-    dw 0x0da7
+    dw 0x0def
     db 44, 0x2d        ; 2d9
     dw 0xffff
     db  0, 0x00        ; 2da
@@ -10882,7 +11398,7 @@ x86_vex38:
     db  0, 0x00        ; 2db
     dw 0xffff
     db  0, 0x00        ; 2dc
-    dw 0x0db6
+    dw 0x0dfe
     db 44, 0x2d        ; 2dd
     dw 0xffff
     db  0, 0x00        ; 2de
@@ -10890,7 +11406,7 @@ x86_vex38:
     db  0, 0x00        ; 2df
     dw 0xffff
     db  0, 0x00        ; 2e0
-    dw 0x0dc5
+    dw 0x0e0d
     db 44, 0x2d        ; 2e1
     dw 0xffff
     db  0, 0x00        ; 2e2
@@ -10898,7 +11414,7 @@ x86_vex38:
     db  0, 0x00        ; 2e3
     dw 0xffff
     db  0, 0x00        ; 2e4
-    dw 0x0dd1
+    dw 0x0e19
     db 44, 0x2b        ; 2e5
     dw 0xffff
     db  0, 0x00        ; 2e6
@@ -10906,7 +11422,7 @@ x86_vex38:
     db  0, 0x00        ; 2e7
     dw 0xffff
     db  0, 0x00        ; 2e8
-    dw 0x0ddd
+    dw 0x0e25
     db 44, 0x2d        ; 2e9
     dw 0xffff
     db  0, 0x00        ; 2ea
@@ -10914,7 +11430,7 @@ x86_vex38:
     db  0, 0x00        ; 2eb
     dw 0xffff
     db  0, 0x00        ; 2ec
-    dw 0x0de9
+    dw 0x0e31
     db 44, 0x2b        ; 2ed
     dw 0xffff
     db  0, 0x00        ; 2ee
@@ -10922,7 +11438,7 @@ x86_vex38:
     db  0, 0x00        ; 2ef
     dw 0xffff
     db  0, 0x00        ; 2f0
-    dw 0x0df5
+    dw 0x0e3d
     db 44, 0x2d        ; 2f1
     dw 0xffff
     db  0, 0x00        ; 2f2
@@ -10930,7 +11446,7 @@ x86_vex38:
     db  0, 0x00        ; 2f3
     dw 0xffff
     db  0, 0x00        ; 2f4
-    dw 0x0e02
+    dw 0x0e4a
     db 44, 0x2b        ; 2f5
     dw 0xffff
     db  0, 0x00        ; 2f6
@@ -10938,7 +11454,7 @@ x86_vex38:
     db  0, 0x00        ; 2f7
     dw 0xffff
     db  0, 0x00        ; 2f8
-    dw 0x0e0f
+    dw 0x0e57
     db 44, 0x2d        ; 2f9
     dw 0xffff
     db  0, 0x00        ; 2fa
@@ -10946,7 +11462,7 @@ x86_vex38:
     db  0, 0x00        ; 2fb
     dw 0xffff
     db  0, 0x00        ; 2fc
-    dw 0x0e1c
+    dw 0x0e64
     db 44, 0x2b        ; 2fd
     dw 0xffff
     db  0, 0x00        ; 2fe
@@ -11352,7 +11868,7 @@ x86_vex38:
     db  0, 0x00        ; 3c6
     dw 0xffff
     db  0, 0x00        ; 3c7
-    dw 0x0e29
+    dw 0x0e71
     db 66, 0x00        ; 3c8
     dw 0xffff
     db  0, 0x00        ; 3c9
@@ -11376,13 +11892,13 @@ x86_vex38:
     db  0, 0x00        ; 3d2
     dw 0xffff
     db  0, 0x00        ; 3d3
-    dw 0x0e2e
+    dw 0x0e76
     db 67, 0x00        ; 3d4
     dw 0xffff
     db  0, 0x00        ; 3d5
-    dw 0x0e33
+    dw 0x0e7b
     db 66, 0x00        ; 3d6
-    dw 0x0e38
+    dw 0x0e80
     db 66, 0x00        ; 3d7
     dw 0xffff
     db  0, 0x00        ; 3d8
@@ -11390,15 +11906,15 @@ x86_vex38:
     db  0, 0x00        ; 3d9
     dw 0xffff
     db  0, 0x00        ; 3da
-    dw 0x0e3d
+    dw 0x0e85
     db 66, 0x00        ; 3db
-    dw 0x0e42
+    dw 0x0e8a
     db 67, 0x00        ; 3dc
-    dw 0x0e48
+    dw 0x0e90
     db 67, 0x00        ; 3dd
-    dw 0x0e4d
+    dw 0x0e95
     db 67, 0x00        ; 3de
-    dw 0x0e52
+    dw 0x0e9a
     db 67, 0x00        ; 3df
     dw 0xffff
     db  0, 0x00        ; 3e0
@@ -11468,7 +11984,7 @@ x86_vex38:
 x86_vex3a:
     dw 0xffff
     db  0, 0x00        ; 00
-    dw 0x0e57
+    dw 0x0e9f
     db 46, 0x05        ; 01
     dw 0xffff
     db  0, 0x00        ; 02
@@ -11476,7 +11992,7 @@ x86_vex3a:
     db  0, 0x00        ; 03
     dw 0xffff
     db  0, 0x00        ; 04
-    dw 0x0e5e
+    dw 0x0ea6
     db 46, 0x05        ; 05
     dw 0xffff
     db  0, 0x00        ; 06
@@ -11484,7 +12000,7 @@ x86_vex3a:
     db  0, 0x00        ; 07
     dw 0xffff
     db  0, 0x00        ; 08
-    dw 0x0e66
+    dw 0x0eae
     db 46, 0x25        ; 09
     dw 0xffff
     db  0, 0x00        ; 0a
@@ -11500,7 +12016,7 @@ x86_vex3a:
     db  0, 0x00        ; 0f
     dw 0xffff
     db  0, 0x00        ; 10
-    dw 0x0bcb
+    dw 0x0c13
     db 46, 0x05        ; 11
     dw 0xffff
     db  0, 0x00        ; 12
@@ -11508,7 +12024,7 @@ x86_vex3a:
     db  0, 0x00        ; 13
     dw 0xffff
     db  0, 0x00        ; 14
-    dw 0x0bd5
+    dw 0x0c1d
     db 46, 0x05        ; 15
     dw 0xffff
     db  0, 0x00        ; 16
@@ -11516,7 +12032,7 @@ x86_vex3a:
     db  0, 0x00        ; 17
     dw 0xffff
     db  0, 0x00        ; 18
-    dw 0x0e6f
+    dw 0x0eb7
     db 46, 0x25        ; 19
     dw 0xffff
     db  0, 0x00        ; 1a
@@ -11660,7 +12176,7 @@ x86_vex3a:
     db  0, 0x00        ; 5f
     dw 0xffff
     db  0, 0x00        ; 60
-    dw 0x0e7a
+    dw 0x0ec2
     db 63, 0x05        ; 61
     dw 0xffff
     db  0, 0x00        ; 62
@@ -11668,7 +12184,7 @@ x86_vex3a:
     db  0, 0x00        ; 63
     dw 0xffff
     db  0, 0x00        ; 64
-    dw 0x0e86
+    dw 0x0ece
     db 64, 0x05        ; 65
     dw 0xffff
     db  0, 0x00        ; 66
@@ -11916,7 +12432,7 @@ x86_vex3a:
     db  0, 0x00        ; df
     dw 0xffff
     db  0, 0x00        ; e0
-    dw 0x0e93
+    dw 0x0edb
     db 63, 0x05        ; e1
     dw 0xffff
     db  0, 0x00        ; e2
@@ -11924,7 +12440,7 @@ x86_vex3a:
     db  0, 0x00        ; e3
     dw 0xffff
     db  0, 0x00        ; e4
-    dw 0x0e9f
+    dw 0x0ee7
     db 64, 0x05        ; e5
     dw 0xffff
     db  0, 0x00        ; e6
@@ -12028,7 +12544,7 @@ x86_vex3a:
     db  0, 0x00        ; 117
     dw 0xffff
     db  0, 0x00        ; 118
-    dw 0x0eac
+    dw 0x0ef4
     db 46, 0x25        ; 119
     dw 0xffff
     db  0, 0x00        ; 11a
@@ -12060,7 +12576,7 @@ x86_vex3a:
     db  0, 0x00        ; 127
     dw 0xffff
     db  0, 0x00        ; 128
-    dw 0x0eb7
+    dw 0x0eff
     db 65, 0x05        ; 129
     dw 0xffff
     db  0, 0x00        ; 12a
@@ -12068,7 +12584,7 @@ x86_vex3a:
     db  0, 0x00        ; 12b
     dw 0xffff
     db  0, 0x00        ; 12c
-    dw 0x0ec1
+    dw 0x0f09
     db 65, 0x05        ; 12d
     dw 0xffff
     db  0, 0x00        ; 12e
@@ -12076,7 +12592,7 @@ x86_vex3a:
     db  0, 0x00        ; 12f
     dw 0xffff
     db  0, 0x00        ; 130
-    dw 0x0ecb
+    dw 0x0f13
     db 65, 0x05        ; 131
     dw 0xffff
     db  0, 0x00        ; 132
@@ -13392,7 +13908,7 @@ x86_vex3a:
     db  0, 0x00        ; 3c1
     dw 0xffff
     db  0, 0x00        ; 3c2
-    dw 0x0ed5
+    dw 0x0f1d
     db 71, 0x00        ; 3c3
     dw 0xffff
     db  0, 0x00        ; 3c4
@@ -13548,57 +14064,57 @@ x86_groups:
     db  0, 0x00        ; 0e
     dw 0xffff
     db  0, 0x00        ; 0f
-    dw 0x0eda
+    dw 0x0f22
     db  0, 0x00        ; 10
-    dw 0x0ede
+    dw 0x0f26
     db  0, 0x00        ; 11
-    dw 0x0ee2
+    dw 0x0f2a
     db  0, 0x00        ; 12
-    dw 0x0ee6
+    dw 0x0f2e
     db  0, 0x00        ; 13
-    dw 0x0eea
+    dw 0x0f32
     db  0, 0x00        ; 14
-    dw 0x0eee
+    dw 0x0f36
     db  0, 0x00        ; 15
     dw 0xffff
     db  0, 0x00        ; 16
-    dw 0x0ef2
+    dw 0x0f3a
     db  0, 0x00        ; 17
     dw 0x007b
     db 14, 0x00        ; 18
     dw 0xffff
     db  0, 0x00        ; 19
-    dw 0x0ef6
+    dw 0x0f3e
     db 12, 0x00        ; 1a
-    dw 0x0efa
+    dw 0x0f42
     db 12, 0x00        ; 1b
-    dw 0x0efe
+    dw 0x0f46
     db 12, 0x00        ; 1c
     dw 0x0035
     db 12, 0x00        ; 1d
-    dw 0x0f02
+    dw 0x0f4a
     db 12, 0x00        ; 1e
-    dw 0x0f06
+    dw 0x0f4e
     db 12, 0x00        ; 1f
     dw 0x007b
     db 15, 0x00        ; 20
     dw 0xffff
     db  0, 0x00        ; 21
-    dw 0x0ef6
+    dw 0x0f3e
     db 13, 0x00        ; 22
-    dw 0x0efa
+    dw 0x0f42
     db 13, 0x00        ; 23
-    dw 0x0efe
+    dw 0x0f46
     db 13, 0x00        ; 24
     dw 0x0035
     db 13, 0x00        ; 25
-    dw 0x0f02
+    dw 0x0f4a
     db 13, 0x00        ; 26
-    dw 0x0f06
+    dw 0x0f4e
     db 13, 0x00        ; 27
-    dw 0x0f0b
+    dw 0x0309
     db  0, 0x00        ; 28
-    dw 0x0f0f
+    dw 0x030d
     db  0, 0x00        ; 29
     dw 0xffff
     db  0, 0x00        ; 2a
@@ -13612,18 +14128,18 @@ x86_groups:
     db  0, 0x00        ; 2e
     dw 0xffff
     db  0, 0x00        ; 2f
-    dw 0x0f0b
+    dw 0x0309
     db 13, 0x00        ; 30
-    dw 0x0f0f
+    dw 0x030d
     db 13, 0x00        ; 31
     dw 0x011f
     db 13, 0x10        ; 32
-    dw 0xffff
-    db  0, 0x00        ; 33
+    dw 0x011f
+    db 107, 0x00        ; 33
     dw 0x0124
     db 13, 0x10        ; 34
-    dw 0xffff
-    db  0, 0x00        ; 35
+    dw 0x0124
+    db 107, 0x00        ; 35
     dw 0x0025
     db 13, 0x08        ; 36
     dw 0xffff
@@ -13690,9 +14206,9 @@ x86_groups:
     db  0, 0x00        ; 55
     dw 0xffff
     db  0, 0x00        ; 56
-    dw 0x0f13
+    dw 0x0f53
     db 29, 0x00        ; 57
-    dw 0x0f1a
+    dw 0x0f5a
     db 12, 0x04        ; 58
     dw 0x008d
     db 13, 0x00        ; 59
@@ -13708,27 +14224,27 @@ x86_groups:
     db 13, 0x00        ; 5e
     dw 0x008d
     db 13, 0x00        ; 5f
-    dw 0x0f23
+    dw 0x0f63
     db  0, 0x00        ; 60
-    dw 0x0f2c
+    dw 0x0f6c
     db  0, 0x00        ; 61
-    dw 0x0f36
+    dw 0x0f76
     db  0, 0x00        ; 62
-    dw 0x0f23
+    dw 0x0f63
     db  0, 0x00        ; 63
-    dw 0x0f23
+    dw 0x0f63
     db  0, 0x00        ; 64
-    dw 0x0f23
+    dw 0x0f63
     db  0, 0x00        ; 65
-    dw 0x0f23
+    dw 0x0f63
     db  0, 0x00        ; 66
-    dw 0x0f23
+    dw 0x0f63
     db  0, 0x00        ; 67
-    dw 0x0f42
+    dw 0x0f82
     db  0, 0x00        ; 68
-    dw 0x0f4a
+    dw 0x0f8a
     db  0, 0x00        ; 69
-    dw 0x0f50
+    dw 0x0f90
     db  0, 0x00        ; 6a
     dw 0xffff
     db  0, 0x00        ; 6b
@@ -13740,33 +14256,33 @@ x86_groups:
     db  0, 0x00        ; 6e
     dw 0xffff
     db  0, 0x00        ; 6f
-    dw 0x0f58
+    dw 0x0f98
     db  0, 0x00        ; 70
-    dw 0x0f63
+    dw 0x0fa3
     db  0, 0x00        ; 71
-    dw 0x0f6e
+    dw 0x0fae
     db  0, 0x00        ; 72
-    dw 0x0f79
+    dw 0x0fb9
     db  0, 0x00        ; 73
-    dw 0x0f84
+    dw 0x0fc4
     db  0, 0x00        ; 74
-    dw 0x0f8f
+    dw 0x0fcf
     db  0, 0x00        ; 75
     dw 0xffff
     db  0, 0x00        ; 76
     dw 0xffff
     db  0, 0x00        ; 77
-    dw 0x0f9a
+    dw 0x0fda
     db  0, 0x00        ; 78
-    dw 0x0f9f
+    dw 0x0fdf
     db  0, 0x00        ; 79
-    dw 0x0fa3
+    dw 0x0fe3
     db  0, 0x00        ; 7a
-    dw 0x0fa8
+    dw 0x0fe8
     db  0, 0x00        ; 7b
-    dw 0x0fac
+    dw 0x0fec
     db  0, 0x00        ; 7c
-    dw 0x0fb1
+    dw 0x0ff1
     db  0, 0x00        ; 7d
     dw 0xffff
     db  0, 0x00        ; 7e
@@ -13776,15 +14292,15 @@ x86_groups:
     db  0, 0x00        ; 80
     dw 0xffff
     db  0, 0x00        ; 81
-    dw 0x0718
+    dw 0x0760
     db  0, 0x00        ; 82
     dw 0xffff
     db  0, 0x00        ; 83
-    dw 0x078f
+    dw 0x07d7
     db  0, 0x00        ; 84
     dw 0xffff
     db  0, 0x00        ; 85
-    dw 0x0814
+    dw 0x085c
     db  0, 0x00        ; 86
     dw 0xffff
     db  0, 0x00        ; 87
@@ -13792,15 +14308,15 @@ x86_groups:
     db  0, 0x00        ; 88
     dw 0xffff
     db  0, 0x00        ; 89
-    dw 0x071e
+    dw 0x0766
     db  0, 0x00        ; 8a
     dw 0xffff
     db  0, 0x00        ; 8b
-    dw 0x0795
+    dw 0x07dd
     db  0, 0x00        ; 8c
     dw 0xffff
     db  0, 0x00        ; 8d
-    dw 0x081a
+    dw 0x0862
     db  0, 0x00        ; 8e
     dw 0xffff
     db  0, 0x00        ; 8f
@@ -13808,7 +14324,7 @@ x86_groups:
     db  0, 0x00        ; 90
     dw 0xffff
     db  0, 0x00        ; 91
-    dw 0x0724
+    dw 0x076c
     db  0, 0x00        ; 92
     dw 0xffff
     db  0, 0x00        ; 93
@@ -13816,7 +14332,7 @@ x86_groups:
     db  0, 0x00        ; 94
     dw 0xffff
     db  0, 0x00        ; 95
-    dw 0x0820
+    dw 0x0868
     db  0, 0x00        ; 96
     dw 0xffff
     db  0, 0x00        ; 97
@@ -13824,25 +14340,25 @@ x86_groups:
     db  0, 0x00        ; 98
     dw 0xffff
     db  0, 0x00        ; 99
-    dw 0x0724
+    dw 0x076c
     db  0, 0x00        ; 9a
-    dw 0x0fb6
+    dw 0x0ff6
     db  0, 0x00        ; 9b
     dw 0xffff
     db  0, 0x00        ; 9c
     dw 0xffff
     db  0, 0x00        ; 9d
-    dw 0x0820
+    dw 0x0868
     db  0, 0x00        ; 9e
-    dw 0x0fbd
+    dw 0x0ffd
     db  0, 0x00        ; 9f
     dw 0xffff
     db  0, 0x00        ; a0
-    dw 0x0fc4
+    dw 0x1004
     db  0, 0x00        ; a1
-    dw 0x0fc9
+    dw 0x1009
     db  0, 0x00        ; a2
-    dw 0x0fd0
+    dw 0x1010
     db  0, 0x00        ; a3
     dw 0xffff
     db  0, 0x00        ; a4
@@ -13852,15 +14368,15 @@ x86_groups:
     db  0, 0x00        ; a6
     dw 0xffff
     db  0, 0x00        ; a7
-    dw 0x0fd5
+    dw 0x1015
     db 12, 0x04        ; a8
-    dw 0x0fe1
+    dw 0x1021
     db 12, 0x04        ; a9
-    dw 0x0fec
+    dw 0x102c
     db 12, 0x04        ; aa
-    dw 0x0ff7
+    dw 0x1037
     db 12, 0x04        ; ab
-    dw 0x1002
+    dw 0x1042
     db 12, 0x04        ; ac
     dw 0x008d
     db 13, 0x00        ; ad
@@ -14040,3503 +14556,3503 @@ x87_fix:
 
 x86_evex:
     dd 0x02100000
-    dw 0x100f
+    dw 0x104f
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vmovups
     dd 0x02100110
-    dw 0x1017
+    dw 0x1057
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vmovupd
     dd 0x02100200
-    dw 0x101f
+    dw 0x105f
     db 3, 0x82, "VHW", 0, 0, 0, 0, 32    ; vmovss
     dd 0x02100310
-    dw 0x1026
+    dw 0x1066
     db 4, 0x82, "VHW", 0, 0, 0, 0, 32    ; vmovsd
     dd 0x02110000
-    dw 0x100f
+    dw 0x104f
     db 0, 0x00, "WV", 0, 0, 0, 0, 0, 32    ; vmovups
     dd 0x02110110
-    dw 0x1017
+    dw 0x1057
     db 0, 0x00, "WV", 0, 0, 0, 0, 0, 32    ; vmovupd
     dd 0x02110200
-    dw 0x101f
+    dw 0x105f
     db 3, 0x82, "WHV", 0, 0, 0, 0, 32    ; vmovss
     dd 0x02110310
-    dw 0x1026
+    dw 0x1066
     db 4, 0x82, "WHV", 0, 0, 0, 0, 32    ; vmovsd
     dd 0x02120200
-    dw 0x102d
+    dw 0x106d
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vmovsldup
     dd 0x02140000
-    dw 0x1037
+    dw 0x1077
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vunpcklps
     dd 0x02140110
-    dw 0x1041
+    dw 0x1081
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vunpcklpd
     dd 0x02150000
-    dw 0x104b
+    dw 0x108b
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vunpckhps
     dd 0x02150110
-    dw 0x1055
+    dw 0x1095
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vunpckhpd
     dd 0x02160200
-    dw 0x105f
+    dw 0x109f
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vmovshdup
     dd 0x02280000
-    dw 0x1069
+    dw 0x10a9
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vmovaps
     dd 0x02280110
-    dw 0x1071
+    dw 0x10b1
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vmovapd
     dd 0x02290000
-    dw 0x1069
+    dw 0x10a9
     db 0, 0x00, "WV", 0, 0, 0, 0, 0, 32    ; vmovaps
     dd 0x02290110
-    dw 0x1071
+    dw 0x10b1
     db 0, 0x00, "WV", 0, 0, 0, 0, 0, 32    ; vmovapd
     dd 0x022a0200
-    dw 0x1079
+    dw 0x10b9
     db 3, 0x06, "VHE", 0, 0, 0, 0, 32    ; vcvtsi2ss
     dd 0x022a0210
-    dw 0x1079
+    dw 0x10b9
     db 4, 0x06, "VHE", 0, 0, 0, 0, 32    ; vcvtsi2ss
     dd 0x022a0300
-    dw 0x1083
+    dw 0x10c3
     db 3, 0x02, "VHE", 0, 0, 0, 0, 32    ; vcvtsi2sd
     dd 0x022a0310
-    dw 0x1083
+    dw 0x10c3
     db 4, 0x06, "VHE", 0, 0, 0, 0, 32    ; vcvtsi2sd
     dd 0x022b0000
-    dw 0x108d
+    dw 0x10cd
     db 0, 0x00, "WV", 0, 0, 0, 0, 0, 32    ; vmovntps
     dd 0x022b0110
-    dw 0x1096
+    dw 0x10d6
     db 0, 0x00, "WV", 0, 0, 0, 0, 0, 32    ; vmovntpd
     dd 0x022c0200
-    dw 0x109f
+    dw 0x10df
     db 3, 0x0a, "GW", 0, 0, 0, 0, 0, 32    ; vcvttss2si
     dd 0x022c0210
-    dw 0x109f
+    dw 0x10df
     db 3, 0x0a, "GW", 0, 0, 0, 0, 0, 32    ; vcvttss2si
     dd 0x022c0300
-    dw 0x10aa
+    dw 0x10ea
     db 4, 0x0a, "GW", 0, 0, 0, 0, 0, 32    ; vcvttsd2si
     dd 0x022c0310
-    dw 0x10aa
+    dw 0x10ea
     db 4, 0x0a, "GW", 0, 0, 0, 0, 0, 32    ; vcvttsd2si
     dd 0x022d0200
-    dw 0x10b5
+    dw 0x10f5
     db 3, 0x06, "GW", 0, 0, 0, 0, 0, 32    ; vcvtss2si
     dd 0x022d0210
-    dw 0x10b5
+    dw 0x10f5
     db 3, 0x06, "GW", 0, 0, 0, 0, 0, 32    ; vcvtss2si
     dd 0x022d0300
-    dw 0x10bf
+    dw 0x10ff
     db 4, 0x06, "GW", 0, 0, 0, 0, 0, 32    ; vcvtsd2si
     dd 0x022d0310
-    dw 0x10bf
+    dw 0x10ff
     db 4, 0x06, "GW", 0, 0, 0, 0, 0, 32    ; vcvtsd2si
     dd 0x022e0000
-    dw 0x10c9
+    dw 0x1109
     db 3, 0x0a, "VW", 0, 0, 0, 0, 0, 32    ; vucomiss
     dd 0x022e0110
-    dw 0x10d2
+    dw 0x1112
     db 4, 0x0a, "VW", 0, 0, 0, 0, 0, 32    ; vucomisd
     dd 0x022f0000
-    dw 0x10db
+    dw 0x111b
     db 3, 0x0a, "VW", 0, 0, 0, 0, 0, 32    ; vcomiss
     dd 0x022f0110
-    dw 0x10e3
+    dw 0x1123
     db 4, 0x0a, "VW", 0, 0, 0, 0, 0, 32    ; vcomisd
     dd 0x02510000
-    dw 0x10eb
+    dw 0x112b
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 32    ; vsqrtps
     dd 0x02510110
-    dw 0x10f3
+    dw 0x1133
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 32    ; vsqrtpd
     dd 0x02510200
-    dw 0x10fb
+    dw 0x113b
     db 3, 0x06, "VHW", 0, 0, 0, 0, 32    ; vsqrtss
     dd 0x02510310
-    dw 0x1103
+    dw 0x1143
     db 4, 0x06, "VHW", 0, 0, 0, 0, 32    ; vsqrtsd
     dd 0x02540000
-    dw 0x110b
+    dw 0x114b
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vandps
     dd 0x02540110
-    dw 0x1112
+    dw 0x1152
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vandpd
     dd 0x02550000
-    dw 0x1119
+    dw 0x1159
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vandnps
     dd 0x02550110
-    dw 0x1121
+    dw 0x1161
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vandnpd
     dd 0x02560000
-    dw 0x1129
+    dw 0x1169
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vorps
     dd 0x02560110
-    dw 0x112f
+    dw 0x116f
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vorpd
     dd 0x02570000
-    dw 0x1135
+    dw 0x1175
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vxorps
     dd 0x02570110
-    dw 0x113c
+    dw 0x117c
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vxorpd
     dd 0x02580000
-    dw 0x1143
+    dw 0x1183
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vaddps
     dd 0x02580110
-    dw 0x114a
+    dw 0x118a
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vaddpd
     dd 0x02580200
-    dw 0x1151
+    dw 0x1191
     db 3, 0x06, "VHW", 0, 0, 0, 0, 32    ; vaddss
     dd 0x02580310
-    dw 0x1158
+    dw 0x1198
     db 4, 0x06, "VHW", 0, 0, 0, 0, 32    ; vaddsd
     dd 0x02590000
-    dw 0x115f
+    dw 0x119f
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vmulps
     dd 0x02590110
-    dw 0x1166
+    dw 0x11a6
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vmulpd
     dd 0x02590200
-    dw 0x116d
+    dw 0x11ad
     db 3, 0x06, "VHW", 0, 0, 0, 0, 32    ; vmulss
     dd 0x02590310
-    dw 0x1174
+    dw 0x11b4
     db 4, 0x06, "VHW", 0, 0, 0, 0, 32    ; vmulsd
     dd 0x025a0000
-    dw 0x117b
+    dw 0x11bb
     db 5, 0x09, "VW", 0, 0, 0, 0, 0, 32    ; vcvtps2pd
     dd 0x025a0110
-    dw 0x1185
+    dw 0x11c5
     db 0, 0x05, "YW", 0, 0, 0, 0, 0, 32    ; vcvtpd2ps
     dd 0x025a0200
-    dw 0x118f
+    dw 0x11cf
     db 3, 0x0a, "VHW", 0, 0, 0, 0, 32    ; vcvtss2sd
     dd 0x025a0310
-    dw 0x1199
+    dw 0x11d9
     db 4, 0x06, "VHW", 0, 0, 0, 0, 32    ; vcvtsd2ss
     dd 0x025b0000
-    dw 0x11a3
+    dw 0x11e3
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 32    ; vcvtdq2ps
     dd 0x025b0010
-    dw 0x11ad
+    dw 0x11ed
     db 0, 0x05, "YW", 0, 0, 0, 0, 0, 0    ; vcvtqq2ps
     dd 0x025b0100
-    dw 0x11b7
+    dw 0x11f7
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 32    ; vcvtps2dq
     dd 0x025b0200
-    dw 0x11c1
+    dw 0x1201
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 32    ; vcvttps2dq
     dd 0x025c0000
-    dw 0x11cc
+    dw 0x120c
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vsubps
     dd 0x025c0110
-    dw 0x11d3
+    dw 0x1213
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vsubpd
     dd 0x025c0200
-    dw 0x11da
+    dw 0x121a
     db 3, 0x06, "VHW", 0, 0, 0, 0, 32    ; vsubss
     dd 0x025c0310
-    dw 0x11e1
+    dw 0x1221
     db 4, 0x06, "VHW", 0, 0, 0, 0, 32    ; vsubsd
     dd 0x025d0000
-    dw 0x11e8
+    dw 0x1228
     db 0, 0x09, "VHW", 0, 0, 0, 0, 32    ; vminps
     dd 0x025d0110
-    dw 0x11ef
+    dw 0x122f
     db 0, 0x09, "VHW", 0, 0, 0, 0, 32    ; vminpd
     dd 0x025d0200
-    dw 0x11f6
+    dw 0x1236
     db 3, 0x0a, "VHW", 0, 0, 0, 0, 32    ; vminss
     dd 0x025d0310
-    dw 0x11fd
+    dw 0x123d
     db 4, 0x0a, "VHW", 0, 0, 0, 0, 32    ; vminsd
     dd 0x025e0000
-    dw 0x1204
+    dw 0x1244
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vdivps
     dd 0x025e0110
-    dw 0x120b
+    dw 0x124b
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vdivpd
     dd 0x025e0200
-    dw 0x1212
+    dw 0x1252
     db 3, 0x06, "VHW", 0, 0, 0, 0, 32    ; vdivss
     dd 0x025e0310
-    dw 0x1219
+    dw 0x1259
     db 4, 0x06, "VHW", 0, 0, 0, 0, 32    ; vdivsd
     dd 0x025f0000
-    dw 0x1220
+    dw 0x1260
     db 0, 0x09, "VHW", 0, 0, 0, 0, 32    ; vmaxps
     dd 0x025f0110
-    dw 0x1227
+    dw 0x1267
     db 0, 0x09, "VHW", 0, 0, 0, 0, 32    ; vmaxpd
     dd 0x025f0200
-    dw 0x122e
+    dw 0x126e
     db 3, 0x0a, "VHW", 0, 0, 0, 0, 32    ; vmaxss
     dd 0x025f0310
-    dw 0x1235
+    dw 0x1275
     db 4, 0x0a, "VHW", 0, 0, 0, 0, 32    ; vmaxsd
     dd 0x02600100
-    dw 0x123c
+    dw 0x127c
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpunpcklbw
     dd 0x02600110
-    dw 0x123c
+    dw 0x127c
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpunpcklbw
     dd 0x02610100
-    dw 0x1247
+    dw 0x1287
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpunpcklwd
     dd 0x02610110
-    dw 0x1247
+    dw 0x1287
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpunpcklwd
     dd 0x02620100
-    dw 0x1252
+    dw 0x1292
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpunpckldq
     dd 0x02630100
-    dw 0x125d
+    dw 0x129d
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpacksswb
     dd 0x02630110
-    dw 0x125d
+    dw 0x129d
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpacksswb
     dd 0x02640100
-    dw 0x1267
+    dw 0x12a7
     db 0, 0x00, "KHW", 0, 0, 0, 0, 0    ; vpcmpgtb
     dd 0x02640110
-    dw 0x1267
+    dw 0x12a7
     db 0, 0x00, "KHW", 0, 0, 0, 0, 0    ; vpcmpgtb
     dd 0x02650100
-    dw 0x1270
+    dw 0x12b0
     db 0, 0x00, "KHW", 0, 0, 0, 0, 0    ; vpcmpgtw
     dd 0x02650110
-    dw 0x1270
+    dw 0x12b0
     db 0, 0x00, "KHW", 0, 0, 0, 0, 0    ; vpcmpgtw
     dd 0x02660100
-    dw 0x1279
+    dw 0x12b9
     db 0, 0x01, "KHW", 0, 0, 0, 0, 0    ; vpcmpgtd
     dd 0x02670100
-    dw 0x1282
+    dw 0x12c2
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpackuswb
     dd 0x02670110
-    dw 0x1282
+    dw 0x12c2
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpackuswb
     dd 0x02680100
-    dw 0x128c
+    dw 0x12cc
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpunpckhbw
     dd 0x02680110
-    dw 0x128c
+    dw 0x12cc
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpunpckhbw
     dd 0x02690100
-    dw 0x1297
+    dw 0x12d7
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpunpckhwd
     dd 0x02690110
-    dw 0x1297
+    dw 0x12d7
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpunpckhwd
     dd 0x026a0100
-    dw 0x12a2
+    dw 0x12e2
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpunpckhdq
     dd 0x026b0100
-    dw 0x12ad
+    dw 0x12ed
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpackssdw
     dd 0x026c0110
-    dw 0x12b7
+    dw 0x12f7
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpunpcklqdq
     dd 0x026d0110
-    dw 0x12c3
+    dw 0x1303
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpunpckhqdq
     dd 0x026e0100
-    dw 0x12cf
+    dw 0x130f
     db 3, 0x02, "VE", 0, 0, 0, 0, 0, 32    ; vmovd
     dd 0x026e0110
-    dw 0x12d5
+    dw 0x1315
     db 4, 0x02, "VE", 0, 0, 0, 0, 0, 32    ; vmovq
     dd 0x026f0100
-    dw 0x12db
+    dw 0x131b
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vmovdqa32
     dd 0x026f0110
-    dw 0x12e5
+    dw 0x1325
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vmovdqa64
     dd 0x026f0200
-    dw 0x12ef
+    dw 0x132f
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vmovdqu32
     dd 0x026f0210
-    dw 0x12f9
+    dw 0x1339
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vmovdqu64
     dd 0x026f0300
-    dw 0x1303
+    dw 0x1343
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vmovdqu8
     dd 0x026f0310
-    dw 0x130c
+    dw 0x134c
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vmovdqu16
     dd 0x02700100
-    dw 0x1316
+    dw 0x1356
     db 0, 0x01, "VWI", 0, 0, 0, 0, 32    ; vpshufd
     dd 0x02700200
-    dw 0x131e
+    dw 0x135e
     db 0, 0x00, "VWI", 0, 0, 0, 0, 32    ; vpshufhw
     dd 0x02700210
-    dw 0x131e
+    dw 0x135e
     db 0, 0x00, "VWI", 0, 0, 0, 0, 32    ; vpshufhw
     dd 0x02700300
-    dw 0x1327
+    dw 0x1367
     db 0, 0x00, "VWI", 0, 0, 0, 0, 32    ; vpshuflw
     dd 0x02700310
-    dw 0x1327
+    dw 0x1367
     db 0, 0x00, "VWI", 0, 0, 0, 0, 32    ; vpshuflw
     dd 0x0271010a
-    dw 0x1330
+    dw 0x1370
     db 0, 0x00, "HWI", 0, 0, 0, 0, 32    ; vpsrlw
     dd 0x0271010c
-    dw 0x1337
+    dw 0x1377
     db 0, 0x00, "HWI", 0, 0, 0, 0, 32    ; vpsraw
     dd 0x0271010e
-    dw 0x133e
+    dw 0x137e
     db 0, 0x00, "HWI", 0, 0, 0, 0, 32    ; vpsllw
     dd 0x0271011a
-    dw 0x1330
+    dw 0x1370
     db 0, 0x00, "HWI", 0, 0, 0, 0, 32    ; vpsrlw
     dd 0x0271011c
-    dw 0x1337
+    dw 0x1377
     db 0, 0x00, "HWI", 0, 0, 0, 0, 32    ; vpsraw
     dd 0x0271011e
-    dw 0x133e
+    dw 0x137e
     db 0, 0x00, "HWI", 0, 0, 0, 0, 32    ; vpsllw
     dd 0x02720108
-    dw 0x1345
+    dw 0x1385
     db 0, 0x01, "HWI", 0, 0, 0, 0, 0    ; vprord
     dd 0x02720109
-    dw 0x134c
+    dw 0x138c
     db 0, 0x01, "HWI", 0, 0, 0, 0, 0    ; vprold
     dd 0x0272010a
-    dw 0x1353
+    dw 0x1393
     db 0, 0x01, "HWI", 0, 0, 0, 0, 32    ; vpsrld
     dd 0x0272010c
-    dw 0x135a
+    dw 0x139a
     db 0, 0x01, "HWI", 0, 0, 0, 0, 32    ; vpsrad
     dd 0x0272010e
-    dw 0x1361
+    dw 0x13a1
     db 0, 0x01, "HWI", 0, 0, 0, 0, 32    ; vpslld
     dd 0x02720118
-    dw 0x1368
+    dw 0x13a8
     db 0, 0x01, "HWI", 0, 0, 0, 0, 0    ; vprorq
     dd 0x02720119
-    dw 0x136f
+    dw 0x13af
     db 0, 0x01, "HWI", 0, 0, 0, 0, 0    ; vprolq
     dd 0x0272011c
-    dw 0x1376
+    dw 0x13b6
     db 0, 0x01, "HWI", 0, 0, 0, 0, 0    ; vpsraq
     dd 0x0273010b
-    dw 0x137d
+    dw 0x13bd
     db 0, 0x00, "HWI", 0, 0, 0, 0, 32    ; vpsrldq
     dd 0x0273010f
-    dw 0x1385
+    dw 0x13c5
     db 0, 0x00, "HWI", 0, 0, 0, 0, 32    ; vpslldq
     dd 0x0273011a
-    dw 0x138d
+    dw 0x13cd
     db 0, 0x01, "HWI", 0, 0, 0, 0, 32    ; vpsrlq
     dd 0x0273011b
-    dw 0x137d
+    dw 0x13bd
     db 0, 0x00, "HWI", 0, 0, 0, 0, 32    ; vpsrldq
     dd 0x0273011e
-    dw 0x1394
+    dw 0x13d4
     db 0, 0x01, "HWI", 0, 0, 0, 0, 32    ; vpsllq
     dd 0x0273011f
-    dw 0x1385
+    dw 0x13c5
     db 0, 0x00, "HWI", 0, 0, 0, 0, 32    ; vpslldq
     dd 0x02740100
-    dw 0x139b
+    dw 0x13db
     db 0, 0x00, "KHW", 0, 0, 0, 0, 0    ; vpcmpeqb
     dd 0x02740110
-    dw 0x139b
+    dw 0x13db
     db 0, 0x00, "KHW", 0, 0, 0, 0, 0    ; vpcmpeqb
     dd 0x02750100
-    dw 0x13a4
+    dw 0x13e4
     db 0, 0x00, "KHW", 0, 0, 0, 0, 0    ; vpcmpeqw
     dd 0x02750110
-    dw 0x13a4
+    dw 0x13e4
     db 0, 0x00, "KHW", 0, 0, 0, 0, 0    ; vpcmpeqw
     dd 0x02760100
-    dw 0x13ad
+    dw 0x13ed
     db 0, 0x01, "KHW", 0, 0, 0, 0, 0    ; vpcmpeqd
     dd 0x027e0100
-    dw 0x12cf
+    dw 0x130f
     db 3, 0x02, "EV", 0, 0, 0, 0, 0, 32    ; vmovd
     dd 0x027e0110
-    dw 0x12d5
+    dw 0x1315
     db 4, 0x02, "EV", 0, 0, 0, 0, 0, 32    ; vmovq
     dd 0x027e0210
-    dw 0x12d5
+    dw 0x1315
     db 4, 0x02, "VW", 0, 0, 0, 0, 0, 32    ; vmovq
     dd 0x027f0100
-    dw 0x12db
+    dw 0x131b
     db 0, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vmovdqa32
     dd 0x027f0110
-    dw 0x12e5
+    dw 0x1325
     db 0, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vmovdqa64
     dd 0x027f0200
-    dw 0x12ef
+    dw 0x132f
     db 0, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vmovdqu32
     dd 0x027f0210
-    dw 0x12f9
+    dw 0x1339
     db 0, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vmovdqu64
     dd 0x027f0300
-    dw 0x1303
+    dw 0x1343
     db 0, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vmovdqu8
     dd 0x027f0310
-    dw 0x130c
+    dw 0x134c
     db 0, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vmovdqu16
     dd 0x02c20000
-    dw 0x13b6
+    dw 0x13f6
     db 0, 0x29, "KHWI", 0, 0, 0, 0    ; vcmpps
     dd 0x02c20110
-    dw 0x13bd
+    dw 0x13fd
     db 0, 0x29, "KHWI", 0, 0, 0, 0    ; vcmppd
     dd 0x02c20200
-    dw 0x13c4
+    dw 0x1404
     db 3, 0x2a, "KHWI", 0, 0, 0, 0    ; vcmpss
     dd 0x02c20310
-    dw 0x13cb
+    dw 0x140b
     db 4, 0x2a, "KHWI", 0, 0, 0, 0    ; vcmpsd
     dd 0x02c40100
-    dw 0x13d2
+    dw 0x1412
     db 2, 0x02, "VHEI", 0, 0, 0, 32    ; vpinsrw
     dd 0x02c50100
-    dw 0x13da
+    dw 0x141a
     db 2, 0x02, "GWI", 0, 0, 0, 0, 32    ; vpextrw
     dd 0x02c60000
-    dw 0x13e2
+    dw 0x1422
     db 0, 0x01, "VHWI", 0, 0, 0, 32    ; vshufps
     dd 0x02c60110
-    dw 0x13ea
+    dw 0x142a
     db 0, 0x01, "VHWI", 0, 0, 0, 32    ; vshufpd
     dd 0x02d10100
-    dw 0x1330
+    dw 0x1370
     db 8, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsrlw
     dd 0x02d10110
-    dw 0x1330
+    dw 0x1370
     db 8, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsrlw
     dd 0x02d20100
-    dw 0x1353
+    dw 0x1393
     db 8, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsrld
     dd 0x02d30110
-    dw 0x138d
+    dw 0x13cd
     db 8, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsrlq
     dd 0x02d40110
-    dw 0x13f2
+    dw 0x1432
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpaddq
     dd 0x02d50100
-    dw 0x13f9
+    dw 0x1439
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmullw
     dd 0x02d50110
-    dw 0x13f9
+    dw 0x1439
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmullw
     dd 0x02d60110
-    dw 0x12d5
+    dw 0x1315
     db 4, 0x02, "WV", 0, 0, 0, 0, 0, 32    ; vmovq
     dd 0x02d80100
-    dw 0x1401
+    dw 0x1441
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsubusb
     dd 0x02d80110
-    dw 0x1401
+    dw 0x1441
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsubusb
     dd 0x02d90100
-    dw 0x140a
+    dw 0x144a
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsubusw
     dd 0x02d90110
-    dw 0x140a
+    dw 0x144a
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsubusw
     dd 0x02da0100
-    dw 0x1413
+    dw 0x1453
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpminub
     dd 0x02da0110
-    dw 0x1413
+    dw 0x1453
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpminub
     dd 0x02db0100
-    dw 0x141b
+    dw 0x145b
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpandd
     dd 0x02db0110
-    dw 0x1422
+    dw 0x1462
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpandq
     dd 0x02dc0100
-    dw 0x1429
+    dw 0x1469
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpaddusb
     dd 0x02dc0110
-    dw 0x1429
+    dw 0x1469
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpaddusb
     dd 0x02dd0100
-    dw 0x1432
+    dw 0x1472
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpaddusw
     dd 0x02dd0110
-    dw 0x1432
+    dw 0x1472
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpaddusw
     dd 0x02de0100
-    dw 0x143b
+    dw 0x147b
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmaxub
     dd 0x02de0110
-    dw 0x143b
+    dw 0x147b
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmaxub
     dd 0x02df0100
-    dw 0x1443
+    dw 0x1483
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpandnd
     dd 0x02df0110
-    dw 0x144b
+    dw 0x148b
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpandnq
     dd 0x02e00100
-    dw 0x1453
+    dw 0x1493
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpavgb
     dd 0x02e00110
-    dw 0x1453
+    dw 0x1493
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpavgb
     dd 0x02e10100
-    dw 0x1337
+    dw 0x1377
     db 8, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsraw
     dd 0x02e10110
-    dw 0x1337
+    dw 0x1377
     db 8, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsraw
     dd 0x02e20100
-    dw 0x135a
+    dw 0x139a
     db 8, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsrad
     dd 0x02e20110
-    dw 0x1376
+    dw 0x13b6
     db 8, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpsraq
     dd 0x02e30100
-    dw 0x145a
+    dw 0x149a
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpavgw
     dd 0x02e30110
-    dw 0x145a
+    dw 0x149a
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpavgw
     dd 0x02e40100
-    dw 0x1461
+    dw 0x14a1
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmulhuw
     dd 0x02e40110
-    dw 0x1461
+    dw 0x14a1
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmulhuw
     dd 0x02e50100
-    dw 0x146a
+    dw 0x14aa
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmulhw
     dd 0x02e50110
-    dw 0x146a
+    dw 0x14aa
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmulhw
     dd 0x02e60110
-    dw 0x1472
+    dw 0x14b2
     db 0, 0x09, "YW", 0, 0, 0, 0, 0, 32    ; vcvttpd2dq
     dd 0x02e60200
-    dw 0x147d
+    dw 0x14bd
     db 5, 0x01, "VW", 0, 0, 0, 0, 0, 32    ; vcvtdq2pd
     dd 0x02e60210
-    dw 0x1487
+    dw 0x14c7
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 0    ; vcvtqq2pd
     dd 0x02e60310
-    dw 0x1491
+    dw 0x14d1
     db 0, 0x05, "YW", 0, 0, 0, 0, 0, 32    ; vcvtpd2dq
     dd 0x02e70100
-    dw 0x149b
+    dw 0x14db
     db 0, 0x00, "WV", 0, 0, 0, 0, 0, 32    ; vmovntdq
     dd 0x02e80100
-    dw 0x14a4
+    dw 0x14e4
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsubsb
     dd 0x02e80110
-    dw 0x14a4
+    dw 0x14e4
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsubsb
     dd 0x02e90100
-    dw 0x14ac
+    dw 0x14ec
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsubsw
     dd 0x02e90110
-    dw 0x14ac
+    dw 0x14ec
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsubsw
     dd 0x02ea0100
-    dw 0x14b4
+    dw 0x14f4
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpminsw
     dd 0x02ea0110
-    dw 0x14b4
+    dw 0x14f4
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpminsw
     dd 0x02eb0100
-    dw 0x14bc
+    dw 0x14fc
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpord
     dd 0x02eb0110
-    dw 0x14c2
+    dw 0x1502
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vporq
     dd 0x02ec0100
-    dw 0x14c8
+    dw 0x1508
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpaddsb
     dd 0x02ec0110
-    dw 0x14c8
+    dw 0x1508
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpaddsb
     dd 0x02ed0100
-    dw 0x14d0
+    dw 0x1510
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpaddsw
     dd 0x02ed0110
-    dw 0x14d0
+    dw 0x1510
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpaddsw
     dd 0x02ee0100
-    dw 0x14d8
+    dw 0x1518
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmaxsw
     dd 0x02ee0110
-    dw 0x14d8
+    dw 0x1518
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmaxsw
     dd 0x02ef0100
-    dw 0x14e0
+    dw 0x1520
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpxord
     dd 0x02ef0110
-    dw 0x14e7
+    dw 0x1527
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpxorq
     dd 0x02f10100
-    dw 0x133e
+    dw 0x137e
     db 8, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsllw
     dd 0x02f10110
-    dw 0x133e
+    dw 0x137e
     db 8, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsllw
     dd 0x02f20100
-    dw 0x1361
+    dw 0x13a1
     db 8, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpslld
     dd 0x02f30110
-    dw 0x1394
+    dw 0x13d4
     db 8, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsllq
     dd 0x02f40110
-    dw 0x14ee
+    dw 0x152e
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpmuludq
     dd 0x02f50100
-    dw 0x14f7
+    dw 0x1537
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmaddwd
     dd 0x02f50110
-    dw 0x14f7
+    dw 0x1537
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmaddwd
     dd 0x02f60100
-    dw 0x1500
+    dw 0x1540
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsadbw
     dd 0x02f60110
-    dw 0x1500
+    dw 0x1540
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsadbw
     dd 0x02f80100
-    dw 0x1508
+    dw 0x1548
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsubb
     dd 0x02f80110
-    dw 0x1508
+    dw 0x1548
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsubb
     dd 0x02f90100
-    dw 0x150f
+    dw 0x154f
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsubw
     dd 0x02f90110
-    dw 0x150f
+    dw 0x154f
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpsubw
     dd 0x02fa0100
-    dw 0x1516
+    dw 0x1556
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpsubd
     dd 0x02fb0110
-    dw 0x151d
+    dw 0x155d
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpsubq
     dd 0x02fc0100
-    dw 0x1524
+    dw 0x1564
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpaddb
     dd 0x02fc0110
-    dw 0x1524
+    dw 0x1564
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpaddb
     dd 0x02fd0100
-    dw 0x152b
+    dw 0x156b
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpaddw
     dd 0x02fd0110
-    dw 0x152b
+    dw 0x156b
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpaddw
     dd 0x02fe0100
-    dw 0x1532
+    dw 0x1572
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpaddd
     dd 0x03000100
-    dw 0x1539
+    dw 0x1579
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpshufb
     dd 0x03000110
-    dw 0x1539
+    dw 0x1579
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpshufb
     dd 0x03040100
-    dw 0x1541
+    dw 0x1581
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmaddubsw
     dd 0x03040110
-    dw 0x1541
+    dw 0x1581
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmaddubsw
     dd 0x030b0100
-    dw 0x154c
+    dw 0x158c
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmulhrsw
     dd 0x030b0110
-    dw 0x154c
+    dw 0x158c
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmulhrsw
     dd 0x030c0100
-    dw 0x0bcb
+    dw 0x0c13
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpermilps
     dd 0x030d0110
-    dw 0x0bd5
+    dw 0x0c1d
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpermilpd
     dd 0x03100110
-    dw 0x1556
+    dw 0x1596
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpsrlvw
     dd 0x03100200
-    dw 0x155e
+    dw 0x159e
     db 5, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vpmovuswb
     dd 0x03110110
-    dw 0x1568
+    dw 0x15a8
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpsravw
     dd 0x03110200
-    dw 0x1570
+    dw 0x15b0
     db 6, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vpmovusdb
     dd 0x03120110
-    dw 0x157a
+    dw 0x15ba
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpsllvw
     dd 0x03120200
-    dw 0x1582
+    dw 0x15c2
     db 7, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vpmovusqb
     dd 0x03130200
-    dw 0x158c
+    dw 0x15cc
     db 5, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vpmovusdw
     dd 0x03140200
-    dw 0x1596
+    dw 0x15d6
     db 6, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vpmovusqw
     dd 0x03150200
-    dw 0x15a0
+    dw 0x15e0
     db 5, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vpmovusqd
     dd 0x03160100
-    dw 0x0bef
+    dw 0x0c37
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpermps
     dd 0x03160110
-    dw 0x0e5e
+    dw 0x0ea6
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpermpd
     dd 0x03180100
-    dw 0x0bf7
+    dw 0x0c3f
     db 3, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vbroadcastss
     dd 0x03190100
-    dw 0x15aa
+    dw 0x15ea
     db 4, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vbroadcastf32x2
     dd 0x03190110
-    dw 0x0c04
+    dw 0x0c4c
     db 4, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vbroadcastsd
     dd 0x031a0100
-    dw 0x15ba
+    dw 0x15fa
     db 8, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vbroadcastf32x4
     dd 0x031a0110
-    dw 0x15ca
+    dw 0x160a
     db 8, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vbroadcastf64x2
     dd 0x031b0100
-    dw 0x15da
+    dw 0x161a
     db 9, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vbroadcastf32x8
     dd 0x031b0110
-    dw 0x15ea
+    dw 0x162a
     db 9, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vbroadcastf64x4
     dd 0x031c0100
-    dw 0x15fa
+    dw 0x163a
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpabsb
     dd 0x031c0110
-    dw 0x15fa
+    dw 0x163a
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpabsb
     dd 0x031d0100
-    dw 0x1601
+    dw 0x1641
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpabsw
     dd 0x031d0110
-    dw 0x1601
+    dw 0x1641
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpabsw
     dd 0x031e0100
-    dw 0x1608
+    dw 0x1648
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 32    ; vpabsd
     dd 0x031f0110
-    dw 0x160f
+    dw 0x164f
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 0    ; vpabsq
     dd 0x03200100
-    dw 0x1616
+    dw 0x1656
     db 5, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovsxbw
     dd 0x03200110
-    dw 0x1616
+    dw 0x1656
     db 5, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovsxbw
     dd 0x03200200
-    dw 0x1620
+    dw 0x1660
     db 5, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vpmovswb
     dd 0x03210100
-    dw 0x1629
+    dw 0x1669
     db 6, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovsxbd
     dd 0x03210110
-    dw 0x1629
+    dw 0x1669
     db 6, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovsxbd
     dd 0x03210200
-    dw 0x1633
+    dw 0x1673
     db 6, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vpmovsdb
     dd 0x03220100
-    dw 0x163c
+    dw 0x167c
     db 7, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovsxbq
     dd 0x03220110
-    dw 0x163c
+    dw 0x167c
     db 7, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovsxbq
     dd 0x03220200
-    dw 0x1646
+    dw 0x1686
     db 7, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vpmovsqb
     dd 0x03230100
-    dw 0x164f
+    dw 0x168f
     db 5, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovsxwd
     dd 0x03230110
-    dw 0x164f
+    dw 0x168f
     db 5, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovsxwd
     dd 0x03230200
-    dw 0x1659
+    dw 0x1699
     db 5, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vpmovsdw
     dd 0x03240100
-    dw 0x1662
+    dw 0x16a2
     db 6, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovsxwq
     dd 0x03240110
-    dw 0x1662
+    dw 0x16a2
     db 6, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovsxwq
     dd 0x03240200
-    dw 0x166c
+    dw 0x16ac
     db 6, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vpmovsqw
     dd 0x03250100
-    dw 0x1675
+    dw 0x16b5
     db 5, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovsxdq
     dd 0x03250200
-    dw 0x167f
+    dw 0x16bf
     db 5, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vpmovsqd
     dd 0x03260100
-    dw 0x1688
+    dw 0x16c8
     db 0, 0x00, "KHW", 0, 0, 0, 0, 0    ; vptestmb
     dd 0x03260110
-    dw 0x1691
+    dw 0x16d1
     db 0, 0x00, "KHW", 0, 0, 0, 0, 0    ; vptestmw
     dd 0x03260200
-    dw 0x169a
+    dw 0x16da
     db 0, 0x00, "KHW", 0, 0, 0, 0, 0    ; vptestnmb
     dd 0x03260210
-    dw 0x16a4
+    dw 0x16e4
     db 0, 0x00, "KHW", 0, 0, 0, 0, 0    ; vptestnmw
     dd 0x03270100
-    dw 0x16ae
+    dw 0x16ee
     db 0, 0x01, "KHW", 0, 0, 0, 0, 0    ; vptestmd
     dd 0x03270110
-    dw 0x16b7
+    dw 0x16f7
     db 0, 0x01, "KHW", 0, 0, 0, 0, 0    ; vptestmq
     dd 0x03270200
-    dw 0x16c0
+    dw 0x1700
     db 0, 0x01, "KHW", 0, 0, 0, 0, 0    ; vptestnmd
     dd 0x03270210
-    dw 0x16ca
+    dw 0x170a
     db 0, 0x01, "KHW", 0, 0, 0, 0, 0    ; vptestnmq
     dd 0x03280110
-    dw 0x16d4
+    dw 0x1714
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpmuldq
     dd 0x03280200
-    dw 0x16dc
+    dw 0x171c
     db 0, 0x00, "Vk", 0, 0, 0, 0, 0, 0    ; vpmovm2b
     dd 0x03280210
-    dw 0x16e5
+    dw 0x1725
     db 0, 0x00, "Vk", 0, 0, 0, 0, 0, 0    ; vpmovm2w
     dd 0x03290110
-    dw 0x16ee
+    dw 0x172e
     db 0, 0x01, "KHW", 0, 0, 0, 0, 0    ; vpcmpeqq
     dd 0x03290200
-    dw 0x16f7
+    dw 0x1737
     db 0, 0x00, "KW", 0, 0, 0, 0, 0, 0    ; vpmovb2m
     dd 0x03290210
-    dw 0x1700
+    dw 0x1740
     db 0, 0x00, "KW", 0, 0, 0, 0, 0, 0    ; vpmovw2m
     dd 0x032a0100
-    dw 0x1709
+    dw 0x1749
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vmovntdqa
     dd 0x032b0100
-    dw 0x1713
+    dw 0x1753
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpackusdw
     dd 0x032c0100
-    dw 0x171d
+    dw 0x175d
     db 0, 0x05, "VHW", 0, 0, 0, 0, 0    ; vscalefps
     dd 0x032c0110
-    dw 0x1727
+    dw 0x1767
     db 0, 0x05, "VHW", 0, 0, 0, 0, 0    ; vscalefpd
     dd 0x03300100
-    dw 0x1731
+    dw 0x1771
     db 5, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovzxbw
     dd 0x03300110
-    dw 0x1731
+    dw 0x1771
     db 5, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovzxbw
     dd 0x03300200
-    dw 0x173b
+    dw 0x177b
     db 5, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vpmovwb
     dd 0x03310100
-    dw 0x1743
+    dw 0x1783
     db 6, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovzxbd
     dd 0x03310110
-    dw 0x1743
+    dw 0x1783
     db 6, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovzxbd
     dd 0x03310200
-    dw 0x174d
+    dw 0x178d
     db 6, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vpmovdb
     dd 0x03320100
-    dw 0x1755
+    dw 0x1795
     db 7, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovzxbq
     dd 0x03320110
-    dw 0x1755
+    dw 0x1795
     db 7, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovzxbq
     dd 0x03320200
-    dw 0x175f
+    dw 0x179f
     db 7, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vpmovqb
     dd 0x03330100
-    dw 0x1767
+    dw 0x17a7
     db 5, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovzxwd
     dd 0x03330110
-    dw 0x1767
+    dw 0x17a7
     db 5, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovzxwd
     dd 0x03330200
-    dw 0x1771
+    dw 0x17b1
     db 5, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vpmovdw
     dd 0x03340100
-    dw 0x1779
+    dw 0x17b9
     db 6, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovzxwq
     dd 0x03340110
-    dw 0x1779
+    dw 0x17b9
     db 6, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovzxwq
     dd 0x03340200
-    dw 0x1783
+    dw 0x17c3
     db 6, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vpmovqw
     dd 0x03350100
-    dw 0x178b
+    dw 0x17cb
     db 5, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpmovzxdq
     dd 0x03350200
-    dw 0x1795
+    dw 0x17d5
     db 5, 0x00, "WV", 0, 0, 0, 0, 0, 0    ; vpmovqd
     dd 0x03360100
-    dw 0x0c36
+    dw 0x0c7e
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpermd
     dd 0x03360110
-    dw 0x0e57
+    dw 0x0e9f
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpermq
     dd 0x03370110
-    dw 0x179d
+    dw 0x17dd
     db 0, 0x01, "KHW", 0, 0, 0, 0, 0    ; vpcmpgtq
     dd 0x03380100
-    dw 0x17a6
+    dw 0x17e6
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpminsb
     dd 0x03380110
-    dw 0x17a6
+    dw 0x17e6
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpminsb
     dd 0x03380200
-    dw 0x17ae
+    dw 0x17ee
     db 0, 0x00, "Vk", 0, 0, 0, 0, 0, 0    ; vpmovm2d
     dd 0x03380210
-    dw 0x17b7
+    dw 0x17f7
     db 0, 0x00, "Vk", 0, 0, 0, 0, 0, 0    ; vpmovm2q
     dd 0x03390100
-    dw 0x17c0
+    dw 0x1800
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpminsd
     dd 0x03390110
-    dw 0x17c8
+    dw 0x1808
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpminsq
     dd 0x03390200
-    dw 0x17d0
+    dw 0x1810
     db 0, 0x00, "KW", 0, 0, 0, 0, 0, 0    ; vpmovd2m
     dd 0x03390210
-    dw 0x17d9
+    dw 0x1819
     db 0, 0x00, "KW", 0, 0, 0, 0, 0, 0    ; vpmovq2m
     dd 0x033a0100
-    dw 0x17e2
+    dw 0x1822
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpminuw
     dd 0x033a0110
-    dw 0x17e2
+    dw 0x1822
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpminuw
     dd 0x033b0100
-    dw 0x17ea
+    dw 0x182a
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpminud
     dd 0x033b0110
-    dw 0x17f2
+    dw 0x1832
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpminuq
     dd 0x033c0100
-    dw 0x17fa
+    dw 0x183a
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmaxsb
     dd 0x033c0110
-    dw 0x17fa
+    dw 0x183a
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmaxsb
     dd 0x033d0100
-    dw 0x1802
+    dw 0x1842
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpmaxsd
     dd 0x033d0110
-    dw 0x180a
+    dw 0x184a
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpmaxsq
     dd 0x033e0100
-    dw 0x1812
+    dw 0x1852
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmaxuw
     dd 0x033e0110
-    dw 0x1812
+    dw 0x1852
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vpmaxuw
     dd 0x033f0100
-    dw 0x181a
+    dw 0x185a
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpmaxud
     dd 0x033f0110
-    dw 0x1822
+    dw 0x1862
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpmaxuq
     dd 0x03400100
-    dw 0x182a
+    dw 0x186a
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpmulld
     dd 0x03400110
-    dw 0x1832
+    dw 0x1872
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpmullq
     dd 0x03420100
-    dw 0x183a
+    dw 0x187a
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vgetexpps
     dd 0x03420110
-    dw 0x1844
+    dw 0x1884
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vgetexppd
     dd 0x03440100
-    dw 0x184e
+    dw 0x188e
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 0    ; vplzcntd
     dd 0x03440110
-    dw 0x1857
+    dw 0x1897
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 0    ; vplzcntq
     dd 0x03450100
-    dw 0x0c3d
+    dw 0x0c85
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpsrlvd
     dd 0x03450110
-    dw 0x1860
+    dw 0x18a0
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpsrlvq
     dd 0x03460100
-    dw 0x0c45
+    dw 0x0c8d
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpsravd
     dd 0x03460110
-    dw 0x1868
+    dw 0x18a8
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpsravq
     dd 0x03470100
-    dw 0x0c4d
+    dw 0x0c95
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpsllvd
     dd 0x03470110
-    dw 0x1870
+    dw 0x18b0
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpsllvq
     dd 0x034c0100
-    dw 0x1878
+    dw 0x18b8
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 0    ; vrcp14ps
     dd 0x034c0110
-    dw 0x1881
+    dw 0x18c1
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 0    ; vrcp14pd
     dd 0x034d0100
-    dw 0x188a
+    dw 0x18ca
     db 3, 0x02, "VHW", 0, 0, 0, 0, 0    ; vrcp14ss
     dd 0x034d0110
-    dw 0x1893
+    dw 0x18d3
     db 4, 0x02, "VHW", 0, 0, 0, 0, 0    ; vrcp14sd
     dd 0x034e0100
-    dw 0x189c
+    dw 0x18dc
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 0    ; vrsqrt14ps
     dd 0x034e0110
-    dw 0x18a7
+    dw 0x18e7
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 0    ; vrsqrt14pd
     dd 0x034f0100
-    dw 0x18b2
+    dw 0x18f2
     db 3, 0x02, "VHW", 0, 0, 0, 0, 0    ; vrsqrt14ss
     dd 0x034f0110
-    dw 0x18bd
+    dw 0x18fd
     db 4, 0x02, "VHW", 0, 0, 0, 0, 0    ; vrsqrt14sd
     dd 0x03500100
-    dw 0x18c8
+    dw 0x1908
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpdpbusd
     dd 0x03510100
-    dw 0x18d1
+    dw 0x1911
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpdpbusds
     dd 0x03520100
-    dw 0x18db
+    dw 0x191b
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpdpwssd
     dd 0x03530100
-    dw 0x18e4
+    dw 0x1924
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpdpwssds
     dd 0x03580100
-    dw 0x0c55
+    dw 0x0c9d
     db 3, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpbroadcastd
     dd 0x03590100
-    dw 0x18ee
+    dw 0x192e
     db 4, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vbroadcasti32x2
     dd 0x03590110
-    dw 0x0c62
+    dw 0x0caa
     db 4, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpbroadcastq
     dd 0x035a0100
-    dw 0x18fe
+    dw 0x193e
     db 8, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vbroadcasti32x4
     dd 0x035a0110
-    dw 0x190e
+    dw 0x194e
     db 8, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vbroadcasti64x2
     dd 0x035b0100
-    dw 0x191e
+    dw 0x195e
     db 9, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vbroadcasti32x8
     dd 0x035b0110
-    dw 0x192e
+    dw 0x196e
     db 9, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vbroadcasti64x4
     dd 0x03640100
-    dw 0x193e
+    dw 0x197e
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpblendmd
     dd 0x03640110
-    dw 0x1948
+    dw 0x1988
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpblendmq
     dd 0x03650100
-    dw 0x1952
+    dw 0x1992
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vblendmps
     dd 0x03650110
-    dw 0x195c
+    dw 0x199c
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vblendmpd
     dd 0x03660100
-    dw 0x1966
+    dw 0x19a6
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpblendmb
     dd 0x03660110
-    dw 0x1970
+    dw 0x19b0
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpblendmw
     dd 0x03750100
-    dw 0x197a
+    dw 0x19ba
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpermi2b
     dd 0x03750110
-    dw 0x1983
+    dw 0x19c3
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpermi2w
     dd 0x03760100
-    dw 0x198c
+    dw 0x19cc
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpermi2d
     dd 0x03760110
-    dw 0x1995
+    dw 0x19d5
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpermi2q
     dd 0x03770100
-    dw 0x199e
+    dw 0x19de
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpermi2ps
     dd 0x03770110
-    dw 0x19a8
+    dw 0x19e8
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpermi2pd
     dd 0x03780100
-    dw 0x0c7e
+    dw 0x0cc6
     db 1, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpbroadcastb
     dd 0x03790100
-    dw 0x0c8b
+    dw 0x0cd3
     db 2, 0x00, "VW", 0, 0, 0, 0, 0, 32    ; vpbroadcastw
     dd 0x037a0100
-    dw 0x0c7e
+    dw 0x0cc6
     db 1, 0x00, "VE", 0, 0, 0, 0, 0, 0    ; vpbroadcastb
     dd 0x037b0100
-    dw 0x0c8b
+    dw 0x0cd3
     db 2, 0x00, "VE", 0, 0, 0, 0, 0, 0    ; vpbroadcastw
     dd 0x037c0100
-    dw 0x0c55
+    dw 0x0c9d
     db 3, 0x00, "VE", 0, 0, 0, 0, 0, 0    ; vpbroadcastd
     dd 0x037c0110
-    dw 0x0c62
+    dw 0x0caa
     db 4, 0x00, "VE", 0, 0, 0, 0, 0, 0    ; vpbroadcastq
     dd 0x037d0100
-    dw 0x19b2
+    dw 0x19f2
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpermt2b
     dd 0x037d0110
-    dw 0x19bb
+    dw 0x19fb
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpermt2w
     dd 0x037e0100
-    dw 0x19c4
+    dw 0x1a04
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpermt2d
     dd 0x037e0110
-    dw 0x19cd
+    dw 0x1a0d
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpermt2q
     dd 0x037f0100
-    dw 0x19d6
+    dw 0x1a16
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpermt2ps
     dd 0x037f0110
-    dw 0x19e0
+    dw 0x1a20
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpermt2pd
     dd 0x03880100
-    dw 0x19ea
+    dw 0x1a2a
     db 0, 0x40, "VW", 0, 0, 0, 0, 0, 0    ; vexpandps
     dd 0x03880110
-    dw 0x19f4
+    dw 0x1a34
     db 0, 0x40, "VW", 0, 0, 0, 0, 0, 0    ; vexpandpd
     dd 0x03890100
-    dw 0x19fe
+    dw 0x1a3e
     db 0, 0x40, "VW", 0, 0, 0, 0, 0, 0    ; vpexpandd
     dd 0x03890110
-    dw 0x1a08
+    dw 0x1a48
     db 0, 0x40, "VW", 0, 0, 0, 0, 0, 0    ; vpexpandq
     dd 0x038a0100
-    dw 0x1a12
+    dw 0x1a52
     db 0, 0x40, "WV", 0, 0, 0, 0, 0, 0    ; vcompressps
     dd 0x038a0110
-    dw 0x1a1e
+    dw 0x1a5e
     db 0, 0x40, "WV", 0, 0, 0, 0, 0, 0    ; vcompresspd
     dd 0x038b0100
-    dw 0x1a2a
+    dw 0x1a6a
     db 0, 0x40, "WV", 0, 0, 0, 0, 0, 0    ; vpcompressd
     dd 0x038b0110
-    dw 0x1a36
+    dw 0x1a76
     db 0, 0x40, "WV", 0, 0, 0, 0, 0, 0    ; vpcompressq
     dd 0x038d0100
-    dw 0x1a42
+    dw 0x1a82
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpermb
     dd 0x038d0110
-    dw 0x1a49
+    dw 0x1a89
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpermw
     dd 0x03960100
-    dw 0x0ca3
+    dw 0x0ceb
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmaddsub132ps
     dd 0x03960110
-    dw 0x1a50
+    dw 0x1a90
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmaddsub132pd
     dd 0x03970100
-    dw 0x0cb2
+    dw 0x0cfa
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmsubadd132ps
     dd 0x03970110
-    dw 0x1a5f
+    dw 0x1a9f
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmsubadd132pd
     dd 0x03980100
-    dw 0x0cc1
+    dw 0x0d09
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmadd132ps
     dd 0x03980110
-    dw 0x1a6e
+    dw 0x1aae
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmadd132pd
     dd 0x03990100
-    dw 0x0ccd
+    dw 0x0d15
     db 3, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfmadd132ss
     dd 0x03990110
-    dw 0x1a7a
+    dw 0x1aba
     db 4, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfmadd132sd
     dd 0x039a0100
-    dw 0x0cd9
+    dw 0x0d21
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmsub132ps
     dd 0x039a0110
-    dw 0x1a86
+    dw 0x1ac6
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmsub132pd
     dd 0x039b0100
-    dw 0x0ce5
+    dw 0x0d2d
     db 3, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfmsub132ss
     dd 0x039b0110
-    dw 0x1a92
+    dw 0x1ad2
     db 4, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfmsub132sd
     dd 0x039c0100
-    dw 0x0cf1
+    dw 0x0d39
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfnmadd132ps
     dd 0x039c0110
-    dw 0x1a9e
+    dw 0x1ade
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfnmadd132pd
     dd 0x039d0100
-    dw 0x0cfe
+    dw 0x0d46
     db 3, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfnmadd132ss
     dd 0x039d0110
-    dw 0x1aab
+    dw 0x1aeb
     db 4, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfnmadd132sd
     dd 0x039e0100
-    dw 0x0d0b
+    dw 0x0d53
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfnmsub132ps
     dd 0x039e0110
-    dw 0x1ab8
+    dw 0x1af8
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfnmsub132pd
     dd 0x039f0100
-    dw 0x0d18
+    dw 0x0d60
     db 3, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfnmsub132ss
     dd 0x039f0110
-    dw 0x1ac5
+    dw 0x1b05
     db 4, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfnmsub132sd
     dd 0x03a60100
-    dw 0x0d25
+    dw 0x0d6d
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmaddsub213ps
     dd 0x03a60110
-    dw 0x1ad2
+    dw 0x1b12
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmaddsub213pd
     dd 0x03a70100
-    dw 0x0d34
+    dw 0x0d7c
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmsubadd213ps
     dd 0x03a70110
-    dw 0x1ae1
+    dw 0x1b21
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmsubadd213pd
     dd 0x03a80100
-    dw 0x0d43
+    dw 0x0d8b
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmadd213ps
     dd 0x03a80110
-    dw 0x1af0
+    dw 0x1b30
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmadd213pd
     dd 0x03a90100
-    dw 0x0d4f
+    dw 0x0d97
     db 3, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfmadd213ss
     dd 0x03a90110
-    dw 0x1afc
+    dw 0x1b3c
     db 4, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfmadd213sd
     dd 0x03aa0100
-    dw 0x0d5b
+    dw 0x0da3
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmsub213ps
     dd 0x03aa0110
-    dw 0x1b08
+    dw 0x1b48
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmsub213pd
     dd 0x03ab0100
-    dw 0x0d67
+    dw 0x0daf
     db 3, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfmsub213ss
     dd 0x03ab0110
-    dw 0x1b14
+    dw 0x1b54
     db 4, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfmsub213sd
     dd 0x03ac0100
-    dw 0x0d73
+    dw 0x0dbb
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfnmadd213ps
     dd 0x03ac0110
-    dw 0x1b20
+    dw 0x1b60
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfnmadd213pd
     dd 0x03ad0100
-    dw 0x0d80
+    dw 0x0dc8
     db 3, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfnmadd213ss
     dd 0x03ad0110
-    dw 0x1b2d
+    dw 0x1b6d
     db 4, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfnmadd213sd
     dd 0x03ae0100
-    dw 0x0d8d
+    dw 0x0dd5
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfnmsub213ps
     dd 0x03ae0110
-    dw 0x1b3a
+    dw 0x1b7a
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfnmsub213pd
     dd 0x03af0100
-    dw 0x0d9a
+    dw 0x0de2
     db 3, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfnmsub213ss
     dd 0x03af0110
-    dw 0x1b47
+    dw 0x1b87
     db 4, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfnmsub213sd
     dd 0x03b40110
-    dw 0x1b54
+    dw 0x1b94
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpmadd52luq
     dd 0x03b50110
-    dw 0x1b60
+    dw 0x1ba0
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpmadd52huq
     dd 0x03b60100
-    dw 0x0da7
+    dw 0x0def
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmaddsub231ps
     dd 0x03b60110
-    dw 0x1b6c
+    dw 0x1bac
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmaddsub231pd
     dd 0x03b70100
-    dw 0x0db6
+    dw 0x0dfe
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmsubadd231ps
     dd 0x03b70110
-    dw 0x1b7b
+    dw 0x1bbb
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmsubadd231pd
     dd 0x03b80100
-    dw 0x0dc5
+    dw 0x0e0d
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmadd231ps
     dd 0x03b80110
-    dw 0x1b8a
+    dw 0x1bca
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmadd231pd
     dd 0x03b90100
-    dw 0x0dd1
+    dw 0x0e19
     db 3, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfmadd231ss
     dd 0x03b90110
-    dw 0x1b96
+    dw 0x1bd6
     db 4, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfmadd231sd
     dd 0x03ba0100
-    dw 0x0ddd
+    dw 0x0e25
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmsub231ps
     dd 0x03ba0110
-    dw 0x1ba2
+    dw 0x1be2
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfmsub231pd
     dd 0x03bb0100
-    dw 0x0de9
+    dw 0x0e31
     db 3, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfmsub231ss
     dd 0x03bb0110
-    dw 0x1bae
+    dw 0x1bee
     db 4, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfmsub231sd
     dd 0x03bc0100
-    dw 0x0df5
+    dw 0x0e3d
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfnmadd231ps
     dd 0x03bc0110
-    dw 0x1bba
+    dw 0x1bfa
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfnmadd231pd
     dd 0x03bd0100
-    dw 0x0e02
+    dw 0x0e4a
     db 3, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfnmadd231ss
     dd 0x03bd0110
-    dw 0x1bc7
+    dw 0x1c07
     db 4, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfnmadd231sd
     dd 0x03be0100
-    dw 0x0e0f
+    dw 0x0e57
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfnmsub231ps
     dd 0x03be0110
-    dw 0x1bd4
+    dw 0x1c14
     db 0, 0x05, "VHW", 0, 0, 0, 0, 32    ; vfnmsub231pd
     dd 0x03bf0100
-    dw 0x0e1c
+    dw 0x0e64
     db 3, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfnmsub231ss
     dd 0x03bf0110
-    dw 0x1be1
+    dw 0x1c21
     db 4, 0x06, "VHW", 0, 0, 0, 0, 32    ; vfnmsub231sd
     dd 0x03c40100
-    dw 0x1bee
+    dw 0x1c2e
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 0    ; vpconflictd
     dd 0x03c40110
-    dw 0x1bfa
+    dw 0x1c3a
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 0    ; vpconflictq
     dd 0x03cf0100
-    dw 0x1c06
+    dw 0x1c46
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vgf2p8mulb
     dd 0x03dc0100
-    dw 0x1c11
+    dw 0x1c51
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vaesenc
     dd 0x03dc0110
-    dw 0x1c11
+    dw 0x1c51
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vaesenc
     dd 0x03dd0100
-    dw 0x1c19
+    dw 0x1c59
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vaesenclast
     dd 0x03dd0110
-    dw 0x1c19
+    dw 0x1c59
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vaesenclast
     dd 0x03de0100
-    dw 0x1c25
+    dw 0x1c65
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vaesdec
     dd 0x03de0110
-    dw 0x1c25
+    dw 0x1c65
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vaesdec
     dd 0x03df0100
-    dw 0x1c2d
+    dw 0x1c6d
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vaesdeclast
     dd 0x03df0110
-    dw 0x1c2d
+    dw 0x1c6d
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vaesdeclast
     dd 0x04000110
-    dw 0x0e57
+    dw 0x0e9f
     db 0, 0x01, "VWI", 0, 0, 0, 0, 32    ; vpermq
     dd 0x04010110
-    dw 0x0e5e
+    dw 0x0ea6
     db 0, 0x01, "VWI", 0, 0, 0, 0, 32    ; vpermpd
     dd 0x04030100
-    dw 0x1c39
+    dw 0x1c79
     db 0, 0x01, "VHWI", 0, 0, 0, 0    ; valignd
     dd 0x04030110
-    dw 0x1c41
+    dw 0x1c81
     db 0, 0x01, "VHWI", 0, 0, 0, 0    ; valignq
     dd 0x04040100
-    dw 0x0bcb
+    dw 0x0c13
     db 0, 0x01, "VWI", 0, 0, 0, 0, 32    ; vpermilps
     dd 0x04050110
-    dw 0x0bd5
+    dw 0x0c1d
     db 0, 0x01, "VWI", 0, 0, 0, 0, 32    ; vpermilpd
     dd 0x04080100
-    dw 0x1c49
+    dw 0x1c89
     db 0, 0x09, "VWI", 0, 0, 0, 0, 0    ; vrndscaleps
     dd 0x04090110
-    dw 0x1c55
+    dw 0x1c95
     db 0, 0x09, "VWI", 0, 0, 0, 0, 0    ; vrndscalepd
     dd 0x040a0100
-    dw 0x1c61
+    dw 0x1ca1
     db 3, 0x0a, "VHWI", 0, 0, 0, 0    ; vrndscaless
     dd 0x040b0110
-    dw 0x1c6d
+    dw 0x1cad
     db 4, 0x0a, "VHWI", 0, 0, 0, 0    ; vrndscalesd
     dd 0x040f0100
-    dw 0x1c79
+    dw 0x1cb9
     db 0, 0x00, "VHWI", 0, 0, 0, 32    ; vpalignr
     dd 0x040f0110
-    dw 0x1c79
+    dw 0x1cb9
     db 0, 0x00, "VHWI", 0, 0, 0, 32    ; vpalignr
     dd 0x04140100
-    dw 0x1c82
+    dw 0x1cc2
     db 1, 0x02, "EVI", 0, 0, 0, 0, 32    ; vpextrb
     dd 0x04150100
-    dw 0x13da
+    dw 0x141a
     db 2, 0x02, "EVI", 0, 0, 0, 0, 32    ; vpextrw
     dd 0x04160100
-    dw 0x1c8a
+    dw 0x1cca
     db 3, 0x02, "EVI", 0, 0, 0, 0, 32    ; vpextrd
     dd 0x04160110
-    dw 0x1c92
+    dw 0x1cd2
     db 4, 0x02, "EVI", 0, 0, 0, 0, 32    ; vpextrq
     dd 0x04170100
-    dw 0x1c9a
+    dw 0x1cda
     db 3, 0x02, "EVI", 0, 0, 0, 0, 32    ; vextractps
     dd 0x04180100
-    dw 0x1ca5
+    dw 0x1ce5
     db 8, 0x00, "VHWI", 0, 0, 0, 0    ; vinsertf32x4
     dd 0x04180110
-    dw 0x1cb2
+    dw 0x1cf2
     db 8, 0x00, "VHWI", 0, 0, 0, 0    ; vinsertf64x2
     dd 0x04190100
-    dw 0x1cbf
+    dw 0x1cff
     db 8, 0x00, "WVI", 0, 0, 0, 0, 0    ; vextractf32x4
     dd 0x04190110
-    dw 0x1ccd
+    dw 0x1d0d
     db 8, 0x00, "WVI", 0, 0, 0, 0, 0    ; vextractf64x2
     dd 0x041a0100
-    dw 0x1cdb
+    dw 0x1d1b
     db 9, 0x00, "VHWI", 0, 0, 0, 0    ; vinsertf32x8
     dd 0x041a0110
-    dw 0x1ce8
+    dw 0x1d28
     db 9, 0x00, "VHWI", 0, 0, 0, 0    ; vinsertf64x4
     dd 0x041b0100
-    dw 0x1cf5
+    dw 0x1d35
     db 9, 0x00, "WVI", 0, 0, 0, 0, 0    ; vextractf32x8
     dd 0x041b0110
-    dw 0x1d03
+    dw 0x1d43
     db 9, 0x00, "WVI", 0, 0, 0, 0, 0    ; vextractf64x4
     dd 0x041e0100
-    dw 0x1d11
+    dw 0x1d51
     db 0, 0x11, "KHWI", 0, 0, 0, 0    ; vpcmpud
     dd 0x041e0110
-    dw 0x1d19
+    dw 0x1d59
     db 0, 0x11, "KHWI", 0, 0, 0, 0    ; vpcmpuq
     dd 0x041f0100
-    dw 0x1d21
+    dw 0x1d61
     db 0, 0x11, "KHWI", 0, 0, 0, 0    ; vpcmpd
     dd 0x041f0110
-    dw 0x1d28
+    dw 0x1d68
     db 0, 0x11, "KHWI", 0, 0, 0, 0    ; vpcmpq
     dd 0x04200100
-    dw 0x1d2f
+    dw 0x1d6f
     db 1, 0x02, "VHEI", 0, 0, 0, 32    ; vpinsrb
     dd 0x04210100
-    dw 0x1d37
+    dw 0x1d77
     db 3, 0x02, "VHWI", 0, 0, 0, 32    ; vinsertps
     dd 0x04220100
-    dw 0x1d41
+    dw 0x1d81
     db 3, 0x02, "VHEI", 0, 0, 0, 32    ; vpinsrd
     dd 0x04220110
-    dw 0x1d49
+    dw 0x1d89
     db 4, 0x02, "VHEI", 0, 0, 0, 32    ; vpinsrq
     dd 0x04230100
-    dw 0x1d51
+    dw 0x1d91
     db 0, 0x01, "VHWI", 0, 0, 0, 0    ; vshuff32x4
     dd 0x04230110
-    dw 0x1d5c
+    dw 0x1d9c
     db 0, 0x01, "VHWI", 0, 0, 0, 0    ; vshuff64x2
     dd 0x04250100
-    dw 0x1d67
+    dw 0x1da7
     db 0, 0x01, "VHWI", 0, 0, 0, 0    ; vpternlogd
     dd 0x04250110
-    dw 0x1d72
+    dw 0x1db2
     db 0, 0x01, "VHWI", 0, 0, 0, 0    ; vpternlogq
     dd 0x04380100
-    dw 0x1d7d
+    dw 0x1dbd
     db 8, 0x00, "VHWI", 0, 0, 0, 0    ; vinserti32x4
     dd 0x04380110
-    dw 0x1d8a
+    dw 0x1dca
     db 8, 0x00, "VHWI", 0, 0, 0, 0    ; vinserti64x2
     dd 0x04390100
-    dw 0x1d97
+    dw 0x1dd7
     db 8, 0x00, "WVI", 0, 0, 0, 0, 0    ; vextracti32x4
     dd 0x04390110
-    dw 0x1da5
+    dw 0x1de5
     db 8, 0x00, "WVI", 0, 0, 0, 0, 0    ; vextracti64x2
     dd 0x043a0100
-    dw 0x1db3
+    dw 0x1df3
     db 9, 0x00, "VHWI", 0, 0, 0, 0    ; vinserti32x8
     dd 0x043a0110
-    dw 0x1dc0
+    dw 0x1e00
     db 9, 0x00, "VHWI", 0, 0, 0, 0    ; vinserti64x4
     dd 0x043b0100
-    dw 0x1dcd
+    dw 0x1e0d
     db 9, 0x00, "WVI", 0, 0, 0, 0, 0    ; vextracti32x8
     dd 0x043b0110
-    dw 0x1ddb
+    dw 0x1e1b
     db 9, 0x00, "WVI", 0, 0, 0, 0, 0    ; vextracti64x4
     dd 0x043e0100
-    dw 0x1de9
+    dw 0x1e29
     db 0, 0x10, "KHWI", 0, 0, 0, 0    ; vpcmpub
     dd 0x043e0110
-    dw 0x1df1
+    dw 0x1e31
     db 0, 0x10, "KHWI", 0, 0, 0, 0    ; vpcmpuw
     dd 0x043f0100
-    dw 0x1df9
+    dw 0x1e39
     db 0, 0x10, "KHWI", 0, 0, 0, 0    ; vpcmpb
     dd 0x043f0110
-    dw 0x1e00
+    dw 0x1e40
     db 0, 0x10, "KHWI", 0, 0, 0, 0    ; vpcmpw
     dd 0x04420100
-    dw 0x1e07
+    dw 0x1e47
     db 0, 0x00, "VHWI", 0, 0, 0, 0    ; vdbpsadbw
     dd 0x04430100
-    dw 0x1e11
+    dw 0x1e51
     db 0, 0x01, "VHWI", 0, 0, 0, 0    ; vshufi32x4
     dd 0x04430110
-    dw 0x1e1c
+    dw 0x1e5c
     db 0, 0x01, "VHWI", 0, 0, 0, 0    ; vshufi64x2
     dd 0x04440100
-    dw 0x1e27
+    dw 0x1e67
     db 0, 0x00, "VHWI", 0, 0, 0, 32    ; vpclmulqdq
     dd 0x04440110
-    dw 0x1e27
+    dw 0x1e67
     db 0, 0x00, "VHWI", 0, 0, 0, 32    ; vpclmulqdq
     dd 0x04ce0110
-    dw 0x1e32
+    dw 0x1e72
     db 0, 0x01, "VHWI", 0, 0, 0, 32    ; vgf2p8affineqb
     dd 0x04cf0110
-    dw 0x1e41
+    dw 0x1e81
     db 0, 0x01, "VHWI", 0, 0, 0, 32    ; vgf2p8affineinvqb
     ; ---- from the encoder's forms (evex_generated) ----
     dd 0x02120000
-    dw 0x1e53
+    dw 0x1e93
     db 0, 0x00, "VHW", 0, 0, 0, 0, 36    ; vmovhlps
     dd 0x02120000
-    dw 0x1e5c
+    dw 0x1e9c
     db 4, 0x02, "VHW", 0, 0, 0, 0, 40    ; vmovlps
     dd 0x02120110
-    dw 0x1e64
+    dw 0x1ea4
     db 4, 0x02, "VHW", 0, 0, 0, 0, 40    ; vmovlpd
     dd 0x02120310
-    dw 0x1e6c
+    dw 0x1eac
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 48    ; vmovddup
     dd 0x02130000
-    dw 0x1e5c
+    dw 0x1e9c
     db 4, 0x02, "WV", 0, 0, 0, 0, 0, 40    ; vmovlps
     dd 0x02130110
-    dw 0x1e64
+    dw 0x1ea4
     db 4, 0x02, "WV", 0, 0, 0, 0, 0, 40    ; vmovlpd
     dd 0x02160000
-    dw 0x1e75
+    dw 0x1eb5
     db 4, 0x02, "VHW", 0, 0, 0, 0, 40    ; vmovhps
     dd 0x02160000
-    dw 0x1e7d
+    dw 0x1ebd
     db 0, 0x00, "VHW", 0, 0, 0, 0, 36    ; vmovlhps
     dd 0x02160110
-    dw 0x1e86
+    dw 0x1ec6
     db 4, 0x02, "VHW", 0, 0, 0, 0, 40    ; vmovhpd
     dd 0x02170000
-    dw 0x1e75
+    dw 0x1eb5
     db 4, 0x02, "WV", 0, 0, 0, 0, 0, 40    ; vmovhps
     dd 0x02170110
-    dw 0x1e86
+    dw 0x1ec6
     db 4, 0x02, "WV", 0, 0, 0, 0, 0, 40    ; vmovhpd
     dd 0x022e0200
-    dw 0x1e8e
+    dw 0x1ece
     db 3, 0x0a, "VW", 0, 0, 0, 0, 0, 0    ; vucomxss
     dd 0x022e0310
-    dw 0x1e97
+    dw 0x1ed7
     db 4, 0x0a, "VW", 0, 0, 0, 0, 0, 0    ; vucomxsd
     dd 0x022f0200
-    dw 0x1ea0
+    dw 0x1ee0
     db 3, 0x0a, "VW", 0, 0, 0, 0, 0, 0    ; vcomxss
     dd 0x022f0310
-    dw 0x1ea8
+    dw 0x1ee8
     db 4, 0x0a, "VW", 0, 0, 0, 0, 0, 0    ; vcomxsd
     dd 0x02780000
-    dw 0x1eb0
+    dw 0x1ef0
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vcvttps2udq
     dd 0x02780010
-    dw 0x1ebc
+    dw 0x1efc
     db 0, 0x09, "YW", 0, 0, 0, 0, 0, 0    ; vcvttpd2udq
     dd 0x02780100
-    dw 0x1ec8
+    dw 0x1f08
     db 5, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vcvttps2uqq
     dd 0x02780110
-    dw 0x1ed4
+    dw 0x1f14
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vcvttpd2uqq
     dd 0x02780200
-    dw 0x1ee0
+    dw 0x1f20
     db 3, 0x0a, "GW", 0, 0, 0, 0, 0, 0    ; vcvttss2usi
     dd 0x02780210
-    dw 0x1ee0
+    dw 0x1f20
     db 3, 0x0a, "GW", 0, 0, 0, 0, 0, 0    ; vcvttss2usi
     dd 0x02780300
-    dw 0x1eec
+    dw 0x1f2c
     db 4, 0x0a, "GW", 0, 0, 0, 0, 0, 0    ; vcvttsd2usi
     dd 0x02780310
-    dw 0x1eec
+    dw 0x1f2c
     db 4, 0x0a, "GW", 0, 0, 0, 0, 0, 0    ; vcvttsd2usi
     dd 0x02790000
-    dw 0x1ef8
+    dw 0x1f38
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 0    ; vcvtps2udq
     dd 0x02790010
-    dw 0x1f03
+    dw 0x1f43
     db 0, 0x05, "YW", 0, 0, 0, 0, 0, 0    ; vcvtpd2udq
     dd 0x02790100
-    dw 0x1f0e
+    dw 0x1f4e
     db 5, 0x05, "VW", 0, 0, 0, 0, 0, 0    ; vcvtps2uqq
     dd 0x02790110
-    dw 0x1f19
+    dw 0x1f59
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 0    ; vcvtpd2uqq
     dd 0x02790200
-    dw 0x1f24
+    dw 0x1f64
     db 3, 0x06, "GW", 0, 0, 0, 0, 0, 0    ; vcvtss2usi
     dd 0x02790210
-    dw 0x1f24
+    dw 0x1f64
     db 3, 0x06, "GW", 0, 0, 0, 0, 0, 0    ; vcvtss2usi
     dd 0x02790300
-    dw 0x1f2f
+    dw 0x1f6f
     db 4, 0x06, "GW", 0, 0, 0, 0, 0, 0    ; vcvtsd2usi
     dd 0x02790310
-    dw 0x1f2f
+    dw 0x1f6f
     db 4, 0x06, "GW", 0, 0, 0, 0, 0, 0    ; vcvtsd2usi
     dd 0x027a0100
-    dw 0x1f3a
+    dw 0x1f7a
     db 5, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vcvttps2qq
     dd 0x027a0110
-    dw 0x1f45
+    dw 0x1f85
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vcvttpd2qq
     dd 0x027a0200
-    dw 0x1f50
+    dw 0x1f90
     db 5, 0x05, "VW", 0, 0, 0, 0, 0, 0    ; vcvtudq2pd
     dd 0x027a0210
-    dw 0x1f5b
+    dw 0x1f9b
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 0    ; vcvtuqq2pd
     dd 0x027a0300
-    dw 0x1f66
+    dw 0x1fa6
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 0    ; vcvtudq2ps
     dd 0x027a0310
-    dw 0x1f71
+    dw 0x1fb1
     db 0, 0x05, "YW", 0, 0, 0, 0, 0, 0    ; vcvtuqq2ps
     dd 0x027b0100
-    dw 0x1f7c
+    dw 0x1fbc
     db 5, 0x05, "VW", 0, 0, 0, 0, 0, 0    ; vcvtps2qq
     dd 0x027b0110
-    dw 0x1f86
+    dw 0x1fc6
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 0    ; vcvtpd2qq
     dd 0x027b0200
-    dw 0x1f90
+    dw 0x1fd0
     db 3, 0x04, "VHE", 0, 0, 0, 0, 0    ; vcvtusi2ss
     dd 0x027b0210
-    dw 0x1f90
+    dw 0x1fd0
     db 4, 0x04, "VHE", 0, 0, 0, 0, 0    ; vcvtusi2ss
     dd 0x027b0300
-    dw 0x1f9b
+    dw 0x1fdb
     db 3, 0x04, "VHE", 0, 0, 0, 0, 0    ; vcvtusi2sd
     dd 0x027b0310
-    dw 0x1f9b
+    dw 0x1fdb
     db 4, 0x04, "VHE", 0, 0, 0, 0, 0    ; vcvtusi2sd
     dd 0x03130100
-    dw 0x1fa6
+    dw 0x1fe6
     db 5, 0x08, "VW", 0, 0, 0, 0, 0, 32    ; vcvtph2ps
     dd 0x03140100
-    dw 0x1fb0
+    dw 0x1ff0
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vprorvd
     dd 0x03140110
-    dw 0x1fb8
+    dw 0x1ff8
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vprorvq
     dd 0x03150100
-    dw 0x1fc0
+    dw 0x2000
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vprolvd
     dd 0x03150110
-    dw 0x1fc8
+    dw 0x2008
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vprolvq
     dd 0x032a0210
-    dw 0x1fd0
+    dw 0x2010
     db 0, 0x00, "Vk", 0, 0, 0, 0, 0, 4    ; vpbroadcastmb2q
     dd 0x032d0100
-    dw 0x1fe0
+    dw 0x2020
     db 3, 0x06, "VHW", 0, 0, 0, 0, 0    ; vscalefss
     dd 0x032d0110
-    dw 0x1fea
+    dw 0x202a
     db 4, 0x06, "VHW", 0, 0, 0, 0, 0    ; vscalefsd
     dd 0x033a0200
-    dw 0x1ff4
+    dw 0x2034
     db 0, 0x00, "Vk", 0, 0, 0, 0, 0, 4    ; vpbroadcastmw2d
     dd 0x03430100
-    dw 0x2004
+    dw 0x2044
     db 3, 0x0a, "VHW", 0, 0, 0, 0, 0    ; vgetexpss
     dd 0x03430110
-    dw 0x200e
+    dw 0x204e
     db 4, 0x0a, "VHW", 0, 0, 0, 0, 0    ; vgetexpsd
     dd 0x034a0100
-    dw 0x2018
+    dw 0x2058
     db 0, 0x00, "VtJ", 0, 0, 0, 0, 4    ; tilemovrow
     dd 0x034a0200
-    dw 0x2023
+    dw 0x2063
     db 0, 0x00, "VtJ", 0, 0, 0, 0, 4    ; tcvtrowd2ps
     dd 0x03500000
-    dw 0x202f
+    dw 0x206f
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpdpbuud
     dd 0x03500200
-    dw 0x2038
+    dw 0x2078
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpdpbsud
     dd 0x03500300
-    dw 0x2041
+    dw 0x2081
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpdpbssd
     dd 0x03510000
-    dw 0x204a
+    dw 0x208a
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpdpbuuds
     dd 0x03510200
-    dw 0x2054
+    dw 0x2094
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpdpbsuds
     dd 0x03510300
-    dw 0x205e
+    dw 0x209e
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpdpbssds
     dd 0x03520000
-    dw 0x2068
+    dw 0x20a8
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vdpphps
     dd 0x03520200
-    dw 0x2070
+    dw 0x20b0
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vdpbf16ps
     dd 0x03520300
-    dw 0x207a
+    dw 0x20ba
     db 8, 0x00, "VHM", 0, 0, 0, 0, 8    ; vp4dpwssd
     dd 0x03530300
-    dw 0x2084
+    dw 0x20c4
     db 8, 0x00, "VHM", 0, 0, 0, 0, 8    ; vp4dpwssds
     dd 0x03540100
-    dw 0x208f
+    dw 0x20cf
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vpopcntb
     dd 0x03540110
-    dw 0x2098
+    dw 0x20d8
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vpopcntw
     dd 0x03550100
-    dw 0x20a1
+    dw 0x20e1
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vpopcntd
     dd 0x03550110
-    dw 0x20aa
+    dw 0x20ea
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vpopcntq
     dd 0x03620100
-    dw 0x20b3
+    dw 0x20f3
     db 0, 0x40, "VW", 0, 0, 0, 0, 0, 2    ; vpexpandb
     dd 0x03620110
-    dw 0x20bd
+    dw 0x20fd
     db 0, 0x40, "VW", 0, 0, 0, 0, 0, 1    ; vpexpandw
     dd 0x03630100
-    dw 0x20c7
+    dw 0x2107
     db 0, 0x40, "WV", 0, 0, 0, 0, 0, 2    ; vpcompressb
     dd 0x03630110
-    dw 0x20d3
+    dw 0x2113
     db 0, 0x40, "WV", 0, 0, 0, 0, 0, 1    ; vpcompressw
     dd 0x03670100
-    dw 0x20df
+    dw 0x211f
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vcvt2ps2phx
     dd 0x03680300
-    dw 0x20eb
+    dw 0x212b
     db 0, 0x01, "KHW", 0, 0, 0, 0, 0    ; vp2intersectd
     dd 0x03680310
-    dw 0x20f9
+    dw 0x2139
     db 0, 0x01, "KHW", 0, 0, 0, 0, 0    ; vp2intersectq
     dd 0x036d0000
-    dw 0x2107
+    dw 0x2147
     db 0, 0x00, "VtJ", 0, 0, 0, 0, 4    ; tcvtrowps2phh
     dd 0x036d0100
-    dw 0x2115
+    dw 0x2155
     db 0, 0x00, "VtJ", 0, 0, 0, 0, 4    ; tcvtrowps2phl
     dd 0x036d0200
-    dw 0x2123
+    dw 0x2163
     db 0, 0x00, "VtJ", 0, 0, 0, 0, 4    ; tcvtrowps2bf16l
     dd 0x036d0300
-    dw 0x2133
+    dw 0x2173
     db 0, 0x00, "VtJ", 0, 0, 0, 0, 4    ; tcvtrowps2bf16h
     dd 0x03700110
-    dw 0x2143
+    dw 0x2183
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpshldvw
     dd 0x03710100
-    dw 0x214c
+    dw 0x218c
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpshldvd
     dd 0x03710110
-    dw 0x2155
+    dw 0x2195
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpshldvq
     dd 0x03720110
-    dw 0x215e
+    dw 0x219e
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpshrdvw
     dd 0x03720200
-    dw 0x2167
+    dw 0x21a7
     db 0, 0x01, "YW", 0, 0, 0, 0, 0, 0    ; vcvtneps2bf16
     dd 0x03720300
-    dw 0x2175
+    dw 0x21b5
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vcvtne2ps2bf16
     dd 0x03730100
-    dw 0x2184
+    dw 0x21c4
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpshrdvd
     dd 0x03730110
-    dw 0x218d
+    dw 0x21cd
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpshrdvq
     dd 0x03740000
-    dw 0x2196
+    dw 0x21d6
     db 0, 0x01, "YHW", 0, 0, 0, 0, 1    ; vcvtbiasph2bf8
     dd 0x03740200
-    dw 0x21a5
+    dw 0x21e5
     db 0, 0x01, "YW", 0, 0, 0, 0, 0, 1    ; vcvtph2bf8
     dd 0x03740300
-    dw 0x21b0
+    dw 0x21f0
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vcvt2ph2bf8
     dd 0x03830110
-    dw 0x21bc
+    dw 0x21fc
     db 0, 0x01, "VHW", 0, 0, 0, 0, 0    ; vpmultishiftqb
     dd 0x038f0100
-    dw 0x21cb
+    dw 0x220b
     db 0, 0x00, "KHW", 0, 0, 0, 0, 0    ; vpshufbitqmb
     dd 0x03900100
-    dw 0x21d8
+    dw 0x2218
     db 0, 0x40, "VS", 0, 0, 0, 0, 0, 40    ; vpgatherdd
     dd 0x03900110
-    dw 0x21e3
+    dw 0x2223
     db 0, 0x40, "Vs", 0, 0, 0, 0, 0, 40    ; vpgatherdq
     dd 0x03910100
-    dw 0x21ee
+    dw 0x222e
     db 0, 0x40, "YS", 0, 0, 0, 0, 0, 40    ; vpgatherqd
     dd 0x03910110
-    dw 0x21f9
+    dw 0x2239
     db 0, 0x40, "VS", 0, 0, 0, 0, 0, 40    ; vpgatherqq
     dd 0x03920100
-    dw 0x2204
+    dw 0x2244
     db 0, 0x40, "VS", 0, 0, 0, 0, 0, 40    ; vgatherdps
     dd 0x03920110
-    dw 0x220f
+    dw 0x224f
     db 0, 0x40, "Vs", 0, 0, 0, 0, 0, 40    ; vgatherdpd
     dd 0x03930100
-    dw 0x221a
+    dw 0x225a
     db 0, 0x40, "YS", 0, 0, 0, 0, 0, 40    ; vgatherqps
     dd 0x03930110
-    dw 0x2225
+    dw 0x2265
     db 0, 0x40, "VS", 0, 0, 0, 0, 0, 40    ; vgatherqpd
     dd 0x039a0300
-    dw 0x2230
+    dw 0x2270
     db 8, 0x00, "VHM", 0, 0, 0, 0, 8    ; v4fmaddps
     dd 0x039b0300
-    dw 0x223a
+    dw 0x227a
     db 0, 0x00, "VHW", 0, 0, 0, 0, 8    ; v4fmaddss
     dd 0x03a00100
-    dw 0x2244
+    dw 0x2284
     db 0, 0x40, "SV", 0, 0, 0, 0, 0, 8    ; vpscatterdd
     dd 0x03a00110
-    dw 0x2250
+    dw 0x2290
     db 0, 0x40, "sV", 0, 0, 0, 0, 0, 8    ; vpscatterdq
     dd 0x03a10100
-    dw 0x225c
+    dw 0x229c
     db 0, 0x40, "SY", 0, 0, 0, 0, 0, 8    ; vpscatterqd
     dd 0x03a10110
-    dw 0x2268
+    dw 0x22a8
     db 0, 0x40, "SV", 0, 0, 0, 0, 0, 8    ; vpscatterqq
     dd 0x03a20100
-    dw 0x2274
+    dw 0x22b4
     db 0, 0x40, "SV", 0, 0, 0, 0, 0, 8    ; vscatterdps
     dd 0x03a20110
-    dw 0x2280
+    dw 0x22c0
     db 0, 0x40, "sV", 0, 0, 0, 0, 0, 8    ; vscatterdpd
     dd 0x03a30100
-    dw 0x228c
+    dw 0x22cc
     db 0, 0x40, "SY", 0, 0, 0, 0, 0, 8    ; vscatterqps
     dd 0x03a30110
-    dw 0x2298
+    dw 0x22d8
     db 0, 0x40, "SV", 0, 0, 0, 0, 0, 8    ; vscatterqpd
     dd 0x03aa0300
-    dw 0x22a4
+    dw 0x22e4
     db 8, 0x00, "VHM", 0, 0, 0, 0, 8    ; v4fnmaddps
     dd 0x03ab0300
-    dw 0x22af
+    dw 0x22ef
     db 0, 0x00, "VHW", 0, 0, 0, 0, 8    ; v4fnmaddss
     dd 0x03c60109
-    dw 0x22ba
+    dw 0x22fa
     db 0, 0x40, "S", 0, 0, 0, 0, 0, 0, 8    ; vgatherpf0dps
     dd 0x03c6010a
-    dw 0x22c8
+    dw 0x2308
     db 0, 0x40, "S", 0, 0, 0, 0, 0, 0, 8    ; vgatherpf1dps
     dd 0x03c6010d
-    dw 0x22d6
+    dw 0x2316
     db 0, 0x40, "S", 0, 0, 0, 0, 0, 0, 8    ; vscatterpf0dps
     dd 0x03c6010e
-    dw 0x22e5
+    dw 0x2325
     db 0, 0x40, "S", 0, 0, 0, 0, 0, 0, 8    ; vscatterpf1dps
     dd 0x03c60119
-    dw 0x22f4
+    dw 0x2334
     db 0, 0x40, "s", 0, 0, 0, 0, 0, 0, 8    ; vgatherpf0dpd
     dd 0x03c6011a
-    dw 0x2302
+    dw 0x2342
     db 0, 0x40, "s", 0, 0, 0, 0, 0, 0, 8    ; vgatherpf1dpd
     dd 0x03c6011d
-    dw 0x2310
+    dw 0x2350
     db 0, 0x40, "s", 0, 0, 0, 0, 0, 0, 8    ; vscatterpf0dpd
     dd 0x03c6011e
-    dw 0x231f
+    dw 0x235f
     db 0, 0x40, "s", 0, 0, 0, 0, 0, 0, 8    ; vscatterpf1dpd
     dd 0x03c70109
-    dw 0x232e
+    dw 0x236e
     db 0, 0x40, "S", 0, 0, 0, 0, 0, 0, 8    ; vgatherpf0qps
     dd 0x03c7010a
-    dw 0x233c
+    dw 0x237c
     db 0, 0x40, "S", 0, 0, 0, 0, 0, 0, 8    ; vgatherpf1qps
     dd 0x03c7010d
-    dw 0x234a
+    dw 0x238a
     db 0, 0x40, "S", 0, 0, 0, 0, 0, 0, 8    ; vscatterpf0qps
     dd 0x03c7010e
-    dw 0x2359
+    dw 0x2399
     db 0, 0x40, "S", 0, 0, 0, 0, 0, 0, 8    ; vscatterpf1qps
     dd 0x03c70119
-    dw 0x2368
+    dw 0x23a8
     db 0, 0x40, "S", 0, 0, 0, 0, 0, 0, 8    ; vgatherpf0qpd
     dd 0x03c7011a
-    dw 0x2376
+    dw 0x23b6
     db 0, 0x40, "S", 0, 0, 0, 0, 0, 0, 8    ; vgatherpf1qpd
     dd 0x03c7011d
-    dw 0x2384
+    dw 0x23c4
     db 0, 0x40, "S", 0, 0, 0, 0, 0, 0, 8    ; vscatterpf0qpd
     dd 0x03c7011e
-    dw 0x2393
+    dw 0x23d3
     db 0, 0x40, "S", 0, 0, 0, 0, 0, 0, 8    ; vscatterpf1qpd
     dd 0x03c80100
-    dw 0x23a2
+    dw 0x23e2
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vexp2ps
     dd 0x03c80110
-    dw 0x23aa
+    dw 0x23ea
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vexp2pd
     dd 0x03ca0100
-    dw 0x23b2
+    dw 0x23f2
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vrcp28ps
     dd 0x03ca0110
-    dw 0x23bb
+    dw 0x23fb
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vrcp28pd
     dd 0x03cb0100
-    dw 0x23c4
+    dw 0x2404
     db 3, 0x0a, "VHW", 0, 0, 0, 0, 0    ; vrcp28ss
     dd 0x03cb0110
-    dw 0x23cd
+    dw 0x240d
     db 4, 0x0a, "VHW", 0, 0, 0, 0, 0    ; vrcp28sd
     dd 0x03cc0100
-    dw 0x23d6
+    dw 0x2416
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vrsqrt28ps
     dd 0x03cc0110
-    dw 0x23e1
+    dw 0x2421
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vrsqrt28pd
     dd 0x03cd0100
-    dw 0x23ec
+    dw 0x242c
     db 3, 0x0a, "VHW", 0, 0, 0, 0, 0    ; vrsqrt28ss
     dd 0x03cd0110
-    dw 0x23f7
+    dw 0x2437
     db 4, 0x0a, "VHW", 0, 0, 0, 0, 0    ; vrsqrt28sd
     dd 0x03d20000
-    dw 0x2402
+    dw 0x2442
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpdpwuud
     dd 0x03d20100
-    dw 0x240b
+    dw 0x244b
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpdpwusd
     dd 0x03d20200
-    dw 0x2414
+    dw 0x2454
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpdpwsud
     dd 0x03d30000
-    dw 0x241d
+    dw 0x245d
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpdpwuuds
     dd 0x03d30100
-    dw 0x2427
+    dw 0x2467
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpdpwusds
     dd 0x03d30200
-    dw 0x2431
+    dw 0x2471
     db 0, 0x01, "VHW", 0, 0, 0, 0, 32    ; vpdpwsuds
     dd 0x03da0200
-    dw 0x243b
+    dw 0x247b
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vsm4key4
     dd 0x03da0300
-    dw 0x2444
+    dw 0x2484
     db 0, 0x00, "VHW", 0, 0, 0, 0, 32    ; vsm4rnds4
     dd 0x04070000
-    dw 0x2107
+    dw 0x2147
     db 0, 0x00, "VtI", 0, 0, 0, 0, 4    ; tcvtrowps2phh
     dd 0x04070100
-    dw 0x2018
+    dw 0x2058
     db 0, 0x00, "VtI", 0, 0, 0, 0, 4    ; tilemovrow
     dd 0x04070200
-    dw 0x2023
+    dw 0x2063
     db 0, 0x00, "VtI", 0, 0, 0, 0, 4    ; tcvtrowd2ps
     dd 0x04070300
-    dw 0x2133
+    dw 0x2173
     db 0, 0x00, "VtI", 0, 0, 0, 0, 4    ; tcvtrowps2bf16h
     dd 0x04080000
-    dw 0x244e
+    dw 0x248e
     db 0, 0x09, "VWI", 0, 0, 0, 0, 1    ; vrndscaleph
     dd 0x04080300
-    dw 0x245a
+    dw 0x249a
     db 0, 0x01, "VWI", 0, 0, 0, 0, 1    ; vrndscalebf16
     dd 0x040a0000
-    dw 0x2468
+    dw 0x24a8
     db 2, 0x02, "VHWI", 0, 0, 0, 0    ; vrndscalesh
     dd 0x041d0100
-    dw 0x2474
+    dw 0x24b4
     db 5, 0x08, "WVI", 0, 0, 0, 0, 32    ; vcvtps2ph
     dd 0x04260000
-    dw 0x247e
+    dw 0x24be
     db 0, 0x09, "VWI", 0, 0, 0, 0, 1    ; vgetmantph
     dd 0x04260100
-    dw 0x2489
+    dw 0x24c9
     db 0, 0x09, "VWI", 0, 0, 0, 0, 0    ; vgetmantps
     dd 0x04260110
-    dw 0x2494
+    dw 0x24d4
     db 0, 0x09, "VWI", 0, 0, 0, 0, 0    ; vgetmantpd
     dd 0x04260300
-    dw 0x249f
+    dw 0x24df
     db 0, 0x01, "VWI", 0, 0, 0, 0, 1    ; vgetmantbf16
     dd 0x04270000
-    dw 0x24ac
+    dw 0x24ec
     db 2, 0x02, "VHWI", 0, 0, 0, 0    ; vgetmantsh
     dd 0x04270100
-    dw 0x24b7
+    dw 0x24f7
     db 3, 0x02, "VHWI", 0, 0, 0, 0    ; vgetmantss
     dd 0x04270110
-    dw 0x24c2
+    dw 0x2502
     db 4, 0x02, "VHWI", 0, 0, 0, 0    ; vgetmantsd
     dd 0x04420200
-    dw 0x24cd
+    dw 0x250d
     db 0, 0x00, "VHWI", 0, 0, 0, 0    ; vmpsadbw
     dd 0x04500100
-    dw 0x24d6
+    dw 0x2516
     db 0, 0x01, "VHWI", 0, 0, 0, 0    ; vrangeps
     dd 0x04500110
-    dw 0x24df
+    dw 0x251f
     db 0, 0x01, "VHWI", 0, 0, 0, 0    ; vrangepd
     dd 0x04510100
-    dw 0x24e8
+    dw 0x2528
     db 3, 0x02, "VHWI", 0, 0, 0, 0    ; vrangess
     dd 0x04510110
-    dw 0x24f1
+    dw 0x2531
     db 4, 0x02, "VHWI", 0, 0, 0, 0    ; vrangesd
     dd 0x04520000
-    dw 0x24fa
+    dw 0x253a
     db 0, 0x01, "VHWI", 0, 0, 0, 1    ; vminmaxph
     dd 0x04520100
-    dw 0x2504
+    dw 0x2544
     db 0, 0x01, "VHWI", 0, 0, 0, 0    ; vminmaxps
     dd 0x04520110
-    dw 0x250e
+    dw 0x254e
     db 0, 0x01, "VHWI", 0, 0, 0, 0    ; vminmaxpd
     dd 0x04520300
-    dw 0x2518
+    dw 0x2558
     db 0, 0x01, "VHWI", 0, 0, 0, 1    ; vminmaxbf16
     dd 0x04530000
-    dw 0x2524
+    dw 0x2564
     db 2, 0x02, "VHWI", 0, 0, 0, 0    ; vminmaxsh
     dd 0x04530100
-    dw 0x252e
+    dw 0x256e
     db 3, 0x02, "VHWI", 0, 0, 0, 0    ; vminmaxss
     dd 0x04530110
-    dw 0x2538
+    dw 0x2578
     db 4, 0x02, "VHWI", 0, 0, 0, 0    ; vminmaxsd
     dd 0x04540100
-    dw 0x2542
+    dw 0x2582
     db 0, 0x01, "VHWI", 0, 0, 0, 0    ; vfixupimmps
     dd 0x04540110
-    dw 0x254e
+    dw 0x258e
     db 0, 0x01, "VHWI", 0, 0, 0, 0    ; vfixupimmpd
     dd 0x04550100
-    dw 0x255a
+    dw 0x259a
     db 3, 0x02, "VHWI", 0, 0, 0, 0    ; vfixupimmss
     dd 0x04550110
-    dw 0x2566
+    dw 0x25a6
     db 4, 0x02, "VHWI", 0, 0, 0, 0    ; vfixupimmsd
     dd 0x04560000
-    dw 0x2572
+    dw 0x25b2
     db 0, 0x09, "VWI", 0, 0, 0, 0, 1    ; vreduceph
     dd 0x04560100
-    dw 0x257c
+    dw 0x25bc
     db 0, 0x09, "VWI", 0, 0, 0, 0, 0    ; vreduceps
     dd 0x04560110
-    dw 0x2586
+    dw 0x25c6
     db 0, 0x09, "VWI", 0, 0, 0, 0, 0    ; vreducepd
     dd 0x04560300
-    dw 0x2590
+    dw 0x25d0
     db 0, 0x01, "VWI", 0, 0, 0, 0, 1    ; vreducebf16
     dd 0x04570000
-    dw 0x259c
+    dw 0x25dc
     db 2, 0x02, "VHWI", 0, 0, 0, 0    ; vreducesh
     dd 0x04570100
-    dw 0x25a6
+    dw 0x25e6
     db 3, 0x02, "VHWI", 0, 0, 0, 0    ; vreducess
     dd 0x04570110
-    dw 0x25b0
+    dw 0x25f0
     db 4, 0x02, "VHWI", 0, 0, 0, 0    ; vreducesd
     dd 0x04660000
-    dw 0x25ba
+    dw 0x25fa
     db 0, 0x01, "KWI", 0, 0, 0, 0, 1    ; vfpclassph
     dd 0x04660100
-    dw 0x25c5
+    dw 0x2605
     db 0, 0x01, "KWI", 0, 0, 0, 0, 0    ; vfpclassps
     dd 0x04660110
-    dw 0x25d0
+    dw 0x2610
     db 0, 0x01, "KWI", 0, 0, 0, 0, 0    ; vfpclasspd
     dd 0x04660300
-    dw 0x25db
+    dw 0x261b
     db 0, 0x01, "KWI", 0, 0, 0, 0, 1    ; vfpclassbf16
     dd 0x04670000
-    dw 0x25e8
+    dw 0x2628
     db 2, 0x02, "KWI", 0, 0, 0, 0, 0    ; vfpclasssh
     dd 0x04670100
-    dw 0x25f3
+    dw 0x2633
     db 3, 0x02, "KWI", 0, 0, 0, 0, 0    ; vfpclassss
     dd 0x04670110
-    dw 0x25fe
+    dw 0x263e
     db 4, 0x02, "KWI", 0, 0, 0, 0, 0    ; vfpclasssd
     dd 0x04700110
-    dw 0x2609
+    dw 0x2649
     db 0, 0x00, "VHWI", 0, 0, 0, 0    ; vpshldw
     dd 0x04710100
-    dw 0x2611
+    dw 0x2651
     db 0, 0x01, "VHWI", 0, 0, 0, 0    ; vpshldd
     dd 0x04710110
-    dw 0x2619
+    dw 0x2659
     db 0, 0x01, "VHWI", 0, 0, 0, 0    ; vpshldq
     dd 0x04720110
-    dw 0x2621
+    dw 0x2661
     db 0, 0x00, "VHWI", 0, 0, 0, 0    ; vpshrdw
     dd 0x04730100
-    dw 0x2629
+    dw 0x2669
     db 0, 0x01, "VHWI", 0, 0, 0, 0    ; vpshrdd
     dd 0x04730110
-    dw 0x2631
+    dw 0x2671
     db 0, 0x01, "VHWI", 0, 0, 0, 0    ; vpshrdq
     dd 0x04770200
-    dw 0x2123
+    dw 0x2163
     db 0, 0x00, "VtI", 0, 0, 0, 0, 4    ; tcvtrowps2bf16l
     dd 0x04770300
-    dw 0x2115
+    dw 0x2155
     db 0, 0x00, "VtI", 0, 0, 0, 0, 4    ; tcvtrowps2phl
     dd 0x04c20000
-    dw 0x2639
+    dw 0x2679
     db 0, 0x21, "KHWI", 0, 0, 0, 1    ; vcmpph
     dd 0x04c20200
-    dw 0x2640
+    dw 0x2680
     db 2, 0x22, "KHWI", 0, 0, 0, 0    ; vcmpsh
     dd 0x04c20300
-    dw 0x2647
+    dw 0x2687
     db 0, 0x21, "KHWI", 0, 0, 0, 65    ; vcmpbf16
     dd 0x06100200
-    dw 0x2650
+    dw 0x2690
     db 0, 0x00, "VHW", 0, 0, 0, 0, 4    ; vmovsh
     dd 0x06100200
-    dw 0x2650
+    dw 0x2690
     db 2, 0x02, "VW", 0, 0, 0, 0, 0, 8    ; vmovsh
     dd 0x06110200
-    dw 0x2650
+    dw 0x2690
     db 0, 0x00, "VHW", 0, 0, 0, 0, 4    ; vmovsh
     dd 0x06110200
-    dw 0x2650
+    dw 0x2690
     db 2, 0x02, "WV", 0, 0, 0, 0, 0, 8    ; vmovsh
     dd 0x06180000
-    dw 0x2657
+    dw 0x2697
     db 0, 0x01, "YHW", 0, 0, 0, 0, 1    ; vcvtbiasph2hf8
     dd 0x06180200
-    dw 0x2666
+    dw 0x26a6
     db 0, 0x01, "YW", 0, 0, 0, 0, 0, 1    ; vcvtph2hf8
     dd 0x06180300
-    dw 0x2671
+    dw 0x26b1
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vcvt2ph2hf8
     dd 0x061b0000
-    dw 0x267d
+    dw 0x26bd
     db 0, 0x01, "YHW", 0, 0, 0, 0, 1    ; vcvtbiasph2hf8s
     dd 0x061b0200
-    dw 0x268d
+    dw 0x26cd
     db 0, 0x01, "YW", 0, 0, 0, 0, 0, 1    ; vcvtph2hf8s
     dd 0x061b0300
-    dw 0x2699
+    dw 0x26d9
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vcvt2ph2hf8s
     dd 0x061d0000
-    dw 0x26a6
+    dw 0x26e6
     db 3, 0x06, "VHW", 0, 0, 0, 0, 0    ; vcvtss2sh
     dd 0x061d0100
-    dw 0x26b0
+    dw 0x26f0
     db 0, 0x05, "YW", 0, 0, 0, 0, 0, 0    ; vcvtps2phx
     dd 0x061e0300
-    dw 0x26bb
+    dw 0x26fb
     db 5, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vcvthf82ph
     dd 0x062a0200
-    dw 0x26c6
+    dw 0x2706
     db 3, 0x04, "VHE", 0, 0, 0, 0, 0    ; vcvtsi2sh
     dd 0x062a0210
-    dw 0x26c6
+    dw 0x2706
     db 4, 0x04, "VHE", 0, 0, 0, 0, 0    ; vcvtsi2sh
     dd 0x062c0200
-    dw 0x26d0
+    dw 0x2710
     db 2, 0x0a, "GW", 0, 0, 0, 0, 0, 0    ; vcvttsh2si
     dd 0x062c0210
-    dw 0x26d0
+    dw 0x2710
     db 2, 0x0a, "GW", 0, 0, 0, 0, 0, 0    ; vcvttsh2si
     dd 0x062d0200
-    dw 0x26db
+    dw 0x271b
     db 2, 0x06, "GW", 0, 0, 0, 0, 0, 0    ; vcvtsh2si
     dd 0x062d0210
-    dw 0x26db
+    dw 0x271b
     db 2, 0x06, "GW", 0, 0, 0, 0, 0, 0    ; vcvtsh2si
     dd 0x062e0000
-    dw 0x26e5
+    dw 0x2725
     db 2, 0x0a, "VW", 0, 0, 0, 0, 0, 0    ; vucomish
     dd 0x062e0200
-    dw 0x26ee
+    dw 0x272e
     db 2, 0x0a, "VW", 0, 0, 0, 0, 0, 0    ; vucomxsh
     dd 0x062f0000
-    dw 0x26f7
+    dw 0x2737
     db 2, 0x0a, "VW", 0, 0, 0, 0, 0, 0    ; vcomish
     dd 0x062f0100
-    dw 0x26ff
+    dw 0x273f
     db 2, 0x02, "VW", 0, 0, 0, 0, 0, 0    ; vcomisbf16
     dd 0x062f0200
-    dw 0x270a
+    dw 0x274a
     db 2, 0x0a, "VW", 0, 0, 0, 0, 0, 0    ; vcomxsh
     dd 0x06510000
-    dw 0x2712
+    dw 0x2752
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 1    ; vsqrtph
     dd 0x06510100
-    dw 0x271a
+    dw 0x275a
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 1    ; vsqrtbf16
     dd 0x06510200
-    dw 0x2724
+    dw 0x2764
     db 2, 0x06, "VHW", 0, 0, 0, 0, 0    ; vsqrtsh
     dd 0x06580000
-    dw 0x272c
+    dw 0x276c
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vaddph
     dd 0x06580100
-    dw 0x2733
+    dw 0x2773
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vaddbf16
     dd 0x06580200
-    dw 0x273c
+    dw 0x277c
     db 2, 0x06, "VHW", 0, 0, 0, 0, 0    ; vaddsh
     dd 0x06590000
-    dw 0x2743
+    dw 0x2783
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vmulph
     dd 0x06590100
-    dw 0x274a
+    dw 0x278a
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vmulbf16
     dd 0x06590200
-    dw 0x2753
+    dw 0x2793
     db 2, 0x06, "VHW", 0, 0, 0, 0, 0    ; vmulsh
     dd 0x065a0000
-    dw 0x275a
+    dw 0x279a
     db 6, 0x09, "VW", 0, 0, 0, 0, 0, 1    ; vcvtph2pd
     dd 0x065a0110
-    dw 0x2764
+    dw 0x27a4
     db 0, 0x05, "XW", 0, 0, 0, 0, 0, 0    ; vcvtpd2ph
     dd 0x065a0200
-    dw 0x276e
+    dw 0x27ae
     db 2, 0x0a, "VHW", 0, 0, 0, 0, 0    ; vcvtsh2sd
     dd 0x065a0310
-    dw 0x2778
+    dw 0x27b8
     db 4, 0x06, "VHW", 0, 0, 0, 0, 0    ; vcvtsd2sh
     dd 0x065b0000
-    dw 0x2782
+    dw 0x27c2
     db 0, 0x05, "YW", 0, 0, 0, 0, 0, 0    ; vcvtdq2ph
     dd 0x065b0010
-    dw 0x278c
+    dw 0x27cc
     db 0, 0x05, "XW", 0, 0, 0, 0, 0, 0    ; vcvtqq2ph
     dd 0x065b0100
-    dw 0x2796
+    dw 0x27d6
     db 5, 0x05, "VW", 0, 0, 0, 0, 0, 1    ; vcvtph2dq
     dd 0x065b0200
-    dw 0x27a0
+    dw 0x27e0
     db 5, 0x09, "VW", 0, 0, 0, 0, 0, 1    ; vcvttph2dq
     dd 0x065c0000
-    dw 0x27ab
+    dw 0x27eb
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vsubph
     dd 0x065c0100
-    dw 0x27b2
+    dw 0x27f2
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vsubbf16
     dd 0x065c0200
-    dw 0x27bb
+    dw 0x27fb
     db 2, 0x06, "VHW", 0, 0, 0, 0, 0    ; vsubsh
     dd 0x065d0000
-    dw 0x27c2
+    dw 0x2802
     db 0, 0x09, "VHW", 0, 0, 0, 0, 1    ; vminph
     dd 0x065d0100
-    dw 0x27c9
+    dw 0x2809
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vminbf16
     dd 0x065d0200
-    dw 0x27d2
+    dw 0x2812
     db 2, 0x0a, "VHW", 0, 0, 0, 0, 0    ; vminsh
     dd 0x065e0000
-    dw 0x27d9
+    dw 0x2819
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vdivph
     dd 0x065e0100
-    dw 0x27e0
+    dw 0x2820
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vdivbf16
     dd 0x065e0200
-    dw 0x27e9
+    dw 0x2829
     db 2, 0x06, "VHW", 0, 0, 0, 0, 0    ; vdivsh
     dd 0x065f0000
-    dw 0x27f0
+    dw 0x2830
     db 0, 0x09, "VHW", 0, 0, 0, 0, 1    ; vmaxph
     dd 0x065f0100
-    dw 0x27f7
+    dw 0x2837
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vmaxbf16
     dd 0x065f0200
-    dw 0x2800
+    dw 0x2840
     db 2, 0x0a, "VHW", 0, 0, 0, 0, 0    ; vmaxsh
     dd 0x06680000
-    dw 0x2807
+    dw 0x2847
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 1    ; vcvttph2ibs
     dd 0x06680100
-    dw 0x2813
+    dw 0x2853
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vcvttps2ibs
     dd 0x06680300
-    dw 0x281f
+    dw 0x285f
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 1    ; vcvttbf162ibs
     dd 0x06690000
-    dw 0x282d
+    dw 0x286d
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 1    ; vcvtph2ibs
     dd 0x06690100
-    dw 0x2838
+    dw 0x2878
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 0    ; vcvtps2ibs
     dd 0x06690300
-    dw 0x2843
+    dw 0x2883
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 1    ; vcvtbf162ibs
     dd 0x066a0000
-    dw 0x2850
+    dw 0x2890
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 1    ; vcvttph2iubs
     dd 0x066a0100
-    dw 0x285d
+    dw 0x289d
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vcvttps2iubs
     dd 0x066a0300
-    dw 0x286a
+    dw 0x28aa
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 1    ; vcvttbf162iubs
     dd 0x066b0000
-    dw 0x2879
+    dw 0x28b9
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 1    ; vcvtph2iubs
     dd 0x066b0100
-    dw 0x2885
+    dw 0x28c5
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 0    ; vcvtps2iubs
     dd 0x066b0300
-    dw 0x2891
+    dw 0x28d1
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 1    ; vcvtbf162iubs
     dd 0x066c0000
-    dw 0x289f
+    dw 0x28df
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vcvttps2udqs
     dd 0x066c0010
-    dw 0x28ac
+    dw 0x28ec
     db 0, 0x09, "YW", 0, 0, 0, 0, 0, 0    ; vcvttpd2udqs
     dd 0x066c0100
-    dw 0x28b9
+    dw 0x28f9
     db 5, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vcvttps2uqqs
     dd 0x066c0110
-    dw 0x28c6
+    dw 0x2906
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vcvttpd2uqqs
     dd 0x066c0200
-    dw 0x28d3
+    dw 0x2913
     db 3, 0x0a, "GW", 0, 0, 0, 0, 0, 0    ; vcvttss2usis
     dd 0x066c0210
-    dw 0x28d3
+    dw 0x2913
     db 3, 0x0a, "GW", 0, 0, 0, 0, 0, 0    ; vcvttss2usis
     dd 0x066c0300
-    dw 0x28e0
+    dw 0x2920
     db 4, 0x0a, "GW", 0, 0, 0, 0, 0, 0    ; vcvttsd2usis
     dd 0x066c0310
-    dw 0x28e0
+    dw 0x2920
     db 4, 0x0a, "GW", 0, 0, 0, 0, 0, 0    ; vcvttsd2usis
     dd 0x066d0000
-    dw 0x28ed
+    dw 0x292d
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vcvttps2dqs
     dd 0x066d0010
-    dw 0x28f9
+    dw 0x2939
     db 0, 0x09, "YW", 0, 0, 0, 0, 0, 0    ; vcvttpd2dqs
     dd 0x066d0100
-    dw 0x2905
+    dw 0x2945
     db 5, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vcvttps2qqs
     dd 0x066d0110
-    dw 0x2911
+    dw 0x2951
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 0    ; vcvttpd2qqs
     dd 0x066d0200
-    dw 0x291d
+    dw 0x295d
     db 3, 0x0a, "GW", 0, 0, 0, 0, 0, 0    ; vcvttss2sis
     dd 0x066d0210
-    dw 0x291d
+    dw 0x295d
     db 3, 0x0a, "GW", 0, 0, 0, 0, 0, 0    ; vcvttss2sis
     dd 0x066d0300
-    dw 0x2929
+    dw 0x2969
     db 4, 0x0a, "GW", 0, 0, 0, 0, 0, 0    ; vcvttsd2sis
     dd 0x066d0310
-    dw 0x2929
+    dw 0x2969
     db 4, 0x0a, "GW", 0, 0, 0, 0, 0, 0    ; vcvttsd2sis
     dd 0x066e0100
-    dw 0x2935
+    dw 0x2975
     db 2, 0x00, "VE", 0, 0, 0, 0, 0, 0    ; vmovw
     dd 0x066f0200
-    dw 0x293b
+    dw 0x297b
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 8    ; vmovrsd
     dd 0x066f0210
-    dw 0x2943
+    dw 0x2983
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 8    ; vmovrsq
     dd 0x066f0300
-    dw 0x294b
+    dw 0x298b
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 8    ; vmovrsb
     dd 0x066f0310
-    dw 0x2953
+    dw 0x2993
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 8    ; vmovrsw
     dd 0x06740000
-    dw 0x295b
+    dw 0x299b
     db 0, 0x01, "YHW", 0, 0, 0, 0, 1    ; vcvtbiasph2bf8s
     dd 0x06740200
-    dw 0x296b
+    dw 0x29ab
     db 0, 0x01, "YW", 0, 0, 0, 0, 0, 1    ; vcvtph2bf8s
     dd 0x06740300
-    dw 0x2977
+    dw 0x29b7
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vcvt2ph2bf8s
     dd 0x06780000
-    dw 0x2984
+    dw 0x29c4
     db 5, 0x09, "VW", 0, 0, 0, 0, 0, 1    ; vcvttph2udq
     dd 0x06780100
-    dw 0x2990
+    dw 0x29d0
     db 6, 0x09, "VW", 0, 0, 0, 0, 0, 1    ; vcvttph2uqq
     dd 0x06780200
-    dw 0x299c
+    dw 0x29dc
     db 2, 0x0a, "GW", 0, 0, 0, 0, 0, 0    ; vcvttsh2usi
     dd 0x06780210
-    dw 0x299c
+    dw 0x29dc
     db 2, 0x0a, "GW", 0, 0, 0, 0, 0, 0    ; vcvttsh2usi
     dd 0x06790000
-    dw 0x29a8
+    dw 0x29e8
     db 5, 0x05, "VW", 0, 0, 0, 0, 0, 1    ; vcvtph2udq
     dd 0x06790100
-    dw 0x29b3
+    dw 0x29f3
     db 6, 0x05, "VW", 0, 0, 0, 0, 0, 1    ; vcvtph2uqq
     dd 0x06790200
-    dw 0x29be
+    dw 0x29fe
     db 2, 0x06, "GW", 0, 0, 0, 0, 0, 0    ; vcvtsh2usi
     dd 0x06790210
-    dw 0x29be
+    dw 0x29fe
     db 2, 0x06, "GW", 0, 0, 0, 0, 0, 0    ; vcvtsh2usi
     dd 0x067a0100
-    dw 0x29c9
+    dw 0x2a09
     db 6, 0x09, "VW", 0, 0, 0, 0, 0, 1    ; vcvttph2qq
     dd 0x067a0300
-    dw 0x29d4
+    dw 0x2a14
     db 0, 0x05, "YW", 0, 0, 0, 0, 0, 0    ; vcvtudq2ph
     dd 0x067a0310
-    dw 0x29df
+    dw 0x2a1f
     db 0, 0x05, "XW", 0, 0, 0, 0, 0, 0    ; vcvtuqq2ph
     dd 0x067b0100
-    dw 0x29ea
+    dw 0x2a2a
     db 6, 0x05, "VW", 0, 0, 0, 0, 0, 1    ; vcvtph2qq
     dd 0x067b0200
-    dw 0x29f4
+    dw 0x2a34
     db 3, 0x04, "VHE", 0, 0, 0, 0, 0    ; vcvtusi2sh
     dd 0x067b0210
-    dw 0x1f90
+    dw 0x1fd0
     db 4, 0x04, "VHE", 0, 0, 0, 0, 0    ; vcvtusi2ss
     dd 0x067c0000
-    dw 0x29ff
+    dw 0x2a3f
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 1    ; vcvttph2uw
     dd 0x067c0100
-    dw 0x2a0a
+    dw 0x2a4a
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 1    ; vcvttph2w
     dd 0x067d0000
-    dw 0x2a14
+    dw 0x2a54
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 1    ; vcvtph2uw
     dd 0x067d0100
-    dw 0x2a1e
+    dw 0x2a5e
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 1    ; vcvtph2w
     dd 0x067d0200
-    dw 0x2a27
+    dw 0x2a67
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 1    ; vcvtw2ph
     dd 0x067d0300
-    dw 0x2a30
+    dw 0x2a70
     db 0, 0x05, "VW", 0, 0, 0, 0, 0, 1    ; vcvtuw2ph
     dd 0x067e0100
-    dw 0x2935
+    dw 0x2975
     db 2, 0x00, "EV", 0, 0, 0, 0, 0, 0    ; vmovw
     dd 0x07130000
-    dw 0x2a3a
+    dw 0x2a7a
     db 2, 0x0a, "VHW", 0, 0, 0, 0, 0    ; vcvtsh2ss
     dd 0x07130100
-    dw 0x2a44
+    dw 0x2a84
     db 5, 0x09, "VW", 0, 0, 0, 0, 0, 1    ; vcvtph2psx
     dd 0x072c0000
-    dw 0x2a4f
+    dw 0x2a8f
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vscalefbf16
     dd 0x072c0100
-    dw 0x2a5b
+    dw 0x2a9b
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vscalefph
     dd 0x072d0100
-    dw 0x2a65
+    dw 0x2aa5
     db 2, 0x06, "VHW", 0, 0, 0, 0, 0    ; vscalefsh
     dd 0x07420000
-    dw 0x2a6f
+    dw 0x2aaf
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 1    ; vgetexpbf16
     dd 0x07420100
-    dw 0x2a7b
+    dw 0x2abb
     db 0, 0x09, "VW", 0, 0, 0, 0, 0, 1    ; vgetexpph
     dd 0x07430100
-    dw 0x2a85
+    dw 0x2ac5
     db 2, 0x0a, "VHW", 0, 0, 0, 0, 0    ; vgetexpsh
     dd 0x074c0000
-    dw 0x2a8f
+    dw 0x2acf
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 1    ; vrcpbf16
     dd 0x074c0100
-    dw 0x2a98
+    dw 0x2ad8
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 1    ; vrcpph
     dd 0x074d0100
-    dw 0x2a9f
+    dw 0x2adf
     db 2, 0x02, "VHW", 0, 0, 0, 0, 0    ; vrcpsh
     dd 0x074e0000
-    dw 0x2aa6
+    dw 0x2ae6
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 1    ; vrsqrtbf16
     dd 0x074e0100
-    dw 0x2ab1
+    dw 0x2af1
     db 0, 0x01, "VW", 0, 0, 0, 0, 0, 1    ; vrsqrtph
     dd 0x074f0100
-    dw 0x2aba
+    dw 0x2afa
     db 2, 0x02, "VHW", 0, 0, 0, 0, 0    ; vrsqrtsh
     dd 0x07560200
-    dw 0x2ac3
+    dw 0x2b03
     db 0, 0x05, "VHW", 0, 0, 0, 0, 0    ; vfmaddcph
     dd 0x07560300
-    dw 0x2acd
+    dw 0x2b0d
     db 0, 0x05, "VHW", 0, 0, 0, 0, 0    ; vfcmaddcph
     dd 0x07570200
-    dw 0x2ad8
+    dw 0x2b18
     db 3, 0x06, "VHW", 0, 0, 0, 0, 0    ; vfmaddcsh
     dd 0x07570300
-    dw 0x2ae2
+    dw 0x2b22
     db 3, 0x06, "VHW", 0, 0, 0, 0, 0    ; vfcmaddcsh
     dd 0x07960100
-    dw 0x2aed
+    dw 0x2b2d
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vfmaddsub132ph
     dd 0x07970100
-    dw 0x2afc
+    dw 0x2b3c
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vfmsubadd132ph
     dd 0x07980000
-    dw 0x2b0b
+    dw 0x2b4b
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vfmadd132bf16
     dd 0x07980100
-    dw 0x2b19
+    dw 0x2b59
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vfmadd132ph
     dd 0x07990100
-    dw 0x2b25
+    dw 0x2b65
     db 2, 0x06, "VHW", 0, 0, 0, 0, 0    ; vfmadd132sh
     dd 0x079a0000
-    dw 0x2b31
+    dw 0x2b71
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vfmsub132bf16
     dd 0x079a0100
-    dw 0x2b3f
+    dw 0x2b7f
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vfmsub132ph
     dd 0x079b0100
-    dw 0x2b4b
+    dw 0x2b8b
     db 2, 0x06, "VHW", 0, 0, 0, 0, 0    ; vfmsub132sh
     dd 0x079c0000
-    dw 0x2b57
+    dw 0x2b97
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vfnmadd132bf16
     dd 0x079c0100
-    dw 0x2b66
+    dw 0x2ba6
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vfnmadd132ph
     dd 0x079d0100
-    dw 0x2b73
+    dw 0x2bb3
     db 2, 0x06, "VHW", 0, 0, 0, 0, 0    ; vfnmadd132sh
     dd 0x079e0000
-    dw 0x2b80
+    dw 0x2bc0
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vfnmsub132bf16
     dd 0x079e0100
-    dw 0x2b8f
+    dw 0x2bcf
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vfnmsub132ph
     dd 0x079f0100
-    dw 0x2b9c
+    dw 0x2bdc
     db 2, 0x06, "VHW", 0, 0, 0, 0, 0    ; vfnmsub132sh
     dd 0x07a60100
-    dw 0x2ba9
+    dw 0x2be9
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vfmaddsub213ph
     dd 0x07a70100
-    dw 0x2bb8
+    dw 0x2bf8
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vfmsubadd213ph
     dd 0x07a80000
-    dw 0x2bc7
+    dw 0x2c07
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vfmadd213bf16
     dd 0x07a80100
-    dw 0x2bd5
+    dw 0x2c15
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vfmadd213ph
     dd 0x07a90100
-    dw 0x2be1
+    dw 0x2c21
     db 2, 0x06, "VHW", 0, 0, 0, 0, 0    ; vfmadd213sh
     dd 0x07aa0000
-    dw 0x2bed
+    dw 0x2c2d
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vfmsub213bf16
     dd 0x07aa0100
-    dw 0x2bfb
+    dw 0x2c3b
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vfmsub213ph
     dd 0x07ab0100
-    dw 0x2c07
+    dw 0x2c47
     db 2, 0x06, "VHW", 0, 0, 0, 0, 0    ; vfmsub213sh
     dd 0x07ac0000
-    dw 0x2c13
+    dw 0x2c53
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vfnmadd213bf16
     dd 0x07ac0100
-    dw 0x2c22
+    dw 0x2c62
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vfnmadd213ph
     dd 0x07ad0100
-    dw 0x2c2f
+    dw 0x2c6f
     db 2, 0x06, "VHW", 0, 0, 0, 0, 0    ; vfnmadd213sh
     dd 0x07ae0000
-    dw 0x2c3c
+    dw 0x2c7c
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vfnmsub213bf16
     dd 0x07ae0100
-    dw 0x2c4b
+    dw 0x2c8b
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vfnmsub213ph
     dd 0x07af0100
-    dw 0x2c58
+    dw 0x2c98
     db 2, 0x06, "VHW", 0, 0, 0, 0, 0    ; vfnmsub213sh
     dd 0x07b60100
-    dw 0x2c65
+    dw 0x2ca5
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vfmaddsub231ph
     dd 0x07b70100
-    dw 0x2c74
+    dw 0x2cb4
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vfmsubadd231ph
     dd 0x07b80000
-    dw 0x2c83
+    dw 0x2cc3
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vfmadd231bf16
     dd 0x07b80100
-    dw 0x2c91
+    dw 0x2cd1
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vfmadd231ph
     dd 0x07b90100
-    dw 0x2c9d
+    dw 0x2cdd
     db 2, 0x06, "VHW", 0, 0, 0, 0, 0    ; vfmadd231sh
     dd 0x07ba0000
-    dw 0x2ca9
+    dw 0x2ce9
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vfmsub231bf16
     dd 0x07ba0100
-    dw 0x2cb7
+    dw 0x2cf7
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vfmsub231ph
     dd 0x07bb0100
-    dw 0x2cc3
+    dw 0x2d03
     db 2, 0x06, "VHW", 0, 0, 0, 0, 0    ; vfmsub231sh
     dd 0x07bc0000
-    dw 0x2ccf
+    dw 0x2d0f
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vfnmadd231bf16
     dd 0x07bc0100
-    dw 0x2cde
+    dw 0x2d1e
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vfnmadd231ph
     dd 0x07bd0100
-    dw 0x2ceb
+    dw 0x2d2b
     db 2, 0x06, "VHW", 0, 0, 0, 0, 0    ; vfnmadd231sh
     dd 0x07be0000
-    dw 0x2cf8
+    dw 0x2d38
     db 0, 0x01, "VHW", 0, 0, 0, 0, 1    ; vfnmsub231bf16
     dd 0x07be0100
-    dw 0x2d07
+    dw 0x2d47
     db 0, 0x05, "VHW", 0, 0, 0, 0, 1    ; vfnmsub231ph
     dd 0x07bf0100
-    dw 0x2d14
+    dw 0x2d54
     db 2, 0x06, "VHW", 0, 0, 0, 0, 0    ; vfnmsub231sh
     dd 0x07d60200
-    dw 0x2d21
+    dw 0x2d61
     db 0, 0x05, "VHW", 0, 0, 0, 0, 0    ; vfmulcph
     dd 0x07d60300
-    dw 0x2d2a
+    dw 0x2d6a
     db 0, 0x05, "VHW", 0, 0, 0, 0, 0    ; vfcmulcph
     dd 0x07d70200
-    dw 0x2d34
+    dw 0x2d74
     db 3, 0x06, "VHW", 0, 0, 0, 0, 0    ; vfmulcsh
     dd 0x07d70300
-    dw 0x2d3d
+    dw 0x2d7d
     db 3, 0x06, "VHW", 0, 0, 0, 0, 0    ; vfcmulcsh
     dd 0
 
 x86_vexgen:
     dd 0x02120300
-    dw 0x1e6c
+    dw 0x1eac
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 16    ; vmovddup
     dd 0x0271010a
-    dw 0x1330
+    dw 0x1370
     db 0, 0x00, "HWI", 0, 0, 0, 0, 4    ; vpsrlw
     dd 0x0271010c
-    dw 0x1337
+    dw 0x1377
     db 0, 0x00, "HWI", 0, 0, 0, 0, 4    ; vpsraw
     dd 0x0271010e
-    dw 0x133e
+    dw 0x137e
     db 0, 0x00, "HWI", 0, 0, 0, 0, 4    ; vpsllw
     dd 0x0272010a
-    dw 0x1353
+    dw 0x1393
     db 0, 0x00, "HWI", 0, 0, 0, 0, 4    ; vpsrld
     dd 0x0272010c
-    dw 0x135a
+    dw 0x139a
     db 0, 0x00, "HWI", 0, 0, 0, 0, 4    ; vpsrad
     dd 0x0272010e
-    dw 0x1361
+    dw 0x13a1
     db 0, 0x00, "HWI", 0, 0, 0, 0, 4    ; vpslld
     dd 0x0273010a
-    dw 0x138d
+    dw 0x13cd
     db 0, 0x00, "HWI", 0, 0, 0, 0, 4    ; vpsrlq
     dd 0x0273010e
-    dw 0x1394
+    dw 0x13d4
     db 0, 0x00, "HWI", 0, 0, 0, 0, 4    ; vpsllq
     dd 0x02d10100
-    dw 0x1330
+    dw 0x1370
     db 8, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpsrlw
     dd 0x02d20100
-    dw 0x1353
+    dw 0x1393
     db 8, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpsrld
     dd 0x02d30100
-    dw 0x138d
+    dw 0x13cd
     db 8, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpsrlq
     dd 0x02e10100
-    dw 0x1337
+    dw 0x1377
     db 8, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpsraw
     dd 0x02e20100
-    dw 0x135a
+    dw 0x139a
     db 8, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpsrad
     dd 0x02f10100
-    dw 0x133e
+    dw 0x137e
     db 8, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpsllw
     dd 0x02f20100
-    dw 0x1361
+    dw 0x13a1
     db 8, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpslld
     dd 0x02f30100
-    dw 0x1394
+    dw 0x13d4
     db 8, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpsllq
     dd 0x03130100
-    dw 0x1fa6
+    dw 0x1fe6
     db 5, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vcvtph2ps
     dd 0x03490000
-    dw 0x2d47
+    dw 0x2d87
     db 0, 0x00, "", 0, 0, 0, 0, 0, 0, 0, 4    ; tilerelease
     dd 0x03490008
-    dw 0x2d53
+    dw 0x2d93
     db 0, 0x00, "M", 0, 0, 0, 0, 0, 0, 8    ; ldtilecfg
     dd 0x03490108
-    dw 0x2d5d
+    dw 0x2d9d
     db 0, 0x00, "M", 0, 0, 0, 0, 0, 0, 8    ; sttilecfg
     dd 0x03490300
-    dw 0x2d67
+    dw 0x2da7
     db 0, 0x00, "T", 0, 0, 0, 0, 0, 0, 4    ; tilezero
     dd 0x034a0100
-    dw 0x2d70
+    dw 0x2db0
     db 0, 0x00, "TM", 0, 0, 0, 0, 0, 8    ; tileloaddrst1
     dd 0x034a0300
-    dw 0x2d7e
+    dw 0x2dbe
     db 0, 0x00, "TM", 0, 0, 0, 0, 0, 8    ; tileloaddrs
     dd 0x034b0100
-    dw 0x2d8a
+    dw 0x2dca
     db 0, 0x00, "TM", 0, 0, 0, 0, 0, 8    ; tileloaddt1
     dd 0x034b0200
-    dw 0x2d96
+    dw 0x2dd6
     db 0, 0x00, "MT", 0, 0, 0, 0, 0, 8    ; tilestored
     dd 0x034b0300
-    dw 0x2da1
+    dw 0x2de1
     db 0, 0x00, "TM", 0, 0, 0, 0, 0, 8    ; tileloadd
     dd 0x03500000
-    dw 0x202f
+    dw 0x206f
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpdpbuud
     dd 0x03500100
-    dw 0x18c8
+    dw 0x1908
     db 0, 0x08, "VHW", 0, 0, 0, 0, 0    ; vpdpbusd
     dd 0x03500200
-    dw 0x2038
+    dw 0x2078
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpdpbsud
     dd 0x03500300
-    dw 0x2041
+    dw 0x2081
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpdpbssd
     dd 0x03510000
-    dw 0x204a
+    dw 0x208a
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpdpbuuds
     dd 0x03510100
-    dw 0x18d1
+    dw 0x1911
     db 0, 0x08, "VHW", 0, 0, 0, 0, 0    ; vpdpbusds
     dd 0x03510200
-    dw 0x2054
+    dw 0x2094
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpdpbsuds
     dd 0x03510300
-    dw 0x205e
+    dw 0x209e
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpdpbssds
     dd 0x03520100
-    dw 0x18db
+    dw 0x191b
     db 0, 0x08, "VHW", 0, 0, 0, 0, 0    ; vpdpwssd
     dd 0x03530100
-    dw 0x18e4
+    dw 0x1924
     db 0, 0x08, "VHW", 0, 0, 0, 0, 0    ; vpdpwssds
     dd 0x035c0200
-    dw 0x2dab
+    dw 0x2deb
     db 0, 0x00, "Ttu", 0, 0, 0, 0, 4    ; tdpbf16ps
     dd 0x035c0300
-    dw 0x2db5
+    dw 0x2df5
     db 0, 0x00, "Ttu", 0, 0, 0, 0, 4    ; tdpfp16ps
     dd 0x035e0000
-    dw 0x2dbf
+    dw 0x2dff
     db 0, 0x00, "Ttu", 0, 0, 0, 0, 4    ; tdpbuud
     dd 0x035e0100
-    dw 0x2dc7
+    dw 0x2e07
     db 0, 0x00, "Ttu", 0, 0, 0, 0, 4    ; tdpbusd
     dd 0x035e0200
-    dw 0x2dcf
+    dw 0x2e0f
     db 0, 0x00, "Ttu", 0, 0, 0, 0, 4    ; tdpbsud
     dd 0x035e0300
-    dw 0x2dd7
+    dw 0x2e17
     db 0, 0x00, "Ttu", 0, 0, 0, 0, 4    ; tdpbssd
     dd 0x036c0000
-    dw 0x2ddf
+    dw 0x2e1f
     db 0, 0x00, "Ttu", 0, 0, 0, 0, 4    ; tcmmrlfp16ps
     dd 0x036c0100
-    dw 0x2dec
+    dw 0x2e2c
     db 0, 0x00, "Ttu", 0, 0, 0, 0, 4    ; tcmmimfp16ps
     dd 0x03720200
-    dw 0x2167
+    dw 0x21a7
     db 0, 0x08, "YW", 0, 0, 0, 0, 0, 0    ; vcvtneps2bf16
     dd 0x03900100
-    dw 0x21d8
+    dw 0x2218
     db 0, 0x40, "VSH", 0, 0, 0, 0, 8    ; vpgatherdd
     dd 0x03900110
-    dw 0x21e3
+    dw 0x2223
     db 0, 0x40, "VsH", 0, 0, 0, 0, 8    ; vpgatherdq
     dd 0x03910100
-    dw 0x21ee
+    dw 0x222e
     db 0, 0x40, "YSh", 0, 0, 0, 0, 8    ; vpgatherqd
     dd 0x03910110
-    dw 0x21f9
+    dw 0x2239
     db 0, 0x40, "VSH", 0, 0, 0, 0, 8    ; vpgatherqq
     dd 0x03920100
-    dw 0x2204
+    dw 0x2244
     db 0, 0x40, "VSH", 0, 0, 0, 0, 8    ; vgatherdps
     dd 0x03920110
-    dw 0x220f
+    dw 0x224f
     db 0, 0x40, "VsH", 0, 0, 0, 0, 8    ; vgatherdpd
     dd 0x03930100
-    dw 0x221a
+    dw 0x225a
     db 0, 0x40, "YSh", 0, 0, 0, 0, 8    ; vgatherqps
     dd 0x03930110
-    dw 0x2225
+    dw 0x2265
     db 0, 0x40, "VSH", 0, 0, 0, 0, 8    ; vgatherqpd
     dd 0x03b00000
-    dw 0x2df9
+    dw 0x2e39
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 8    ; vcvtneoph2ps
     dd 0x03b00100
-    dw 0x2e06
+    dw 0x2e46
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 8    ; vcvtneeph2ps
     dd 0x03b00200
-    dw 0x2e13
+    dw 0x2e53
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 8    ; vcvtneebf162ps
     dd 0x03b00300
-    dw 0x2e22
+    dw 0x2e62
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 8    ; vcvtneobf162ps
     dd 0x03b10100
-    dw 0x2e31
+    dw 0x2e71
     db 2, 0x00, "VW", 0, 0, 0, 0, 0, 8    ; vbcstnesh2ps
     dd 0x03b10200
-    dw 0x2e3e
+    dw 0x2e7e
     db 2, 0x00, "VW", 0, 0, 0, 0, 0, 8    ; vbcstnebf162ps
     dd 0x03b40110
-    dw 0x1b54
+    dw 0x1b94
     db 0, 0x08, "VHW", 0, 0, 0, 0, 0    ; vpmadd52luq
     dd 0x03b50110
-    dw 0x1b60
+    dw 0x1ba0
     db 0, 0x08, "VHW", 0, 0, 0, 0, 0    ; vpmadd52huq
     dd 0x03cb0300
-    dw 0x2e4d
+    dw 0x2e8d
     db 5, 0x00, "VHW", 0, 0, 0, 0, 4    ; vsha512rnds2
     dd 0x03cc0300
-    dw 0x2e5a
+    dw 0x2e9a
     db 5, 0x00, "VW", 0, 0, 0, 0, 0, 4    ; vsha512msg1
     dd 0x03cd0300
-    dw 0x2e66
+    dw 0x2ea6
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 4    ; vsha512msg2
     dd 0x03d20000
-    dw 0x2402
+    dw 0x2442
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpdpwuud
     dd 0x03d20100
-    dw 0x240b
+    dw 0x244b
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpdpwusd
     dd 0x03d20200
-    dw 0x2414
+    dw 0x2454
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpdpwsud
     dd 0x03d30000
-    dw 0x241d
+    dw 0x245d
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpdpwuuds
     dd 0x03d30100
-    dw 0x2427
+    dw 0x2467
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpdpwusds
     dd 0x03d30200
-    dw 0x2431
+    dw 0x2471
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpdpwsuds
     dd 0x03da0000
-    dw 0x2e72
+    dw 0x2eb2
     db 0, 0x00, "VHW", 0, 0, 0, 0, 4    ; vsm3msg1
     dd 0x03da0100
-    dw 0x2e7b
+    dw 0x2ebb
     db 0, 0x00, "VHW", 0, 0, 0, 0, 4    ; vsm3msg2
     dd 0x03da0200
-    dw 0x243b
+    dw 0x247b
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vsm4key4
     dd 0x03da0300
-    dw 0x2444
+    dw 0x2484
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vsm4rnds4
     dd 0x03e00100
-    dw 0x2e84
+    dw 0x2ec4
     db 3, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpoxadd
     dd 0x03e00110
-    dw 0x2e84
+    dw 0x2ec4
     db 4, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpoxadd
     dd 0x03e10100
-    dw 0x2e8d
+    dw 0x2ecd
     db 3, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpnoxadd
     dd 0x03e10110
-    dw 0x2e8d
+    dw 0x2ecd
     db 4, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpnoxadd
     dd 0x03e20100
-    dw 0x2e97
+    dw 0x2ed7
     db 3, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpbxadd
     dd 0x03e20110
-    dw 0x2e97
+    dw 0x2ed7
     db 4, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpbxadd
     dd 0x03e30100
-    dw 0x2ea0
+    dw 0x2ee0
     db 3, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpaexadd
     dd 0x03e30110
-    dw 0x2ea0
+    dw 0x2ee0
     db 4, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpaexadd
     dd 0x03e40100
-    dw 0x2eaa
+    dw 0x2eea
     db 3, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpexadd
     dd 0x03e40110
-    dw 0x2eaa
+    dw 0x2eea
     db 4, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpexadd
     dd 0x03e50100
-    dw 0x2eb3
+    dw 0x2ef3
     db 3, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpnexadd
     dd 0x03e50110
-    dw 0x2eb3
+    dw 0x2ef3
     db 4, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpnexadd
     dd 0x03e60100
-    dw 0x2ebd
+    dw 0x2efd
     db 3, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpbexadd
     dd 0x03e60110
-    dw 0x2ebd
+    dw 0x2efd
     db 4, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpbexadd
     dd 0x03e70100
-    dw 0x2ec7
+    dw 0x2f07
     db 3, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpaxadd
     dd 0x03e70110
-    dw 0x2ec7
+    dw 0x2f07
     db 4, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpaxadd
     dd 0x03e80100
-    dw 0x2ed0
+    dw 0x2f10
     db 3, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpsxadd
     dd 0x03e80110
-    dw 0x2ed0
+    dw 0x2f10
     db 4, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpsxadd
     dd 0x03e90100
-    dw 0x2ed9
+    dw 0x2f19
     db 3, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpnsxadd
     dd 0x03e90110
-    dw 0x2ed9
+    dw 0x2f19
     db 4, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpnsxadd
     dd 0x03ea0100
-    dw 0x2ee3
+    dw 0x2f23
     db 3, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmppxadd
     dd 0x03ea0110
-    dw 0x2ee3
+    dw 0x2f23
     db 4, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmppxadd
     dd 0x03eb0100
-    dw 0x2eec
+    dw 0x2f2c
     db 3, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpnpxadd
     dd 0x03eb0110
-    dw 0x2eec
+    dw 0x2f2c
     db 4, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpnpxadd
     dd 0x03ec0100
-    dw 0x2ef6
+    dw 0x2f36
     db 3, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmplxadd
     dd 0x03ec0110
-    dw 0x2ef6
+    dw 0x2f36
     db 4, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmplxadd
     dd 0x03ed0100
-    dw 0x2eff
+    dw 0x2f3f
     db 3, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpgexadd
     dd 0x03ed0110
-    dw 0x2eff
+    dw 0x2f3f
     db 4, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpgexadd
     dd 0x03ee0100
-    dw 0x2f09
+    dw 0x2f49
     db 3, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmplexadd
     dd 0x03ee0110
-    dw 0x2f09
+    dw 0x2f49
     db 4, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmplexadd
     dd 0x03ef0100
-    dw 0x2f13
+    dw 0x2f53
     db 3, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpgxadd
     dd 0x03ef0110
-    dw 0x2f13
+    dw 0x2f53
     db 4, 0x02, "WGJ", 0, 0, 0, 0, 8    ; cmpgxadd
     dd 0x041d0100
-    dw 0x2474
+    dw 0x24b4
     db 5, 0x00, "WVI", 0, 0, 0, 0, 0    ; vcvtps2ph
     dd 0x045c0100
-    dw 0x2f1c
+    dw 0x2f5c
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vfmaddsubps
     dd 0x045c0110
-    dw 0x2f1c
+    dw 0x2f5c
     db 0, 0x00, "VHLW", 0, 0, 0, 0    ; vfmaddsubps
     dd 0x045d0100
-    dw 0x2f28
+    dw 0x2f68
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vfmaddsubpd
     dd 0x045d0110
-    dw 0x2f28
+    dw 0x2f68
     db 0, 0x00, "VHLW", 0, 0, 0, 0    ; vfmaddsubpd
     dd 0x045e0100
-    dw 0x2f34
+    dw 0x2f74
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vfmsubaddps
     dd 0x045e0110
-    dw 0x2f34
+    dw 0x2f74
     db 0, 0x00, "VHLW", 0, 0, 0, 0    ; vfmsubaddps
     dd 0x045f0100
-    dw 0x2f40
+    dw 0x2f80
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vfmsubaddpd
     dd 0x045f0110
-    dw 0x2f40
+    dw 0x2f80
     db 0, 0x00, "VHLW", 0, 0, 0, 0    ; vfmsubaddpd
     dd 0x04680100
-    dw 0x2f4c
+    dw 0x2f8c
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vfmaddps
     dd 0x04680110
-    dw 0x2f4c
+    dw 0x2f8c
     db 0, 0x00, "VHLW", 0, 0, 0, 0    ; vfmaddps
     dd 0x04690100
-    dw 0x2f55
+    dw 0x2f95
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vfmaddpd
     dd 0x04690110
-    dw 0x2f55
+    dw 0x2f95
     db 0, 0x00, "VHLW", 0, 0, 0, 0    ; vfmaddpd
     dd 0x046a0100
-    dw 0x2f5e
+    dw 0x2f9e
     db 3, 0x02, "VHWL", 0, 0, 0, 0    ; vfmaddss
     dd 0x046a0110
-    dw 0x2f5e
+    dw 0x2f9e
     db 3, 0x02, "VHLW", 0, 0, 0, 0    ; vfmaddss
     dd 0x046b0100
-    dw 0x2f67
+    dw 0x2fa7
     db 4, 0x02, "VHWL", 0, 0, 0, 0    ; vfmaddsd
     dd 0x046b0110
-    dw 0x2f67
+    dw 0x2fa7
     db 4, 0x02, "VHLW", 0, 0, 0, 0    ; vfmaddsd
     dd 0x046c0100
-    dw 0x2f70
+    dw 0x2fb0
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vfmsubps
     dd 0x046c0110
-    dw 0x2f70
+    dw 0x2fb0
     db 0, 0x00, "VHLW", 0, 0, 0, 0    ; vfmsubps
     dd 0x046d0100
-    dw 0x2f79
+    dw 0x2fb9
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vfmsubpd
     dd 0x046d0110
-    dw 0x2f79
+    dw 0x2fb9
     db 0, 0x00, "VHLW", 0, 0, 0, 0    ; vfmsubpd
     dd 0x046e0100
-    dw 0x2f82
+    dw 0x2fc2
     db 3, 0x02, "VHWL", 0, 0, 0, 0    ; vfmsubss
     dd 0x046e0110
-    dw 0x2f82
+    dw 0x2fc2
     db 3, 0x02, "VHLW", 0, 0, 0, 0    ; vfmsubss
     dd 0x046f0100
-    dw 0x2f8b
+    dw 0x2fcb
     db 4, 0x02, "VHWL", 0, 0, 0, 0    ; vfmsubsd
     dd 0x046f0110
-    dw 0x2f8b
+    dw 0x2fcb
     db 4, 0x02, "VHLW", 0, 0, 0, 0    ; vfmsubsd
     dd 0x04780100
-    dw 0x2f94
+    dw 0x2fd4
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vfnmaddps
     dd 0x04780110
-    dw 0x2f94
+    dw 0x2fd4
     db 0, 0x00, "VHLW", 0, 0, 0, 0    ; vfnmaddps
     dd 0x04790100
-    dw 0x2f9e
+    dw 0x2fde
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vfnmaddpd
     dd 0x04790110
-    dw 0x2f9e
+    dw 0x2fde
     db 0, 0x00, "VHLW", 0, 0, 0, 0    ; vfnmaddpd
     dd 0x047a0100
-    dw 0x2fa8
+    dw 0x2fe8
     db 3, 0x02, "VHWL", 0, 0, 0, 0    ; vfnmaddss
     dd 0x047a0110
-    dw 0x2fa8
+    dw 0x2fe8
     db 3, 0x02, "VHLW", 0, 0, 0, 0    ; vfnmaddss
     dd 0x047b0100
-    dw 0x2fb2
+    dw 0x2ff2
     db 4, 0x02, "VHWL", 0, 0, 0, 0    ; vfnmaddsd
     dd 0x047b0110
-    dw 0x2fb2
+    dw 0x2ff2
     db 4, 0x02, "VHLW", 0, 0, 0, 0    ; vfnmaddsd
     dd 0x047c0100
-    dw 0x2fbc
+    dw 0x2ffc
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vfnmsubps
     dd 0x047c0110
-    dw 0x2fbc
+    dw 0x2ffc
     db 0, 0x00, "VHLW", 0, 0, 0, 0    ; vfnmsubps
     dd 0x047d0100
-    dw 0x2fc6
+    dw 0x3006
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vfnmsubpd
     dd 0x047d0110
-    dw 0x2fc6
+    dw 0x3006
     db 0, 0x00, "VHLW", 0, 0, 0, 0    ; vfnmsubpd
     dd 0x047e0100
-    dw 0x2fd0
+    dw 0x3010
     db 3, 0x02, "VHWL", 0, 0, 0, 0    ; vfnmsubss
     dd 0x047e0110
-    dw 0x2fd0
+    dw 0x3010
     db 3, 0x02, "VHLW", 0, 0, 0, 0    ; vfnmsubss
     dd 0x047f0100
-    dw 0x2fda
+    dw 0x301a
     db 4, 0x02, "VHWL", 0, 0, 0, 0    ; vfnmsubsd
     dd 0x047f0110
-    dw 0x2fda
+    dw 0x301a
     db 4, 0x02, "VHLW", 0, 0, 0, 0    ; vfnmsubsd
     dd 0x04de0100
-    dw 0x2fe4
+    dw 0x3024
     db 0, 0x00, "VHWI", 0, 0, 0, 4    ; vsm3rnds2
     dd 0x06fd0000
-    dw 0x2fee
+    dw 0x302e
     db 0, 0x00, "Ttu", 0, 0, 0, 0, 4    ; tdpbf8ps
     dd 0x06fd0100
-    dw 0x2ff7
+    dw 0x3037
     db 0, 0x00, "Ttu", 0, 0, 0, 0, 4    ; tdphf8ps
     dd 0x06fd0200
-    dw 0x3000
+    dw 0x3040
     db 0, 0x00, "Ttu", 0, 0, 0, 0, 4    ; tdphbf8ps
     dd 0x06fd0300
-    dw 0x300a
+    dw 0x304a
     db 0, 0x00, "Ttu", 0, 0, 0, 0, 4    ; tdpbhf8ps
     dd 0x09850000
-    dw 0x3014
+    dw 0x3054
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vpmacssww
     dd 0x09860000
-    dw 0x301e
+    dw 0x305e
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vpmacsswd
     dd 0x09870000
-    dw 0x3028
+    dw 0x3068
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vpmacssdql
     dd 0x098e0000
-    dw 0x3033
+    dw 0x3073
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vpmacssdd
     dd 0x098f0000
-    dw 0x303d
+    dw 0x307d
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vpmacssdqh
     dd 0x09950000
-    dw 0x3048
+    dw 0x3088
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vpmacsww
     dd 0x09960000
-    dw 0x3051
+    dw 0x3091
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vpmacswd
     dd 0x09970000
-    dw 0x305a
+    dw 0x309a
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vpmacsdql
     dd 0x099e0000
-    dw 0x3064
+    dw 0x30a4
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vpmacsdd
     dd 0x099f0000
-    dw 0x306d
+    dw 0x30ad
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vpmacsdqh
     dd 0x09a20000
-    dw 0x3077
+    dw 0x30b7
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vpcmov
     dd 0x09a20010
-    dw 0x3077
+    dw 0x30b7
     db 0, 0x00, "VHLW", 0, 0, 0, 0    ; vpcmov
     dd 0x09a30000
-    dw 0x307e
+    dw 0x30be
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vpperm
     dd 0x09a30010
-    dw 0x307e
+    dw 0x30be
     db 0, 0x00, "VHLW", 0, 0, 0, 0    ; vpperm
     dd 0x09a60000
-    dw 0x3085
+    dw 0x30c5
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vpmadcsswd
     dd 0x09b60000
-    dw 0x3090
+    dw 0x30d0
     db 0, 0x00, "VHWL", 0, 0, 0, 0    ; vpmadcswd
     dd 0x09c00000
-    dw 0x309a
+    dw 0x30da
     db 0, 0x00, "VWI", 0, 0, 0, 0, 0    ; vprotb
     dd 0x09c10000
-    dw 0x30a1
+    dw 0x30e1
     db 0, 0x00, "VWI", 0, 0, 0, 0, 0    ; vprotw
     dd 0x09c20000
-    dw 0x30a8
+    dw 0x30e8
     db 0, 0x00, "VWI", 0, 0, 0, 0, 0    ; vprotd
     dd 0x09c30000
-    dw 0x30af
+    dw 0x30ef
     db 0, 0x00, "VWI", 0, 0, 0, 0, 0    ; vprotq
     dd 0x09cc0000
-    dw 0x30b6
+    dw 0x30f6
     db 0, 0x00, "VHWI", 0, 0, 0, 128    ; vpcomb
     dd 0x09cd0000
-    dw 0x30bd
+    dw 0x30fd
     db 0, 0x00, "VHWI", 0, 0, 0, 128    ; vpcomw
     dd 0x09ce0000
-    dw 0x30c4
+    dw 0x3104
     db 0, 0x00, "VHWI", 0, 0, 0, 128    ; vpcomd
     dd 0x09cf0000
-    dw 0x30cb
+    dw 0x310b
     db 0, 0x00, "VHWI", 0, 0, 0, 128    ; vpcomq
     dd 0x09ec0000
-    dw 0x30d2
+    dw 0x3112
     db 0, 0x00, "VHWI", 0, 0, 0, 128    ; vpcomub
     dd 0x09ed0000
-    dw 0x30da
+    dw 0x311a
     db 0, 0x00, "VHWI", 0, 0, 0, 128    ; vpcomuw
     dd 0x09ee0000
-    dw 0x30e2
+    dw 0x3122
     db 0, 0x00, "VHWI", 0, 0, 0, 128    ; vpcomud
     dd 0x09ef0000
-    dw 0x30ea
+    dw 0x312a
     db 0, 0x00, "VHWI", 0, 0, 0, 128    ; vpcomuq
     dd 0x0a010009
-    dw 0x30f2
+    dw 0x3132
     db 3, 0x00, "JE", 0, 0, 0, 0, 0, 0    ; blcfill
     dd 0x0a01000a
-    dw 0x30fa
+    dw 0x313a
     db 3, 0x00, "JE", 0, 0, 0, 0, 0, 0    ; blsfill
     dd 0x0a01000b
-    dw 0x3102
+    dw 0x3142
     db 3, 0x00, "JE", 0, 0, 0, 0, 0, 0    ; blcs
     dd 0x0a01000c
-    dw 0x3107
+    dw 0x3147
     db 3, 0x00, "JE", 0, 0, 0, 0, 0, 0    ; tzmsk
     dd 0x0a01000d
-    dw 0x310d
+    dw 0x314d
     db 3, 0x00, "JE", 0, 0, 0, 0, 0, 0    ; blcic
     dd 0x0a01000e
-    dw 0x3113
+    dw 0x3153
     db 3, 0x00, "JE", 0, 0, 0, 0, 0, 0    ; blsic
     dd 0x0a01000f
-    dw 0x3119
+    dw 0x3159
     db 3, 0x00, "JE", 0, 0, 0, 0, 0, 0    ; t1mskc
     dd 0x0a010019
-    dw 0x30f2
+    dw 0x3132
     db 4, 0x00, "JE", 0, 0, 0, 0, 0, 0    ; blcfill
     dd 0x0a01001a
-    dw 0x30fa
+    dw 0x313a
     db 4, 0x00, "JE", 0, 0, 0, 0, 0, 0    ; blsfill
     dd 0x0a01001b
-    dw 0x3102
+    dw 0x3142
     db 4, 0x00, "JE", 0, 0, 0, 0, 0, 0    ; blcs
     dd 0x0a01001c
-    dw 0x3107
+    dw 0x3147
     db 4, 0x00, "JE", 0, 0, 0, 0, 0, 0    ; tzmsk
     dd 0x0a01001d
-    dw 0x310d
+    dw 0x314d
     db 4, 0x00, "JE", 0, 0, 0, 0, 0, 0    ; blcic
     dd 0x0a01001e
-    dw 0x3113
+    dw 0x3153
     db 4, 0x00, "JE", 0, 0, 0, 0, 0, 0    ; blsic
     dd 0x0a01001f
-    dw 0x3119
+    dw 0x3159
     db 4, 0x00, "JE", 0, 0, 0, 0, 0, 0    ; t1mskc
     dd 0x0a020009
-    dw 0x3120
+    dw 0x3160
     db 3, 0x00, "JE", 0, 0, 0, 0, 0, 0    ; blcmsk
     dd 0x0a02000e
-    dw 0x3127
+    dw 0x3167
     db 3, 0x00, "JE", 0, 0, 0, 0, 0, 0    ; blci
     dd 0x0a020019
-    dw 0x3120
+    dw 0x3160
     db 4, 0x00, "JE", 0, 0, 0, 0, 0, 0    ; blcmsk
     dd 0x0a02001e
-    dw 0x3127
+    dw 0x3167
     db 4, 0x00, "JE", 0, 0, 0, 0, 0, 0    ; blci
     dd 0x0a120008
-    dw 0x312c
+    dw 0x316c
     db 0, 0x00, "E", 0, 0, 0, 0, 0, 0, 4    ; llwpcb
     dd 0x0a120009
-    dw 0x3133
+    dw 0x3173
     db 0, 0x00, "E", 0, 0, 0, 0, 0, 0, 4    ; slwpcb
     dd 0x0a120018
-    dw 0x312c
+    dw 0x316c
     db 0, 0x00, "E", 0, 0, 0, 0, 0, 0, 4    ; llwpcb
     dd 0x0a120019
-    dw 0x3133
+    dw 0x3173
     db 0, 0x00, "E", 0, 0, 0, 0, 0, 0, 4    ; slwpcb
     dd 0x0a800000
-    dw 0x313a
+    dw 0x317a
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vfrczps
     dd 0x0a810000
-    dw 0x3142
+    dw 0x3182
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vfrczpd
     dd 0x0a820000
-    dw 0x314a
+    dw 0x318a
     db 3, 0x02, "VW", 0, 0, 0, 0, 0, 0    ; vfrczss
     dd 0x0a830000
-    dw 0x3152
+    dw 0x3192
     db 4, 0x02, "VW", 0, 0, 0, 0, 0, 0    ; vfrczsd
     dd 0x0a900000
-    dw 0x309a
+    dw 0x30da
     db 0, 0x00, "VWH", 0, 0, 0, 0, 0    ; vprotb
     dd 0x0a900010
-    dw 0x309a
+    dw 0x30da
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vprotb
     dd 0x0a910000
-    dw 0x30a1
+    dw 0x30e1
     db 0, 0x00, "VWH", 0, 0, 0, 0, 0    ; vprotw
     dd 0x0a910010
-    dw 0x30a1
+    dw 0x30e1
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vprotw
     dd 0x0a920000
-    dw 0x30a8
+    dw 0x30e8
     db 0, 0x00, "VWH", 0, 0, 0, 0, 0    ; vprotd
     dd 0x0a920010
-    dw 0x30a8
+    dw 0x30e8
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vprotd
     dd 0x0a930000
-    dw 0x30af
+    dw 0x30ef
     db 0, 0x00, "VWH", 0, 0, 0, 0, 0    ; vprotq
     dd 0x0a930010
-    dw 0x30af
+    dw 0x30ef
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vprotq
     dd 0x0a940000
-    dw 0x315a
+    dw 0x319a
     db 0, 0x00, "VWH", 0, 0, 0, 0, 0    ; vpshlb
     dd 0x0a940010
-    dw 0x315a
+    dw 0x319a
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpshlb
     dd 0x0a950000
-    dw 0x3161
+    dw 0x31a1
     db 0, 0x00, "VWH", 0, 0, 0, 0, 0    ; vpshlw
     dd 0x0a950010
-    dw 0x3161
+    dw 0x31a1
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpshlw
     dd 0x0a960000
-    dw 0x3168
+    dw 0x31a8
     db 0, 0x00, "VWH", 0, 0, 0, 0, 0    ; vpshld
     dd 0x0a960010
-    dw 0x3168
+    dw 0x31a8
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpshld
     dd 0x0a970000
-    dw 0x316f
+    dw 0x31af
     db 0, 0x00, "VWH", 0, 0, 0, 0, 0    ; vpshlq
     dd 0x0a970010
-    dw 0x316f
+    dw 0x31af
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpshlq
     dd 0x0a980000
-    dw 0x3176
+    dw 0x31b6
     db 0, 0x00, "VWH", 0, 0, 0, 0, 0    ; vpshab
     dd 0x0a980010
-    dw 0x3176
+    dw 0x31b6
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpshab
     dd 0x0a990000
-    dw 0x317d
+    dw 0x31bd
     db 0, 0x00, "VWH", 0, 0, 0, 0, 0    ; vpshaw
     dd 0x0a990010
-    dw 0x317d
+    dw 0x31bd
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpshaw
     dd 0x0a9a0000
-    dw 0x3184
+    dw 0x31c4
     db 0, 0x00, "VWH", 0, 0, 0, 0, 0    ; vpshad
     dd 0x0a9a0010
-    dw 0x3184
+    dw 0x31c4
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpshad
     dd 0x0a9b0000
-    dw 0x318b
+    dw 0x31cb
     db 0, 0x00, "VWH", 0, 0, 0, 0, 0    ; vpshaq
     dd 0x0a9b0010
-    dw 0x318b
+    dw 0x31cb
     db 0, 0x00, "VHW", 0, 0, 0, 0, 0    ; vpshaq
     dd 0x0ac10000
-    dw 0x3192
+    dw 0x31d2
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vphaddbw
     dd 0x0ac20000
-    dw 0x319b
+    dw 0x31db
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vphaddbd
     dd 0x0ac30000
-    dw 0x31a4
+    dw 0x31e4
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vphaddbq
     dd 0x0ac60000
-    dw 0x31ad
+    dw 0x31ed
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vphaddwd
     dd 0x0ac70000
-    dw 0x31b6
+    dw 0x31f6
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vphaddwq
     dd 0x0acb0000
-    dw 0x31bf
+    dw 0x31ff
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vphadddq
     dd 0x0ad10000
-    dw 0x31c8
+    dw 0x3208
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vphaddubw
     dd 0x0ad20000
-    dw 0x31d2
+    dw 0x3212
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vphaddubd
     dd 0x0ad30000
-    dw 0x31dc
+    dw 0x321c
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vphaddubq
     dd 0x0ad60000
-    dw 0x31e6
+    dw 0x3226
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vphadduwd
     dd 0x0ad70000
-    dw 0x31f0
+    dw 0x3230
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vphadduwq
     dd 0x0adb0000
-    dw 0x31fa
+    dw 0x323a
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vphaddudq
     dd 0x0ae10000
-    dw 0x3204
+    dw 0x3244
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vphsubbw
     dd 0x0ae20000
-    dw 0x320d
+    dw 0x324d
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vphsubwd
     dd 0x0ae30000
-    dw 0x3216
+    dw 0x3256
     db 0, 0x00, "VW", 0, 0, 0, 0, 0, 0    ; vphsubdq
     dd 0x0b100000
-    dw 0x0e42
+    dw 0x0e8a
     db 3, 0x00, "GEZ", 0, 0, 0, 0, 0    ; bextr
     dd 0x0b100010
-    dw 0x0e42
+    dw 0x0e8a
     db 4, 0x00, "GEZ", 0, 0, 0, 0, 0    ; bextr
     dd 0x0b120008
-    dw 0x321f
+    dw 0x325f
     db 3, 0x00, "JEZ", 0, 0, 0, 0, 0    ; lwpins
     dd 0x0b120009
-    dw 0x3226
+    dw 0x3266
     db 3, 0x00, "JEZ", 0, 0, 0, 0, 0    ; lwpval
     dd 0x0b120018
-    dw 0x321f
+    dw 0x325f
     db 3, 0x00, "JEZ", 0, 0, 0, 0, 0    ; lwpins
     dd 0x0b120019
-    dw 0x3226
+    dw 0x3266
     db 3, 0x00, "JEZ", 0, 0, 0, 0, 0    ; lwpval
     dd 0
 
