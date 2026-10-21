@@ -1,13 +1,13 @@
 ;
 ; ============================================
-; File     : core/crash.s
+; File     : src/core/crash.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
 ; ============================================
 ;
 
-%include "include/constant.inc"
+%include "src/include/constant.inc"
 
 DEFAULT REL
 
