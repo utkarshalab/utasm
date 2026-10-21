@@ -1,6 +1,6 @@
 ; ;
 ; ============================================
-; File     : src/core/string.s
+; File     : src/lib/string.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
