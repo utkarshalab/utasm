@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/atomic.s
+// TEST: tests/asm/riscv64/atomic.s
 // Suite: RISC-V 64 Core
 // Purpose: Atomic extension (A) exhaustive coverage.
 // Expected: EXIT_OK.
