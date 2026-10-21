@@ -1,5 +1,5 @@
-# Build Output
-build/
+# Build Output (the top-level build/ only - not scripts/build/)
+/build/
 *.o
 *.elf
 *.bin
@@ -27,7 +27,7 @@ Thumbs.db
 # Logs
 *.log
 
-# Python bytecode (scripts/compat)
+# Python bytecode (tests/compat, scripts/)
 __pycache__/
 
 # Scratch / debug artifacts (never commit these)
@@ -36,7 +36,7 @@ task.md
 gdb_trace*.txt
 tmp_test*.s
 test_*.s
-!tests/unit/test_*.s
+!tests/unit/**/test_*.s
 *.patch
 *.patch.log
 err.txt
