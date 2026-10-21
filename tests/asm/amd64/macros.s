@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/macros.s
+// TEST: tests/asm/amd64/macros.s
 // Suite: AMD64 Preprocessor
 // Purpose: Macro definition and expansion within AMD64 context.
 //   Tests: %macro/%endmacro, parameter passing, nested macros,
