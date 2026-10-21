@@ -68,6 +68,9 @@ extern dump_put_strtab
 extern symdump_symbols
 extern symdump_relocs
 extern disasm_sections
+extern disasm_raw
+extern elf32_widen
+extern ins_elf32
 extern io_open
 extern io_close
 extern io_file_size
@@ -119,6 +122,38 @@ inspect_run:
     mov     edx, INSPECT_LINE_MAX - 1
     call    fmt_init
 
+    ; an ELF32 file: read as its ELF64 image (tools/inspector/elf32.s)
+    mov     byte [rel ins_elf32], 0
+    cmp     qword [rbx + INSPCTX_len], 52
+    jb      .not_elf32
+    mov     rax, [rbx + INSPCTX_buf]
+    cmp     dword [rax], 0x464C457F
+    jne     .not_elf32
+    cmp     word [rax + 4], ELFCLASS32 | (ELFDATA2LSB << 8)
+    jne     .not_elf32
+    mov     rdi, rax
+    mov     rsi, [rbx + INSPCTX_len]
+    call    elf32_widen
+    test    rax, rax
+    jnz     .not_elf32                     ; (validation says what is wrong)
+    mov     [rbx + INSPCTX_buf], rdx
+    mov     [rbx + INSPCTX_len], rcx
+.not_elf32:
+    ; --disasm alone of a file that is no ELF one: raw bytes (a flat
+    ; binary, a boot sector), as objdump -b binary reads them
+    cmp     r12, INSPECT_DISASM
+    jne     .elf
+    cmp     qword [rbx + INSPCTX_len], 4
+    jb      .raw
+    mov     rax, [rbx + INSPCTX_buf]
+    cmp     dword [rax], 0x464C457F        ; "\x7fELF"
+    je      .elf
+.raw:
+    mov     rdi, rbx
+    call    disasm_raw
+    mov     rax, [rbx + INSPCTX_err]
+    jmp     .done
+.elf:
     mov     rdi, rbx
     call    inspect_validate
     test    rax, rax
@@ -529,7 +564,13 @@ ins_print_header:
 
     INS_PUTS "  Class:"
     INS_PAD HDR_COL
+    cmp     byte [rel ins_elf32], 0
+    jne     .class32
     INS_PUTS "ELF64"
+    jmp     .class_done
+.class32:
+    INS_PUTS "ELF32 (read as its ELF64 image)"
+.class_done:
     INS_NL
 
     INS_PUTS "  Data:"
