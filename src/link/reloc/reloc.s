@@ -8,10 +8,10 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
-%include "include/elf.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
+%include "src/include/elf.inc"
 
 ; --- External Symbols ---
 extern  mem_zero
@@ -755,7 +755,7 @@ reloc_resolve_all:
 .check_undef:
 .undef:
     ; "file:line: error: symbol `x' not defined" at the statement that
-    ; used it, then "did you mean" (utasm.s prints both)
+    ; used it, then "did you mean" (src/main/utasm.s prints both)
     mov     rdi, [r13 + RELOC_file]
     mov     esi, [r13 + RELOC_line]
     extern  error_set_location
