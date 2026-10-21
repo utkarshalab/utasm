@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/system.s
+// TEST: tests/asm/aarch64/system.s
 // Suite: AArch64 System
 // Purpose: System and privileged instruction coverage.
 //   Covers: SVC, HVC, SMC, MSR/MRS, ISB, DMB, DSB, ERET, AT, DC, IC,
