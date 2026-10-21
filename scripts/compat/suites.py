@@ -298,8 +298,8 @@ def encoder(utasm, verbose=False):
 # the disassembler against objdump
 # ---------------------------------------------------------------------------
 def _norm(t):
-    t = re.sub(r"\s*#.*$", "", t)
-    t = re.sub(r"\s*<[^>]*>", "", t)
+    # (the "<sym+0x..>" after a branch and the "# 13 <sym>" after a
+    # [rip + disp] are compared too: utasm writes them as objdump does)
     return re.sub(r"\s+", " ", t).strip()
 
 
@@ -320,6 +320,55 @@ def _parse(text, ours):
 DISASM_OBJDUMP = (2, 47)    # the reference: older ones print default segments
                             # (es:[rdi]), {evex} where no VEX form exists, (bad)
                             # for the 0F 1A / 1B hint nops and for udb
+
+
+def _mode_corpus(d, bits):
+    """every form of NASM's insns.dat and insns3.dat, twice, in bits 16 / 32
+    (encfuzz's operands, seed 7), the lines NASM refuses dropped: the .s, its
+    NASM .bin next to it - or None"""
+    import encfuzz, random
+    here = os.path.dirname(os.path.abspath(__file__))
+    rng, lines = random.Random(7), []
+    for table in ("insns.dat", "insns3.dat"):
+        encfuzz.INSNS = os.path.join(here, "..", "nasm", table)
+        for f in encfuzz.forms():
+            n = f[0].upper()
+            if n.startswith(("RES", "INCBIN", "EQU")) or n in ("DB", "DW", "DD", "DQ", "DT", "DO", "DY", "DZ"):
+                continue
+            if "CYRIX" in f[3]:
+                continue                       # (Cyrix's EMMI: 0F 50 is movmskps now)
+            for _ in range(2):
+                try:
+                    line = encfuzz.instance(f, bits, rng)
+                except encfuzz.Skip:
+                    continue
+                if not (line.startswith(("movmskp", "pmovmskb")) and "[" in line):
+                    lines.append(line)     # (NASM writes a memory form of those: none)
+    src = os.path.join(d, "mode%d.s" % bits)
+    for _ in range(30):
+        open(src, "w").write("bits %d\n" % bits + "\n".join(lines) + "\n")
+        r = run(["nasm", "-f", "bin", src, "-o", src[:-2] + ".bin"])
+        bad = {int(m.group(1)) for m in re.finditer(r"^[^:]+:(\d+): (?:error|fatal)", r.stderr or "", re.M)}
+        if r.returncode == 0 and not bad:
+            return src
+        if not bad:
+            return None
+        lines = [l for i, l in enumerate(lines) if i + 2 not in bad]
+    return None
+
+
+def _relocs(text, ours):
+    """{(section, offset): "R_X86_64_PC32 ext-0x4"} from a -dr listing"""
+    res, sec = {}, None
+    for line in text.splitlines():
+        m = re.match(r"Disassembly of section '(.*)':" if ours else r"Disassembly of section (.*):", line)
+        if m:
+            sec = m.group(1)
+            continue
+        m = re.match(r"^\t\t\t([0-9a-f]+): (\S+)\t(.*)$", line)
+        if m and sec is not None:
+            res[(sec, int(m.group(1), 16))] = m.group(2) + " " + m.group(3).strip()
+    return res
 
 
 def disasm(utasm, verbose=False, objects=()):
@@ -367,6 +416,39 @@ def disasm(utasm, verbose=False, objects=()):
                 mn = rt.split(" ")[0] if rt else "?"
                 bad[mn] += 1
                 example.setdefault(mn, "%s: objdump '%s' | utasm '%s'" % (" ".join(rb), rt, o[1] if o else "-"))
+            # -r: each instruction's relocations, as objdump -dr writes them
+            ours_r = _relocs(run([utasm, "--disasm", "-r", f], timeout=120).stdout, True)
+            # (not -w: objdump writes the relocations on lines of their own)
+            for k, v in _relocs(run(["objdump", "-dr", "-M", "intel", f]).stdout, False).items():
+                if ours_r.get(k) == v:
+                    s.ok += 1
+                    continue
+                bad["reloc"] += 1
+                example.setdefault("reloc", "%s+%x: objdump '%s' | utasm '%s'" % (k[0], k[1], v, ours_r.get(k, "-")))
+        # 16 / 32-bit mode: every form of NASM's tables in bits 16 / 32, NASM's
+        # flat binary read with --bits as objdump -b binary -m i8086 / i386 reads
+        # it, and the bits 32 one as an ELF32 object (tools/inspector/elf32.s)
+        for bits, arch in ((32, "i386"), (16, "i8086")):
+            src = _mode_corpus(d, bits)
+            if src is None:
+                s.result("bits %d corpus" % bits, False, "NASM refused it")
+                continue
+            files = [(src[:-2] + ".bin", ["--bits", str(bits)], ["-b", "binary", "-m", arch])]
+            if bits == 32 and run(["nasm", "-f", "elf32", src, "-o", src[:-2] + ".o"]).returncode == 0:
+                files.append((src[:-2] + ".o", [], []))
+            for f, uopt, oopt in files:
+                ours = _parse(run([utasm, "--disasm"] + uopt + [f], timeout=120).stdout, True)
+                ref = _parse(run(["objdump", "-D" if oopt else "-d"] + oopt + ["-M", "intel", "-w", f]).stdout, False)
+                for k, (rb, rt) in ref.items():
+                    o = ours.get(k)
+                    if o and o[0] == rb and o[1] == rt:
+                        s.ok += 1
+                    elif rt.startswith("{evex} vpermpd ymm"):
+                        s.known += 1           # (objdump's: no VEX form reads as it)
+                    else:
+                        mn = "%d:%s" % (bits, rt.split(" ")[0] if rt else "?")
+                        bad[mn] += 1
+                        example.setdefault(mn, "%s: objdump '%s' | utasm '%s'" % (" ".join(rb), rt, o[1] if o else "-"))
         for mn, n in bad.most_common():
             s.bad += n
             s.failures.append("%-10s x%d  %s" % (mn, n, example[mn]))
