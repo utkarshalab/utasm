@@ -119,7 +119,7 @@ Stack must be 16-byte aligned before any `call`.
 ## Adding a New Output Format
 
 1. Add the entry point at `backend/output/<format>/out.s`
-2. Register the format in `backend/output/output.s` dispatcher
+2. Register the format in the output dispatch of `backend/linker/linker.s` (by `ASMCTX_fmt`'s `FMT_*` value)
 3. Add the `-f <format>` CLI option in `cli.s`
 4. Add integration tests at `tests/integration/<format>/`
 
