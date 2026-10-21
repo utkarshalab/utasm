@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : src/core/archive.s
+; File        : src/link/archive.s
 ; Project     : utasm
 ; Description : Unix Archive (.a) Parser Implementation.
 ; ============================================================================
