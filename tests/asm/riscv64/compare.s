@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/compare.s
+// TEST: tests/asm/riscv64/compare.s
 // Suite: RISC-V 64 Core
 // Purpose: Comparison instruction coverage.
 //   RISC-V uses SLT (Set Less Than) and conditional branches.
