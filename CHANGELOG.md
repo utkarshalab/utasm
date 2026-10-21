@@ -26,6 +26,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - `--disasm` reads every encoding as objdump 2.47 does, in all three modes: unused prefixes named, prefixes an opcode's prefix table takes, `(bad)` operands, a REX before a prefix, `9B` folded into x87 instructions, 66 with REX.W, VEX / EVEX that cannot be one — no difference left on NASM's every form or the opcode-space scan
 
 ### Changed
+- Repository layout: all assembly under `src/` (`main/`, `core/`, `include/`, `frontend/{lexer,preproc,syntax}`, `semantic/`, `encode/<arch>/`, `object/`, `link/`, `optimize/`, `debug/`, `diag/`, `tools/`, `profile/`, `platform/`, `lib/`, `planned/`); generated tables in `gen/` folders; the suites in `tests/compat/`; build and generator scripts in `scripts/{build,gen,bench}/`; NASM's tables in `third_party/nasm/`; docs in `docs/{user,reference,dev}/`. Every gen1 object is byte-identical to before the move
+- The build reads every source under `src/` in one sorted order: the same tree gives the same binary everywhere
+- Utkarsha OS (was Tattva OS) in the docs; `-h` names utasm its native assembler
 - Project restructured from `src/` flat layout to layered architecture
 - Include files renamed from `.s` to `.inc`
 - Entry point moved from `src/main.s` to `utasm.s`
