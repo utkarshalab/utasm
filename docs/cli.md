@@ -3,7 +3,7 @@
 ```
 utasm [options] <source.s>
 utasm --inspect [--inspect-only <parts>] <file>
-utasm --disasm <file>
+utasm --disasm [-r] [--bits 16|32|64] [--org ADDR] <file>
 ```
 
 UTASM assembles one source file per invocation. With no output options,
@@ -40,7 +40,9 @@ NASM does not read; messages name it `-`, and with no `-o` the output is
 | `-w...`, `-W...`, `-X`, `-s`, `-Z file` | Warnings, message style and destination. |
 | `--inspect` | Print an existing ELF file instead of assembling (see below). |
 | `--inspect-only <parts>` | Inspect only the listed parts; implies `--inspect`. |
-| `--disasm` | Disassemble an ELF file's code sections (x86-64; see below). |
+| `--disasm` | Disassemble an ELF64 / ELF32 file's code sections, or a raw file (16 / 32 / 64-bit; see below). |
+| `-r`, `--reloc` | With `--disasm`: each instruction's relocations after it. |
+| `--org ADDR` | With `--disasm` of a raw file: its first byte's address. |
 | `-h`, `--help` | Print help and exit successfully. |
 | `-v`, `--version` | Print the UTASM version and exit successfully. |
 
@@ -124,8 +126,8 @@ with a specific code:
 ## Disassembling
 
 `--disasm` (or the `disasm` part of `--inspect-only`) prints every
-executable section as x86-64 instructions in Intel syntax, in the same style
-as `objdump -d -M intel`:
+executable section as x86 instructions in Intel syntax, as
+`objdump -d -M intel` does:
 
 ```
 Disassembly of section '.text':
@@ -135,67 +137,65 @@ Disassembly of section '.text':
   00000002:  48 85 ff                test   rdi,rdi
   00000005:  74 0a                   je     11 <math_is_pow2.done>
   00000007:  48 8d 4f ff             lea    rcx,[rdi-0x1]
+  0000000b:  48 8b 05 00 00 00 00    mov    rax,QWORD PTR [rip+0x0]        # 12 <math_is_pow2.done+0x1>
 ```
 
-A symbol that starts at an address gets a label line, and a direct jump or
-call shows its target with the nearest symbol at or before it. Like objdump,
-decoding restarts at every symbol, so data inside a code section cannot run
-into the next function. Bytes it cannot decode print as `(bad)` and are
-skipped one at a time.
+| Option | Meaning |
+| --- | --- |
+| `-r`, `--reloc` | each instruction's relocations after it, as `objdump -dr` writes them (`<tab><tab><tab>6: R_X86_64_PC32<tab>ext-0x4`) |
+| `--bits 16\|32\|64` | the mode to decode in (default: the file's - 32 for an i386 ELF32 file, else 64) |
+| `--org ADDR` | a raw file's first address (default 0) |
 
-It decodes the general-purpose instruction set: every prefix, REX, the
-one-byte and `0F` opcode maps (arithmetic and logic, moves, shifts,
-multiply/divide, jumps and calls, `setcc`/`cmovcc`, bit operations, string
-instructions with `rep`, fences, `syscall`, `cpuid`, system instructions and
-so on), with 32-bit addressing under a `67` prefix. It also decodes MMX and
-SSE through SSE4.2 - the `0F`, `0F 38` and `0F 3A` maps selected by a `66`,
-`F3` or `F2` prefix, including AES and `pclmulqdq` - plus `popcnt`, `tzcnt`,
-`lzcnt`, `crc32`, `movbe`, `adcx`/`adox`, the SHA instructions,
-`cmpxchg16b`, `rdrand`/`rdseed` and `endbr64`; the VEX-encoded AVX, AVX2,
-FMA and BMI1/BMI2 instructions (xmm/ymm, three- and four-operand forms,
-broadcasts, `vinserti128`/`vextracti128`, permutes, masked moves,
-`vzeroupper`, `andn`, `shlx`, `pdep`, `rorx`, ...); x87 floating point
-(`fld`/`fstp` with DWORD, QWORD and TBYTE operands, integer and BCD loads and
-stores, `st(i)` register forms, `fcomi`/`fcmovcc`, the constants and
-transcendental functions, control and status words); and AVX-512:
+What it reads:
 
-- the EVEX prefix with xmm/ymm/zmm and registers 16-31, `{k1}` masking and
-  `{z}` zeroing, broadcasts (`DWORD BCST [rax]`), rounding control and
-  `{sae}`, and the compressed disp8*N displacement;
-- AVX-512F/BW/DQ/VL and friends: `vmovdqu8/16/32/64`, `vpternlogd`,
-  `vpcmpub` & co. with their predicate names (`vpcmpnequb`), compares and
-  tests into mask registers, `vpermi2`/`vpermt2`, narrowing `vpmov*`,
-  compress/expand, `vpconflict`, `vplzcnt`, 512-bit FMA, IFMA, VNNI, VAES,
-  `vpclmulqdq` and GFNI;
-- the mask-register instructions: `kmov`, `kortest`, `ktest`, `kand`/`kor`/
-  `kxor`/`knot`, `kadd`, `kunpck` and `kshift`;
-- APX: `r16`-`r31` (REX2 `D5`, with its `0F` map, and EVEX's B4 / X4 bits
-  in the vector instructions), VEX instructions written as EVEX (BMI,
-  `kmov`, `{nf} andn`), and map 4 - a new destination (`add rax,rbx,rcx`),
-  `{nf}`, `{evex}`, `imulzu` / `setzue`, `ccmpe {dfv=of, zf}` / `ctest`,
-  `cfcmov`, `push2` / `pop2`, `pushp` / `popp`, `jmpabs`, and the `0F 38`
-  instructions with `r16`-`r31` (`movbe`, `crc32`, `adcx`, `invpcid`,
-  `enqcmd`, `movdiri`, `wrss` ...), as objdump writes them. Where objdump
-  calls `D5 18 90` "{rex2 0x18} nop", utasm writes the `xchg r16,rax` NASM
-  and GNU `as` encode so.
+- **ELF64** objects, executables and shared objects (x86-64).
+- **ELF32** files (`-f elf32`'s, i386 objects): read as their ELF64 image
+  (`tools/inspector/elf32.s`), decoded in 32-bit mode, with `R_386_*`
+  relocation names. `--inspect` reads them the same way.
+- **Raw files** - anything that is not ELF: a flat binary, a boot sector,
+  a UBF image's code - as `objdump -b binary` does: one section `.data` at
+  `--org`, in the `--bits` mode, branch targets written `0x7c3e`:
 
-It is checked against objdump: on utasm's own 276 object files, a linked
-utasm executable and a coverage file of NASM-assembled instruction forms,
-every instruction is identical to objdump's output (same bytes, same text).
-So is every instruction of these system binaries:
+```sh
+utasm --disasm --bits 16 --org 0x7c00 boot.bin
+```
 
-| File | Instructions | Identical |
-| --- | --- | --- |
-| `libc.so.6` | 349,012 | 100% |
-| `libstdc++.so.6` | 340,870 | 100% |
-| `python3` | 1,039,681 | 100% |
-| `bash` | 199,949 | 100% |
-| `libz.so.1` | 19,289 | 100% |
-| `libm.so.6` | 128,689 | 99.6% |
-| `libcrypto.so.3` | 874,770 | 99.9% |
+A symbol that starts at an address gets a label line (where several do,
+the one objdump names: a function, then a global, then a name not
+starting with `.`, then by name). A direct branch shows its target with
+the nearest symbol at or before it (in a linked file, any section's; with
+none before it, the first after it - `<lab-0x5>`), a `[rip + disp]`
+operand the address it names (`# 13 <sym+0x7>`). Without a symbol table the
+dynamic one is used. Decoding restarts at every symbol, as objdump's does.
 
-What remains in the last two is AMD-only FMA4/XOP, the newest SHA512 and
-SM3 instructions and a few prefix spellings. Random bytes never crash it.
+The three modes are decoded as the CPU reads them: in 16 and 32-bit mode
+`40`-`4F` are `inc` / `dec`, `C4` / `C5` / `62` are VEX / EVEX only before a
+ModRM of mod 11 (else `les` / `lds` / `bound`), 16-bit addressing
+(`[bx+si]`), `pusha`, `daa`, `arpl`, far `call` / `jmp` (`0x1234:0x5678`),
+`salc`; 64-bit mode's own instructions (`movrs`, the SEV-SNP and UINTR
+`0F 01` forms ...) are `(bad)` there.
+
+What the CPU would refuse is shown, as objdump shows it:
+
+- a prefix the instruction does not use is named - `rex.WB mov WORD PTR
+  [r11-0x80],gs`, `data16 sfence`, `addr32 invlpga`, `fs rex pushf`
+  (utasm decodes the instruction without the prefix, or with the REX bit
+  cleared: where it reads the same, the prefix had no use);
+- an undefined opcode is `(bad)` taking the bytes up to the opcode; a VEX /
+  EVEX instruction whose unused vvvv is not 1111 too;
+- `/(bad)` after a gather's destination, index and mask that are one
+  register (or an EVEX gather with no mask), `vmovw` with a mask; `(bad)`
+  for a complex FP16 multiply's destination that is a source.
+
+It is checked against objdump 2.47 (the disassembler suite needs it, see
+`docs/tests.md`): every form of NASM's instruction tables, in all three
+modes, a 64-bit, a 32-bit and a 16-bit corpus of each; utasm's own
+objects (with their relocations); an ELF32 object. Every instruction is
+identical: bytes, text, symbol annotation. Of the system's own binaries,
+the instructions all read the same - what differs in a shared library is
+the names objdump makes up from GNU's symbol versions and the PLT
+(`<abort@@GLIBC_2.2.5>`, `<__sigsetjmp@plt>`), which utasm does not read.
+Random bytes never crash it.
 
 The opcode tables are generated by `scripts/gen_x86_tables.py` into
 `tools/disasm/x86_tables.inc`; rerun the script after changing it
