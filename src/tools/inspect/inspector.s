@@ -1,17 +1,17 @@
 ;
 ; ============================================
-; File     : tools/inspector/inspector.s
+; File     : src/tools/inspect/inspector.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
-%include "include/elf.inc"
-%include "include/inspect.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
+%include "src/include/elf.inc"
+%include "src/include/inspect.inc"
 
 DEFAULT REL
 
@@ -36,7 +36,7 @@ DEFAULT REL
 ; tests. The first non-zero sink result stops further output and becomes
 ; inspect_run's return value.
 ;
-; Symbols and relocations are printed by tools/symdump/symdump.s, which
+; Symbols and relocations are printed by src/tools/symdump/symdump.s, which
 ; shares the InspCtx and the ins_* helpers defined here.
 ;
 ; Calling convention (AMD64):
@@ -122,7 +122,7 @@ inspect_run:
     mov     edx, INSPECT_LINE_MAX - 1
     call    fmt_init
 
-    ; an ELF32 file: read as its ELF64 image (tools/inspector/elf32.s)
+    ; an ELF32 file: read as its ELF64 image (src/tools/inspect/elf32.s)
     mov     byte [rel ins_elf32], 0
     cmp     qword [rbx + INSPCTX_len], 52
     jb      .not_elf32
@@ -460,7 +460,7 @@ inspect_validate:
     ret
 
 ; ============================================================================
-; Shared helpers (also used by tools/symdump/symdump.s)
+; Shared helpers (also used by src/tools/symdump/symdump.s)
 ; ============================================================================
 
 ; ---- ins_flush_line ---------------------
