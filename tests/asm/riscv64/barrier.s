@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/barrier.s
+// TEST: tests/asm/riscv64/barrier.s
 // Suite: RISC-V 64 Core
 // Purpose: Memory barrier and synchronization instruction coverage.
 //   Covers: FENCE, FENCE.I, and A extension (atomic) barriers.
