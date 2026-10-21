@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/interrupt.s
+// TEST: tests/asm/riscv64/interrupt.s
 // Suite: RISC-V 64 Core
 // Purpose: Trap and interrupt handling instruction coverage.
 //   Covers: CSR manipulation for traps (mstatus, mepc, mtvec),
