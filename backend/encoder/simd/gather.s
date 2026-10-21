@@ -12,6 +12,10 @@
 ;   told by its shape - a vector register, then memory with a vector index
 ;   - so every gather the table has is covered; scatters and the
 ;   AVX512PF prefetches (the memory first) are not gathers.
+;
+;   The EVEX gathers, the scatters and the AVX512PF prefetches all need a
+;   write mask, {k1} to {k7}: k0 (none written) is #UD too - GNU's as
+;   refuses them, NASM takes them.
 ; ============================================================================
 ;
 
@@ -28,10 +32,33 @@ DEFAULT REL
 ; * [amd64_gather_check]
 ; * Purpose: A gather with its destination, index and mask not distinct?
 ; * Input  : R12 = INST
-; * Output : RAX = OK or EXIT_GATHER_SAME. Preserves all but rax, rcx, rdx.
+; * Output : RAX = OK, EXIT_GATHER_SAME or EXIT_VSIB_NO_MASK. Preserves all
+; *          but rax, rcx, rdx.
 ; ;
 global amd64_gather_check
 amd64_gather_check:
+    ; memory with a vector index, as op0 or op1, of an EVEX form (VEX's
+    ; gathers have three operands): op0 has the mask
+    movzx   ecx, byte [r12 + INST_nops]
+    test    ecx, ecx
+    jz      .ok
+    cmp     ecx, 3
+    jae     .regs
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_MEM
+    jne     .op1
+    cmp     byte [r12 + INST_op0 + OPERAND_vsib], 0
+    jne     .masked
+.op1:
+    cmp     ecx, 2
+    jb      .ok
+    cmp     byte [r12 + INST_op0 + OPERAND_SIZE + OPERAND_kind], OP_MEM
+    jne     .regs
+    cmp     byte [r12 + INST_op0 + OPERAND_SIZE + OPERAND_vsib], 0
+    je      .regs
+.masked:
+    cmp     byte [r12 + INST_op0 + OPERAND_mask], 0
+    je      .no_mask
+.regs:
     xor     eax, eax
     cmp     byte [r12 + INST_nops], 2
     jb      .ret
@@ -60,8 +87,12 @@ amd64_gather_check:
     je      .same
     cmp     eax, edx
     je      .same
+.ok:
     xor     eax, eax
 .ret:
+    ret
+.no_mask:
+    mov     eax, EXIT_VSIB_NO_MASK
     ret
 .same:
     mov     eax, EXIT_GATHER_SAME
