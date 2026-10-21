@@ -40,34 +40,34 @@ This is the same technique used by JIT compilers, but applied to an assembler th
 ## Layered Architecture
 
 ```
-utasm.s / cli.s          ← entry, CLI dispatch
+src/main/utasm.s / src/main/cli.s          ← entry, CLI dispatch
      │
      ▼
-frontend/                ← source text → tokens → AST
+src/frontend/                ← source text → tokens → AST
   lexer/                   character stream → token stream
   parser/                  token stream → parse tree
   macro/                   preprocessing, expansion, conditionals
      │
      ▼
-middle/                  ← AST → validated, resolved IR
+src/semantic/                  ← AST → validated, resolved IR
   semantic/                type checking, operand validation
   symtable/                O(1) hash table, forward references
   expr/                    constant folding, reloc expressions
      │
      ▼
-backend/                 ← IR → binary output
+src/                 ← IR → binary output
   encoder/                 instruction → bytes (arch-specific)
   isa/                     instruction tables per arch
   linker/                  section layout, relocation, symbol resolution
   output/                  ELF64 / PE32+ / flat / .upk emission
      │
      ▼
-error/                   ← runs at all stages, independent of pipeline
-cpu/                     ← CPU profile validation, feature flags
-debug/                   ← DWARF v5 emission
-optimizer/               ← post-encoding passes
-selfpatch/               ← runtime binary modification
-profiler/                ← RDTSC-based hot path measurement
+src/diag/                   ← runs at all stages, independent of pipeline
+src/planned/cpu/                     ← CPU profile validation, feature flags
+src/debug/                   ← DWARF v5 emission
+src/optimize/               ← post-encoding passes
+src/planned/selfpatch/               ← runtime binary modification
+src/profile/                ← RDTSC-based hot path measurement
 ```
 
 ### Why This Layering?
