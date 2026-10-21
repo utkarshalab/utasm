@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/call.s
+// TEST: tests/asm/riscv64/call.s
 // Suite: RISC-V 64 Core
 // Purpose: Function call instruction coverage.
 //   Covers: JAL, JALR, pseudo: CALL, TAIL, RET.
