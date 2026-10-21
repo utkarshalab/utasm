@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/interrupt.s
+// TEST: tests/asm/aarch64/interrupt.s
 // Suite: AArch64 System
 // Purpose: Exception generation and interrupt instruction coverage.
 //   Covers: BRK, HLT, SVC, HVC, SMC, ERET — all immediate values.
