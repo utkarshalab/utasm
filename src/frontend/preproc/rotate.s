@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : frontend/macro/rotate.s
+; File        : src/frontend/preproc/rotate.s
 ; Project     : utasm
 ; Description : %rotate - rotate the parameters of the current macro call.
 ;
@@ -17,8 +17,8 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
 
 extern  parser_evaluate_pp
 
