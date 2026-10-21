@@ -774,7 +774,7 @@ def limit_cases():
 
 
 # ---------------------------------------------------------------------------
-# robustness: inputs that crashed or hung utasm (found by scripts/compat/
+# robustness: inputs that crashed or hung utasm (found by tests/compat/
 # fuzz.py, cut down): utasm must finish, without an internal error, and
 # accept or reject each as NASM does. (name, source, format, options)
 # ---------------------------------------------------------------------------
@@ -971,7 +971,7 @@ BIN_PROBES.update({
 
 
 # labels defined later, in instructions: the short forms NASM gives once it
-# knows the value (the second pass, core/known.s)
+# knows the value (the second pass, src/core/known.s)
 EXPR_BIN.update({
     "distance_imm": "bits 64\nadd rsp, (l2 - l1)\nnop\nl1: times 16 db 0\nl2:\n",
     "distance_disp": "bits 64\nmov eax, [rbx + (l2 - l1)]\nl1: dd 1\nl2:\n",
@@ -1094,7 +1094,7 @@ LINT_CASES = [
     ("slash-comment off", "bits 64\nmov eax, -7 // 2\n", ["-w-slash-comment"], {}, [2]),
 ]
 
-# -f win64 (scripts/compat/suites.py coff): objects compared field by field
+# -f win64 (tests/compat/suites.py coff): objects compared field by field
 COFF_CASES = {
     "basic": "global main\nextern printf\nsection .text\nmain:\n sub rsp, 40\n lea rcx, [rel msg]\n call printf\n"
              " add rsp, 40\n ret\nsection .data\nmsg: db 'hi', 10, 0\nsection .bss\nbuf: resb 16\n",
@@ -1246,7 +1246,7 @@ WARN_CASES.update({
     "warn_macro_redef": "%macro m 0\nnop\n%endmacro\n%macro m 0\nint3\n%endmacro\n%macro m 1\nnop\n%endmacro\nm\n",
 })
 
-# .cfi_ directives (scripts/compat/suites.py cfi): GAS's source, utasm's,
+# .cfi_ directives (tests/compat/suites.py cfi): GAS's source, utasm's,
 # the mode; .eh_frame compared byte for byte
 CFI_CASES = {
     'basic': ('\t.text\n\t.globl f\nf:\n\t.cfi_startproc\n\tpushq %rbp\n\t.cfi_def_cfa_offset 16\n\t.cfi_offset %rbp, -16\n\tmovq %rsp, %rbp\n\t.cfi_def_cfa_register %rbp\n\tnop\n\tpopq %rbp\n\t.cfi_def_cfa %rsp, 8\n\tret\n\t.cfi_endproc\n',
@@ -1798,7 +1798,7 @@ TLS_CASES = [
 REJECT_CASES += [
     ("tlsie not RIP-relative", "elf64", "extern x\nsection .text\nmov rax, [x wrt ..tlsie]\n"),
 ]
-# batch 49 (scripts/compat/encfuzz.py's findings): EVEX's disp8*N in 16-bit
+# batch 49 (tests/compat/encfuzz.py's findings): EVEX's disp8*N in 16-bit
 # addressing, 3DNow!, the legacy forms the hand encoders had wrong, CMPccXADD,
 # gathers in bits 32, immediates out of range (cut, as NASM, with its warning)
 BIN_PROBES.update({
@@ -1863,7 +1863,7 @@ READBACK_CASES = [
     ("vfmadd132ps xmm1, xmm2", None, "invalid combination"),
 ]
 
-# batch 50: GNU as's directives (frontend/parser/gas.s), the same source by
+# batch 50: GNU as's directives (src/frontend/syntax/gas/gas.s), the same source by
 # GNU as (".intel_syntax noprefix" first) and by utasm - (name, source)
 GAS_CASES = [
     ("data", ".data\nd1: .byte 1, 2, 3\n.short 0x1234\n.word 5\n.hword 6\n.value 7\n.2byte 8\n"
@@ -1938,7 +1938,7 @@ GAS_ERRORS = [
     (".data\n.base64 \"aGV$sbG8=\"", "invalid character found inside .base64 string"),
 ]
 # batch 51: GNU as's macros, repetitions and conditionals
-# (frontend/parser/gas_macro.s), and its rip addressing
+# (src/frontend/syntax/gas/gas_macro.s), and its rip addressing
 GAS_CASES += [
     ("macros", r'''.text
 .macro push2 a, b
@@ -2249,7 +2249,7 @@ top:
 ]
 
 # batch 53: FASM's virtual / load / store / defined and "NAME = EXPR"
-# (frontend/parser/fasm.s) - (name, source, the flat binary's bytes in hex),
+# (src/frontend/syntax/fasm/fasm.s) - (name, source, the flat binary's bytes in hex),
 # or (name, source, None, the error)
 FASM_CASES = [
     ("virtual load", "bits 64\nvirtual at 0\nmov eax, ebx\nlen = $\nload op byte from 0\n"
@@ -2275,7 +2275,7 @@ FASM_CASES = [
     ("assign a label", "label: nop\nlabel = 5\n", None, "inconsistently redefined"),
 ]
 
-# batch 54: MASM's PROC / LOCAL / INVOKE / .IF & co (frontend/parser/masm.s)
+# batch 54: MASM's PROC / LOCAL / INVOKE / .IF & co (src/frontend/syntax/masm/masm.s)
 # - a program that uses all of them, its exit status their sum; then each
 # error
 MASM_PROGRAM = (r"""bits 64
@@ -2411,7 +2411,7 @@ hlt
 """, ["cmp eax,ebx", "jge", "jb", "je", "test eax,0x4", "je"]),
 ]
 
-# batch 55: MASM's typed data and STRUCT (frontend/parser/masm.s) - a
+# batch 55: MASM's typed data and STRUCT (src/frontend/syntax/masm/masm.s) - a
 # program reading them (its exit status), each error, and the text made
 MASM_DATA_PROGRAM = (r"""bits 64
 %use masm
@@ -2541,7 +2541,7 @@ REJECT_CASES += [
     ("cpu_read in 64-bit", "bin", "bits 64\ncpu_read\n"),
 ]
 
-# AT&T syntax (frontend/parser/att.s, --att): each line assembled by GNU as and
+# AT&T syntax (src/frontend/syntax/gas/att.s, --att): each line assembled by GNU as and
 # by utasm --att - the same .text bytes and relocation types (suites.att)
 ATT_LINES_64 = r'''
 fsub %st, %st(1)
@@ -2904,7 +2904,7 @@ ELF_PROBES.update({
 })
 
 # batch 64: GNU's .file N / .loc - the line table GNU as makes of them
-# (debug/line.s), byte for byte: DWARF 5 (.file 0) and 3, every .loc
+# (src/debug/line.s), byte for byte: DWARF 5 (.file 0) and 3, every .loc
 # option, views (.LVUn, 0, -0), several code sections, a .loc in data
 # used by the next instruction, long steps; a .debug_info of the source's
 # (GNU as makes its own without one: not done)
@@ -2987,7 +2987,7 @@ ATT_ERRORS += [
 ]
 
 # batch 64: a view only padding decides (worked out in the second pass,
-# core/known.s), a row and a label just before padding that grows (they
+# src/core/known.s), a row and a label just before padding that grows (they
 # stay before it), a jump shortened under them
 ATT_FILES += [
     ("loc view after padding", r"""	.text
@@ -3143,7 +3143,7 @@ DISASM_APX = "bits 64\n" + "".join(
     for l in BIN_PROBES[k].splitlines()
     if l and not l.startswith("bits") and "cr0" not in l and "tile" not in l and not l.startswith("xchg r16, rax")
     and "ds," not in l and ", ds" not in l)
-# utasm's procedures (middle/semantic/proc.s): name, source, options,
+# utasm's procedures (src/semantic/proc.s): name, source, options,
 # {line: (warning | error, text)}, lines with nothing, the exit code (0 / non-0)
 PROC_CASES = [
     ("balanced", "bits 64\nproc f uses rbx, r12\npush rbx\npush r12\nmov rbx, rdi\nmov r12, rsi\npop r12\n"
@@ -3187,7 +3187,7 @@ PROC_CASES = [
     ("endproc alone", "bits 64\nendproc\n", [], {2: ("error", "endproc with no proc")}, [], 1),
     ("never closed", "bits 64\nproc f\nret\n", [], {0: ("error", "proc has no endproc")}, [], 1),
 ]
-# utasm's typed struc access, "[reg:TYPE].field" (frontend/parser/parser.s
+# utasm's typed struc access, "[reg:TYPE].field" (src/frontend/syntax/nasm/parser.s
 # parser_typed_field): name, the lines after PACKET's definition, the bytes
 # (-f bin), or None and the error the line must give
 TYPED_STRUC = ("bits 64\nstruc PACKET\n.len: resd 1\n.flags: resw 1\n.kind: resb 1\n.ptr: resq 1\n"
@@ -3212,7 +3212,7 @@ TYPED_STRUC_CASES = [
     ("a number for the type", "mov eax, [rbx:5].len\n", None, "unexpected token"),
     ("no term before it", "mov eax, [rbx + :PACKET].len\n", None, "expression syntax error"),
 ]
-# utasm's namespaces and modules (middle/semantic/namespace.s): name, the
+# utasm's namespaces and modules (src/semantic/namespace.s): name, the
 # files ({name: text}, t.s assembled), the bytes (-f bin), or None and the
 # error it must give
 NS_NET = ("module net\nexport send, MTU\nMTU equ 1500\nsend:\n    call helper\n    call later\n    ret\n"
@@ -3292,7 +3292,7 @@ ISA_ERRORS = [
     ("urdmsr rax, -1", "invalid combination of opcode and operands"),
 ]
 # instructions that take no operands, given some: NASM's error (utasm wrote
-# the opcode and dropped them - backend/encoder/tables/noops.s)
+# the opcode and dropped them - src/encode/x86/noops.s)
 REJECT_CASES += [
     ("cpuid with an operand", "bin", "bits 64\ncpuid eax\n"),
     ("hlt with an operand", "bin", "bits 64\nhlt 5\n"),
