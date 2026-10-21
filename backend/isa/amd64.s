@@ -2131,6 +2131,7 @@ mnc_tb_x64:
     mnc_ent "ffreep", 0, 7020
     mnc_ent "fndisi", 0, 7021
     mnc_ent "fneni", 0, 7022
+    mnc_ent "fnsetpm", 0, 7896
     mnc_ent "fsetpm", 0, 7023
     mnc_ent "getsec", 0, 7024
     mnc_ent "hint_nop0", 0, 7025
@@ -2633,6 +2634,8 @@ mnc_tb_x64:
     mnc_ent "vmovrsq", 0, 7748
     mnc_ent "vmovrsw", 0, 7749
     mnc_ent "vmulbf16", 0, 7750
+    mnc_ent "vp4dpwssd", 0, 7897
+    mnc_ent "vp4dpwssds", 0, 7898
     mnc_ent "vpbroadcastmb2q", 0, 7356
     mnc_ent "vpbroadcastmw2d", 0, 7357
     mnc_ent "vpcmov", 0, 7358
