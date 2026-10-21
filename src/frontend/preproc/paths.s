@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : frontend/macro/paths.s
+; File        : src/frontend/preproc/paths.s
 ; Project     : utasm
 ; Description : Include search paths (-I) and the files a source depends on.
 ;
@@ -15,8 +15,8 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
 
 ; bss: only the pages used are committed
 %define MAX_INCPATHS    (1 << 16)       ; -I directories (argv strings)
