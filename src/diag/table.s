@@ -1,4 +1,4 @@
-; error/table.s
+; src/diag/table.s
 ; Phase 1 — error code constants (E1xx–E9xx) and message string table
 ;
 ; Layout:
@@ -13,8 +13,8 @@
 ;   - tables are arrays of dq pointers, one per slot
 ;   - unknown/gap slots point to err_msg_unknown
 
-%include "include/constant.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/macro.inc"
 
 ; ============================================================================
 ; Section 1 — Error code constants
