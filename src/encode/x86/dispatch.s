@@ -1,11 +1,11 @@
 ;
 ; ============================================================================
-; File        : backend/encoder/dispatch.s
+; File        : src/encode/x86/dispatch.s
 ; Project     : utasm
 ; Description : Table-driven AMD64 encoder.
 ;
-;   The instruction forms live in backend/encoder/tables/opcode.s, which
-;   scripts/gen_x86_enc.py generates from the same opcode map the
+;   The instruction forms live in src/encode/x86/gen/opcode.s, which
+;   scripts/gen/gen_x86_enc.py generates from the same opcode map the
 ;   disassembler decodes with. amd64_encode_instruction tries this encoder
 ;   first; when no form of the mnemonic fits the operands it falls back to
 ;   the hand-written encoders in encoder.s.
@@ -17,9 +17,9 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/arch/amd64.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/arch/amd64.inc"
 
 extern  x86_enc_types
 extern  x86_enc_index
@@ -31,7 +31,7 @@ extern  amd64_disp8n
 extern  amd64_force_sib
 extern  asm_bits
 
-; ---- operand classes (C_* in scripts/gen_x86_enc.py) ----
+; ---- operand classes (C_* in scripts/gen/gen_x86_enc.py) ----
 %define C_GPR       1
 %define C_XMM       2
 %define C_YMM       3
