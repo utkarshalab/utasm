@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/simd.s
+// TEST: tests/asm/amd64/simd.s
 // Suite: AMD64 SIMD
 // Purpose: SSE/SSE2/SSE4, AVX (VEX-128), AVX2 (VEX-256), FMA coverage.
 //   Exercises XMM (128-bit) and YMM (256-bit) registers.
