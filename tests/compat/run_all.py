@@ -15,7 +15,7 @@ scale in addresses,
 the encoder corpus (also under bits 32 and bits 16), operand shapes (valid
 and invalid pairings), and the disassembler against objdump.
 
-usage: scripts/compat/run_all.py [utasm-binary] [--quick] [-v]
+usage: tests/compat/run_all.py [utasm-binary] [--quick] [-v]
        --quick  skips the encoder corpus, the operand shapes, the addresses and the
                 disassembler
                 (the slow ones)
