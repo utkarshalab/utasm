@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/common/macro.s
+// TEST: tests/asm/common/macro.s
 // Suite: Common Preprocessor
 // Purpose: Basic %macro coverage.
 // Expected: EXIT_OK.
