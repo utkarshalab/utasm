@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/exception.s
+// TEST: tests/asm/amd64/exception.s
 // Suite: AMD64 System
 // Purpose: Exception-generating instruction coverage.
 //   Covers: BOUND, DIV (div-by-zero path), IDIV, overflow idioms,
