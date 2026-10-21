@@ -2,6 +2,20 @@
 
 ---
 
+## Before You Change a Module
+
+Read its README first: every folder under `src/` has one
+([src/README.md](src/README.md) is the map) — what the module does, how,
+each file, its entry points and who calls them, what is left to do, and
+which tests cover it.
+
+Keep it true. When you add, move or remove a file, update the module's
+**Files** table; `scripts/check_readmes.py` (run by `tests/run.sh`) fails
+when a table and its folder disagree. When behaviour, an entry point or the
+status changes, change the README in the same commit.
+
+---
+
 ## Code Style
 
 ### Assembly Rules
