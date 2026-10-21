@@ -1,15 +1,15 @@
 ;
 ; ============================================
-; File     : frontend/parser/gas.s
+; File     : src/frontend/syntax/gas/gas.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 DEFAULT REL
 
@@ -50,11 +50,11 @@ DEFAULT REL
 ;   .intel_syntax                 ptr, flat and offset as %use masm's
 ;                                 ("DWORD PTR x[rip]", "OFFSET FLAT:x")
 ;   .file "NAME"                  the object's FILE symbol
-;   .file N ..., .loc N L ...     the line table (debug/line.s)
+;   .file N ..., .loc N L ...     the line table (src/debug/line.s)
 ;   .arch                         taken, nothing done
-;   .att_syntax [noprefix]        AT&T syntax from here (frontend/parser/att.s)
+;   .att_syntax [noprefix]        AT&T syntax from here (src/frontend/syntax/gas/att.s)
 ;   .macro .endm .exitm .purgem .rept .irp .irpc .endr, .if & co, .else,
-;   .elseif, .endif               frontend/parser/gas_macro.s
+;   .elseif, .endif               src/frontend/syntax/gas/gas_macro.s
 ;
 ; "." alone in an expression is $ (parser.s), as GNU writes the location.
 ; A name followed by a NASM word ("equ", "resd", "db", "times") is a label
@@ -113,7 +113,7 @@ extern  gas_repeat, gas_if, gas_else, gas_endif
 %define G_OCTA       22
 %define G_IDENT      23
 %define G_INTEL      24
-%define G_MACRO      25             ; frontend/parser/gas_macro.s
+%define G_MACRO      25             ; src/frontend/syntax/gas/gas_macro.s
 %define G_STRAY      26             ; .endm / .endr out of place
 %define G_EXITM      27
 %define G_PURGEM     28
@@ -295,7 +295,7 @@ gas_minus:      resb TOKEN_SIZE     ; a "-" in it, to put back
 alignb 8
 global gas_file_name
 gas_file_name:  resq 1              ; .file "NAME": the FILE symbol's name
-align_from:     resq 1              ; an alignment's start (debug/line.s)
+align_from:     resq 1              ; an alignment's start (src/debug/line.s)
 LCOMM_MAX equ 65536
 lcomm_tab:      resb 32 * LCOMM_MAX ; the .lcomm blocks: name, size, align,
 lcomm_n:        resq 1              ; section (lcomm_place)
@@ -422,7 +422,7 @@ gas_directive:
     mov     rdx, rax
     jmp     .done_rdx
 .not_gm:
-    ; .loc: a row of the line table (debug/line.s)
+    ; .loc: a row of the line table (src/debug/line.s)
     cmp     r14d, 2
     jne     .not_loc
     mov     rdi, rbx
@@ -906,7 +906,7 @@ gas_directive:
 .leb:
     ; numbers, each LEB128 (r14: 1 signed). One that measures code ("b - a"
     ; of labels jumps lie between, as GCC's -g writes them) comes from the
-    ; code laid out: the second pass has it (core/known.s), this one writes
+    ; code laid out: the second pass has it (src/core/known.s), this one writes
     ; a byte for it
 .leb_next:
     extern  expr_late_diff, known_active, known_guessed
@@ -1019,7 +1019,7 @@ gas_directive:
 .align_go:
     ; more padding than MAX: none (GNU's). In code, once jumps are made
     ; short: MAX goes with the fill spec (its bits 10-15: MAX + 1), the
-    ; padding worked out as the code moves (core/asmctx.s, jump.s rx_cap);
+    ; padding worked out as the code moves (src/core/asmctx.s, jump.s rx_cap);
     ; elsewhere - or MAX past 62 - as the code stands when it is read
     test    r14, r14
     jz      .align_do
@@ -1090,7 +1090,7 @@ gas_directive:
     mov     edi, 2
     call    lst_mark
 .align_frag:
-    ; GNU as's frag ends where the padding starts (debug/line.s)
+    ; GNU as's frag ends where the padding starts (src/debug/line.s)
     mov     rsi, [rel align_from]
     mov     rax, [rbx + PREP_ctx]
     mov     rax, [rax + ASMCTX_curr_sec]
@@ -1518,7 +1518,7 @@ gas_directive:
     jmp     .done_rdx
 
 .att:
-    ; AT&T syntax from here (frontend/parser/att.s); "noprefix": registers
+    ; AT&T syntax from here (src/frontend/syntax/gas/att.s); "noprefix": registers
     ; without their %
     extern  att_on, att_noprefix, gas_names
     mov     byte [rel att_on], 1
