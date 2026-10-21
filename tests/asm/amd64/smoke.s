@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/smoke.s
+// TEST: tests/asm/amd64/smoke.s
 // Suite: AMD64 Core
 // Purpose: Minimal smoke check — verifies the assembler pipeline can parse
 //          and emit a trivial instruction sequence without crashing.
