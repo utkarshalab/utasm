@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/common/include.s
+// TEST: tests/asm/common/include.s
 // Suite: Common Preprocessor
 // Purpose: %inc (include) coverage.
 // Expected: EXIT_OK.
@@ -7,7 +7,7 @@
 
 // Assume there is a file to include or we use a relative path
 // For testing purposes, we assume include/constant.s exists
-%inc "include/constant.inc"
+%inc "src/include/constant.inc"
 
 [SECTION .text]
     // Use a constant defined in the included file
