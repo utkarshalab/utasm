@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : src/core/parser.s
+; File        : src/frontend/syntax/nasm/parser.s
 ; Project     : utasm
 ; Description : Multi-Architecture Instruction Parser and Dispatch System.
 ; ============================================================================
