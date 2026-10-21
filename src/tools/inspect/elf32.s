@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : tools/inspector/elf32.s
+; File        : src/tools/inspect/elf32.s
 ; Project     : utasm
 ; Description : An ELF32 file read as ELF64 (--inspect, --disasm).
 ;
@@ -15,10 +15,10 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
-%include "include/elf.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
+%include "src/include/elf.inc"
 
 DEFAULT REL
 
