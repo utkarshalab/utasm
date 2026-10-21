@@ -8,10 +8,10 @@
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
-%include "include/inspect.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
+%include "src/include/inspect.inc"
 
 DEFAULT REL
 
@@ -87,7 +87,7 @@ cli_parse:
     test    rax, rax
     jz      .handle_version
 
-    ; --lsp: the language server (tools/lsp/lsp.s)
+    ; --lsp: the language server (src/tools/lsp/lsp.s)
     mov     rdi, r14
     lea     rsi, [rel .flag_lsp]
     call    str_cmp
@@ -168,7 +168,7 @@ cli_parse:
     test    rax, rax
     jz      .handle_standalone
 
-    ; --att: AT&T syntax from the start, as GNU as reads (frontend/parser/
+    ; --att: AT&T syntax from the start, as GNU as reads (src/frontend/syntax/
     ; att.s; .intel_syntax turns it off)
     mov     rdi, r14
     lea     rsi, [rel .flag_att]
@@ -182,7 +182,7 @@ cli_parse:
 .not_att:
 
     ; --gdwarf-2 .. --gdwarf-5: the version of the line table GNU's .loc
-    ; directives give (GCC passes it; debug/line.s)
+    ; directives give (GCC passes it; src/debug/line.s)
     mov     rax, '--gdwarf'
     cmp     [r14], rax
     jne     .not_gdwarf
@@ -202,7 +202,7 @@ cli_parse:
 .not_gdwarf:
 
     ; --noexecstack / --execstack / --cet: note sections in an ELF object
-    ; (backend/output/elf/notes.s)
+    ; (src/object/elf/notes.s)
     extern  elf_gnu_stack, elf_cet
     mov     rdi, r14
     lea     rsi, [rel .flag_noexecstack]
@@ -389,7 +389,7 @@ cli_parse:
     je      .unknown_val
 .not_nasm:
 
-    ; "-" alone: the source is read from stdin (utasm.s)
+    ; "-" alone: the source is read from stdin (src/main/utasm.s)
     cmp     word [r14], '-'
     je      .an_input
     ; If it starts with '-', it's an unknown flag
@@ -472,7 +472,7 @@ cli_parse:
     jmp     .unknown_val
 
 .set_win64:
-    ; a COFF object for Windows (backend/output/coff/coff.s rewrites the
+    ; a COFF object for Windows (src/object/coff/coff.s rewrites the
     ; ELF64 object), in bits 64
     extern  elf32_enabled, asm_bits, coff_enabled
     mov     byte [rel elf32_enabled], 0
@@ -481,7 +481,7 @@ cli_parse:
     jmp     .set_elf
 
 .set_elf32:
-    ; an i386 object (backend/output/elf/elf32.s), in bits 32 by default
+    ; an i386 object (src/object/elf/elf32.s), in bits 32 by default
     extern  elf32_enabled, asm_bits, coff_enabled
     mov     byte [rel elf32_enabled], 1
     mov     byte [rel coff_enabled], 0
@@ -924,7 +924,7 @@ cli_parse.exit:
 ;   -w+x, -w-x, -Wx, -Wno-x warning classes on / off ("all": every one);
 ;                           -w+error[=x], -Werror[=x]: warnings are errors
 ;   -X gnu | -X vc          message style: file:line: / file(line) :
-;   -X json                 each message a JSON object (error/json.s)
+;   -X json                 each message a JSON object (src/diag/json.s)
 ;   -s                      messages on stdout; -Z file: into a file
 ;   -l file                 the listing: lines, offsets and bytes
 ;   -g, -F dwarf            DWARF debug information (ELF objects)
@@ -1096,7 +1096,7 @@ cli_nasm_option:
 
 .warn:
     ; -w+class, -w-class, -Wclass, -Wno-class, -w+error[=class]: the
-    ; warning classes (error/warnings.s)
+    ; warning classes (src/diag/warnings.s)
     mov     rdi, r12
     extern  warn_option
     call    warn_option
@@ -1120,7 +1120,7 @@ cli_nasm_option:
     mov     ecx, 1
     test    rax, rax
     jz      .style_set
-    ; -X json: each message a JSON object (error/json.s), placed as gnu's
+    ; -X json: each message a JSON object (src/diag/json.s), placed as gnu's
     mov     rdi, [rsp]
     lea     rsi, [rel .s_json]
     call    str_cmp
@@ -1206,7 +1206,7 @@ cli_nasm_option:
     call    str_cmp
     test    rax, rax
     jz      .before
-    ; --map FILE: the map file, all of it (backend/output/map.s)
+    ; --map FILE: the map file, all of it (src/object/map.s)
     mov     rdi, r12
     lea     rsi, [rel .s_map]
     call    str_cmp
