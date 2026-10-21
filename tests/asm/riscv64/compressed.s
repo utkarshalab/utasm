@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/riscv64/compressed.s
+// TEST: tests/asm/riscv64/compressed.s
 // Suite: RISC-V 64 Core
 // Purpose: Compressed extension (C) instruction coverage.
 // Expected: EXIT_OK.
