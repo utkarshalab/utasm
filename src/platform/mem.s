@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : src/host/mem.s
+; File        : src/platform/mem.s
 ; Project     : utasm
 ; Description : Host memory management interface.
 ;                Thin syscall wrappers for mmap/munmap with a simple
