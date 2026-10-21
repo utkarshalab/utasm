@@ -7,9 +7,9 @@
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 extern arena_init
 extern arena_alloc
@@ -64,7 +64,7 @@ stdin_memfd:   db "utasm-stdin", 0
 ; ---- utasm_stdin -------------------------
 ; The source from stdin ("-"): fd 0, at its start, mapped as a file is.
 ; A pipe is copied into a memfd first, which becomes fd 0, so the second
-; pass (core/known.s), which runs utasm again, reads it too.
+; pass (src/core/known.s), which runs utasm again, reads it too.
 ; Output: rax = 0 and rdx = 0 (the fd), or an error
 utasm_stdin:
     push    r12
@@ -141,7 +141,7 @@ _start:
     mov     rbp, rsp
     and     rsp, -16               ; Align stack
 
-    ; a fault in utasm is reported as an internal error (core/crash.s)
+    ; a fault in utasm is reported as an internal error (src/core/crash.s)
     extern  crash_install
     call    crash_install
 
@@ -151,7 +151,7 @@ _start:
     ; the environment follows argv and its NULL (%ifenv)
     lea     rax, [r13 + r12*8 + 8]
     mov     [rel utasm_envp], rax
-    mov     [rel utasm_argv], r13          ; to run again (core/known.s)
+    mov     [rel utasm_argv], r13          ; to run again (src/core/known.s)
     extern  known_init
     call    known_init                     ; pass 2 of two?
 
@@ -192,15 +192,15 @@ _start:
     call    cli_parse
     test    rax, rax
     jnz     .show_usage
-    ; -X json: stderr a pipe to the JSON writer (error/json.s) - before
+    ; -X json: stderr a pipe to the JSON writer (src/diag/json.s) - before
     ; diag_init, which then sees no terminal there
     extern  diag_json_start
     call    diag_json_start
-    ; on a terminal, messages show the line and explain (error/format)
+    ; on a terminal, messages show the line and explain (src/diag/source.s)
     extern  diag_init
     call    diag_init
 
-    ; --lsp: the language server instead (tools/lsp/lsp.s; it exits)
+    ; --lsp: the language server instead (src/tools/lsp/lsp.s; it exits)
     extern  cli_lsp, lsp_main
     cmp     byte [rel cli_lsp], 0
     jne     lsp_main
@@ -402,7 +402,7 @@ _start:
     jmp     .check_enc
 
 .call_amd64:
-    ; a GNU .loc waiting: its row is this instruction's (debug/line.s)
+    ; a GNU .loc waiting: its row is this instruction's (src/debug/line.s)
     extern  line_pending, line_insn
     cmp     byte [rel line_pending], 0
     je      .amd64_encode
@@ -414,7 +414,7 @@ _start:
     test    rax, rax
     jnz     .check_enc
 .amd64_encode:
-    ; inside a proc: its stack and preserved registers (middle/semantic/proc.s)
+    ; inside a proc: its stack and preserved registers (src/semantic/proc.s)
     extern  proc_active, proc_insn
     cmp     byte [rel proc_active], 0
     je      .no_proc_insn
@@ -425,7 +425,7 @@ _start:
 .no_proc_insn:
     extern  amd64_encode_tracked
     call    amd64_encode_tracked
-    ; GNU's syntax: the last statement an instruction (frontend/parser/gas.s)
+    ; GNU's syntax: the last statement an instruction (src/frontend/syntax/gas/gas.s)
     extern  gas_names, gas_insn_done
     cmp     byte [rel gas_names], 0
     je      .gas_noted
@@ -436,7 +436,7 @@ _start:
     pop     rax
     pop     rax
 .gas_noted:
-    ; a jump GNU as relaxes ends its frag (debug/line.s)
+    ; a jump GNU as relaxes ends its frag (src/debug/line.s)
     extern  line_active, line_insn_done
     cmp     byte [rel line_active], 0
     je      .check_enc
@@ -465,7 +465,7 @@ _start:
     jmp     .assembly_loop
 
 .finish_assembly:
-    ; errors from here on come with the warnings (error/warnings.s)
+    ; errors from here on come with the warnings (src/diag/warnings.s)
     extern  warn_final
     mov     byte [rel warn_final], 1
     ; what needs the whole source read ("global f:function (size)")
@@ -480,13 +480,13 @@ _start:
     call    gas_macro_finish
     test    rax, rax
     jnz     .error_in_parser
-    ; a proc with no endproc (middle/semantic/proc.s)
+    ; a proc with no endproc (src/semantic/proc.s)
     extern  proc_finish
     call    proc_finish
     test    rax, rax
     jnz     .error_in_parser
     ; namespaces: names used before their definition, private names
-    ; (middle/semantic/namespace.s)
+    ; (src/semantic/namespace.s)
     extern  ns_finish
     call    ns_finish
     test    rax, rax
@@ -521,7 +521,7 @@ _start:
     jmp     .exit
 .link:
     ; constants used before their definition: assemble again knowing them,
-    ; as NASM's passes would (core/known.s); nothing is written before this
+    ; as NASM's passes would (src/core/known.s); nothing is written before this
     lea     rdi, [rel global_ctx]
     extern  prep_unshadow
     call    prep_unshadow                  ; equ values a %define hid
@@ -691,7 +691,7 @@ _start:
 
 .error_in_encoder:
     ; "file:line: error: <message>" for the statement being encoded, and
-    ; what its operands were (error/format/source.s)
+    ; what its operands were (src/diag/source.s)
     extern  diag_inst
     mov     [rel diag_inst], r12
     mov     r15, rax
@@ -782,7 +782,7 @@ print_str:
     inc     rdx
     jmp     .len_loop
 .len_done:
-    ; a warning being written is held (error/warnings.s)
+    ; a warning being written is held (src/diag/warnings.s)
     cmp     rbx, 2
     jne     .write
     extern  stderr_hold, warn_hold_put
