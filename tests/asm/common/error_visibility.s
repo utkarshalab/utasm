@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/common/error_visibility.s
+// TEST: tests/asm/common/error_visibility.s
 // Suite: Common Parser Security
 // Purpose: Verify detection of symbol visibility binding conflicts.
 // Expected: EXIT_VISIBILITY_CONFLICT.
