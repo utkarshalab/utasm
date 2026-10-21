@@ -1,13 +1,13 @@
 ## UBF boot images (`-f ubf`)
 
-UBF — the Utkarsha Boot Format — is the image the Tattva OS stage-2 boot
+UBF — the Utkarsha Boot Format — is the image the Utkarsha OS stage-2 boot
 loader reads (`tattvaos boot/stage2/fs/ubf.asm`): one container holding the
 kernel and whatever the boot needs next to it — an initial ramdisk, a device
 tree, a configuration, modules, firmware.
 
 ```sh
-utasm -f ubf kernel.s -o tattva.ubf
-utasm -f ubf kernel.s -o tattva.ubf \
+utasm -f ubf kernel.s -o utkarsha.ubf
+utasm -f ubf kernel.s -o utkarsha.ubf \
       --ubf-add config=boot.cfg@0x200000 \
       --ubf-add initrd=initrd.img@0x300000
 ```
@@ -67,7 +67,7 @@ and the digests are there for it (or a verifier) to check the image.
 
 ### Checks
 
-`scripts/compat/run_all.py` (the *ubf images* suite) builds an image with a
+`tests/compat/run_all.py` (the *ubf images* suite) builds an image with a
 kernel and two added components and checks every field: the CRC against
 zlib's, each digest against Python's hashlib, the sector layout, the load
 addresses, the entry offset, and that the kernel's bytes are the `-f bin`
