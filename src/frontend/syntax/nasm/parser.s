@@ -6,14 +6,14 @@
 ; ============================================================================
 ;
 
-%include "include/constant.inc"
-%include "include/macro.inc"
-%include "include/type.inc"
+%include "src/include/constant.inc"
+%include "src/include/macro.inc"
+%include "src/include/type.inc"
 
 %define SIZE_LATE_CAP  (1 << 20)        ; .size directives kept (parser_size_late)
 DEFAULT REL
-%include "include/elf.inc"
-%include "include/arch/aarch64.inc"
+%include "src/include/elf.inc"
+%include "src/include/arch/aarch64.inc"
 
 extern arena_alloc
 extern float_encode
@@ -475,7 +475,7 @@ parser_parse_instruction:
             ENDIF
         ENDIF
 
-    ; MASM's "NAME PROC ..." / "NAME ENDP" (%use masm: frontend/parser/
+    ; MASM's "NAME PROC ..." / "NAME ENDP" (%use masm: src/frontend/syntax/
     ; masm.s)
     extern  masm_label_word
     mov     rdi, rbx
@@ -489,7 +489,7 @@ parser_parse_instruction:
 .not_masm_label:
 
     ; "NAME = EXPR" (GNU as, FASM, MASM): a constant, which a later "NAME =
-    ; ..." sets again (frontend/parser/gas.s gas_assign) - "==" is no such
+    ; ..." sets again (src/frontend/syntax/gas/gas.s gas_assign) - "==" is no such
     mov     rdi, rbx
     call    preprocessor_peek_token
     check_err
@@ -516,7 +516,7 @@ parser_parse_instruction:
     mov     [rdi + ASMCTX_debug_col], eax
     
     ; AT&T syntax (.att_syntax, --att): the statement, its prefixes too, in
-    ; utasm's syntax, read next (frontend/parser/att.s)
+    ; utasm's syntax, read next (src/frontend/syntax/gas/att.s)
     extern  att_on, att_statement
     cmp     byte [rel att_on], 0
     je      .not_att
@@ -603,7 +603,7 @@ parser_parse_instruction:
     jmp     .get_mnemonic           ; Get the actual mnemonic or next prefix
 
 .lookup_mnemonic:
-    ; MASM's ret in a PROC: its epilogue (frontend/parser/masm.s)
+    ; MASM's ret in a PROC: its epilogue (src/frontend/syntax/masm/masm.s)
     extern  masm_ret
     mov     rdi, rbx
     mov     rsi, [r12 + TOKEN_value]
@@ -615,7 +615,7 @@ parser_parse_instruction:
     jnz     .error
     jmp     .pseudo_op_ok
 .no_masm_ret:
-    ; GNU's .macro names (frontend/parser/gas_macro.s), before the
+    ; GNU's .macro names (src/frontend/syntax/gas/gas_macro.s), before the
     ; mnemonics: a macro may be named as an instruction is
     extern  gm_defined, gas_macro_call
     cmp     qword [rel gm_defined], 0
@@ -946,7 +946,7 @@ parser_parse_instruction:
     mov     rax, EXIT_BRACKET_UNKNOWN
     jmp     .done
 .no_label_word:
-    ; Remember the closest known instruction/directive; utasm.s prints it
+    ; Remember the closest known instruction/directive; src/main/utasm.s prints it
     ; as a hint after the error line ("... expected, found `x'").
     call    error_hint_mnemonic
     mov     rax, EXIT_UNKNOWN_INSTR
@@ -997,7 +997,7 @@ parser_parse_operand:
     call    preprocessor_next_token
     mov     r13, rdx
 
-    ; %use masm (frontend/parser/masm.s): OFFSET X is X's address; a typed
+    ; %use masm (src/frontend/syntax/masm/masm.s): OFFSET X is X's address; a typed
     ; variable ("x DWORD 5") is a memory operand of its type ("mov eax, x")
     cmp     byte [rel masm_hl], 0
     je      .masm_done
@@ -1495,7 +1495,7 @@ parser_parse_operand:
     ; make the operand memory with that segment (not for jmp / call,
     ; where "cs:foo" is no far pointer: NASM's error)
     ; (the register table's ids: cs ds es fs gs ss are 64-69,
-    ; include/arch/amd64.inc)
+    ; src/include/arch/amd64.inc)
     movzx   eax, byte [r12 + OPERAND_reg]
     sub     eax, REG_CS
     cmp     eax, 5
@@ -1995,7 +1995,7 @@ parser_evaluate_additive:
 
         ; "b - a", both labels of one section: the distance is a number now,
         ; so the code between them must keep its size (a frozen range,
-        ; optimizer/jump.s). Anything else freezes the sections involved.
+        ; src/optimize/jump.s). Anything else freezes the sections involved.
         test    r14, r14
         jnz     .diff_other
         test    rcx, rcx
@@ -2021,7 +2021,7 @@ parser_evaluate_additive:
         mov     rdx, [r11 + SYMBOL_value]
         ; in a preprocessor expression ("%if $ - $$ > 510"): the distance
         ; with the jumps between shortened, as NASM's last pass gives it,
-        ; and nothing is kept from moving (core/known.s)
+        ; and nothing is kept from moving (src/core/known.s)
         cmp     byte [rel expr_pp], 0
         je      .diff_keep_range
         extern  known_pp_diff
@@ -2033,7 +2033,7 @@ parser_evaluate_additive:
 .diff_keep_range:
         call    relax_freeze_range
         extern  known_note_diff
-        call    known_note_diff            ; (core/known.s: "len equ $ - msg")
+        call    known_note_diff            ; (src/core/known.s: "len equ $ - msg")
         jmp     .diff_number
 .diff_other:
         ; labels of two sections, or an extern ("dd func - $", "dd e - x"):
@@ -2448,7 +2448,7 @@ parser_evaluate_expression:
     cmp     byte [rel expr_lost], 0
     jne     .top_lost
     ; "end - start" of labels not defined yet, kept as a distance
-    ; (RELOC_OFFSET_MARK): a record too, for a second pass (core/known.s)
+    ; (RELOC_OFFSET_MARK): a record too, for a second pass (src/core/known.s)
     test    r14, r14
     jz      .top_named
     cmp     byte [r14], RELOC_OFFSET_MARK
@@ -2534,7 +2534,7 @@ parser_evaluate_expression:
     mov     [rel expr_last_record], rdx
     xor     r13d, r13d
     xor     r15d, r15d
-    ; pass 2: the value pass 1 found for an instruction's (core/known.s) -
+    ; pass 2: the value pass 1 found for an instruction's (src/core/known.s) -
     ; a number now, checked once the code is laid out (known_verify)
     cmp     byte [rel known_active], 0
     je      .top_out
@@ -2623,7 +2623,7 @@ parser_defer_record:
     mov     [rdx + 16], r12
     lea     eax, [r13d + 1]
     mov     [rdx + 24], eax
-    ; its name across the passes (core/known.s), and pass 1 hands an
+    ; its name across the passes (src/core/known.s), and pass 1 hands an
     ; instruction's on: a second pass can give it its short form
     mov     r12, rdx
     mov     rdi, r14
@@ -3485,7 +3485,7 @@ parser_evaluate_term:
         jnz     .done
         ; Multiplication wraps modulo 2^64 rather than erroring: hash
         ; constructions such as FNV-1a rely on it, including the
-        ; compile_time_hash tables in backend/isa/*.s.
+        ; compile_time_hash tables in src/encode/*.s.
         imul    r12, rdx
         jmp     .loop
     ELSEIF al, e, TOK_SLASH
@@ -4053,7 +4053,7 @@ parser_evaluate_factor:
 .not_masm_offset_word:
     mov     al, TOK_IDENT
 .not_masm_offset:
-    ; %use masm's SIZEOF / LENGTHOF / TYPE X (frontend/parser/masm.s)
+    ; %use masm's SIZEOF / LENGTHOF / TYPE X (src/frontend/syntax/masm/masm.s)
     cmp     byte [rel masm_hl], 0
     je      .not_size_op
     cmp     al, TOK_IDENT
@@ -4112,7 +4112,7 @@ parser_evaluate_factor:
     jne     .not_gas_dot
     mov     al, TOK_DOLLAR
 .not_gas_dot:
-    ; FASM's "defined NAME" / "defined(NAME)": 1 or 0 (frontend/parser/
+    ; FASM's "defined NAME" / "defined(NAME)": 1 or 0 (src/frontend/syntax/
     ; fasm.s) - "defined" alone is a name
     cmp     al, TOK_IDENT
     jne     .not_defined_op
@@ -4264,7 +4264,7 @@ parser_evaluate_factor:
         jnz     .pos_start
         mov     qword [rel expr_coeff], 1  ; $ moves with itself
 .pos_start:
-        inc     qword [rel known_pos_uses]  ; a position (core/known.s)
+        inc     qword [rel known_pos_uses]  ; a position (src/core/known.s)
         xor     rax, rax
         jmp     .done
     ELSEIF al, e, TOK_IDENT
@@ -4346,7 +4346,7 @@ parser_evaluate_factor:
 .sym_defined:
             mov     r15, rdx               ; return SYMBOL* in r11 (A78)
             ; a position (a label, or an equ derived from one) in an equ
-            ; makes it depend on the layout (core/known.s)
+            ; makes it depend on the layout (src/core/known.s)
             cmp     word [rdx + SYMBOL_section], SHN_ABS
             jne     .pos_use
             test    byte [rdx + SYMBOL_pflags], SYMF_POSDEP
@@ -4360,7 +4360,7 @@ parser_evaluate_factor:
             xor     rax, rax
             ELSE
             ; not defined yet: the second pass knows it if it is a
-            ; constant (core/known.s), the first notes it
+            ; constant (src/core/known.s), the first notes it
             extern  known_lookup, known_note_forward
             inc     qword [rel known_fwd_uses]     ; (NASM: unknown in pass 1)
             call    known_lookup
@@ -6172,7 +6172,7 @@ parser_gas_symbol:
 
 ;*
 ; * [parser_size_late]
-; * Purpose: GNU's ".size NAME, EXPR" (frontend/parser/gas.s): EXPR kept
+; * Purpose: GNU's ".size NAME, EXPR" (src/frontend/syntax/gas/gas.s): EXPR kept
 ; *   and worked out once jumps are made short (parser_sizes, after
 ; *   relax_run). ".-f" taken when it is read froze the code it spans -
 ; *   GCC writes one after every function, so no jump in any was made
@@ -6312,7 +6312,7 @@ parser_size_late:
 ;*
 ; * [parser_sizes]
 ; * Purpose: The sizes parser_size_late kept, from the code as it is once
-; *   jumps are made short (backend/linker/linker.s, after relax_run).
+; *   jumps are made short (src/link/linker.s, after relax_run).
 ; * Output : RAX = OK or an error
 ; ;
 global parser_sizes
@@ -6871,7 +6871,7 @@ str_abs: db "abs", 0
 ;*
 ; * [parser_is_reg_name]
 ; * Purpose: Is the word one of the target's registers? (AT&T's noprefix:
-; *   frontend/parser/att.s)
+; *   src/frontend/syntax/gas/att.s)
 ; * Input  : RDI = the word
 ; * Output : EAX = 1 / 0. Preserves rbx, r12-r15.
 ; ;
@@ -8067,13 +8067,13 @@ parser_parse_struc:
 global parser_define_label
 parser_define_label:
     prologue
-    ; inside a namespace: its full name, net::x (middle/semantic/namespace.s)
+    ; inside a namespace: its full name, net::x (src/semantic/namespace.s)
     extern  ns_qualify
     mov     edx, 1
     call    ns_qualify
     push    rbx
     push    rsi
-    ; inside a proc: a place paths meet (middle/semantic/proc.s)
+    ; inside a proc: a place paths meet (src/semantic/proc.s)
     extern  proc_active, proc_label
     cmp     byte [rel proc_active], 0
     je      .no_proc
@@ -8388,7 +8388,7 @@ parser_handle_pseudo_op:
     mov     r12, rdi
 .lc_keep:
 
-    ; GAS's call frame directives: .cfi_startproc ... (debug/cfi.s)
+    ; GAS's call frame directives: .cfi_startproc ... (src/debug/cfi.s)
     cmp     dword [r12], '.cfi'
     jne     .not_cfi
     cmp     byte [r12 + 4], '_'
@@ -8414,7 +8414,7 @@ parser_handle_pseudo_op:
     add     [rax + ASMCTX_mac_exp_id], ecx
 .counted:
 
-    ; %use masm's LOCAL, INVOKE, .IF & co, .CODE (frontend/parser/masm.s)
+    ; %use masm's LOCAL, INVOKE, .IF & co, .CODE (src/frontend/syntax/masm/masm.s)
     extern  masm_word
     mov     rdi, rbx
     mov     rsi, r12
@@ -8443,7 +8443,7 @@ parser_handle_pseudo_op:
     mov     r12, rdx
 .not_gas:
 
-    ; FASM's virtual / end virtual / load / store (frontend/parser/fasm.s)
+    ; FASM's virtual / end virtual / load / store (src/frontend/syntax/fasm/fasm.s)
     call    parser_fasm_word
     test    eax, eax
     jz      .not_fasm
@@ -8616,7 +8616,7 @@ parser_handle_pseudo_op:
     jmp     .check_handler_result
 .not_iend:
     ; utasm's procedures: proc NAME [uses REG, ...] / endproc
-    ; (middle/semantic/proc.s)
+    ; (src/semantic/proc.s)
     extern  proc_word
     mov     rdi, r12
     call    proc_word
@@ -8626,7 +8626,7 @@ parser_handle_pseudo_op:
     jmp     .check_handler_result
 .not_proc:
     ; namespace / endnamespace / module / export / private
-    ; (middle/semantic/namespace.s)
+    ; (src/semantic/namespace.s)
     extern  ns_word
     mov     rdi, r12
     call    ns_word
@@ -8852,7 +8852,7 @@ parser_handle_pseudo_op:
     mov     byte [rel extern_required], 0
     jmp     .check_handler_result
 .not_required:
-    ; [map OPTIONS FILE] in a flat binary: its map file (backend/output/
+    ; [map OPTIONS FILE] in a flat binary: its map file (src/object/
     ; map.s); in an object file not a directive (see org)
     mov     rdi, r12
     lea     rsi, [rel str_map]
@@ -10316,7 +10316,7 @@ parser_absolute:
 ; * Purpose: The address an "absolute" / FASM "virtual at" block starts at,
 ; *   from its expression's value (rdx) and label (r11): "absolute x+7" is
 ; *   x's offset as the code is laid out, the jumps before it shortened
-; *   (core/known.s, as for "%if $ - $$"; or that code keeps its size); in
+; *   (src/core/known.s, as for "%if $ - $$"; or that code keeps its size); in
 ; *   a flat binary its section's start (org) with it, as NASM has it.
 ; * Input  : RBX = PrepState, RDX = the value, R11 = its label (or 0)
 ; * Output : RAX = OK, RDX = the address
@@ -10433,7 +10433,7 @@ parser_alignb:
 ;*
 ; * [parser_alignmode]
 ; * Purpose: "alignmode MODE [, threshold | nojmp]" (%use smartalign): the
-; *   NOPs "align" pads code with (optimizer/align.s).
+; *   NOPs "align" pads code with (src/optimize/align.s).
 ; * Input  : RBX = PrepState
 ; * Output : RAX = OK or an error
 ; ;
@@ -10695,7 +10695,7 @@ parser_istruc:
 
 ;*
 ; * [parser_cfi]
-; * Purpose: A .cfi_ directive (GAS's), recorded by debug/cfi.s: its
+; * Purpose: A .cfi_ directive (GAS's), recorded by src/debug/cfi.s: its
 ; *   register (a name - rbp, xmm3, or GAS's %rbp - or DWARF's number) and
 ; *   offset as its form wants them.
 ; * Input  : RBX = PrepState, R12 = the directive's name, in lower case
@@ -11538,7 +11538,7 @@ parser_object_out:
 
 ;*
 ; * [parser_fasm_word]
-; * Purpose: FASM's statement words (frontend/parser/fasm.s): "virtual",
+; * Purpose: FASM's statement words (src/frontend/syntax/fasm/fasm.s): "virtual",
 ; *   "end virtual", "load", "store" - not when a ':' or a NASM word (equ,
 ; *   resb, db, times) follows: a label of that name then.
 ; * Input  : RBX = PrepState, R12 = the word (lower case)
@@ -11869,7 +11869,7 @@ parser_typed_field:
 ; * [parser_masm_field]
 ; * Purpose: %use masm's "[rbx].POINT.y": after a memory operand, ".T.F" -
 ; *   the field's offset added, its size the operand's when none is
-; *   written (frontend/parser/masm.s).
+; *   written (src/frontend/syntax/masm/masm.s).
 ; * Input  : RBX = PrepState, R12 = the OPERAND
 ; * Output : RAX = OK or an error
 ; ;
@@ -11923,7 +11923,7 @@ parser_masm_field:
 ;*
 ; * [parser_map_words]
 ; * Purpose: "[map all file.map]": each word an option or the file
-; *   (backend/output/map.s), to the line's end or its ].
+; *   (src/object/map.s), to the line's end or its ].
 ; * Input  : RBX = PrepState
 ; * Output : RAX = OK or an error
 ; ;
@@ -12123,7 +12123,7 @@ parser_handle_equ:
 .set:
     mov     [r13 + SYMBOL_value], r12
     ; "len equ $ - msg", "x equ label + 4": not a constant a second pass
-    ; could take before its definition (core/known.s)
+    ; could take before its definition (src/core/known.s)
     cmp     qword [rel known_pos_uses], 0
     je      .set_done
     or      byte [r13 + SYMBOL_pflags], SYMF_POSDEP
@@ -12144,7 +12144,7 @@ parser_handle_equ:
     ; "PAGE equ ...": the name stays undefined - what uses it is a forward
     ; reference - and its value is worked out once the code is laid out
     ; (parser_late_equs): at the end of pass 1, for pass 2 to take as a
-    ; number (core/known.s), and before the relocations are resolved
+    ; number (src/core/known.s), and before the relocations are resolved
     cmp     byte [rel equ_again], 0
     jne     .forward_error                 ; (a constant defined again)
     mov     rsi, [rel expr_last_record]
@@ -14506,7 +14506,7 @@ parser_finish:
     test    rax, rax
     jnz     .skip
     ; the code between the labels is not frozen (its jumps shorten as
-    ; NASM's do): the size moves with its end when they do (optimizer/
+    ; NASM's do): the size moves with its end when they do (src/optimize/
     ; jump.s), as "f.end - f" then measures
     extern  relax_no_freeze
     mov     byte [rel relax_no_freeze], 1
