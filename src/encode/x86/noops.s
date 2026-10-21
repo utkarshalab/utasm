@@ -1,6 +1,6 @@
 ;
 ; ============================================================================
-; File        : backend/encoder/tables/noops.s
+; File        : src/encode/x86/noops.s
 ; Project     : utasm
 ; Description : The instructions that take no operands (amd64).
 ;
@@ -13,13 +13,13 @@
 ; ============================================================================
 ;
 
-%include "include/macro.inc"
+%include "src/include/macro.inc"
 
 DEFAULT REL
 
 [SECTION .rodata]
 align 2
-; the mnemonic ids, sorted (backend/isa/amd64.s)
+; the mnemonic ids, sorted (src/encode/x86/isa.s)
 noops_ids:
     dw 1000  ; aaa
     dw 1003  ; aas
