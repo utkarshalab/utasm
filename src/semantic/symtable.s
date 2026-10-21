@@ -1,6 +1,6 @@
 ;
 ; ============================================
-; File     : src/core/symbol.s
+; File     : src/semantic/symtable.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
