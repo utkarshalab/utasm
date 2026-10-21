@@ -76,6 +76,11 @@ amd64_encode_instruction:
     call    amd64_amx_check
     test    rax, rax
     jnz     .done                          ; (its own error, not .error's)
+    ; a gather: destination, index and mask all different (simd/gather.s)
+    extern  amd64_gather_check
+    call    amd64_gather_check
+    test    rax, rax
+    jnz     .done
 
     ; lea's source is an address, whatever it was written as
     cmp     word [r12 + INST_op_id], 1356  ; LEA
@@ -2046,38 +2051,8 @@ amd64_encode_instruction:
     ELSEIF ax, e, 1440             ; NOP
         mov     al, 0x90
         call amd64_emit_byte
-    ELSEIF ax, e, 1888             ; XBEGIN
-        mov     al, 0xC7
-        call amd64_emit_byte
-        mov     al, 0xF8
-        call amd64_emit_byte
-        lea     r10, [r12 + INST_op0]
-        IF byte [r10 + OPERAND_kind], e, OP_SYMBOL
-            mov al, RELOC_REL32
-            mov rsi, [r10 + OPERAND_sym]
-            mov edx, 4                 ; rel32 ends the instruction
-            call amd64_emit_reloc
-            xor rdi, rdi           ; emit_dword takes the value in RDI
-            call amd64_emit_dword
-            ELSE
-            mov rdi, [r10 + OPERAND_imm]
-            call amd64_emit_dword
-            ENDIF
-    ELSEIF ax, e, 1889             ; XEND
-        mov     al, 0x0F
-        call amd64_emit_byte
-        mov     al, 0x01
-        call amd64_emit_byte
-        mov     al, 0xD5
-        call amd64_emit_byte
-    ELSEIF ax, e, 1887             ; XABORT
-        mov     al, 0xC6
-        call amd64_emit_byte
-        mov     al, 0xF8
-        call amd64_emit_byte
-        lea     r10, [r12 + INST_op0]
-        mov     rax, [r10 + OPERAND_imm]
-        call amd64_emit_byte
+    ELSEIF ax, e, 2151             ; XBEGIN rel16/32: a branch's target
+        call    amd64_encode_xbegin
     ELSEIF ax, e, 1069             ; CLI
         mov     al, 0xFA
         call    amd64_emit_byte
@@ -7792,6 +7767,36 @@ amd64_far_width:
     mov     al, 64
 .ret:
     ret
+
+;*
+; * [amd64_encode_xbegin]
+; * C7 F8 rel32 (rel16 in bits 16): the abort handler's address, a label or
+; * a number ("xbegin $+6") as a near branch's
+; ;
+amd64_encode_xbegin:
+    prologue
+    lea     r10, [r12 + INST_op0]
+    cmp     byte [r10 + OPERAND_kind], OP_SYMBOL
+    je      .target
+    cmp     byte [r10 + OPERAND_kind], OP_IMM
+    jne     .bad
+    test    byte [r10 + OPERAND_flags], OP_FLAG_FAR
+    jnz     .bad
+.target:
+    call    amd64_branch_osize             ; (66 for "xbegin word x" in bits 32)
+    mov     al, 0xC7
+    call    amd64_emit_byte
+    mov     al, 0xF8
+    call    amd64_emit_byte
+    lea     r10, [r12 + INST_op0]
+    mov     rsi, [r10 + OPERAND_sym]
+    mov     rcx, 4
+    mov     al, RELOC_REL32
+    call    amd64_emit_branch_disp         ; (its error, if any)
+    epilogue
+.bad:
+    mov     rax, EXIT_INVALID_OPERAND
+    epilogue
 
 ;*
 ; * [amd64_encode_call]
