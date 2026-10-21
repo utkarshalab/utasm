@@ -1,6 +1,6 @@
 ;
 ; ============================================
-; File     : src/core/error.s
+; File     : src/diag/error.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
