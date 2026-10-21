@@ -841,7 +841,7 @@ print_num:
     msg_usage:     db "Usage: utasm [options] <source.s>", 10, "Try 'utasm --help' for usage.", 10, 0
     ; One db line per help line: utasm's own assembler does not support
     ; backslash line continuation, so this text must not use it.
-    msg_help:      db "utasm 0.1.0 - multi-architecture assembler and linker", 10, 10
+    msg_help:      db "utasm 0.1.0 - the native assembler of Utkarsha OS", 10, 10
                    db "Usage: utasm [options] <source.s>", 10
                    db "       utasm --inspect [--inspect-only <parts>] <file>", 10, 10
                    db "Options:", 10
