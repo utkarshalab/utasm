@@ -1,14 +1,14 @@
 ;
 ; ============================================
-; File     : lib/sha256.s
+; File     : src/lib/sha256.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
 ; ============================================
 ;
-; SHA-256 (FIPS 180-4), from Tattva OS crypto/uhash/sha256: the scalar
+; SHA-256 (FIPS 180-4), from Utkarsha OS crypto/uhash/sha256: the scalar
 ; implementation verified there against the FIPS vectors. utasm uses it for
-; the component digests of UBF boot images (backend/output/ubf).
+; the component digests of UBF boot images (src/object/ubf).
 ;
 ;   sha256_init / sha256_update / sha256_final  streaming
 ;   sha256_hash                                 one shot
@@ -18,9 +18,9 @@
 ; are byte-swapped on load and store.
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 DEFAULT REL
 
