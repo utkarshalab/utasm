@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/load.s
+// TEST: tests/asm/aarch64/load.s
 // Suite: AArch64 Core
 // Purpose: Load instruction coverage — LDR, LDRB, LDRH, LDRSB, LDRSH,
 //          LDRSW, LDP, LDXR/LDAXR atomics, all addressing modes.
