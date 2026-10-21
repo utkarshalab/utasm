@@ -23,7 +23,7 @@ GNU as and objdump 2.47, over tens of thousands of cases.
 - **Debug information** — DWARF line tables, a compile unit and call-frame information (`-g`, `.cfi_*`)
 - **Built-in tools** — `--disasm` (ELF64, ELF32 and raw files, 16-, 32- and 64-bit mode: objdump 2.47's output for every instruction NASM knows and for the whole opcode space), `--inspect` (ELF headers, sections, symbols, relocations) ([docs/user/cli.md](docs/user/cli.md#disassembling))
 - **Fast** — 3x NASM on ordinary code, 100x on jump-heavy code (see [Beyond NASM](#beyond-nasm))
-- **Zero dependencies** — no libc, no runtime: raw system calls, io_uring for file I/O
+- **Zero dependencies** — no libc, no runtime: raw system calls, sources read by mmap
 
 ---
 
@@ -40,6 +40,9 @@ x86-64 comes first; the other two follow when there are devices to run them on.
 ---
 
 ## Project Structure
+
+Every module under `src/` has a README — what it does, how, each file,
+its entry points, its status and tests: start at [src/README.md](src/README.md).
 
 ```
 utasm/
@@ -73,7 +76,7 @@ utasm/
 │   │   ├── symdump/         ; symbol and relocation dumps
 │   │   └── lsp/             ; --lsp
 │   ├── profile/             ; --profile: phases, rdtsc, hot paths, report
-│   ├── platform/            ; system calls, files, memory, io_uring
+│   ├── platform/            ; system calls: files, memory
 │   ├── lib/                 ; arena, strings, fmt, hash, sort, float, sha256, time ...
 │   └── planned/             ; cpu/ (CPU profiles), selfpatch/: placeholders
 │
