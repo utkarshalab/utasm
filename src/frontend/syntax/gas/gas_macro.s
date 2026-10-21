@@ -1,15 +1,15 @@
 ;
 ; ============================================
-; File     : frontend/parser/gas_macro.s
+; File     : src/frontend/syntax/gas/gas_macro.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 DEFAULT REL
 
