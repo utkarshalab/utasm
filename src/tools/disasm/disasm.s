@@ -1,17 +1,17 @@
 ;
 ; ============================================
-; File     : tools/disasm/disasm.s
+; File     : src/tools/disasm/disasm.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
-%include "include/elf.inc"
-%include "include/inspect.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
+%include "src/include/elf.inc"
+%include "src/include/inspect.inc"
 
 DEFAULT REL
 
@@ -32,7 +32,7 @@ DEFAULT REL
 ; first SHT_SYMTAB: a symbol starting at an address prints a label line,
 ; and a direct branch target is annotated with the nearest symbol at or
 ; before it. Bytes that do not decode print as "(bad)", one byte at a time
-; (see tools/disasm/x86.s for what decodes).
+; (see src/tools/disasm/x86.s for what decodes).
 ;
 ; Calling convention (AMD64): rdi = InspCtx; callee saved rbx, r12-r15.
 
