@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/call.s
+// TEST: tests/asm/amd64/call.s
 // Suite: AMD64 Core
 // Purpose: CALL instruction — near/indirect, tail-call idioms,
 //          calling conventions (System V AMD64 ABI, Microsoft x64 ABI).
