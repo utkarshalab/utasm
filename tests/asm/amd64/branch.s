@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/branch.s
+// TEST: tests/asm/amd64/branch.s
 // Suite: AMD64 Core
 // Purpose: All branch/jump/call forms for AMD64.
 //   Covers: JMP (near, far, indirect), Jcc (all 16 conditions),
