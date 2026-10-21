@@ -4,20 +4,21 @@ NASM_FLAGS := -d__NASM__=1 -f elf64 -I./
 GEN0      := build/gen0/utasm
 GEN1      := build/gen1/utasm
 
-SRC_DIRS  := frontend middle backend core error cpu debug optimizer selfpatch profiler io lib host tools
-SOURCES   := $(shell find $(SRC_DIRS) -name '*.s' 2>/dev/null) utasm.s cli.s
+# every source under src/, in one fixed order (the link order: the same
+# binary on every machine)
+SOURCES   := $(shell find src -name '*.s' | LC_ALL=C sort)
 
 GEN0_OBJS := $(patsubst %.s, build/gen0/%.o, $(SOURCES))
 GEN1_OBJS := $(patsubst %.s, build/gen1/%.o, $(SOURCES))
 
-.PHONY: all gen0 gen1 test clean fmt doc bootstrap
+.PHONY: all gen0 gen1 test test-unit test-integration clean doc bootstrap help
 
 all: gen1
 
 ## Stage 0: build using NASM
 gen0: $(GEN0)
 
-# linked as scripts/bootstrap.sh links it: plain ld, no linker script (an
+# linked as scripts/build/bootstrap.sh links it: plain ld, no linker script (an
 # empty one, given with -T, produced a binary that crashed on every command)
 $(GEN0): $(GEN0_OBJS)
 	@mkdir -p $(dir $@)
@@ -43,19 +44,19 @@ build/gen1/%.o: %.s $(GEN0)
 
 ## Run full bootstrap script (3-stage with strict parity)
 bootstrap:
-	bash scripts/bootstrap.sh
+	bash scripts/build/bootstrap.sh
 
 ## Run all tests against Gen1
 test: gen1
-	bash scripts/test.sh
+	bash tests/run.sh
 
 ## Run only unit tests
 test-unit: gen1
-	bash scripts/test.sh unit
+	bash tests/run.sh unit
 
 ## Run only integration tests
 test-integration: gen1
-	bash scripts/test.sh integration
+	bash tests/run.sh integration
 
 ## Clean all build artifacts
 clean:
@@ -64,10 +65,6 @@ clean:
 ## Generate docs (placeholder — extend as tooling matures)
 doc:
 	@echo "Docs are in docs/ — no generator yet."
-
-## Format check: verify all .s files have the standard file header
-fmt:
-	@python3 scripts/check_headers.py || true
 
 ## Print help
 help:
