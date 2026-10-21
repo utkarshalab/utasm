@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/memory.s
+// TEST: tests/asm/amd64/memory.s
 // Suite: AMD64 Core
 // Purpose: Addressing mode exhaustion.
 //   Covers: All ModRM/SIB combinations, disp8, disp32, RIP-relative,
