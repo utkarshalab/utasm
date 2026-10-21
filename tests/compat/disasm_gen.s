@@ -1,6 +1,6 @@
-; scripts/compat/disasm_gen.s - the disassembler suite: an instance of each
-; form the disassembler reads by tools/disasm/x86_tables.inc generated
-; entries (scripts/gen_x86_tables.py evex_generated / vex_generated, from
+; tests/compat/disasm_gen.s - the disassembler suite: an instance of each
+; form the disassembler reads by src/tools/disasm/gen/x86_tables.inc generated
+; entries (scripts/gen/gen_x86_tables.py evex_generated / vex_generated, from
 ; the encoder forms), assembled by utasm and read back against objdump
 bits 64
 vmovddup xmm7, qword [rdi+rbx*4-128]
