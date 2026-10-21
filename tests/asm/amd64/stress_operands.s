@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/stress_operands.s
+// TEST: tests/asm/amd64/stress_operands.s
 // Suite: AMD64 Parser
 // Purpose: Stress-test operand parsing to verify register stability (r13 fix).
 // Expected: EXIT_OK.
