@@ -1,6 +1,6 @@
 ;
 ; ============================================
-; File     : src/host/io.s
+; File     : src/platform/io.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
