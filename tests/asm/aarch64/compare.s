@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/aarch64/compare.s
+// TEST: tests/asm/aarch64/compare.s
 // Suite: AArch64 Core
 // Purpose: Comparison instruction coverage.
 //   Covers: CMP, CMN, TST, CCMP, CCMN, CSEL, CSET, CSINC,
