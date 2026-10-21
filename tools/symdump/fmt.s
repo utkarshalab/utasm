@@ -201,6 +201,10 @@ dump_name:
     lea     rdx, [rel tab_stvis_end]
     cmp     edi, NAME_STVIS
     je      .scan
+    lea     rcx, [rel tab_r386]
+    lea     rdx, [rel tab_r386_end]
+    cmp     edi, NAME_R_386
+    je      .scan
     lea     rcx, [rel tab_rx86]            ; NAME_R_X86_64 (range-checked above)
     lea     rdx, [rel tab_rx86_end]
 
@@ -447,6 +451,43 @@ tab_rx86:
     NAMEENT R_X86_64_GOTPC32_TLSDESC, "R_X86_64_GOTPC32_TLSDESC"
     NAMEENT R_X86_64_TLSDESC_CALL, "R_X86_64_TLSDESC_CALL"
 tab_rx86_end:
+
+tab_r386:
+    NAMEENT 0, "R_386_NONE"
+    NAMEENT 1, "R_386_32"
+    NAMEENT 2, "R_386_PC32"
+    NAMEENT 3, "R_386_GOT32"
+    NAMEENT 4, "R_386_PLT32"
+    NAMEENT 5, "R_386_COPY"
+    NAMEENT 6, "R_386_GLOB_DAT"
+    NAMEENT 7, "R_386_JUMP_SLOT"
+    NAMEENT 8, "R_386_RELATIVE"
+    NAMEENT 9, "R_386_GOTOFF"
+    NAMEENT 10, "R_386_GOTPC"
+    NAMEENT 11, "R_386_32PLT"
+    NAMEENT 14, "R_386_TLS_TPOFF"
+    NAMEENT 15, "R_386_TLS_IE"
+    NAMEENT 16, "R_386_TLS_GOTIE"
+    NAMEENT 17, "R_386_TLS_LE"
+    NAMEENT 18, "R_386_TLS_GD"
+    NAMEENT 19, "R_386_TLS_LDM"
+    NAMEENT 20, "R_386_16"
+    NAMEENT 21, "R_386_PC16"
+    NAMEENT 22, "R_386_8"
+    NAMEENT 23, "R_386_PC8"
+    NAMEENT 32, "R_386_TLS_LDO_32"
+    NAMEENT 33, "R_386_TLS_IE_32"
+    NAMEENT 34, "R_386_TLS_LE_32"
+    NAMEENT 35, "R_386_TLS_DTPMOD32"
+    NAMEENT 36, "R_386_TLS_DTPOFF32"
+    NAMEENT 37, "R_386_TLS_TPOFF32"
+    NAMEENT 38, "R_386_SIZE32"
+    NAMEENT 39, "R_386_TLS_GOTDESC"
+    NAMEENT 40, "R_386_TLS_DESC_CALL"
+    NAMEENT 41, "R_386_TLS_DESC"
+    NAMEENT 42, "R_386_IRELATIVE"
+    NAMEENT 43, "R_386_GOT32X"
+tab_r386_end:
 
 str_0x:      db "0x", 0
 str_corrupt: db "<corrupt>", 0
