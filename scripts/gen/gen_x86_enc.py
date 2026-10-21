@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-gen_x86_enc.py - regenerate backend/encoder/tables/opcode.s
+gen_x86_enc.py - regenerate src/encode/x86/gen/opcode.s
 
-The table-driven part of the AMD64 encoder (backend/encoder/dispatch.s)
+The table-driven part of the AMD64 encoder (src/encode/x86/dispatch.s)
 reads the instruction forms written here. Most of them are derived from the
-opcode map in scripts/gen_x86_tables.py, the one the disassembler decodes
+opcode map in scripts/gen/gen_x86_tables.py, the one the disassembler decodes
 with, so the assembler and the disassembler agree on every encoding; the
 rest (x87, system and other integer instructions) are listed below.
 
@@ -14,7 +14,7 @@ rest (x87, system and other integer instructions) are listed below.
                   order they are tried (the first one that matches wins)
 
 Form layout:
-  +0  dw  mnemonic ID (backend/isa/amd64.s)
+  +0  dw  mnemonic ID (src/encode/x86/isa.s)
   +2  db  operand types 0-3 (T_*; 0 = no operand)
   +6  db  mandatory prefix (0 none, 1 66, 2 F3, 3 F2) | encoding << 4
           (0 legacy, 1 VEX, 2 EVEX)
@@ -31,19 +31,19 @@ Form layout:
           2 a32, 3 a64: 67 in the other modes), 4 not in 64-bit mode, 5 only
           there, 6 a REP prefix of its own (F3, unless one is written)
 
-    python3 scripts/gen_x86_enc.py           regenerate
-    python3 scripts/gen_x86_enc.py --check   fail if out of date
+    python3 scripts/gen/gen_x86_enc.py           regenerate
+    python3 scripts/gen/gen_x86_enc.py --check   fail if out of date
 """
 
 import os, re, sys
 
 sys.dont_write_bytecode = True                   # no __pycache__ in scripts/
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "scripts"))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # scripts/gen/ -> the repository
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gen_x86_tables as T                       # the shared opcode map
 
-DST = os.path.join(ROOT, "backend", "encoder", "tables", "opcode.s")
-ISA = os.path.join(ROOT, "backend", "isa", "amd64.s")
+DST = os.path.join(ROOT, "src", "encode", "x86", "gen", "opcode.s")
+ISA = os.path.join(ROOT, "src", "encode", "x86", "isa.s")
 
 # ---------------------------------------------------------------- operand types
 # rclass: 0 register not allowed, else C_*; special: 1 size 16/32/64 sets the
@@ -808,18 +808,18 @@ x87_forms()
 # ============================================================================
 # NASM's instruction list: the forms the opcode map above does not give
 # ============================================================================
-# scripts/nasm/insns.dat is NASM's own instruction table (x86/insns.dat of
+# third_party/nasm/insns.dat is NASM's own instruction table (x86/insns.dat of
 # NASM 2.16.03, under NASM's 2-clause BSD licence, its notice kept at the
 # top). Its 64-bit forms are read here and placed after the forms above
 # (prio NASM_PRIO), so they only take operands none of those fit: the
 # instructions the opcode map does not have (AMX, AVX-512 FP16, XOP, FMA4,
 # the VCMP predicate aliases ...) and the spellings it does not (NASM's
 # "vaddps xmm1, xmm2" for "vaddps xmm1, xmm1, xmm2"). Mnemonics new to
-# backend/isa/amd64.s go in its generated block (isa_block below).
-INSNS = os.path.join(ROOT, "scripts", "nasm", "insns.dat")
+# src/encode/x86/isa.s go in its generated block (isa_block below).
+INSNS = os.path.join(ROOT, "third_party", "nasm", "insns.dat")
 # NASM 3.01's lines for the instructions 2.16.03's has not (AVX10.2, the
 # AMX additions, AVX-VNNI-INT16, MOVRS ...): read after it, the same way
-INSNS3 = os.path.join(ROOT, "scripts", "nasm", "insns3.dat")
+INSNS3 = os.path.join(ROOT, "third_party", "nasm", "insns3.dat")
 NASM_PRIO = 50
 
 # NASM's AVX512-FP16 FMA names are off from Intel's: its VFMADD132PH is
@@ -846,7 +846,7 @@ NASM_WRONG = {"vcvtqq2ph", "vcvtuqq2ph", "vp2intersectd",
               "vendscalesh", "vfmulcpch",
               # narrowing conversions with the source's width (xmm for ymm)
               "vcvtdq2ph", "vcvtudq2ph", "vcvtpd2ph",
-              # memory narrower than the vector (by tools/disasm's generated
+              # memory narrower than the vector (by src/tools/disasm's generated
               # tables read back against objdump): vcvtph2udq's half of what
               # it is, vdpbf16ps / vsm4key4 / vsm4rnds4's 128 bits at 256 / 512
               "vcvtph2udq", "vdpbf16ps", "vsm4key4", "vsm4rnds4",
@@ -1282,14 +1282,14 @@ def nasm_form(name, ops, enc, flags=()):
                 add(rt2[:j] + rt2[j + 1:], rr2[:j] + rr2[j + 1:], (fl | fx | F_V0) & ~(F_BCST | F_B16))
     return out
 
-# backend/isa/amd64.s: the mnemonics only NASM's list has are kept in a
+# src/encode/x86/isa.s: the mnemonics only NASM's list has are kept in a
 # block of their own, IDs from NASM_ID0, rewritten with the table
-ISA_BEGIN = "    ; ---- NASM's instruction list: GENERATED by scripts/gen_x86_enc.py ----"
+ISA_BEGIN = "    ; ---- NASM's instruction list: GENERATED by scripts/gen/gen_x86_enc.py ----"
 ISA_END = "    ; ---- end of NASM's instruction list ----"
 NASM_ID0 = 7000
 
 def isa_base():
-    """backend/isa/amd64.s without the generated block"""
+    """src/encode/x86/isa.s without the generated block"""
     text = open(ISA, encoding="utf-8").read().replace("\r\n", "\n")
     if ISA_BEGIN in text:
         a = text.index(ISA_BEGIN)
@@ -1310,7 +1310,7 @@ LEGACY_OK = {"movd", "fadd", "fsub", "fsubr", "fmul", "fdiv", "fdivr", "fld", "f
 def hand_ids():
     """the mnemonic IDs the hand-written encoders (encoder.s) dispatch on:
     the table must not take those over"""
-    src = open(os.path.join(ROOT, "backend", "encoder", "encoder.s"), encoding="utf-8").read()
+    src = open(os.path.join(ROOT, "src", "encode", "x86", "encoder.s"), encoding="utf-8").read()
     ids = {int(n) for n in re.findall(r"\b(?:ELSE)?IF\s+ax,\s*e,\s*(\d+)", src)}
     for a, b in re.findall(r"ELSEIF_RANGE\s+ax,\s*(\d+),\s*(\d+)", src):
         ids.update(range(int(a), int(b) + 1))
@@ -1328,7 +1328,7 @@ NASM_OVER = {"ldtilecfg", "sttilecfg", "tileloadd", "tileloaddt1", "tilestored",
              "bndcl", "bndcu", "bndcn", "bndmk", "bndmov", "bndldx", "bndstx",
              # 3DNow! the stub wrote 0F 0F alone for (femms too)
              "femms", "pfadd", "pfcmpeq", "pfmax", "pfmin", "pfrcp", "pfrsqrt", "pi2fd",
-             # scripts/compat/encfuzz.py's findings: lfs / lgs / lss were 0F 00
+             # tests/compat/encfuzz.py's findings: lfs / lgs / lss were 0F 00
              # with a REX.W; senduipi, tpause, umwait, incssp*, rdssp* lost
              # their REX.B; clrssbsy was setssbsy; prefetchwt1 took a 66 in
              # bits 16; cmpsd / movsd with operands were the string ones
@@ -1348,7 +1348,7 @@ def nasm_allowed(name, encn):
     hand (encoder.s) are left to their encoders - the table is tried first,
     so a form there would take their operands over."""
     if name not in ISA_NAMES or name in NASM_OVER:
-        return True                              # new to backend/isa/amd64.s
+        return True                              # new to src/encode/x86/isa.s
     if encn != ENC_LEGACY:
         return True                              # (the hand-written VEX / EVEX ones
                                                  # are stubs: vfmaddcph gave 0f 38 98)
@@ -1363,7 +1363,7 @@ NASM_LEGACY_SEEN = set()
 NASM_SEEN = set()
 AVX10_EVEX = set()      # mnemonics with an AVX10.2 EVEX form (insns3.dat)
 # NASM's CPU levels (x86/iflags.ph's order), as "cpu" names them
-# (frontend/parser/parser.s cpu_levels: the same numbers)
+# (src/frontend/syntax/nasm/parser.s cpu_levels: the same numbers)
 CPU_LEVELS = {"8086": 1, "186": 2, "286": 3, "386": 4, "486": 5, "PENT": 6, "P6": 7,
               "KATMAI": 8, "WILLAMETTE": 9, "PRESCOTT": 10, "X86_64": 11, "NEHALEM": 12,
               "WESTMERE": 13, "SANDYBRIDGE": 14, "FUTURE": 15, "IA64": 16}
@@ -1492,7 +1492,7 @@ def render():
     ids = mnemonic_ids()
     missing = sorted({f[0] for f in forms if f[0] not in ids})
     if missing:
-        sys.exit("mnemonics missing from backend/isa/amd64.s: " + " ".join(missing))
+        sys.exit("mnemonics missing from src/encode/x86/isa.s: " + " ".join(missing))
     # group by mnemonic ID in first-seen order, then by priority (stable)
     order, by_id, name_of = [], {}, {}
     for i, f in enumerate(forms):
@@ -1504,9 +1504,9 @@ def render():
         by_id[mid].append((f[10] == ENC_EVEX, f[9], i, f))
     out = [
         "; " + "=" * 76,
-        "; GENERATED by scripts/gen_x86_enc.py - do not edit by hand.",
+        "; GENERATED by scripts/gen/gen_x86_enc.py - do not edit by hand.",
         "; AMD64 instruction forms for the table-driven encoder",
-        "; (backend/encoder/dispatch.s). See the script for the layout.",
+        "; (src/encode/x86/dispatch.s). See the script for the layout.",
         "; " + "=" * 76,
         "",
         "bits 64",
@@ -1569,9 +1569,9 @@ def main():
     if "--check" in sys.argv:
         cur = open(DST, encoding="utf-8").read().replace("\r\n", "\n") if os.path.exists(DST) else ""
         if cur != text:
-            sys.exit("backend/encoder/tables/opcode.s is out of date; run scripts/gen_x86_enc.py")
+            sys.exit("src/encode/x86/gen/opcode.s is out of date; run scripts/gen/gen_x86_enc.py")
         if open(ISA, encoding="utf-8").read().replace("\r\n", "\n") != isa:
-            sys.exit("backend/isa/amd64.s's NASM block is out of date; run scripts/gen_x86_enc.py")
+            sys.exit("src/encode/x86/isa.s's NASM block is out of date; run scripts/gen/gen_x86_enc.py")
         return
     with open(DST, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
