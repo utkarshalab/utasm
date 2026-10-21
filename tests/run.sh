@@ -24,6 +24,12 @@ if [ ! -f "$UTASM_BIN" ]; then
     exit 1
 fi
 
+# the module READMEs list exactly the files of their folders
+if ! python3 scripts/check_readmes.py; then
+    echo -e "${RED}[-] A module README is out of step with its folder (scripts/check_readmes.py).${NC}"
+    exit 1
+fi
+
 mkdir -p build/tests
 FAILED=0
 PASSED=0
