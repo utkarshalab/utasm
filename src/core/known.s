@@ -1,15 +1,15 @@
 ;
 ; ============================================
-; File     : core/known.s
+; File     : src/core/known.s
 ; Project  : utasm
 ; Author   : Utkarsha Lab
 ; License  : Apache-2.0
 ; ============================================
 ;
 
-%include "include/constant.inc"
-%include "include/type.inc"
-%include "include/macro.inc"
+%include "src/include/constant.inc"
+%include "src/include/type.inc"
+%include "src/include/macro.inc"
 
 DEFAULT REL
 
@@ -696,7 +696,7 @@ known_second_pass:
     inc     r15
     jmp     .ppd
 .ppds_done:
-    ; the line table's views padding decides (debug/line.s), as the code is
+    ; the line table's views padding decides (src/debug/line.s), as the code is
     ; laid out: GNU as works them out then
     extern  line_views_unsure, line_views_records
     cmp     byte [rel line_views_unsure], 0
@@ -1216,7 +1216,7 @@ known_pp_diff:
 ; ---- known_remap --------------------------
 ;
 ; known_remap
-; Section rdi was laid out again (optimizer/jump.s rx_apply): the offsets
+; Section rdi was laid out again (src/optimize/jump.s rx_apply): the offsets
 ; of the preprocessor's differences in it move with its code.
 ; Preserves: rbx, rbp, r12-r15
 ;
