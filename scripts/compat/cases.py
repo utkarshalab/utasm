@@ -3561,3 +3561,18 @@ ISA_CASES += [  # utasm --disasm read as objdump 2.47 writes them: unused prefix
     ("v4fnmaddps zmm20{k4}, zmm21, [rbx-0x80]", "62e25744aa63f8", "v4fnmaddps zmm20{k4},zmm21,XMMWORD PTR [rbx-0x80]"),
     ("movrs bpl, byte [r12]", "410f388a2c24", "movrs bpl,BYTE PTR [r12]"),
 ]
+ISA_CASES += [  # vmovw: Intel's / GNU's r32 (NASM's r16 too)
+    ("vmovw xmm1, eax", "62f57d086ec8", "vmovw xmm1,eax"),
+    ("vmovw eax, xmm1", "62f57d087ec8", "vmovw eax,xmm1"),
+    ("vmovw xmm1, ax", "62f57d086ec8", "vmovw xmm1,eax"),
+]
+ISA_ERRORS += [
+    # a mask / {z} where the instruction takes none (#UD; NASM refuses them
+    # too): vmovw, vmovd, vcomiss, vpextrd; {z} on a store or into a mask
+    ("vmovw xmm1{k1}, [rax]", "takes no write mask"),
+    ("vmovd xmm17{k1}, eax", "takes no write mask"),
+    ("vcomiss xmm17{k1}, xmm2", "takes no write mask"),
+    ("vpextrd eax{k1}, xmm17, 1", "takes no write mask"),
+    ("vcmpps k1{k2}{z}, zmm2, zmm3, 1", "takes no write mask"),
+    ("vmovaps [rax]{k1}{z}, zmm1", "takes no write mask"),
+]
