@@ -9,7 +9,7 @@
 ; These are leaf functions with no dependencies. They do NOT use
 ; prologue/epilogue macros to avoid inflating calibration measurements.
 ;
-; See docs/profiler_architecture.md §2, §6.1, §16 for design rationale.
+; See src/profile/README.md for design rationale.
 ; ============================================================================
 ;
 
