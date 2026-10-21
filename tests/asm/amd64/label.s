@@ -1,5 +1,5 @@
 // ============================================================================
-// TEST: tests/amd64/label.s
+// TEST: tests/asm/amd64/label.s
 // Suite: AMD64 Core
 // Purpose: Label and symbol definition coverage.
 //   Covers: global labels, local labels (.label:), forward references,
