@@ -10,7 +10,10 @@
 %include "src/include/constant.inc"
 %include "src/include/type.inc"
 
-extern error_new_from_errno
+extern error_set_subject
+
+; Nothing here prints: a failure is an EXIT_* code, and the caller - which
+; knows the file's name - reports it (error_set_subject, then the code).
 
 ; ============================================================================
 ; HOST I/O (Syscall Interface)
@@ -75,9 +78,6 @@ io_write:
     ret
 
 .error:
-    neg     rax                    ; convert negative error to positive errno
-    mov     rdi, rax
-    call    error_new_from_errno
     mov     rax, EXIT_FILE_WRITE
     xor     rdx, rdx
     pop     r10
@@ -93,7 +93,7 @@ io_write:
 ; Input    : rdi = file descriptor (i32)
 ;            rsi = buffer pointer (*mut u8)
 ;            rdx = buffer size (usize)
-; Output   : rax = EXIT_OK or EXIT_FILE_READ
+; Output   : rax = EXIT_OK, EXIT_FILE_IS_DIR or EXIT_FILE_READ
 ;            rdx = number of bytes read (0 on EOF)
 ; Clobbers : rcx, r11
 ;
@@ -116,11 +116,11 @@ io_read:
     ret
 
 .error:
-    neg     rax
-    mov     rdi, rax
-    call    error_new_from_errno
-    mov     rax, EXIT_FILE_READ
-    xor     rdx, rdx
+    cmp     rax, -EISDIR
+    mov     eax, EXIT_FILE_READ
+    mov     edx, EXIT_FILE_IS_DIR
+    cmove   eax, edx
+    xor     edx, edx
     ret
 
 ; ---- io_open ----------------------------------
@@ -130,7 +130,9 @@ io_read:
 ; Input    : rdi = pointer to filename string
 ;            rsi = open flags (AMD64_O_* values)
 ;            rdx = file mode (permissions) when creating
-; Output   : rax = EXIT_OK or EXIT_FILE_NOT_FOUND or EXIT_FILE_PERM
+; Output   : rax = EXIT_OK, EXIT_FILE_NOT_FOUND (also: a directory on the
+;            way is a file), EXIT_FILE_PERM, EXIT_FILE_IS_DIR (opened for
+;            writing) or EXIT_IO_ERROR
 ;            rdx = file descriptor (on success)
 ; Clobbers : rcx, r11
 ;
@@ -150,12 +152,19 @@ io_open:
     neg     rax                    ; rax = errno
     cmp     rax, ENOENT
     je      .not_found
+    cmp     rax, ENOTDIR
+    je      .not_found
     cmp     rax, EACCES
     je      .permission
+    cmp     rax, EPERM
+    je      .permission
+    cmp     rax, EISDIR
+    je      .directory
+    mov     rax, EXIT_IO_ERROR
+    jmp     .done
 
-    mov     rdi, rax
-    call    error_new_from_errno
-    mov     rax, EXIT_ERROR
+.directory:
+    mov     rax, EXIT_FILE_IS_DIR
     jmp     .done
 
 .not_found:
@@ -167,6 +176,31 @@ io_open:
 
 .done:
     xor     rdx, rdx
+    ret
+
+; ---- io_create --------------------------------
+;
+; io_create
+; Creates (or truncates) an output file for writing. On failure the file
+; is the error's subject: "unable to create output file `out.o'".
+; Input    : rdi = pointer to filename string
+;            rdx = file mode (permissions)
+; Output   : rax = EXIT_OK or EXIT_OUT_CREATE
+;            rdx = file descriptor (on success)
+; Clobbers : rcx, rsi, r11
+;
+global io_create
+io_create:
+    push    rdi
+    mov     rsi, AMD64_O_WRONLY | AMD64_O_CREAT | AMD64_O_TRUNC
+    call    io_open
+    pop     rdi
+    test    rax, rax
+    jz      .ret
+    call    error_set_subject
+    mov     eax, EXIT_OUT_CREATE
+    xor     edx, edx
+.ret:
     ret
 
 ; ---- io_close ---------------------------------
@@ -189,9 +223,6 @@ io_close:
     ret
 
 .error:
-    neg     rax
-    mov     rdi, rax
-    call    error_new_from_errno
     mov     rax, EXIT_ERROR
     ret
 
@@ -219,9 +250,6 @@ io_lseek:
     ret
 
 .error:
-    neg     rax
-    mov     rdi, rax
-    call    error_new_from_errno
     mov     rax, EXIT_ERROR
     xor     rdx, rdx
     ret
@@ -236,30 +264,51 @@ io_lseek:
 ;            rcx = flags (MAP_* flags)
 ;            r8  = file descriptor (i32)
 ;            r9  = offset (usize)
-; Output   : rax = EXIT_OK or EXIT_OOM
-;            rdx = pointer to mapped memory (on success)
+; Output   : rax = EXIT_OK, EXIT_OOM (memory, or an anonymous mapping)
+;            or EXIT_FILE_READ (a file that cannot be mapped)
+;            rdx = pointer to mapped memory (on success); length 0 maps
+;            nothing and gives a pointer to nothing (an empty file)
 ; Clobbers : rcx, r10, r11
 ;
 global io_mmap
 io_mmap:
+    test    rsi, rsi
+    jz      .empty                 ; (mmap refuses length 0)
     mov     r10, rcx               ; r10 = flags (AMD64 syscall ABI)
     mov     rax, AMD64_SYS_MMAP
     syscall
 
-    cmp     rax, MAP_FAILED
-    je      .error
+    ; the kernel returns -errno: anything in the last page is a failure
+    ; (comparing with MAP_FAILED, -1, missed every one: a directory's
+    ; ENODEV came back as an address)
+    cmp     rax, -4095
+    jae     .error
 
     mov     rdx, rax               ; rdx = mapped address
     xor     rax, rax               ; EXIT_OK
     ret
 
+.empty:
+    lea     rdx, [rel io_nothing]
+    xor     eax, eax
+    ret
+
 .error:
-    neg     rax                    ; get errno from negative return
-    mov     rdi, rax
-    call    error_new_from_errno
+    cmp     rax, -ENOMEM
+    je      .oom
+    cmp     r8, -1
+    je      .oom                   ; anonymous: memory it is
+    mov     rax, EXIT_FILE_READ
+    xor     rdx, rdx
+    ret
+.oom:
     mov     rax, EXIT_OOM
     xor     rdx, rdx
     ret
+
+[SECTION .bss]
+io_nothing:     resq 1             ; what an empty mapping points at
+[SECTION .text]
 
 ; ---- io_munmap --------------------------------
 ;
@@ -282,9 +331,6 @@ io_munmap:
     ret
 
 .error:
-    neg     rax
-    mov     rdi, rax
-    call    error_new_from_errno
     mov     rax, EXIT_ERROR
     ret
 
@@ -309,9 +355,6 @@ io_ftruncate:
     ret
 
 .error:
-    neg     rax
-    mov     rdi, rax
-    call    error_new_from_errno
     mov     rax, EXIT_ERROR
     ret
 
@@ -353,14 +396,32 @@ io_exists:
 ; io_file_size
 ; Gets the size of an open file.
 ; Input    : rdi = file descriptor (i32)
-; Output   : rax = EXIT_OK or EXIT_ERROR
+; Output   : rax = EXIT_OK, EXIT_FILE_IS_DIR or EXIT_ERROR
 ;            rdx = file size in bytes (on success)
-; Clobbers : rcx, r10, r11
+; Clobbers : rcx, rsi, r10, r11
 ;
 global io_file_size
 io_file_size:
     push    rbx
     mov     rbx, rdi               ; save fd
+
+    ; a directory opens, but has no bytes to read: said as such (mapping
+    ; it failed, and the failure went unseen)
+    sub     rsp, 144               ; struct stat
+    mov     eax, AMD64_SYS_FSTAT
+    mov     rsi, rsp
+    syscall
+    mov     ecx, [rsp + 24]        ; st_mode
+    add     rsp, 144
+    test    rax, rax
+    js      .sized                 ; (no stat: lseek says)
+    and     ecx, 0o170000
+    cmp     ecx, 0o040000
+    jne     .sized
+    mov     eax, EXIT_FILE_IS_DIR
+    jmp     .error
+.sized:
+    mov     rdi, rbx
 
     ; seek to end to get size
     xor     rsi, rsi               ; offset = 0
