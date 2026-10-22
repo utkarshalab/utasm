@@ -29,6 +29,11 @@ if ! python3 scripts/check_readmes.py; then
     echo -e "${RED}[-] A module README is out of step with its folder (scripts/check_readmes.py).${NC}"
     exit 1
 fi
+# the error reference lists exactly the messages utasm prints
+if ! python3 scripts/gen/gen_error_docs.py --check; then
+    echo -e "${RED}[-] docs/user/errors.md is out of date: run scripts/gen/gen_error_docs.py.${NC}"
+    exit 1
+fi
 
 mkdir -p build/tests
 FAILED=0
