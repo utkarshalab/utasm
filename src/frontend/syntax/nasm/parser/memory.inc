@@ -896,11 +896,10 @@ parser_parse_mem_operand:
     cmp     rcx, rsi
     jle     .bounds_ok                     ; write size <= field size -> OK
     
-    ; FATAL: write exceeds field width
-    extern error_struct_bounds
-    mov     rdi, [r13 + SYMBOL_name]       ; field name for error message
-    mov     rdx, rcx                       ; attempted access size
-    call    error_struct_bounds
+    ; the access is wider than the field: "operand larger than the
+    ; structure field `name'"
+    mov     rdi, [r13 + SYMBOL_name]
+    call    error_set_subject
     mov     rax, EXIT_STRUCT_BOUNDS
     jmp     .error
 
