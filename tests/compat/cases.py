@@ -3672,3 +3672,58 @@ LIMIT_ERRORS += [
     ("RIP-relative past 2 GB", "bits 64\nfoo:\nmov cl, [rel foo + 0x100000000]\n", 3,
      "jump or displacement out of range"),
 ]
+# the same with baz defined after the line: known once the code is placed,
+# and the error then, at its line (it was an absolute address, the warning)
+REJECT_CASES += [
+    ("self-relative, a forward label", "elf64", "bits 64\ndefault rel\nfoo: nop\nmov eax, [baz - $]\n"
+     "section .data\nbaz: dd 0\n"),
+    ("self-relative, a forward label, bin", "bin", "bits 64\ndefault rel\nfoo: nop\nmov eax, [baz - $]\n"
+     "section .data\nbaz: dd 0\n"),
+    ("self-relative with rel, a forward label", "elf64", "bits 64\nfoo: nop\nmov eax, [rel baz - $]\n"
+     "section .data\nbaz: dd 0\n"),
+    ("two sections' labels, a forward one", "bin", "bits 64\ndefault rel\nfoo: nop\nmov esi, [baz - foo]\n"
+     "section .data\nbaz: dd 0\n"),
+]
+# a value measured around its own instruction: long when the long form's
+# value does not fit, as NASM writes it isolated (optimization.asm's comes
+# out short only because jumps before it make NASM run more passes); a
+# forward difference of two sections' labels stays a disp32
+BIN_PROBES.update({
+    "disp_around_itself": "bits 32\na: lea eax, [eax + b - a]\ntimes 124 nop\nb:\nc: lea eax, [eax + d - c]\n"
+                          "times 125 nop\nd:\ne: lea eax, [eax + f - e]\ntimes 127 nop\nf:\n",
+    "imm_around_itself": "bits 64\na: push b - a\ntimes 126 nop\nb:\nc: cmp eax, d - c\ntimes 125 nop\nd:\n",
+    "disp_two_sections_forward": "bits 64\nfoo: nop\nmov eax, [rbx + baz - $]\nmov ecx, [rbx + baz - foo]\n"
+                                 "section .data\nbaz: dd 0\n",
+})
+# fuzz.py's: a res* with no label as a struc's first field (a null name
+# looked up), a section named by a character constant or a number (their
+# value taken for a pointer to the name): utasm crashed
+ROBUST_CASES += [
+    ("struc_unnamed_first_field", "struc s\nresd 1\nresq 1\n.a resb 1\nendstruc\nsection .text\nmov eax, s_size\n",
+     "bin", []),
+    ("section_char_constant", "section 'bc'\ndb 1\nsection .text\ndb 2\nsection 'bc'\ndb 3\n", "elf64", []),
+    ("section_substr_name", "%substr s 'abc' 2,-1\nsection s\ndb 1\n", "bin", ["--bits", "16"]),
+    ("section_number", "section 5\ndb 1\n", "elf64", []),
+]
+# NASM 3's number-overflow words (2.16's said "data", "value",
+# "immediate", and gave a 64-bit operation's imm32 two warnings); NASM's
+# "ib,u" fields (in, out, int, the shifts' counts ...) as unsigned bytes;
+# displacements: an absolute one past 32 bits warned, one with a base cut
+# silently, "[byte bx + 0x1ff]" cut to its byte; NASM 3's
+# implicit-abs-deprecated (once)
+WARN_CASES.update({
+    "warn_bounds_nasm3": "bits 64\nadd rax, 0x80000000\ncmp eax, 0x100000000\nadd ax, 0x1ffff\nmov al, 0x1ff\n"
+                         "dd 0x1ffffffff\nimul rax, rbx, 0x80000000\nadd rax, byte 0x1ff\nmov rax, strict dword 0x80000000\n",
+    "warn_unsigned_byte": "bits 64\nin al, 0x1ff\nin al, -1\nout 0x100, al\nint -1\nshl eax, 256\nshl eax, -1\n"
+                          "rol byte [rax], 0x1ff\npsllw mm0, -1\nenter 1, 256\nshl eax, 255\n",
+    "warn_displacement": "bits 64\ndefault abs\nmov al, [0x1ffffffffff]\nmov al, [0x80000000]\nmov cl, [rax + 0x100000000]\n"
+                         "mov cl, [byte rax + 0x1ff]\nbits 16\nmov cl, [byte bx + 0x1ff]\nmov cl, [bx + 0x1ff]\n",
+    "warn_implicit_abs": "bits 64\nmov al, [0x10]\nmov al, [0x20]\nmov eax, [rbx]\n",
+    "warn_implicit_abs_default": "bits 64\ndefault abs\nmov al, [0x10]\n",
+})
+# an absolute address: the status the encoder returned was the address
+# (40, EXIT_ENCODE_FAIL's number, made "[fs:40]" an error)
+BIN_PROBES.update({
+    "abs_addresses": "bits 64\ndefault abs\nmov eax, [fs:40]\nmov eax, [40]\nmov al, [gs:40]\nmov eax, [0x10]\n"
+                     "mov eax, [0xffffffff80000000]\nmov eax, [rbx + 40]\n",
+})
