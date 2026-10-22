@@ -99,11 +99,11 @@ python3 scripts/gen/gen_x86_enc.py --check   # fail if out of date
 | `encoder/general.inc` | 929 | movzx / movsx / movsxd, lea, test, unary, shifts, imul, cmovcc / setcc, enter, int, system, in / out, x87, SSE crypto |
 | `encoder/vex_evex.inc` | 652 | the VEX / EVEX entries, string instructions, 0F binaries, cmpxchg, bt, memory sync, r/m forms |
 | `encoder/branch.inc` | 524 | branch sizing, and tracking each instruction for the second pass |
-| `encoder/emit.inc` | 1,172 | relocations, prefixes, ModRM / SIB, bytes and dwords; the SGX leaves |
+| `encoder/emit.inc` | 1,208 | relocations, prefixes, ModRM / SIB, bytes and dwords; the SGX leaves |
 | `encoder/jmp_call.inc` | 609 | jmp, call, xbegin, far widths, push / pop forms, MPX, nop, words and qwords |
 | `encoder/sse_avx.inc` | 393 | AVX / SSE forms, the VEX2 / VEX3 prefixes; messages and the obsolete tables |
-| `dispatch.s` | 1,859 | the table encoder: `amd64_table_encode`, `amd64_table_has`, form matching and emission |
-| `mode.s` | 3,108 | 16- and 32-bit mode: what changes from 64-bit, REX / REX2 placement, the 66 / 67 prefixes |
+| `dispatch.s` | 1,873 | the table encoder: `amd64_table_encode`, `amd64_table_has`, form matching and emission |
+| `mode.s` | 3,129 | 16- and 32-bit mode: what changes from 64-bit, REX / REX2 placement, the 66 / 67 prefixes |
 | `apx.s` | 1,378 | APX's EVEX map-4 integer instructions |
 | `shape.s` | 453 | the operand shapes of the general-purpose instructions (`amd64_check_shape`, `amd64_shape_forms`) |
 | `msr.s` | 272 | the MSR instructions with operands (MSR_IMM, USER_MSR) |
@@ -111,7 +111,7 @@ python3 scripts/gen/gen_x86_enc.py --check   # fail if out of date
 | `gather.s` | 99 | the gathers' distinct-register rule |
 | `amx.s` | 75 | AMX's distinct-tile rule |
 | `isa.s` | 3,442 | `mnc_tb_x64` (mnemonics), `amd64_register_table` (registers) |
-| `gen/opcode.s` | 47,480 | GENERATED: the table encoder's forms |
+| `gen/opcode.s` | 47,483 | GENERATED: the table encoder's forms |
 
 ## Entry points
 
