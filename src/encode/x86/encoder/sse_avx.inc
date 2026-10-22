@@ -316,7 +316,7 @@ msg_reloc_table_err: db "Reloc error: ASMCTX_relocs is NULL", 10, 0
 msg_reloc_sec_err:   db "Reloc error: No active section or sections array is NULL", 10, 0
 
 [SECTION .rodata]
-s_disp8_bounds: db "byte data exceeds bounds", 0
+s_disp8_bounds: db "byte displacement exceeds bounds", 0
 s_obs_removed:  db "instruction obsolete and removed from the target CPU", 0
 s_obs_valid:    db "instruction obsolete but valid on the target CPU", 0
 s_obs_nop:      db "instruction never implemented and is a noop on the target CPU", 0
