@@ -83,23 +83,19 @@ global prof_row_prefix
 global prof_space
 global prof_dot
 global prof_pct_sign
-global prof_comma
 
 prof_row_prefix:        db " ", 0
 prof_space:             db " ", 0
 prof_dot:               db ".", 0
 prof_pct_sign:          db "%", 0
-prof_comma:             db ",", 0
 
 ; ============================================================================
 ; HOT PATH MARKERS
 ; ============================================================================
 
 global prof_hot_marker
-global prof_hot_marker_plain
 
 prof_hot_marker:        db "  HOT", 0
-prof_hot_marker_plain:  db "     ", 0
 
 ; ============================================================================
 ; TOTAL ROW
