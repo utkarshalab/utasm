@@ -42,7 +42,6 @@ extern str_compare
 extern asm_ctx_align
 extern str_concat
 extern error_hint_mnemonic
-extern relax_freeze_current
 extern relax_freeze_symref
 extern relax_freeze_range
 extern relax_defer_begin
