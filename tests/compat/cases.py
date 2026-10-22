@@ -3727,3 +3727,29 @@ BIN_PROBES.update({
     "abs_addresses": "bits 64\ndefault abs\nmov eax, [fs:40]\nmov eax, [40]\nmov al, [gs:40]\nmov eax, [0x10]\n"
                      "mov eax, [0xffffffff80000000]\nmov eax, [rbx + 40]\n",
 })
+# NASM 3: o16 / o32 / o64 on push, pop, call / jmp, ret, enter, leave and
+# pushf / popf in 64-bit code (64 bits with no REX.W there; o32 cannot be),
+# a dword push / pop refused, a byte down to -256, "$0ff" deprecated
+WARN_CASES.update({
+    "warn_d64_prefix": "bits 64\no64 push rax\no32 push rax\no16 push ax\no16 push 5\no16 push fs\no32 push word 5\n"
+                       "o16 push rax\no16 ret\no32 ret\no64 ret\no32 leave\no16 pushf\no32 popf\no16 jmp ax\n"
+                       "o16 call rax\no32 enter 1, 2\nbits 32\no16 push eax\no32 push ax\n",
+    "warn_d64_dword": "bits 64\npush dword 5\n",
+    "warn_d64_dword_mem": "bits 64\npop dword [rax]\n",
+    "warn_byte_low": "bits 64\ndb -256\ndb -257\ndb 255\ndb 256\n",
+    "warn_dollar_hex": "bits 64\ndw $0ff, $12\nmov eax, $1f\ndd $1.0\nx: dw $ - x, $ - $$\n",
+})
+# a difference across sections, the other one first: NASM lists its value
+# (baz - $), not the symbol alone as for a RIP-relative or a branch's field
+BIN_PROBES.update({
+    "disp_two_sections_backward": "section .data\nbaz: dd 0\nsection .text\nbits 64\nfoo: nop\n"
+                                  "mov eax, [rbx + baz - $]\nmov ecx, [rbx + baz - foo]\ndd baz - $\n"
+                                  "dd baz - foo + 3\nmov eax, [rel baz + 5]\ncall baz\n",
+})
+# NASM's $ is where the line starts: the same for each item of a data line
+# and in every copy of a times line (utasm's moved on with each item)
+BIN_PROBES.update({
+    "dollar_line_start": "bits 64\nnop\ndw $, $, $\ntimes 2 dw $, $\ndd 1, $ - $$\ndb \"ab\", $ - $$\n"
+                         "foo: dw foo - $, 0, $ - foo\nmov eax, $\npush $\ndq $, $\ntimes 2 db $ - $$, $ - $$\n"
+                         "times 2 push $\nx: times 2 dd x - $, $ - x\n%rep 2\ndw $\n%endrep\n",
+})
