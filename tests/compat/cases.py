@@ -543,6 +543,9 @@ DIAG_CASES += [
     # a %if never closed: NASM's error at the end (utasm let it go)
     ("%if never closed", "%if 1\nnop\n"),
     ("%if never closed, skipping", "nop\n%if 0\nnop\n%else\nnop\n"),
+    # NASM's --limit-eval: more than 8192 terms is "expression too long"
+    ("an expression of 9000 terms", "nop\n%if 1" + "+1" * 9000 + "\n%endif\n"),
+    ("data of 9000 terms", "nop\ndd 1" + "+1" * 9000 + "\n"),
 ]
 
 # the command line: NASM's options, each run with NASM and with utasm on
@@ -1347,6 +1350,12 @@ LIMIT_ERRORS = [
     # a token's length is 16 bits; up to it, a string's buffer grows (it
     # was 4 KB: "string literal too long", and utasm stopped)
     ("a string over 65535 bytes", 'nop\ndb "' + "a" * 70000 + '"\n', 2, "string longer than 65535 bytes"),
+    # a macro calling itself with a longer argument each time: stopped at
+    # NASM's macro-tokens (10,000,000 in the open calls' arguments) - it
+    # took 9 s and 2 GB to reach 10,000 levels (fuzz.py's last hang; NASM
+    # itself runs for minutes)
+    ("runaway recursion, a growing argument", "bits 64\n%rmacro r 1\n%if %1 > 0\n%endif\nr %1-1\ndb %1\n"
+     "%endmacro\nr 3\n", 8, "macros nested too deeply (runaway recursion?)"),
 ]
 
 # files utasm cannot read or write: what it says, and its exit status (a
