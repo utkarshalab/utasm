@@ -90,7 +90,7 @@ forms, `__POSIX_TIME__`: lib/time.s) — each also as NASM's `__?NAME?__`.
 | --- | --- | --- |
 | `macro.s` | 772 | `prep_init`, the token interface (`preprocessor_next_token`, peek / unread / putback), `%pragma`, placing errors (`prep_error_take`); the rest of it in the `macro/` parts, %included in this order: |
 | `macro/tokens.inc` | 1,321 | prep_internal_next: the token loop (expansion, directives, single-line macros), the input buffers |
-| `macro/expand.inc` | 1,443 | multi-line macro expansion: starting, the next token, popping |
+| `macro/expand.inc` | 1,461 | multi-line macro expansion: starting, the next token, popping |
 | `macro/directives.inc` | 902 | prep_handle_directive (the % directive dispatch), %include |
 | `macro/tables.inc` | 595 | the directive names and the preprocessor's other string tables |
 | `macro/cond.inc` | 831 | entering and branching conditionals, %ifidn / %ifidni, %elif, %error; constant text substitution, file pasting |
@@ -131,7 +131,12 @@ semantic/ (symbols), object/ (the listing's expansion lines).
 
 Complete: NASM 3.01's preprocessor, compared against NASM itself. Every
 fixed limit is gone (macro parameters, nesting depth, line length grow as
-needed).
+needed); what is left are NASM's guards against a runaway: 10,000 macro
+calls open (`MAX_MACRO_DEPTH`), 10,000,000 tokens in their arguments
+(`MAX_MACRO_ARGS_TOKENS`, NASM's macro-tokens: `prep_expand_start` adds a
+call's, `prep_expand_pop` takes them off - "r %1-1" calling itself took 9 s
+and 2 GB to reach the depth limit), `--limit-rep` (1,000,000), and the
+parser's `--limit-eval` (8192 terms in an expression).
 
 ## Tests
 
