@@ -110,7 +110,7 @@ name in it is not defined yet. That lets the parser:
 
 | File | Lines | What is in it |
 | --- | --- | --- |
-| `nasm/parser.s` | 978 | `parser_parse_instruction`: a statement (above); the rest of it in the `nasm/parser/` parts, %included in this order: |
+| `nasm/parser.s` | 977 | `parser_parse_instruction`: a statement (above); the rest of it in the `nasm/parser/` parts, %included in this order: |
 | `nasm/parser/operand.inc` | 779 | one operand: register, immediate, memory or far pointer (parser_parse_operand), a register's size and kind |
 | `nasm/parser/expr.inc` | 2,696 | the expression evaluator: the precedence levels, terms and factors, values deferred to a later pass, symbol classes |
 | `nasm/parser/memory.inc` | 1,465 | memory operands: relocation modifiers (wrt, rel, abs), base / index / scale terms, rip, MIB, decorators ({k}, {z}, {1toN}, {dfv=}) |
@@ -124,9 +124,9 @@ name in it is not defined yet. That lets the parser:
 | `nasm/parser/equ.inc` | 442 | org, equ, the late equs and aliases |
 | `nasm/parser/data.inc` | 925 | db / dw / dd / dq: item lists, dup, sizes, symbols, field widths, the zeroing warnings |
 | `nasm/parser/symbols.inc` | 1,749 | resb .., extern, default, section / segment, global / weak / visibility, common, parser_finish; the directive word tables (cpu_levels) |
-| `masm/masm.s` | 4,598 | MASM's procedures, INVOKE, runtime control flow, sections, typed data |
+| `masm/masm.s` | 4,588 | MASM's procedures, INVOKE, runtime control flow, sections, typed data |
 | `fasm/fasm.s` | 906 | fasm's virtual / load / store, format, entry, segment |
-| `gas/gas.s` | 2,189 | GNU as's directives |
+| `gas/gas.s` | 2,188 | GNU as's directives |
 | `gas/gas_macro.s` | 2,279 | GNU as's macros, repetitions and conditionals |
 | `gas/att.s` | 2,140 | AT&T syntax |
 
