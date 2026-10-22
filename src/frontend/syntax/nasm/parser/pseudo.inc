@@ -51,9 +51,19 @@ parser_handle_pseudo_op:
 
     ; the directives NASM makes standard macros (section, global, align
     ; ...) move its %% counter as a macro call does - so many numbers each
-    ; (std_macro_words) - which ..@N names show; not in [ ] (the primitive)
+    ; (std_macro_words) - which ..@N names show; not in [ ] (the primitive),
+    ; nor after times ("times 2 incbin f": no macro there, the line's first
+    ; word is times)
     cmp     byte [rel stmt_bracketed], 0
     jne     .counted
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_mac_exp]
+    test    rax, rax
+    jz      .count_word
+    mov     rax, [rax + MACROEXP_macro]
+    test    byte [rax + MACRO_flags], MACRO_FLAG_TIMES
+    jnz     .counted
+.count_word:
     mov     rdi, r12
     lea     rsi, [rel std_macro_words]
     call    parser_word_index
