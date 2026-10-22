@@ -898,7 +898,12 @@ parser_parse_instruction:
     call    warn_begin
     test    eax, eax
     jz      .colonless
+    ; "label `foo' alone on a line ...": NASM 3's, the name in it
     lea     rsi, [rel s_orphan]
+    call    warn_text
+    mov     rsi, [r12 + TOKEN_value]
+    call    warn_text
+    lea     rsi, [rel s_orphan_tail]
     call    warn_text
     call    warn_end
     mov     rdi, [r12 + TOKEN_value]
