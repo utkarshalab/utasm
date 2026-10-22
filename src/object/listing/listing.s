@@ -1643,7 +1643,8 @@ lst_file_slot:
 ; lst_reloc_at: is a relocation recorded at (section rdi, offset rsi)?
 ; eax = its width (0: none), edx = 1 when PC-relative, r8 = the value
 ; NASM shows: the symbol's offset in its section (when it is defined
-; here) plus the addend for an absolute field. Relocations are recorded
+; here) plus the addend for an absolute field, the difference's value for
+; a PC-relative one written as one ("baz - $"). Relocations are recorded
 ; in the order the code is, so the search goes on from the last one
 ; found, a little way.
 lst_reloc_at:
@@ -1721,7 +1722,18 @@ lst_reloc_at:
 .ret:
     test    edx, edx
     jz      .absolute
-    mov     r8, [rel lst_symval]           ; PC-relative: the symbol alone
+    ; PC-relative: the value written - "[rel baz + 5]" the symbol plus 5
+    ; (the addend less the field's distance to the instruction's end), a
+    ; difference ("baz - $", "dd baz - foo + 3", no such distance) S + A - P
+    mov     r8, [rel lst_symval]
+    add     r8, [rbx + RELOC_addend]
+    movsxd  rcx, dword [rbx + RELOC_pc_adjust]
+    test    rcx, rcx
+    jnz     .pc_written
+    mov     rcx, [rbx + RELOC_offset]
+    neg     rcx
+.pc_written:
+    add     r8, rcx
     pop     rbx
     ret
 .absolute:
