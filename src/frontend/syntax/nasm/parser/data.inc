@@ -885,7 +885,8 @@ s_bits32:      db "32", 0
 s_bits16:      db "16", 0
 s_rel_regs:    db "indirect address displacements cannot be RIP-relative", 0
 s_db_empty:    db "no operand for data declaration", 0
-s_orphan:      db "label alone on a line without a colon might be in error", 0
+s_orphan:      db "label `", 0
+s_orphan_tail: db "' alone on a line without a colon might be in error", 0
 data_letters:  db "bwdqtoyz", 0
 [SECTION .bss]
 alignb 8
