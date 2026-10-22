@@ -96,7 +96,6 @@ cf_debug:       db ".debug"
 cf_debug_len    equ $ - cf_debug
 cf_file:        db ".file", 0, 0, 0
 cf_absolut:     db ".absolut"
-cf_here:        db "L@here."
 cf_n8:          db "8-bit", 0
 cf_n16:         db "16-bit", 0
 cf_npc8:        db "8-bit relative", 0
