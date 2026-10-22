@@ -258,6 +258,40 @@ amd64_encode_instruction:
     call    amd64_imm_size_check
     test    rax, rax
     jnz     .done
+    ; push / pop: in 64-bit code 64 or 16 bits, never a dword (NASM's
+    ; error; "push dword [rax]" pushed 64 bits, silently); an immediate of
+    ; no size written takes o16 / o32's ("o16 push 0x12345" in bits 32 had
+    ; a 66 before a 4-byte immediate: the next instruction read wrong)
+    movzx   eax, word [r12 + INST_op_id]
+    cmp     eax, 1583                      ; PUSH
+    je      .push_pop
+    cmp     eax, 1534                      ; POP
+    jne     .push_pop_ok
+.push_pop:
+    extern  asm_bits
+    cmp     byte [rel asm_bits], 64
+    jne     .push_size
+    cmp     byte [r12 + INST_op0 + OPERAND_size], 32
+    jne     .push_size
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_REG
+    je      .push_size                     ; (push eax: its own error)
+    mov     eax, EXIT_OSZ32_64
+    jmp     .done
+.push_size:
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_IMM
+    jne     .push_pop_ok
+    cmp     byte [r12 + INST_op0 + OPERAND_size], 0
+    jne     .push_pop_ok
+    movzx   eax, byte [r12 + INST_osize]
+    test    eax, eax
+    jz      .push_pop_ok
+    cmp     byte [rel asm_bits], 64
+    jne     .push_sized
+    cmp     eax, 32
+    je      .push_pop_ok                   ; (o32 in 64-bit code: amd64_force_osize)
+.push_sized:
+    mov     [r12 + INST_op0 + OPERAND_size], al
+.push_pop_ok:
     ; immediates as the operation's width sees them: 0xFFFF in a 16-bit
     ; operation is -1, so the imm8 forms apply as in NASM
     extern  amd64_imm_canon
