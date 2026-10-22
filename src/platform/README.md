@@ -35,9 +35,8 @@ directory opens, but mapping it failed unseen and utasm crashed.
 
 | Function | What it does |
 | --- | --- |
-| `mem_map` | anonymous mmap (the bump allocator's pages) |
-| `heap_alloc`, `heap_free` | a bump allocator on top — used by `lib/string.s` (`str_dup` & co.); the arena (`lib/arena.s`) reserves its own memory |
-| `mem_unmap`, `mem_protect`, `mem_alloc_exec`, `mem_lock`, `mem_unlock`, `mem_advise` | munmap, mprotect, mlock, madvise wrappers — unused today (kept for the self-patching engine, `src/planned/selfpatch/`, which needs executable memory) |
+| `heap_alloc` | `arena_alloc` from `global_arena` - used by `lib/string.s` (`str_dup` & co.) |
+| `mem_map`, `mem_unmap`, `mem_protect`, `mem_alloc_exec`, `mem_lock`, `mem_unlock`, `mem_advise`, `heap_free` | mmap, munmap, mprotect, mlock, madvise wrappers (and a `heap_free` that frees nothing) - not called today: kept for the self-patching engine, `src/planned/selfpatch/`, which needs executable memory |
 
 ## Files
 
@@ -53,7 +52,7 @@ directory opens, but mapping it failed unseen and utasm crashed.
 | Symbol | Used by |
 | --- | --- |
 | `io_*` | object/ (writing outputs), frontend/preproc (includes), tools/inspect (reading), main/, core/known.s, debug/, link/ |
-| `heap_alloc`, `heap_free` | lib/string.s |
+| `heap_alloc` | lib/string.s |
 
 ## Depends on
 
