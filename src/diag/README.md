@@ -65,7 +65,8 @@ its line (`lst_warning`). Warnings are **held** until an error is printed
 or utasm exits (`warn_flush`): when core/known.s runs a second pass, the
 first pass's warnings are dropped, so each is given once, as NASM does.
 The classes are NASM's (`zeroing`, `number-overflow`, `label-orphan`,
-`ptr`, `ea-absolute`, `ea-dispsize`, `prefix-*`, `pp-*`, `obsolete-*` ...)
+`ptr`, `ea-absolute`, `ea-dispsize`, `implicit-abs-deprecated` (NASM 3's, once a file),
+`prefix-*`, `pp-*`, `obsolete-*` ...)
 plus utasm's own: `pie` and `proc-stack`, `proc-uses`, `proc-clobber`,
 `proc-unreachable`, `proc-fallthrough` (semantic/proc.s).
 
@@ -83,7 +84,7 @@ same diagnostics.
 | --- | --- | --- |
 | `codes.s` | 1,116 | `error_report_code`, `error_code_message` (every `EXIT_*` code's message), `error_report_line` (the lexer's errors, at their own line), the line tracking, `error_report_text` (`%error`, `%warning`, `%fatal`), the `-X` style |
 | `source.s` | 1,347 | the rich form: colors, `diag_snippet` (the line, marked), `diag_notes` / `diag_inst` (what the operands were) |
-| `warnings.s` | 560 | warning classes, `-w` / `-W`, holding and flushing, `-Werror` |
+| `warnings.s` | 563 | warning classes, `-w` / `-W`, holding and flushing, `-Werror` |
 | `hints.s` | 248 | "did you mean" for mnemonics and symbols |
 | `suggest.s` | 352 | the edit-distance engine |
 | `json.s` | 670 | `-X json` |
