@@ -51,7 +51,7 @@ the expanded source.
 | File | Lines | What is in it |
 | --- | --- | --- |
 | `utasm.s` | 1,042 | `_start` (the steps above); the error recovery (`rc_snapshot`, `rc_failed`, `rc_fatal`, `rc_skip_line`); stdin as a file (`utasm_stdin`); `print_str` / `print_num`; the `-h` text; the globals every module reaches: `global_ctx`, `global_arena`, `global_lexer`, `global_prep`, `utasm_argv`, `utasm_envp`, `rc_status` |
-| `cli.s` | 1,549 | `cli_parse`: every option into the AsmCtx and the module flags; NASM's options (`cli_nasm_option`: `-I -D -U -p -E -l -M* -w -W -X -O -Z -s`); `cli_write_deps` (`-M` output); the options other modules read: `cli_bits`, `cli_mode`, `cli_prelude`, `cli_output_given`, `cli_deps`, `cli_lsp` |
+| `cli.s` | 1,564 | `cli_parse`: every option into the AsmCtx and the module flags; NASM's options (`cli_nasm_option`: `-I -D -U -p -E -l -M* -w -W -X -O -Z -s`); `cli_write_deps` (`-M` output); the options other modules read: `cli_bits`, `cli_mode`, `cli_prelude`, `cli_output_given`, `cli_deps`, `cli_lsp` |
 
 ## Entry points
 
