@@ -1545,6 +1545,7 @@ str_org:       db "org", 0
 str_required:  db "required", 0
 s_num_wide_a:  db "numeric constant ", 0
 s_num_wide_b:  db " does not fit in 64 bits", 0
+s_dollar_hex:  db "$ prefix for hexadecimal is deprecated", 0
 ; one-byte instructions a "times K-($-$$)" pads with: name, then the byte
 fill_insns:    db "nop", 0, 0, 0x90
                db "int3", 0, 0xCC
