@@ -236,6 +236,8 @@ struc MACROEXP
     field greedy_at, 4      ; arguments from which a comma no longer ends one
     field pad3,     4
     field call_file, 8      ; (line's file)
+    field argtoks,  8       ; the tokens of its arguments (prep_expand_start's
+                            ; runaway check: prep_mac_args)
 endstruc
 
 ; ============================================================================
