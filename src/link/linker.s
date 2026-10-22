@@ -14,8 +14,8 @@
 extern binary_emit
 extern elf64_emit
 extern reloc_resolve_all
-extern error_emit
 extern io_open
+extern io_create
 extern io_close
 
 [SECTION .text]
@@ -129,12 +129,11 @@ linker_run:
     test    rdi, rdi
     jz      .error_no_output
 
-    mov     rsi, AMD64_O_WRONLY | AMD64_O_CREAT | AMD64_O_TRUNC
     mov     rdx, 0o644
     IF byte [rbx + ASMCTX_standalone], e, 1
         mov     rdx, 0o755             ; an executable
         ENDIF
-    call    io_open
+    call    io_create              ; (names the file when it fails)
     check_err
     mov     r12, rdx               ; r12 = FD
 
