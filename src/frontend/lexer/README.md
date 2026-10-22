@@ -26,8 +26,22 @@ through a 256-entry table (`lexer_char_props`):
 | `%name`, `%%name`, `%$name`, `%[...]`, `%+` ... | the preprocessor's tokens |
 | operators and punctuation | their own kinds: `+ - * / % << >> & ^ ~ ! == != < <= > >= && ? :`, the bar and double bar (or), `[ ] ( ) { } ,` |
 
-An unknown character is an error at its line and column; an unterminated
-string is `EXIT_UNEXPECTED_EOF`.
+What cannot be read is an error at its line (`error_report_line`,
+diag/codes.s), counted; lexing goes on and the assembly fails at its end
+(exit status 4):
+
+| In the source | The error | Then |
+| --- | --- | --- |
+| a string or `'...'` with no closing quote on its line | ``unterminated string (missing `"')`` | the literal ends at the line's end |
+| `%{` with no `}` on its line | ``unterminated %{...} construct (missing `}')`` | the name ends at the line's end |
+| `/*` with no `*/` | ``unterminated block comment (missing `*/')``, at the line it starts on | the rest of the file is the comment |
+| bytes that are not UTF-8 | `invalid UTF-8 sequence` | the run of them skipped |
+| a character no token starts with | ``invalid character `\' in the source``; a control character as `invalid character (byte 0x01) in the source` | the run of them skipped |
+| a string over 65,535 bytes | `string longer than 65535 bytes` | read to its end (`TOKEN_len` is 16 bits) |
+
+A string's buffer starts at 64 bytes and doubles as it fills. (These
+errors used to stop utasm at the first one, in a form of their own, with
+exit status 1: `diag/error.s`'s `error_emit`, removed 2026-10-22.)
 
 Line numbers step by `lexer_line_step` — 1, or what `%line N+step` set —
 so the listing and the diagnostics can report a generated file's original
@@ -37,7 +51,7 @@ lines.
 
 | File | Lines | What is in it |
 | --- | --- | --- |
-| `lexer.s` | 2,968 | `lexer_init`, `lexer_next`, `lexer_peek`, the character table, numbers, strings and escapes, `%line` stepping, `lexer_mark_lone` (a word alone on its line, for NASM's orphan-label warning) |
+| `lexer.s` | 3,007 | `lexer_init`, `lexer_next`, `lexer_peek`, the character table, numbers, strings and escapes, `%line` stepping, `lexer_mark_lone` (a word alone on its line, for NASM's orphan-label warning) |
 
 ## Entry points
 
@@ -48,12 +62,12 @@ lines.
 | `lexer_char_props` | frontend/syntax (GNU's and fasm's word rules) |
 | `lexer_line_step`, `lexer_mark_lone` | frontend/preproc |
 
-`lexer_destroy` and `lexer_expect` are defined but unused (lexers live in
-the arena and go when utasm exits).
+`lexer_destroy` is defined but unused (lexers live in the arena and go
+when utasm exits).
 
 ## Depends on
 
-lib/ (strings, numbers), diag/ (the error for a bad character), semantic/
+lib/ (strings, numbers), diag/ (`error_report_line`), semantic/
 (symbols for `$`-style names).
 
 ## Status
