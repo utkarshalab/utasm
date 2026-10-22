@@ -31,8 +31,9 @@ resolved_here:  resb 1                  ; some were written in place
 ; ============================================================================
 ;
 ; reloc_warn_pie: "absolute 32-bit address of `msg' will not link into a
-; PIE" for relocation r8 to the name r13, in a 64-bit ELF object (rbx =
-; AsmCtx). Preserves rbx, r8, r12-r14.
+; PIE" (16-bit, 8-bit: its width) for relocation r8 to the name r13 ("$"
+; for the label a $ is), in a 64-bit ELF object (rbx = AsmCtx). Preserves
+; rbx, r8, r12-r14.
 global reloc_warn_pie, reloc_quiet
 reloc_warn_pie:
     cmp     byte [rel reloc_quiet], 0
@@ -65,13 +66,36 @@ reloc_warn_pie:
     jz      .out
     lea     rsi, [rel s_pie_a]
     call    warn_text
+    mov     rax, [rsp]                     ; its width
+    lea     rsi, [rel s_pie_8]
+    cmp     eax, 14                        ; R_X86_64_8
+    je      .width
+    lea     rsi, [rel s_pie_16]
+    cmp     eax, 12                        ; R_X86_64_16
+    je      .width
+    lea     rsi, [rel s_pie_32]
+.width:
+    call    warn_text
     mov     rsi, r13
     cmp     byte [rsi], 0x1F
     jbe     .an_expression                 ; a kept expression, a distance
+    ; "dd $": the label made for it ("L@here.N", parser/labels.inc) is no
+    ; name the source has
+    mov     r9, r13
+    cmp     dword [r13], 'L@he'
+    jne     .named
+    cmp     word [r13 + 4], 're'
+    jne     .named
+    cmp     byte [r13 + 6], '.'
+    jne     .named
+    lea     r9, [rel s_pie_here]
+.named:
+    push    r9
+    mov     rsi, r9
     call    warn_text
     lea     rsi, [rel s_pie_b]
     call    warn_text
-    mov     rsi, r13
+    pop     rsi
     call    warn_text
     lea     rsi, [rel s_pie_c]
     call    warn_text
@@ -86,8 +110,145 @@ reloc_warn_pie:
 .ret:
     ret
 
+; reloc_pc_type: edx = 1 when relocation type eax is PC-relative (else 0)
+reloc_pc_type:
+    xor     edx, edx
+    cmp     eax, R_X86_64_PC32
+    je      .pc
+    cmp     eax, R_X86_64_PLT32
+    je      .pc
+    cmp     eax, R_X86_64_PC8
+    je      .pc
+    cmp     eax, 13                        ; R_X86_64_PC16
+    je      .pc
+    cmp     eax, 24                        ; R_X86_64_PC64
+    je      .pc
+    cmp     eax, R_X86_64_GOTPCREL
+    jne     .ret
+.pc:
+    mov     edx, 1
+.ret:
+    ret
+
+; reloc_warn_nasm: NASM's "32-bit absolute section-crossing relocation"
+; [-w+reloc-abs-dword] (and -byte, -word, -qword; "relative" for a
+; PC-relative one, -w+reloc-rel-*) for relocation r12d (r13 = it, rbx =
+; AsmCtx), at its statement and its line in the listing, in the order of
+; the source (warn_late_key). Off unless -w+all or named; GNU's syntax has
+; none. Preserves rbx, r12-r15.
+reloc_warn_nasm:
+    extern  gas_names
+    cmp     byte [rel gas_names], 0
+    jne     .ret
+    test    byte [r13 + RELOC_flags], RELOC_FLAG_SECTION
+    jnz     .ret                           ; (debug information)
+    mov     rax, [r13 + RELOC_sym]
+    test    rax, rax
+    jz      .ret
+    cmp     byte [rax], 0x1F
+    jbe     .ret                           ; a number's, an offset's, a value's
+    mov     eax, [r13 + RELOC_type]
+    lea     rcx, [rel rw_types]
+.type:
+    cmp     dword [rcx], 0
+    je      .ret                           ; (TLS, GOT ...: none)
+    cmp     [rcx], eax
+    je      .typed
+    add     rcx, 8
+    jmp     .type
+.typed:
+    movzx   eax, byte [rcx + 4]            ; the class
+    push    rax
+    movzx   eax, byte [rcx + 5]            ; its bits
+    push    rax
+    mov     rdi, [r13 + RELOC_file]
+    mov     esi, [r13 + RELOC_line]
+    extern  error_set_location
+    call    error_set_location
+    mov     rax, [r13 + RELOC_mac_name]    ; the "... from macro" note
+    mov     [rel error_mac_name], rax
+    mov     rax, [r13 + RELOC_mac_file]
+    mov     [rel error_mac_file], rax
+    mov     eax, [r13 + RELOC_mac_line]
+    mov     [rel error_mac_line], eax
+    lea     rax, [r12 + r12 + 1]
+    extern  warn_late_key
+    mov     [rel warn_late_key], rax
+    extern  lst_warn_sec, lst_warn_off
+    mov     rax, [r13 + RELOC_section]
+    mov     [rel lst_warn_sec], rax
+    mov     rax, [r13 + RELOC_offset]
+    mov     [rel lst_warn_off], rax
+    mov     rdi, [rsp + 8]
+    call    warn_begin
+    test    eax, eax
+    jz      .quiet
+    mov     rax, [rsp]
+    lea     rsi, [rel s_rw_8]
+    cmp     eax, 8
+    je      .bits
+    lea     rsi, [rel s_rw_16]
+    cmp     eax, 16
+    je      .bits
+    lea     rsi, [rel s_rw_32]
+    cmp     eax, 32
+    je      .bits
+    lea     rsi, [rel s_rw_64]
+.bits:
+    call    warn_text
+    lea     rsi, [rel s_rw_abs]
+    cmp     qword [rsp + 8], WC_RELOC_REL_BYTE
+    jb      .kind
+    lea     rsi, [rel s_rw_rel]
+.kind:
+    call    warn_text
+    call    warn_end
+.quiet:
+    add     rsp, 16
+    mov     qword [rel lst_warn_sec], 0
+    ; warnings after these come after them
+    mov     rax, 0x7FFFFFFFFFFFFFFE
+    mov     [rel warn_late_key], rax
+.ret:
+    ret
+
 [SECTION .rodata]
-s_pie_a:    db "absolute 32-bit address of `", 0
+; relocation type, class, bits (8 bytes a row)
+rw_types:
+    dd R_X86_64_64
+    db WC_RELOC_ABS_QWORD, 64, 0, 0
+    dd R_X86_64_32
+    db WC_RELOC_ABS_DWORD, 32, 0, 0
+    dd R_X86_64_32S
+    db WC_RELOC_ABS_DWORD, 32, 0, 0
+    dd 12                                  ; R_X86_64_16
+    db WC_RELOC_ABS_WORD, 16, 0, 0
+    dd 14                                  ; R_X86_64_8
+    db WC_RELOC_ABS_BYTE, 8, 0, 0
+    dd R_X86_64_PC32
+    db WC_RELOC_REL_DWORD, 32, 0, 0
+    dd R_X86_64_PLT32
+    db WC_RELOC_REL_DWORD, 32, 0, 0
+    dd R_X86_64_GOTPCREL
+    db WC_RELOC_REL_DWORD, 32, 0, 0
+    dd 13                                  ; R_X86_64_PC16
+    db WC_RELOC_REL_WORD, 16, 0, 0
+    dd R_X86_64_PC8
+    db WC_RELOC_REL_BYTE, 8, 0, 0
+    dd 24                                  ; R_X86_64_PC64
+    db WC_RELOC_REL_QWORD, 64, 0, 0
+    dd 0
+s_rw_8:     db "8", 0
+s_rw_16:    db "16", 0
+s_rw_32:    db "32", 0
+s_rw_64:    db "64", 0
+s_rw_abs:   db "-bit absolute section-crossing relocation", 0
+s_rw_rel:   db "-bit relative section-crossing relocation", 0
+s_pie_a:    db "absolute ", 0
+s_pie_8:    db "8-bit address of `", 0
+s_pie_16:   db "16-bit address of `", 0
+s_pie_32:   db "32-bit address of `", 0
+s_pie_here: db "$", 0
 s_pie_b:    db "' will not link into a PIE: use [rel ", 0
 s_pie_c:    db "] or lea reg, [rel ...]", 0
 s_pie_expr: db "an expression' will not link into a PIE: use rip-relative addressing ([rel ...])", 0
@@ -249,6 +410,13 @@ reloc_record:
     mov     [rdx + RELOC_line], eax
     mov     rax, [rel error_loc_file]
     mov     [rdx + RELOC_file], rax
+    extern  error_mac_name, error_mac_file, error_mac_line
+    mov     rax, [rel error_mac_name]      ; ... and from which macro
+    mov     [rdx + RELOC_mac_name], rax
+    mov     rax, [rel error_mac_file]
+    mov     [rdx + RELOC_mac_file], rax
+    mov     eax, [rel error_mac_line]
+    mov     [rdx + RELOC_mac_line], eax
 
     ; Target section: the one currently being emitted into
     mov     rcx, [rbx + ASMCTX_curr_sec]
@@ -572,6 +740,24 @@ reloc_resolve_all:
     jmp     .ret
 
 .check_done:
+    ; what the object keeps: NASM's reloc-abs-* / reloc-rel-* (-w+all), each
+    ; at its statement (the index, before the others are dropped, its key)
+    mov     r14, [rbx + ASMCTX_relocs]
+    xor     r12d, r12d
+.kept_next:
+    cmp     r12d, [rbx + ASMCTX_nrelocs]
+    jae     .kept_done
+    mov     r13, r12
+    imul    r13, RELOC_SIZE
+    add     r13, r14
+    cmp     dword [r13 + RELOC_type], RELOC_DELETED_TYPE
+    je      .kept_skip
+    call    reloc_warn_nasm
+.kept_skip:
+    inc     r12d
+    jmp     .kept_next
+.kept_done:
+    mov     r14, [rbx + ASMCTX_relocs]
     ; drop the relocations written in place, keeping the others in order
     cmp     byte [rel resolved_here], 0
     je      .coff_check
@@ -715,6 +901,21 @@ reloc_resolve_all:
     test    r8, r8
     jz      .undef
     
+    ; NASM's reloc-abs-* / reloc-rel-* (-w+all): an address, or a distance
+    ; to another section, a linker would have taken
+    push    r8
+    push    r10
+    mov     eax, [r13 + RELOC_type]
+    call    reloc_pc_type
+    test    edx, edx
+    jz      .flat_warn                     ; an address: always
+    cmp     r8, [r13 + RELOC_section]
+    je      .flat_quiet                    ; a distance in its own section
+.flat_warn:
+    call    reloc_warn_nasm
+.flat_quiet:
+    pop     r10
+    pop     r8
     mov     r9, [r8 + SECTION_addr]          ; r9 = section VA
     mov     rax, [r10 + SYMBOL_value]
     add     rax, r9                          ; rax = sym_va
