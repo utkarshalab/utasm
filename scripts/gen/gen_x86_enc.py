@@ -123,6 +123,9 @@ TYPES = [   # name, rclass, special, rsize, msize, fixreg, imm
     # NASM's rm8 with "nohi" (pinsrb): the byte register encoded as its
     # 32-bit one - no REX for sil / dil, no ah .. bh
     ("RM8N", C_GPR, 6, 8, 8, 0xFF, 0),
+    # NASM's "ib,u": a byte immediate it calls unsigned - matched as I8,
+    # cut with "unsigned byte exceeds bounds" (fixreg 1 marks it)
+    ("I8U", 0, 3, 0, NOMEM, 1, I8),
 ]
 TY = {t[0]: i for i, t in enumerate(TYPES)}
 
@@ -144,10 +147,26 @@ ENC_LEGACY, ENC_VEX, ENC_EVEX, ENC_XOP = 0, 1, 2, 3
 # objdump's names for undocumented x87 aliases: no assembler accepts them
 SKIP = {"fcom2", "fcomp3", "fcomp5", "ffreep", "fstp1", "fstp8", "fstp9", "fxch4", "fxch7"}
 
+def _u8_names():
+    # the mnemonics whose byte immediate NASM marks "ib,u" (in, out, int,
+    # enter's, the shifts' counts, psllw ...): unsigned, in every form of
+    # theirs, the opcode map's too
+    names = set()
+    for f in ("insns.dat", "insns3.dat"):
+        p = os.path.join(ROOT, "third_party", "nasm", f)
+        if os.path.exists(p):
+            for line in open(p, encoding="utf-8", errors="replace"):
+                if "ib,u" in line and line[:1].isalpha():
+                    names.add(line.split()[0].lower())
+    return names
+U8_NAMES = _u8_names()
+
 def form(name, types, pfx, mp, opcode, modrm, roles, flags=0, fiximm=0, prio=0, enc=ENC_LEGACY, L=0):
     if name in SKIP and prio != 50:              # (NASM's list, NASM_PRIO, has ffreep)
         return
     types = types.split() if isinstance(types, str) else list(types)
+    if name in U8_NAMES:
+        types = ["I8U" if t == "I8" else t for t in types]
     roles = roles.split() if isinstance(roles, str) else list(roles)
     assert len(types) == len(roles), (name, types, roles)
     rmap = {"-": R_NONE, "reg": R_REG, "rm": R_RM, "v": R_VVVV, "+": R_PLUS, "i": R_IMM, "is4": R_IS4}
