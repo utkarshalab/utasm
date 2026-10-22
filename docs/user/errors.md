@@ -158,7 +158,7 @@ the first failure: see *Exit status* at the end.
 | --- | --- | --- | --- |
 | 5 | `invalid combination of opcode and operands` |  | machine instruction encoding failed (`EXIT_ENCODER_ERROR`) |
 | 24 | `invalid effective address: two index registers` |  | [rax*2 + rbx*2] (`EXIT_EA_TWO_INDEX`) |
-| 25 | `parser: instruction expected` | `` parser: instruction expected, found `NAME' `` | mnemonic does not match any known instruction (`EXIT_UNKNOWN_INSTR`) |
+| 25 | `instruction expected` | `` instruction expected, found `NAME' `` | mnemonic does not match any known instruction (`EXIT_UNKNOWN_INSTR`) |
 | 26 | `invalid operand` |  | operand syntax is not valid for instruction (`EXIT_INVALID_OPERAND`) |
 | 27 | `invalid register` |  | register name is unrecognized or illegal (`EXIT_INVALID_REG`) |
 | 28 | `invalid immediate value` |  | immediate value format or content is invalid (`EXIT_INVALID_IMM`) |
@@ -185,6 +185,7 @@ the first failure: see *Exit status* at the end.
 | 181 | `this instruction takes no write mask / {z} here (#UD with one)` |  | a write mask / {z} the instruction does not take (`EXIT_MASK_REFUSED`) |
 | 191 | `invalid use of self-relative expression` |  | a self-relative value ("x - $", x elsewhere) as a RIP-relative address (`EXIT_EA_SELF_REL`) |
 | 192 | `instruction not valid with 32-bit operand size` |  | push / pop of a dword in 64-bit code (they are 64 or 16 bits there) (`EXIT_OSZ32_64`) |
+| 193 | `label, instruction or prefix expected at start of line` | `` label, instruction or prefix expected at start of line, found `NAME' `` | a line starts with no label, instruction or prefix ("5", ",") (`EXIT_LINE_START`) |
 
 ### Expressions and symbols
 
@@ -389,6 +390,14 @@ after the whole source is read, as `%error` does.
 | `proc-fallthrough` | yes | the code runs into endproc |
 | `implicit-abs-deprecated` | yes | NASM 3's, an absolute address in 64-bit code with no "default" written |
 | `number-deprecated-hex` | yes | NASM 3's, "$0ff" (write 0x0ff) |
+| `reloc-abs-byte` | no | an 8-bit absolute relocation |
+| `reloc-abs-word` | no | a 16-bit absolute relocation |
+| `reloc-abs-dword` | no | a 32-bit absolute relocation ("dd x") |
+| `reloc-abs-qword` | no | a 64-bit absolute relocation |
+| `reloc-rel-byte` | no | an 8-bit PC-relative relocation |
+| `reloc-rel-word` | no | a 16-bit PC-relative relocation |
+| `reloc-rel-dword` | no | a 32-bit PC-relative one ("call e") |
+| `reloc-rel-qword` | no | a 64-bit PC-relative relocation |
 
 `pie`, `slash-comment` and the `proc-*` classes are utasm's own; the others
 are NASM's, with NASM's names and defaults.
