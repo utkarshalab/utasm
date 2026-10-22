@@ -74,6 +74,10 @@ lst_parent_exp: resq 1              ; set before a body lst_note: the
                                     ; expansion around the token's own
 lst_depth_last: resq LST_DEPTHS     ; writing: last line shown per depth
 lst_rcur:       resq 1              ; relocation search cursor
+global lst_warn_sec, lst_warn_off
+lst_warn_sec:   resq 1              ; a warning given after the source is read
+lst_warn_off:   resq 1              ; (the relocation pass's): its line's bytes
+lst_wcur:       resq 1              ; lst_warn_entry's search cursor
 lst_fd:         resq 1
 lst_outlen:     resq 1
 lst_files:      resb LST_FILES * LF_ENTRY
@@ -115,7 +119,9 @@ lst_listing:
 
 ;*
 ; * [lst_warning]
-; * Purpose: A warning given at the current line: listed after it.
+; * Purpose: A warning given at the current line: listed after it - or,
+; *          given once the source is read (lst_warn_sec set: a
+; *          relocation's), after the line whose bytes hold lst_warn_off.
 ; * Input  : RDI = its text ("warning: ... [-w+class]")
 ; * Clobbers: rax, rcx, rdx, rsi, rdi, r8-r11
 ; ;
@@ -123,11 +129,19 @@ global lst_warning
 lst_warning:
     cmp     byte [rel lst_enabled], 0
     je      .ret
-    cmp     qword [rel lst_cur], 0
-    je      .ret
     push    rbx
     push    r12
+    push    r13
     mov     r12, rdi
+    mov     r13, [rel lst_cur]
+    cmp     qword [rel lst_warn_sec], 0
+    je      .current
+    call    lst_warn_entry
+    mov     r13, rax
+.current:
+    test    r13, r13
+    jz      .out
+    mov     rdi, r12
     call    str_len
     lea     rdi, [rax + 17]                ; next, offset, the text, its NUL
     call    lst_alloc
@@ -137,7 +151,18 @@ lst_warning:
     ; where in the line's bytes it came: NASM lists it after that row
     ; ("db 300, 2, ... 20": after the first)
     xor     ecx, ecx
-    mov     rdx, [rel lst_cur]
+    mov     rdx, r13
+    cmp     qword [rel lst_warn_sec], 0
+    je      .at_now
+    ; a relocation's: after the row with the byte before its field, as
+    ; NASM has it ("dq e, e, e": two after the first row, one after the
+    ; second; "mov rax, e": after the row with 48 b8)
+    mov     rcx, [rel lst_warn_off]
+    sub     rcx, [rdx + LE_START]
+    jz      .at
+    dec     rcx
+    jmp     .at
+.at_now:
     mov     rbx, [rdx + LE_SEC]
     test    rbx, rbx
     jz      .at
@@ -155,8 +180,7 @@ lst_warning:
     test    cl, cl
     jnz     .copy
     ; after the line's other warnings
-    mov     rcx, [rel lst_cur]
-    add     rcx, LE_WARN
+    lea     rcx, [r13 + LE_WARN]
 .tail:
     cmp     qword [rcx], 0
     je      .link
@@ -165,9 +189,50 @@ lst_warning:
 .link:
     mov     [rcx], rax
 .out:
+    pop     r13
     pop     r12
     pop     rbx
 .ret:
+    ret
+
+; lst_warn_entry: rax = the entry whose bytes in lst_warn_sec hold
+; lst_warn_off, or 0. The search goes on from the last one found (the
+; relocation pass asks in the order of the code), round to it once.
+; Clobbers: rcx, rdx, rsi, rdi, r8-r11
+lst_warn_entry:
+    mov     rsi, [rel lst_warn_sec]
+    mov     rdi, [rel lst_warn_off]
+    mov     r8, [rel lst_base]
+    mov     r9, [rel lst_count]
+    test    r9, r9
+    jz      .none
+    mov     r10, [rel lst_wcur]
+    cmp     r10, r9
+    jb      .from
+    xor     r10d, r10d
+.from:
+    mov     r11, r9                        ; entries left to look at
+.look:
+    imul    rax, r10, LE_SIZE
+    add     rax, r8
+    cmp     [rax + LE_SEC], rsi
+    jne     .next
+    cmp     rdi, [rax + LE_START]
+    jb      .next
+    cmp     rdi, [rax + LE_END]
+    jae     .next
+    mov     [rel lst_wcur], r10
+    ret
+.next:
+    inc     r10
+    cmp     r10, r9
+    jb      .left
+    xor     r10d, r10d
+.left:
+    dec     r11
+    jnz     .look
+.none:
+    xor     eax, eax
     ret
 
 ;*
@@ -1722,6 +1787,21 @@ lst_reloc_at:
 .ret:
     test    edx, edx
     jz      .absolute
+    ; a flat binary's distance in its own section is no relocation: the
+    ; bytes, as NASM lists them ("call y": e8 00 00)
+    lea     rcx, [rel global_ctx]
+    cmp     byte [rcx + ASMCTX_fmt], FMT_BIN
+    je      .flat
+    cmp     byte [rcx + ASMCTX_standalone], 0
+    je      .pc_value
+.flat:
+    mov     rcx, [rbx + RELOC_section]
+    test    rcx, rcx
+    jz      .pc_value
+    mov     ecx, [rcx + SECTION_index]
+    cmp     ecx, [rel lst_symsec]
+    je      .none
+.pc_value:
     ; PC-relative: the value written - "[rel baz + 5]" the symbol plus 5
     ; (the addend less the field's distance to the instruction's end), a
     ; difference ("baz - $", "dd baz - foo + 3", no such distance) S + A - P
@@ -1752,6 +1832,7 @@ lst_reloc_value:
     push    r10
     push    r11
     mov     qword [rel lst_symval], 0
+    mov     dword [rel lst_symsec], -1
     lea     rdi, [rel global_ctx]
     mov     rsi, [rbx + RELOC_sym]
     test    rsi, rsi
@@ -1766,6 +1847,8 @@ lst_reloc_value:
     je      .done
     mov     rax, [rdx + SYMBOL_value]
     mov     [rel lst_symval], rax
+    movzx   eax, word [rdx + SYMBOL_section]
+    mov     [rel lst_symsec], eax
 .done:
     pop     r11
     pop     r10
@@ -1952,3 +2035,4 @@ lst_row:        resb 64
 lst_rep_at:     resq 1              ; a times line's offset (its count's row)
 lst_value:      resq 1
 lst_symval:     resq 1
+lst_symsec:     resd 1              ; ... and its section's index (-1: none)
