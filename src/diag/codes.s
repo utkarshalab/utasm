@@ -859,6 +859,7 @@ code_table:
     code_msg EXIT_LEX_STRING_LONG,   m_string_long
     code_msg EXIT_FILE_IS_DIR,       m_is_dir, t_is_dir
     code_msg EXIT_PP_NO_ENDIF,       m_no_endif
+    code_msg EXIT_EXPR_TOO_LONG,     m_expr_long
     dd 0, 0
     dq 0, 0
 
@@ -1081,6 +1082,7 @@ m_string_long:  db "string longer than 65535 bytes", 0
 m_is_dir:       db "a directory, not a file", 0
 t_is_dir:       db "`^' is a directory, not a file", 0
 m_no_endif:     db "expected `%endif' before end of file", 0
+m_expr_long:    db "expression too long", 0
 t_ns_shadow:    db "`^' was taken from an outer namespace, then this one defined it (write ::^, or define it before)", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
