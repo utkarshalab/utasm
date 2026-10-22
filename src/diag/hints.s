@@ -33,7 +33,7 @@ extern warn_hold_put
 ; the caller. So the finders only remember the best match, and the code
 ; that prints the error calls error_hint_flush afterwards:
 ;
-;     prog.s:3: error: parser: instruction expected, found `mvo'
+;     prog.s:3: error: instruction expected, found `mvo eax'
 ;     hint: did you mean 'mov'?
 ;
 ; Mnemonic candidates come from src/diag/gen/mnemonic_names.inc, generated from
