@@ -860,6 +860,12 @@ skipped with a note.
 README of their own), and that no folder with files is left without one.
 `tests/run.sh` runs it first.
 
+### The error reference
+
+`python3 scripts/gen/gen_error_docs.py --check` fails when
+`docs/user/errors.md` no longer lists exactly the messages and warning
+classes the source has; `tests/run.sh` runs it next.
+
 ### The opcode-space scan
 
 The disassembler suite reads what assemblers write. What they never write -
