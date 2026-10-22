@@ -81,6 +81,7 @@ warn_state:
     db 1                                ; WC_PROC_CLOBBER
     db 1                                ; WC_PROC_UNREACHABLE
     db 1                                ; WC_PROC_FALLTHROUGH
+    db 1                                ; WC_IMPLICIT_ABS
 
 [SECTION .rodata]
 warn_names:
@@ -91,6 +92,7 @@ warn_names:
     dq wn_prefix_opsize, wn_prefix_hle, wn_obsolete_removed, wn_obsolete_nop
     dq wn_obsolete_valid, wn_float_overflow, wn_pp_rep_negative, wn_ea_dispsize
     dq wn_proc_stack, wn_proc_uses, wn_proc_clobber, wn_proc_unreachable, wn_proc_fallthrough
+    dq wn_implicit_abs
 wn_other:db "other", 0
 wn_user:        db "user", 0
 wn_zeroing:     db "zeroing", 0
@@ -122,6 +124,7 @@ wn_proc_uses:   db "proc-uses", 0
 wn_proc_clobber: db "proc-clobber", 0
 wn_proc_unreachable: db "proc-unreachable", 0
 wn_proc_fallthrough: db "proc-fallthrough", 0
+wn_implicit_abs: db "implicit-abs-deprecated", 0
 wn_all:         db "all", 0
 s_warning:      db "warning: ", 0
 s_error:        db "error: ", 0
@@ -131,7 +134,7 @@ s_close:        db "]", 0
 s_byte:         db "byte", 0
 s_word:         db "word", 0
 s_dword:        db "dword", 0
-s_exceeds:      db " data exceeds bounds", 0
+s_exceeds:      db " exceeds bounds", 0
 
 [SECTION .bss]
 alignb 8
@@ -372,7 +375,7 @@ warn_flush:
 ;
 ; warn_data_bounds
 ; A value written into a field of esi bytes (1, 2 or 4) that does not fit:
-; NASM's "dword data exceeds bounds" (number-overflow), for anything below
+; NASM 3's "dword exceeds bounds" (number-overflow), for anything below
 ; -2^n or above 2^n - 1 (n the field's bits: db -256 and db 255 fit).
 ; Input    : rdi = the value, esi = the field's bytes
 ; Clobbers : rax, rcx, rdx, rsi, rdi, r8-r11
@@ -414,7 +417,7 @@ warn_data_bounds:
 ;
 ; warn_number
 ; A number-overflow warning in NASM's words for an immediate ("signed byte
-; value exceeds bounds").
+; exceeds bounds").
 ; Input    : rsi = the text
 ; Clobbers : rax, rcx, rdx, rsi, rdi, r8-r11
 ;
