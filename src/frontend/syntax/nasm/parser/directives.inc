@@ -82,6 +82,9 @@ align 8
 global eval_limit
 eval_limit:    dq 8192             ; ... at most (--limit-eval, NASM's default)
 expr_lost:     db 0                ; a label not defined yet went into arithmetic
+default_given: db 0                ; "default rel" / "default abs" written
+implicit_said: db 0                ; implicit-abs-deprecated given (once)
+global expr_xsec
 expr_xsec:     db 0                ; two sections' labels in a difference (a flat binary)
 expr_pp:       db 0                ; in a preprocessor expression (parser_evaluate_pp)
 expr_deferring: db 0               ; parser_deferred_value is working one out
