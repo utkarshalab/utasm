@@ -59,7 +59,7 @@ warn_state:
     db 1                                ; WC_DB_EMPTY
     db 1                                ; WC_PP_MACRO_DEFAULTS
     db 1                                ; WC_LABEL_ORPHAN
-    db 0                                ; WC_PIE (utasm's own: -w+pie, -w+all)
+    db 0                                ; WC_PIE (utasm's own: -w+pie)
     db 1                                ; WC_SLASH_COMMENT (utasm's own)
     db 1                                ; WC_PP_SEL_RANGE
     db 1                                ; WC_PTR
@@ -83,6 +83,14 @@ warn_state:
     db 1                                ; WC_PROC_FALLTHROUGH
     db 1                                ; WC_IMPLICIT_ABS
     db 1                                ; WC_NUMBER_DEPRECATED_HEX
+    db 0                                ; WC_RELOC_ABS_BYTE (-w+all)
+    db 0                                ; WC_RELOC_ABS_WORD (-w+all)
+    db 0                                ; WC_RELOC_ABS_DWORD (-w+all)
+    db 0                                ; WC_RELOC_ABS_QWORD (-w+all)
+    db 0                                ; WC_RELOC_REL_BYTE (-w+all)
+    db 0                                ; WC_RELOC_REL_WORD (-w+all)
+    db 0                                ; WC_RELOC_REL_DWORD (-w+all)
+    db 0                                ; WC_RELOC_REL_QWORD (-w+all)
 
 [SECTION .rodata]
 warn_names:
@@ -94,6 +102,8 @@ warn_names:
     dq wn_obsolete_valid, wn_float_overflow, wn_pp_rep_negative, wn_ea_dispsize
     dq wn_proc_stack, wn_proc_uses, wn_proc_clobber, wn_proc_unreachable, wn_proc_fallthrough
     dq wn_implicit_abs, wn_deprecated_hex
+    dq wn_reloc_abs_byte, wn_reloc_abs_word, wn_reloc_abs_dword, wn_reloc_abs_qword
+    dq wn_reloc_rel_byte, wn_reloc_rel_word, wn_reloc_rel_dword, wn_reloc_rel_qword
 wn_other:db "other", 0
 wn_user:        db "user", 0
 wn_zeroing:     db "zeroing", 0
@@ -127,6 +137,14 @@ wn_proc_unreachable: db "proc-unreachable", 0
 wn_proc_fallthrough: db "proc-fallthrough", 0
 wn_implicit_abs: db "implicit-abs-deprecated", 0
 wn_deprecated_hex: db "number-deprecated-hex", 0
+wn_reloc_abs_byte: db "reloc-abs-byte", 0
+wn_reloc_abs_word: db "reloc-abs-word", 0
+wn_reloc_abs_dword: db "reloc-abs-dword", 0
+wn_reloc_abs_qword: db "reloc-abs-qword", 0
+wn_reloc_rel_byte: db "reloc-rel-byte", 0
+wn_reloc_rel_word: db "reloc-rel-word", 0
+wn_reloc_rel_dword: db "reloc-rel-dword", 0
+wn_reloc_rel_qword: db "reloc-rel-qword", 0
 wn_all:         db "all", 0
 s_warning:      db "warning: ", 0
 s_error:        db "error: ", 0
@@ -142,6 +160,12 @@ s_exceeds:      db " exceeds bounds", 0
 alignb 8
 warn_hold:      resq 1                  ; the warnings held (warn_hold_put)
 warn_hold_len:  resq 1
+warn_segs:      resq 1                  ; each held warning: {q its start, q its key}
+warn_nsegs:     resq 1
+global warn_late_key
+warn_late_key:  resq 1                  ; the key of the warnings begun now, or 0:
+                                        ; twice the relocations made so far
+warn_has_late:  resb 1                  ; one has an odd key (warn_flush sorts)
 global stderr_hold
 stderr_hold:    resb 1                  ; print_str: stderr goes to warn_hold
 warn_final:     resb 1                  ; the source is read (warn_before_error)
@@ -169,6 +193,7 @@ warn_begin:
     movzx   eax, byte [rax + rdi]
     test    al, 1
     jz      .off
+    call    warn_seg_mark
     mov     [rel warn_class], edi
     mov     byte [rel warn_active], 1
     mov     byte [rel warn_shown], 1
@@ -339,13 +364,84 @@ warn_before_error:
     cmp     byte [rel warn_final], 0
     jne     warn_flush
     mov     qword [rel warn_hold_len], 0
+    mov     qword [rel warn_nsegs], 0
+    mov     byte [rel warn_has_late], 0
+    ret
+
+; ---- warn_seg_mark ------------------------
+;
+; warn_seg_mark
+; A warning begins in the held text: where, and its key - warn_late_key,
+; else twice the relocations made so far. A warning the relocation pass
+; gives about relocation N (src/link/reloc/reloc.s) has the key 2N + 1:
+; warn_flush puts it after the warnings of the statements before that
+; relocation was made, as NASM gives them, in the order of the source.
+; Preserves every register.
+;
+%define WARN_SEGS   (1 << 20)
+warn_seg_mark:
+    push    rax
+    push    rcx
+    push    rdx
+    push    rsi
+    push    rdi
+    push    r8
+    push    r9
+    push    r10
+    push    r11
+    mov     rax, [rel warn_segs]
+    test    rax, rax
+    jnz     .room
+    xor     edi, edi
+    mov     rsi, WARN_SEGS * 16
+    mov     edx, 3                         ; PROT_READ | PROT_WRITE
+    mov     r10d, 0x4022                   ; MAP_PRIVATE | ANONYMOUS | NORESERVE
+    mov     r8, -1
+    xor     r9d, r9d
+    mov     eax, 9                         ; mmap
+    syscall
+    cmp     rax, -4095
+    jae     .ret
+    mov     [rel warn_segs], rax
+.room:
+    mov     rcx, [rel warn_nsegs]
+    cmp     rcx, WARN_SEGS
+    jae     .ret                           ; (past that, in the order given)
+    shl     rcx, 4
+    add     rax, rcx
+    mov     rdx, [rel warn_hold_len]
+    mov     [rax], rdx
+    mov     rdx, [rel warn_late_key]
+    test    rdx, rdx
+    jnz     .keyed
+    lea     rcx, [rel global_ctx]
+    mov     edx, [rcx + ASMCTX_nrelocs]
+    add     rdx, rdx
+.keyed:
+    mov     [rax + 8], rdx
+    test    dl, 1
+    jz      .counted
+    mov     byte [rel warn_has_late], 1
+.counted:
+    inc     qword [rel warn_nsegs]
+.ret:
+    pop     r11
+    pop     r10
+    pop     r9
+    pop     r8
+    pop     rdi
+    pop     rsi
+    pop     rdx
+    pop     rcx
+    pop     rax
     ret
 
 ; ---- warn_flush ---------------------------
 ;
 ; warn_flush
 ; Writes the warnings held to stderr: before an error is reported, and at
-; exit.
+; exit. When the relocation pass gave some (odd keys), the two runs - the
+; others, then those - are merged by key.
 ; Preserves every register.
 ;
 global warn_flush
@@ -357,20 +453,116 @@ warn_flush:
     push    rdx
     push    rsi
     push    rdi
+    push    r8
+    push    r9
+    push    r10
     push    r11
-    mov     edi, 2
-    mov     rsi, [rel warn_hold]
+    push    r12
+    push    r13
+    cmp     byte [rel warn_has_late], 0
+    je      .whole
+    mov     r8, [rel warn_segs]
+    mov     r9, [rel warn_nsegs]
+    test    r9, r9
+    jz      .whole
+    ; the text before the first warning (none, usually)
+    xor     esi, esi
+    mov     rdx, [r8]
+    call    .write
+    xor     r12d, r12d                     ; the next of the even run
+    xor     r13d, r13d                     ; the next of the odd run
+.merge:
+    mov     rdi, r12
+    xor     ecx, ecx                       ; (even)
+    call    .find
+    mov     r12, rdi
+    mov     rdi, r13
+    mov     ecx, 1                         ; (odd)
+    call    .find
+    mov     r13, rdi
+    cmp     r12, r9
+    jae     .take_odd
+    cmp     r13, r9
+    jae     .take_even
+    mov     rax, r12
+    shl     rax, 4
+    mov     rax, [r8 + rax + 8]
+    mov     rcx, r13
+    shl     rcx, 4
+    cmp     [r8 + rcx + 8], rax
+    jb      .take_odd                      ; (on a tie, the even one first)
+.take_even:
+    cmp     r12, r9
+    jae     .merged
+    mov     rdi, r12
+    call    .seg
+    inc     r12
+    jmp     .merge
+.take_odd:
+    cmp     r13, r9
+    jae     .merged
+    mov     rdi, r13
+    call    .seg
+    inc     r13
+    jmp     .merge
+.merged:
+    jmp     .done
+.whole:
+    xor     esi, esi
     mov     rdx, [rel warn_hold_len]
+    call    .write
+.done:
     mov     qword [rel warn_hold_len], 0
-    mov     eax, 1                         ; write
-    syscall
+    mov     qword [rel warn_nsegs], 0
+    mov     byte [rel warn_has_late], 0
+    pop     r13
+    pop     r12
     pop     r11
+    pop     r10
+    pop     r9
+    pop     r8
     pop     rdi
     pop     rsi
     pop     rdx
     pop     rcx
     pop     rax
 .ret:
+    ret
+; .find: rdi = the first segment from rdi whose key's low bit is ecx (r9
+; when none)
+.find:
+    cmp     rdi, r9
+    jae     .found
+    mov     rax, rdi
+    shl     rax, 4
+    mov     rax, [r8 + rax + 8]
+    and     eax, 1
+    cmp     eax, ecx
+    je      .found
+    inc     rdi
+    jmp     .find
+.found:
+    ret
+; .seg: writes segment rdi (up to the next one's start, or the end)
+.seg:
+    mov     rax, rdi
+    shl     rax, 4
+    mov     rsi, [r8 + rax]
+    lea     rcx, [rdi + 1]
+    mov     rdx, [rel warn_hold_len]
+    cmp     rcx, r9
+    jae     .write
+    shl     rcx, 4
+    mov     rdx, [r8 + rcx]
+; .write: the held text from offset rsi up to offset rdx
+.write:
+    sub     rdx, rsi
+    jbe     .written
+    add     rsi, [rel warn_hold]
+    mov     edi, 2
+    mov     eax, 1                         ; write
+    syscall
+.written:
     ret
 
 ; ---- warn_data_bounds ---------------------
@@ -537,9 +729,14 @@ warn_option:
     call    .set
     jmp     .ret
 .every:
+    ; (all NASM's: utasm's pie only by its name, -w+pie - with -w+all the
+    ; reloc-abs-* classes say what it does, as NASM gives them)
     xor     ecx, ecx
 .every_next:
+    cmp     ecx, WC_PIE
+    je      .every_skip
     call    .set
+.every_skip:
     inc     ecx
     cmp     ecx, WC_COUNT
     jb      .every_next
