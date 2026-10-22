@@ -81,7 +81,7 @@ same diagnostics.
 
 | File | Lines | What is in it |
 | --- | --- | --- |
-| `codes.s` | 1,114 | `error_report_code`, `error_code_message` (every `EXIT_*` code's message), `error_report_line` (the lexer's errors, at their own line), the line tracking, `error_report_text` (`%error`, `%warning`, `%fatal`), the `-X` style |
+| `codes.s` | 1,116 | `error_report_code`, `error_code_message` (every `EXIT_*` code's message), `error_report_line` (the lexer's errors, at their own line), the line tracking, `error_report_text` (`%error`, `%warning`, `%fatal`), the `-X` style |
 | `source.s` | 1,347 | the rich form: colors, `diag_snippet` (the line, marked), `diag_notes` / `diag_inst` (what the operands were) |
 | `warnings.s` | 560 | warning classes, `-w` / `-W`, holding and flushing, `-Werror` |
 | `hints.s` | 248 | "did you mean" for mnemonics and symbols |
