@@ -3640,3 +3640,35 @@ ISA_ERRORS += [
     ("vcmpps k1{k2}{z}, zmm2, zmm3, 1", "takes no write mask"),
     ("vmovaps [rax]{k1}{z}, zmm1", "takes no write mask"),
 ]
+
+# NASM's test suite (nasm-2.16.03/test, the sweep), what it found:
+# kandn with a size written - insns.dat 2.16.03's four lines had each
+# other's encodings ("kandn byte" was kandnq; NASM 3 has them right) - and,
+# under -Ox, "mov r64, dword x" with x 0x80000000 .. 0xFFFFFFFF: B8+r imm32,
+# rax = x (it was C7, sign-extended: rax negative)
+BIN_PROBES.update({
+    "kandn_sized": "bits 64\nkandn byte k1, k2, k3\nkandn word k1, k2, k3\nkandn dword k1, k2, k3\n"
+                   "kandn qword k1, k2, k3\nkand byte k1, k2, k3\nkandnb k1, k2, k3\n",
+    "mov_r64_dword_unsigned": "bits 64\nmov rax, dword 0x80000000\nmov r9, dword 0xffffffff\nmov rax, dword -1\n"
+                              "mov rax, dword 0x7fffffff\nmov rax, strict dword 0x80000000\n"
+                              "mov qword [rax], dword 0x80000000\n",
+})
+# a self-relative value ("baz - $", "baz - foo", baz in another section)
+# as a RIP-relative address: NASM's "invalid use of self-relative
+# expression" (in an object it was [rip + baz] less 1: another address)
+REJECT_CASES += [
+    ("self-relative under default rel", "elf64", "bits 64\ndefault rel\nsection .data\nbaz: dd 0\nsection .text\n"
+     "foo: nop\nmov eax, [baz - $]\n"),
+    ("self-relative with rel", "elf64", "bits 64\nsection .data\nbaz: dd 0\nsection .text\nfoo: nop\n"
+     "mov eax, [rel baz - $]\n"),
+    ("two sections' labels, default rel", "elf64", "bits 64\ndefault rel\nsection .data\nbaz: dd 0\n"
+     "section .text\nfoo: nop\nmov esi, [baz - foo]\n"),
+    ("self-relative under default rel, bin", "bin", "bits 64\ndefault rel\nsection .data\nbaz: dd 0\n"
+     "section .text\nfoo: nop\nmov eax, [baz - $]\n"),
+]
+# RIP-relative more than 2 GB away: utasm's error at its line, where NASM
+# cuts the displacement with a warning (it said "utasm: error:", no line)
+LIMIT_ERRORS += [
+    ("RIP-relative past 2 GB", "bits 64\nfoo:\nmov cl, [rel foo + 0x100000000]\n", 3,
+     "jump or displacement out of range"),
+]
