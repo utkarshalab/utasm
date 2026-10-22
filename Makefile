@@ -11,6 +11,10 @@ SOURCES   := $(shell find src -name '*.s' | LC_ALL=C sort)
 GEN0_OBJS := $(patsubst %.s, build/gen0/%.o, $(SOURCES))
 GEN1_OBJS := $(patsubst %.s, build/gen1/%.o, $(SOURCES))
 
+# a file cut into parts (src/.../parser.s and its parser/*.inc) is rebuilt
+# when one of them changes
+$(foreach s,$(SOURCES),$(eval build/gen0/$(s:.s=.o) build/gen1/$(s:.s=.o): $(wildcard $(s:.s=)/*.inc)))
+
 .PHONY: all gen0 gen1 test test-unit test-integration clean doc bootstrap help
 
 all: gen1
