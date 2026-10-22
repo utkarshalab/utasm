@@ -527,6 +527,24 @@ DIAG_CASES = [
 ]
 
 
+# what the lexer cannot read: an error at its line, and reading goes on
+# (utasm stopped at the first, with exit status 1). A case may be bytes:
+# a source that is not UTF-8.
+DIAG_CASES += [
+    ("string with no closing quote", 'nop\ndb "abc\nnop\n'),
+    ("backquote string with no closing quote", "nop\ndb `abc\nnop\n"),
+    ("character constant with no closing quote", "nop\nmov al, 'a\nnop\n"),
+    ("character constant to the next line", "db 'abc\ndb 'x'\n"),
+    ("%{ with no }", "nop\n%{foo\nnop\n"),
+    ("a control character", "nop\n\x01\nnop\n"),
+    ("bytes that are not UTF-8", b"nop\ndb \xff\xfe\nnop\n"),
+    ("a block comment never closed", "nop\n/* never\nnop\n"),
+    ("a string, then an instruction error", 'db "abc\nnop\nfoo eax\n'),
+    # a %if never closed: NASM's error at the end (utasm let it go)
+    ("%if never closed", "%if 1\nnop\n"),
+    ("%if never closed, skipping", "nop\n%if 0\nnop\n%else\nnop\n"),
+]
+
 # the command line: NASM's options, each run with NASM and with utasm on
 # the same files. (name, arguments, what is compared: "bin" the flat
 # binary, "deps" the -M output, "pp" -E output assembled again, "ppt" the
@@ -740,6 +758,9 @@ def limit_cases():
         "ifidn_long_differ": (nl(["%%ifidn %sA, %sB" % (long, long), "db 1", "%else", "db 2", "%endif"]), {}, "bin"),
         "defstr_long": (nl(["%defstr S " + " ".join(["w"] * 1500), "db S"]), {}, "bin"),
         "utf16_long": ("db __utf16__('" + "u" * 10000 + "')\n", {}, "bin"),
+        # strings up to the longest a token holds (their buffer was 4 KB)
+        "string_65535": ('db "' + "a" * 65535 + '"\ndb `' + "\\x41" * 16000 + '`\n', {}, "bin"),
+        "define_string_60000": (nl(['%define S "' + "b" * 60000 + '"', "%strlen n S", "db S", "dd n"]), {}, "bin"),
         "macro_40_params": (nl(["%macro m 40", "db %1, %20, %40", "%endmacro",
                                 "m " + ", ".join(str(i) for i in range(1, 41))]), {}, "bin"),
         "macro_100_params": (nl(["%macro m 100", "db %1, %50, %100, %0", "%endmacro",
@@ -956,7 +977,12 @@ DIAG_CASES += [
     ("empty data item", "nop\ndb 1,,2\n"),
 ]
 WARN_CASES.update({
-    "warn_macro_defaults": "%macro s 0 junk\nnop\n%endmacro\ns\n%macro t 0-1 5,6\n%endmacro\n"
+    # what follows an expression is dropped, with NASM's warning (it went on
+    # to the assembler: "%if 1 x" defined a label x; "%if 1 .a resb 1" in a
+    # struc crashed utasm)
+    "warn_trailing_expr": "%if 1 x\ndb 1\n%endif\n%ifn 0 y\ndb 2\n%endif\n%assign v 3 z\ndb v\n"
+                          "%rep 2 w\ndb 7\n%endrep\n%if 0\n%elif 1 q\ndb 4\n%endif\nx:\ny:\nz:\nw:\nq: nop\n",
+    "warn_macro_defaults":"%macro s 0 junk\nnop\n%endmacro\ns\n%macro t 0-1 5,6\n%endmacro\n"
                            "%macro u 0-1 (5,6)\n%endmacro\n%macro v 1-* 5,6,7\n%endmacro\n",
     "warn_db_empty": "db\ndd\nnop\n",
 })
@@ -1285,6 +1311,14 @@ CFI_ERRORS = [
 # resb / alignb past a code section's buffer (fuzz seed 3: a fault in the
 # next byte's write; at the end, the output cut short)
 ROBUST_CASES += [
+    # an address with no encoding, found in amd64_emit_modrm_sib: it jumped
+    # to the driver's .error past its callers' pops, and utasm crashed
+    ("far_two_names_bits64", "jmp far dword [r  ax]\n", "elf32", ["-g"]),
+    ("far_two_names_bits32", "bits 32\njmp far dword [r  ax]\ncall far dword [rax]\n", "elf32", []),
+    # text after a %if's expression went on to the assembler: in a struc,
+    # ".a resb 1" after "%if 1" crashed utasm (fuzz.py, seed 2)
+    ("trailing_after_if_in_struc", "struc s\n%if 1 .a resb 1\n.a resb 1\nsection .text\nnop\nendstruc\nnop\n",
+     "win64", []),
     ("resb_past_buffer", "bits 32\nresb 0x80000\nnop\n", "bin", []),
     ("resb_past_buffer_win64", "nop\nresb 0x80000\nnop\n", "win64", []),
 ]
@@ -1310,6 +1344,27 @@ LIMIT_ERRORS = [
     ("reservation that overflows", "section .text\nresq 0x4000000000000000\n", 2, "section `.text' larger than 4 GiB"),
     ("times past 2^32", "section .text\ntimes 0x100000000 nop\n", 2,
      "TIMES value is too large (more than 4294967295)"),
+    # a token's length is 16 bits; up to it, a string's buffer grows (it
+    # was 4 KB: "string literal too long", and utasm stopped)
+    ("a string over 65535 bytes", 'nop\ndb "' + "a" * 70000 + '"\n', 2, "string longer than 65535 bytes"),
+]
+
+# files utasm cannot read or write: what it says, and its exit status (a
+# directory crashed it: mapping one failed unseen). (name, arguments, the
+# line stderr must hold or None for none, the exit status); run in a
+# folder holding dir/, inc.s, bin.s, ok.s and empty.s (suites.robustness)
+FILE_ERRORS = [
+    ("a directory as the source", ["-f", "elf64", "dir", "-o", "u.o"],
+     "utasm: error: `dir' is a directory, not a file", 3),
+    ("%include of a directory", ["-f", "elf64", "inc.s", "-o", "u.o"],
+     "inc.s:1: error: `dir' is a directory, not a file", 4),
+    ("incbin of a directory", ["-f", "bin", "bin.s", "-o", "u.bin"],
+     "bin.s:1: error: `dir' is a directory, not a file", 4),
+    ("an output in a missing directory", ["-f", "elf64", "ok.s", "-o", "nodir/u.o"],
+     "utasm: error: unable to open output file `nodir/u.o'", 6),
+    ("a listing in a missing directory", ["-f", "elf64", "ok.s", "-o", "u.o", "-l", "nodir/u.lst"],
+     "utasm: error: unable to open output file `nodir/u.lst'", 6),
+    ("an empty source", ["-f", "bin", "empty.s", "-o", "u.bin"], None, 0),
 ]
 
 # immediates, NASM's way: an unsized memory operand takes a sized
