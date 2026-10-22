@@ -40,7 +40,7 @@ records what the shortener and the line table need and calls
    gives the prefix, map, opcode, ModRM layout, which operand goes where
    (ModRM.reg, ModRM.rm, opcode low bits, vvvv, an immediate), VEX / EVEX
    length and disp8*N. This handles nearly every instruction.
-6. **The hand-written encoders** (encoder.s), for what the table does not
+6. **The hand-written encoders** (`encoder/*.inc`, %included by encoder.s), for what the table does not
    cover: `mov` in all its forms, branches (`jmp`, `jcc`, `call`, `ret`,
    with short/near choice and rel16 in 16-bit code), `push` / `pop`,
    `imul`, `xchg`, `lea`, `in` / `out`, string instructions, `enter`, MPX,
@@ -93,7 +93,15 @@ python3 scripts/gen/gen_x86_enc.py --check   # fail if out of date
 
 | File | Lines | What is in it |
 | --- | --- | --- |
-| `encoder.s` | 8,583 | `amd64_encode_instruction` (the steps above), the hand-written encoders, prefixes, ModRM / SIB, branches, relocations, NOPs |
+| `encoder.s` | 2,218 | `amd64_encode_instruction` (the steps above); the hand-written encoders in the `encoder/` parts, %included in this order: |
+| `encoder/support.inc` | 917 | CPU forms, GOT forms, obsolete instructions, immediate guesses, rip-relative displacements, relaxation kinds, disp8*N, branch widths, relocation errors |
+| `encoder/mov_arith.inc` | 1,236 | mov, arithmetic, syscall / sysret, xchg, push / pop, branches, ret, jcc |
+| `encoder/general.inc` | 929 | movzx / movsx / movsxd, lea, test, unary, shifts, imul, cmovcc / setcc, enter, int, system, in / out, x87, SSE crypto |
+| `encoder/vex_evex.inc` | 652 | the VEX / EVEX entries, string instructions, 0F binaries, cmpxchg, bt, memory sync, r/m forms |
+| `encoder/branch.inc` | 524 | branch sizing, and tracking each instruction for the second pass |
+| `encoder/emit.inc` | 1,163 | relocations, prefixes, ModRM / SIB, bytes and dwords; the SGX leaves |
+| `encoder/jmp_call.inc` | 609 | jmp, call, xbegin, far widths, push / pop forms, MPX, nop, words and qwords |
+| `encoder/sse_avx.inc` | 393 | AVX / SSE forms, the VEX2 / VEX3 prefixes; messages and the obsolete tables |
 | `dispatch.s` | 1,859 | the table encoder: `amd64_table_encode`, `amd64_table_has`, form matching and emission |
 | `mode.s` | 3,092 | 16- and 32-bit mode: what changes from 64-bit, REX / REX2 placement, the 66 / 67 prefixes |
 | `apx.s` | 1,378 | APX's EVEX map-4 integer instructions |
@@ -124,10 +132,10 @@ core/ (emitting bytes, sections, the second pass), link/reloc
 ## Status
 
 Complete for x86-64: the forms of NASM 3.01's and GNU as 2.47's
-instruction tables, in all three modes. `encoder.s` is large and holds
-both the driver and the hand-written encoders; moving the hand-written
-ones next to what they encode (branches, mov, x87, system) is a planned
-refactor that does not change the bytes.
+instruction tables, in all three modes. `encoder.s` holds the driver;
+the hand-written encoders are in its `encoder/` parts, cut where its
+functions were, in their old order (the object is the same, byte for
+byte).
 
 ## Tests
 
