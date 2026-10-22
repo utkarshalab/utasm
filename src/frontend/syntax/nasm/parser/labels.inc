@@ -120,7 +120,8 @@ parser_numlabel_name:
 ; * [parser_pos_label]
 ; * Purpose: "$" and "$$" as labels. Each use becomes a hidden label
 ; *          ("L@here.N", which no source can spell) at the current
-; *          position, or at offset 0 of the current section for "$$", so
+; *          position (a data line's start, for each of its items), or at
+; *          offset 0 of the current section for "$$", so
 ; *          branches, data relocations and label differences treat them
 ; *          like any other label: "jmp $", "loop $", "dq $", "$-start".
 ; * Input  : EDI = 0 for "$", 1 for "$$"; RBX = PrepState
@@ -157,7 +158,33 @@ parser_pos_label:
     test    rax, rax
     jnz     .ret
     test    r12d, r12d
-    jz      .ret
+    jnz     .start
+    ; a times line's $ is where the line starts, in each copy; a data
+    ; line's, for each item ("dw $, $": both the same)
+    mov     rcx, [rbx + PREP_ctx]
+    mov     rax, [rcx + ASMCTX_curr_sec]
+    test    rax, rax
+    jz      .here
+    mov     rcx, [rcx + ASMCTX_mac_exp]
+    test    rcx, rcx
+    jz      .not_times
+    mov     r8, [rcx + MACROEXP_macro]
+    test    byte [r8 + MACRO_flags], MACRO_FLAG_TIMES
+    jz      .not_times
+    cmp     rax, [rcx + MACROEXP_times_sec]
+    jne     .not_times
+    mov     rax, [rcx + MACROEXP_times_pos]
+    mov     [rdx + SYMBOL_value], rax
+    jmp     .here
+.not_times:
+    cmp     rax, [rel pos_line_sec]
+    jne     .here
+    mov     rax, [rel pos_line]
+    mov     [rdx + SYMBOL_value], rax
+.here:
+    xor     eax, eax
+    jmp     .ret
+.start:
     mov     qword [rdx + SYMBOL_value], 0  ; "$$": the start of the section
 .ret:
     pop     r13
