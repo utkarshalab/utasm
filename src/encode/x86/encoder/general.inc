@@ -233,7 +233,7 @@ amd64_lea_address:
 amd64_abs_target: db RELOC_ABS_MARK, 0   ; a branch to a number (amd64_emit_branch_disp)
 lea_ea_absolute: db "absolute address can not be RIP-relative", 0
 s_ea_dispsize:  db "displacement size ignored on absolute address", 0
-s_disp_bounds:  db "dword data exceeds bounds", 0
+s_disp_bounds:  db "dword displacement exceeds bounds", 0
 [SECTION .text]
 
 ;*
