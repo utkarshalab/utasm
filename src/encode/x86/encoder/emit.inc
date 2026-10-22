@@ -94,6 +94,13 @@ amd64_emit_reloc:
     mov     [rdx + RELOC_line], eax
     mov     rax, [rel error_loc_file]
     mov     [rdx + RELOC_file], rax
+    extern  error_mac_name, error_mac_file, error_mac_line
+    mov     rax, [rel error_mac_name]      ; ... and from which macro
+    mov     [rdx + RELOC_mac_name], rax
+    mov     rax, [rel error_mac_file]
+    mov     [rdx + RELOC_mac_file], rax
+    mov     eax, [rel error_mac_line]
+    mov     [rdx + RELOC_mac_line], eax
 
     ; "sym wrt ..plt" and friends (reloc_wrt): the type the statement asked
     ; for; the PC-relative addend above stays the same
