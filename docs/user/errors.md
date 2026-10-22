@@ -184,6 +184,7 @@ the first failure: see *Exit status* at the end.
 | 180 | `a gather / scatter needs a write mask, {k1} to {k7} (#UD with k0)` |  | an EVEX gather / scatter with no write mask (k0) (`EXIT_VSIB_NO_MASK`) |
 | 181 | `this instruction takes no write mask / {z} here (#UD with one)` |  | a write mask / {z} the instruction does not take (`EXIT_MASK_REFUSED`) |
 | 191 | `invalid use of self-relative expression` |  | a self-relative value ("x - $", x elsewhere) as a RIP-relative address (`EXIT_EA_SELF_REL`) |
+| 192 | `instruction not valid with 32-bit operand size` |  | push / pop of a dword in 64-bit code (they are 64 or 16 bits there) (`EXIT_OSZ32_64`) |
 
 ### Expressions and symbols
 
@@ -387,6 +388,7 @@ after the whole source is read, as `%error` does.
 | `proc-unreachable` | yes | code after a ret / jmp, no label between |
 | `proc-fallthrough` | yes | the code runs into endproc |
 | `implicit-abs-deprecated` | yes | NASM 3's, an absolute address in 64-bit code with no "default" written |
+| `number-deprecated-hex` | yes | NASM 3's, "$0ff" (write 0x0ff) |
 
 `pie`, `slash-comment` and the `proc-*` classes are utasm's own; the others
 are NASM's, with NASM's names and defaults.
