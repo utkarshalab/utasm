@@ -908,6 +908,9 @@ size_n:        resq 1
 parser_field_width:
     cmp     rcx, [rel last_label_off]
     jne     .fw_ret
+    cmp     qword [rel last_label_name], 0
+    je      .fw_ret                        ; no label yet ("struc s / resd 1": it
+                                           ; looked a null name up, and crashed)
     mov     qword [rel last_label_off], -1
     push    rdx
     push    r8
