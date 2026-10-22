@@ -126,24 +126,3 @@ hotpath_rank:
     pop     r12
     pop     rbx
     ret
-
-; ---- hotpath_get_top -----------------------------------------------------
-;
-; hotpath_get_top
-; After sorting, returns a pointer to the first entry (hottest phase)
-; and the clamped count of entries to return.
-;
-; Input    : rdi = pointer to PROFENTRY array (already sorted descending)
-;            rsi = total entry count
-;            rdx = maximum number of entries to return (n)
-; Output   : rax = actual count returned: min(count, n)
-;            rdx = pointer to first entry (entries[0])
-; Clobbers : (none)
-;
-global hotpath_get_top
-hotpath_get_top:
-    mov     rax, rdx                ; rax = n
-    cmp     rax, rsi
-    cmova   rax, rsi                ; rax = min(n, count)
-    mov     rdx, rdi                ; rdx = pointer to entries[0]
-    ret
