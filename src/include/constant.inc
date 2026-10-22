@@ -46,7 +46,7 @@
 %define EXIT_INC_NOT_FOUND     15  ; included file specified by source not found
 %define EXIT_MACRO_DEF         16  ; malformed or illegal macro definition
 %define EXIT_MACRO_EXP         17  ; failure during macro expansion phase
-%define EXIT_MACRO_RECURSION   18  ; nested macro depth exceeded limit
+%define EXIT_MACRO_RECURSION   18  ; a runaway macro: 10,000 calls open, or 10,000,000 tokens in their arguments
 %define EXIT_MACRO_ARITY_FAIL  19  ; wrong number of macro arguments
 %define EXIT_DEFINE            20  ; invalid or malformed %define directive
 %define EXIT_INC_NAME          21  ; %include without a quoted file name
@@ -204,6 +204,7 @@
 %define EXIT_LEX_STRING_LONG   187 ; a string over 65,535 bytes (a token's length is 16 bits)
 %define EXIT_FILE_IS_DIR       188 ; a directory given where a file is read
 %define EXIT_PP_NO_ENDIF       189 ; a %if still open at the end of the source
+%define EXIT_EXPR_TOO_LONG     190 ; an expression of more terms than --limit-eval (8192, NASM's)
 
 ; src/debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
@@ -320,6 +321,7 @@
 %define MAX_INCLUDES           4096        ; nested %include depth (a file including itself)
 %define MAX_MACRO_PARAMS       32          ; maximum parameters per macro
 %define MAX_MACRO_DEPTH        10000       ; nested macro expansions (NASM's default limit)
+%define MAX_MACRO_ARGS_TOKENS  10000000    ; tokens in the arguments of the calls open (NASM's macro-tokens)
 %define MAX_REP_COUNT          65536       ; maximum iterations per %rep block
 %define MAX_ERRORS             100         ; fatal hard stop threshold for error count (consistent with docs/dev/history/workflow.md and docs/user/errors.md)
 %define MAX_ERRORS_SOFT        100         ; soft threshold for warning count reporting
