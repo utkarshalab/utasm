@@ -321,26 +321,6 @@ relax_overlap:
     xor     eax, eax
     ret
 
-; ---- relax_freeze_current ----------------
-;
-; relax_freeze_current
-; The current position was used as a number ($): keep this section as is.
-; Preserves every register.
-;
-global relax_freeze_current
-relax_freeze_current:
-    push    rax
-    cmp     byte [rel relax_no_freeze], 0
-    jne     .out
-    lea     rax, [rel global_ctx]
-    mov     rax, [rax + ASMCTX_curr_sec]
-    test    rax, rax
-    jz      .out
-    mov     byte [rax + SECTION_relax_frozen], 1
-.out:
-    pop     rax
-    ret
-
 ; ---- relax_freeze_range ------------------
 ;
 ; relax_freeze_range
