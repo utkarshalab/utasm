@@ -84,13 +84,28 @@ forms, `__POSIX_TIME__`: lib/time.s) — each also as NASM's `__?NAME?__`.
 
 | File | Lines | What is in it |
 | --- | --- | --- |
-| `macro.s` | 14,261 | the whole preprocessor: the token loop, every directive above, macro definition and expansion, conditions, `%rep`, contexts, functions, predefined macros, recording, `-E` output (`prep_dump`), the error reporting at the right line (`prep_error_take`) |
+| `macro.s` | 773 | `prep_init`, the token interface (`preprocessor_next_token`, peek / unread / putback), `%pragma`, placing errors (`prep_error_take`); the rest of it in the `macro/` parts, %included in this order: |
+| `macro/tokens.inc` | 1,321 | prep_internal_next: the token loop (expansion, directives, single-line macros), the input buffers |
+| `macro/expand.inc` | 1,443 | multi-line macro expansion: starting, the next token, popping |
+| `macro/directives.inc` | 898 | prep_handle_directive (the % directive dispatch), %include |
+| `macro/tables.inc` | 594 | the directive names and the preprocessor's other string tables |
+| `macro/cond.inc` | 825 | entering and branching conditionals, %ifidn / %ifidni, %elif, %error; constant text substitution, file pasting |
+| `macro/contexts.inc` | 723 | raw tokens, macro labels, %unmacro, %strlen, %substr, %push / %pop |
+| `macro/interp.inc` | 804 | prep_resolve_interp: %[...], %+, context-local and parameter interpolation |
+| `macro/assign.inc` | 806 | %assign, %undef, predefined and dynamic macros (__LINE__ ...), %ifnidn, %warning, %exitrep, %exitmacro, built-in macros |
+| `macro/tests.inc` | 1,225 | %ifdef-style tests, %defstr, %iassign, %repl, %getenv, %stacksize, %arg / %local frames, condition-code inverses |
+| `macro/functions.inc` | 1,702 | the preprocessor functions (%sel, %cond, %eval, %str, %num, %hex ...): fn_* |
+| `macro/files.inc` | 545 | %depend, %pathsearch, %line, %use, %clear, %strtok |
+| `macro/define.inc` | 603 | %define / %xdefine: parameters, marks, storing |
+| `macro/cond_if.inc` | 562 | %if / %else / %endif, skipping macro and %rep blocks, counts |
+| `macro/macro_def.inc` | 752 | %macro definitions: recording bodies, capture slots, token buffers |
+| `macro/rep_state.inc` | 792 | %rep, %defalias and aliases, preprocessor symbols, error lines; the preprocessor's state |
 | `paths.s` | 322 | include search paths (`-I`) and dependencies: `incpath_open` tries the name as written, then each `-I` directory; every file opened is recorded for `-M` (`deps_add`, `deps_write`) |
 | `rotate.s` | 121 | `%rotate n`: the current macro call's arguments moved n places |
 
-`macro.s` is the largest file after the parser; splitting it (directives,
-expansion, conditions, functions) is a planned refactor that does not
-change what it does.
+`macro.s` is one object: its parts in `macro/` are %included in order,
+cut where its functions were (the object is the same, byte for byte). A
+part is not assembled alone; `make` rebuilds `macro.s` when one changes.
 
 ## Entry points
 
