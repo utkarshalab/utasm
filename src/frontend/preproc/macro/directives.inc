@@ -877,8 +877,12 @@ prep_handle_inc:
 
 .error_size:
 .error_mmap:
+    push    rax
     mov     rdi, r12
     call    error_set_subject
+    pop     rax
+    cmp     eax, EXIT_FILE_IS_DIR          ; "`x' is a directory, not a file"
+    je      .done
     mov     rax, EXIT_FILE_READ
     jmp     .done
 
