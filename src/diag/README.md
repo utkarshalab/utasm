@@ -64,11 +64,16 @@ turn classes on and off; `-Werror` / `-w+error=class` make them errors
 its line (`lst_warning`). Warnings are **held** until an error is printed
 or utasm exits (`warn_flush`): when core/known.s runs a second pass, the
 first pass's warnings are dropped, so each is given once, as NASM does.
+Each held warning has a key (`warn_seg_mark`): the relocations made
+before it, doubled, or for one the relocation pass gives about relocation
+N (`reloc-abs-*`, src/link/reloc/reloc.s) 2N + 1 - `warn_flush` merges the
+two runs by it, so those come out in the order of the source.
 The classes are NASM's (`zeroing`, `number-overflow`, `label-orphan`,
 `ptr`, `ea-absolute`, `ea-dispsize`, `implicit-abs-deprecated` (NASM 3's, once a file),
-`number-deprecated-hex` (NASM 3's, "$0ff"),
+`number-deprecated-hex` (NASM 3's, "$0ff"), `reloc-abs-*` / `reloc-rel-*`
+(NASM 3's, off: `-w+all`),
 `prefix-*`, `pp-*`, `obsolete-*` ...)
-plus utasm's own: `pie` and `proc-stack`, `proc-uses`, `proc-clobber`,
+plus utasm's own: `pie` (only by its name: `-w+all` is NASM's classes) and `proc-stack`, `proc-uses`, `proc-clobber`,
 `proc-unreachable`, `proc-fallthrough` (semantic/proc.s).
 
 ## JSON (`json.s`)
