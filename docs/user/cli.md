@@ -304,6 +304,7 @@ works with `NASM=utasm`:
 | `-l file` | The listing (see [Listings](#listings)). |
 | `-g`, `-F dwarf` | DWARF debug information (see [Debug information](#debug-information)); `-F` takes any format name and gives DWARF. |
 | `--reproducible` | A COFF object's time stamp and file name left out (0), so that the same source gives the same bytes, as NASM's `--reproducible` does. Other formats have no time stamp. |
+| `--limit-rep N`, `--limit-eval N` | NASM's limits: a `%rep` count (default 1,000,000) and the terms of one expression (default 8192: "expression too long"). The others (`--limit-macro-levels` ...) are accepted. utasm also stops a runaway macro - 10,000 calls open, or 10,000,000 tokens in their arguments (NASM's macro-tokens, a macro calling itself with a longer argument each time) - with the fatal "macros nested too deeply (runaway recursion?)". |
 | `--no-line`, `--keep-all` | Accepted. |
 
 `-D`, `-U`, `-p` and `--before` are read in the order given, as if a file
