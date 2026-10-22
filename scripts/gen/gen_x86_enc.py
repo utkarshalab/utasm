@@ -860,7 +860,11 @@ NASM_WRONG = {"vcvtqq2ph", "vcvtuqq2ph", "vp2intersectd",
               # vmovw: NASM's takes a mask (#UD: it has none) and no r32
               # (Intel's and GNU's "vmovw xmm1, eax"); below without the
               # mask, with r32 and NASM's r16
-              "vmovw"}
+              "vmovw",
+              # kandn with a size written: 2.16.03's four lines have the
+              # encodings of the others ("kandn byte" was kandnq, "word"
+              # kandnd ...; NASM 3 has them right) - below as KAND's
+              "kandn"}
 # (v4fmaddss / v4fnmaddss: NASM's zmm spelling kept, Intel's xmm one added below)
 # NASM's VCVTPS2PH of map 5 (no imm8) is Intel's VCVTPS2PHX: NASM's lines are
 # wrong in their destinations, those below are right; the F16C / AVX-512
@@ -874,6 +878,10 @@ CONDITIONS = [("o", 0), ("no", 1), ("b", 2), ("c", 2), ("nae", 2), ("ae", 3), ("
 # forms NASM has wrong or not at all, from Intel's manual, in insns.dat's
 # notation
 EXTRA_INSNS = '''
+KANDN		kreg8,kreg,kreg			[rvm: vex.nds.l1.66.0f.w0 42 /r ]	FUTURE,ND,SM
+KANDN		kreg16,kreg,kreg		[rvm: vex.nds.l1.0f.w0 42 /r ]	FUTURE,ND,SM
+KANDN		kreg32,kreg,kreg		[rvm: vex.nds.l1.66.0f.w1 42 /r ]	FUTURE,ND,SM
+KANDN		kreg64,kreg,kreg		[rvm: vex.nds.l1.0f.w1 42 /r ]	FUTURE,ND,SM
 VMOVW		xmmreg,rm16			[rm:t1s: evex.128.66.map5.wig 6e /r]	AVX512FP16,FUTURE
 VMOVW		xmmreg,reg32			[rm:t1s: evex.128.66.map5.wig 6e /r]	AVX512FP16,FUTURE
 VMOVW		rm16,xmmreg			[mr:t1s: evex.128.66.map5.wig 7e /r]	AVX512FP16,FUTURE
