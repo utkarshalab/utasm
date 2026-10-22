@@ -93,7 +93,6 @@ fwd_n:          resq 1
 known_tab:      resq 1              ; pass 2: hash slots -> records
 known_mask:     resq 1
 known_buf:      resq 1              ; pass 2: the records
-known_fd:       resq 1
 known_env:      resb 40             ; "UTASM_KNOWN=" and the fd
 known_len:      resq 1              ; pass 2: the records' length
 defer_list:     resq 1              ; pass 1: kept expressions (operands)
