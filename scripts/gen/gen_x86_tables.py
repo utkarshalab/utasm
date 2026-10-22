@@ -540,7 +540,7 @@ sse_int("38", 0xF0, "np", "movbe", "GvMv"); sse_int("38", 0xF1, "np", "movbe", "
 sse_int("38", 0x8A, "np", "movrs", "GvMv", F_MODRM | F_BYTE | F_O64); sse_int("38", 0x8B, "np", "movrs", "GvMv", F_MODRM | F_O64)
 sse_int("38", 0xF0, "F2", "crc32", "CRC"); sse_int("38", 0xF1, "F2", "crc32", "CRC")
 sse_int("38", 0xF6, "66", "adcx", "GvEv", F_MODRM | F_X32); sse_int("38", 0xF6, "F3", "adox", "GvEv", F_MODRM | F_X32)
-# (with a register, F2 / F3 0F 38 F8 are urdmsr / uwrmsr: x86_apx.inc's dx_umsr)
+# (with a register, F2 / F3 0F 38 F8 are urdmsr / uwrmsr: x86/apx.inc's dx_umsr)
 sse_int("38", 0xF8, "F2", "enqcmd", "GaM"); sse_int("38", 0xF8, "F3", "enqcmds", "GaM")
 sse_int("38", 0xF8, "66", "movdir64b", "GaM")
 sse_int("38", 0xF9, "np", "movdiri", "MvGv", F_MODRM | F_X32)
