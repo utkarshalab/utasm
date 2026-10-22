@@ -1543,6 +1543,7 @@ parser_incbin:
     jnz     .ret
     mov     r14, rdx
 .open:
+    mov     [rel incbin_name], r12         ; (r12 is the buffer later)
     mov     rdi, r12                       ; as named, then in each -I dir
     extern  incpath_open
     call    incpath_open
@@ -1589,9 +1590,11 @@ parser_incbin:
     xor     eax, eax
     jmp     .ret
 .close_error:
-    mov     r13, rax
-    mov     rdi, r15
+    mov     r13, rax                       ; "`x' is a directory, not a file",
+    mov     rdi, r15                       ; "error reading `x'"
     call    io_close
+    mov     rdi, [rel incbin_name]
+    call    error_set_subject
     mov     rax, r13
     jmp     .ret
 .not_found:
@@ -1609,6 +1612,8 @@ parser_incbin:
     pop     r12
     ret
 
+[SECTION .bss]
+incbin_name:   resq 1                      ; the file being read, for its error
 [SECTION .rodata]
 str_incbin:    db "incbin", 0
 str_list:      db "list", 0
