@@ -117,7 +117,6 @@ s_rel:      db ", [rel ", 0
 s_brk:      db ", [", 0
 s_mov:      db "mov ", 0
 s_movzx:    db "movzx ", 0
-s_movsx:    db "movsx ", 0
 s_section:  db "section ", 0
 s_extern:   db "extern ", 0
 s_loop:     db "loop ", 0
@@ -125,21 +124,14 @@ s_sub8:     db "sub rsp, 8", 0
 s_sub32:    db "sub rsp, 32", 0
 s_global:   db "global ", 0
 sec_text:   db ".text", 0
-sec_data:   db ".data", 0
 sec_bss:    db ".bss", 0
 sec_rodata: db ".rodata", 0
 
 w_proc:     db "proc", 0
 w_endp:     db "endp", 0
-w_near:     db "near", 0
 w_far:      db "far", 0
-w_c:        db "c", 0
 w_stdcall:  db "stdcall", 0
-w_syscall:  db "syscall", 0
-w_pascal:   db "pascal", 0
 w_public:   db "public", 0
-w_private:  db "private", 0
-w_export:   db "export", 0
 w_uses:     db "uses", 0
 w_local:    db "local", 0
 w_invoke:   db "invoke", 0
@@ -163,7 +155,6 @@ w_untilcxz: db ".untilcxz", 0
 w_break:    db ".break", 0
 w_continue: db ".continue", 0
 w_code:     db ".code", 0
-w_data:     db ".data", 0
 w_datau:    db ".data?", 0
 w_const:    db ".const", 0
 w_zero:     db "zero?", 0
@@ -3359,7 +3350,6 @@ nasm_words: db "istruc", 0, "struc", 0, "at", 0, "times", 0, "extern", 0, "globa
 w_struc:    db "struc", 0
 w_ends:     db "ends", 0
 w_dup:      db "dup", 0
-w_q:        db "?", 0
 d_dirs:     db "db", 0, "dw", 0, "dd", 0, "dq", 0, "dt", 0, "do", 0, "dy", 0
 r_dirs:     db "resb", 0, "resw", 0, "resd", 0, "resq", 0, "rest", 0, "reso", 0, "resy", 0
 s_times:    db "times ", 0
