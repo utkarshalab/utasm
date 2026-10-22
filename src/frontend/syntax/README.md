@@ -112,14 +112,14 @@ name in it is not defined yet. That lets the parser:
 | --- | --- | --- |
 | `nasm/parser.s` | 977 | `parser_parse_instruction`: a statement (above); the rest of it in the `nasm/parser/` parts, %included in this order: |
 | `nasm/parser/operand.inc` | 779 | one operand: register, immediate, memory or far pointer (parser_parse_operand), a register's size and kind |
-| `nasm/parser/expr.inc` | 2,708 | the expression evaluator: the precedence levels, terms and factors, values deferred to a later pass, symbol classes |
-| `nasm/parser/memory.inc` | 1,465 | memory operands: relocation modifiers (wrt, rel, abs), base / index / scale terms, rip, MIB, decorators ({k}, {z}, {1toN}, {dfv=}) |
+| `nasm/parser/expr.inc` | 2,711 | the expression evaluator: the precedence levels, terms and factors, values deferred to a later pass, symbol classes |
+| `nasm/parser/memory.inc` | 1,498 | memory operands: relocation modifiers (wrt, rel, abs), base / index / scale terms, rip, MIB, decorators ({k}, {z}, {1toN}, {dfv=}) |
 | `nasm/parser/labels.inc` | 496 | numeric labels (1:, 1b, 1f), positional labels, GNU symbol names, .size |
 | `nasm/parser/section_attrs.inc` | 496 | statement words, COFF section attributes and classes, section attributes, segment overrides, and their names |
 | `nasm/parser/checks.inc` | 644 | register and mnemonic lookup (the hash indexes), operand size checks, lock / HLE / prefix checks |
 | `nasm/parser/struc.inc` | 855 | struc / endstruc, defining a label (local names), GNU names, .equ / .set |
 | `nasm/parser/pseudo.inc` | 1,720 | the pseudo-instruction dispatch; string, UTF-16 / 32, float and BCD data; the float and ilog2 functions; incbin |
-| `nasm/parser/directives.inc` | 986 | bits / cpu, sectalign, absolute, alignb, istruc / at / iend, cfi; the expression operator tables and the parser's state |
+| `nasm/parser/directives.inc` | 987 | bits / cpu, sectalign, absolute, alignb, istruc / at / iend, cfi; the expression operator tables and the parser's state |
 | `nasm/parser/times_align.inc` | 927 | times, align, typed struc fields ([reg:TYPE].field), MASM fields, mnemonic tests |
 | `nasm/parser/equ.inc` | 442 | org, equ, the late equs and aliases |
 | `nasm/parser/data.inc` | 925 | db / dw / dd / dq: item lists, dup, sizes, symbols, field widths, the zeroing warnings |
