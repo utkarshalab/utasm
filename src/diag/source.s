@@ -111,7 +111,6 @@ s_reg:          db "a register", 0
 s_sizes:        db "the operands' sizes differ: ", 0
 s_bits:         db " bits", 0
 s_imm_first:    db "the first operand cannot be a number: it is where the result goes", 0
-s_none_takes:   db "no form of the instruction takes these operands", 0
 s_operand:      db "operand ", 0
 s_no_size_a:    db "' has no size: write `dword ", 0
 s_no_size_b:    db "' (or byte, word, qword)", 10, 0
