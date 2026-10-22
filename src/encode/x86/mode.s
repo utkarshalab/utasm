@@ -1739,6 +1739,59 @@ amd64_force_osize:
     call    osz_scan
     test    eax, eax
     jz      .ok                            ; nothing to change
+    ; 64-bit code: push, pop, call / jmp, ret, enter, leave, pushf / popf
+    ; are 64 bits with no REX.W (NASM's NW): o64 adds nothing (it gave a
+    ; REX.W), o32 cannot be - NASM 3's warning, the bytes as they are -
+    ; and o16 is a 66, with the warning unless the operand is 16 bits or
+    ; has no size of its own (o16 jmp ax, o16 push 5, o16 push fs)
+    cmp     byte [rel asm_bits], 64
+    jne     .not_d64
+    movzx   eax, word [r12 + INST_op_id]
+    lea     rsi, [rel osz_d64_ids]
+.d64_id:
+    movzx   ecx, word [rsi]
+    test    ecx, ecx
+    jz      .not_d64
+    add     rsi, 2
+    cmp     ecx, eax
+    jne     .d64_id
+    movzx   ecx, byte [r12 + INST_osize]
+    cmp     ecx, 64
+    je      .ok
+    mov     dword [rel osz_had], 64
+    cmp     ecx, 32
+    jne     .d64_16
+    ; o32: the warning names the operand's own size, 16 when it has it
+    ; ("o32 push word 5": must be o16), and the bytes are the default's -
+    ; no 66 (NASM 3: 6a 05)
+    cmp     byte [r12 + INST_nops], 0
+    je      .d64_32
+    cmp     byte [r12 + INST_op0 + OPERAND_size], 16
+    jne     .d64_32
+    mov     dword [rel osz_had], 16
+.d64_32:
+    call    osz_warn
+    jmp     .bytes
+.d64_16:
+    cmp     byte [r12 + INST_nops], 0
+    je      .d64_warn
+    cmp     byte [r12 + INST_op0 + OPERAND_size], 16
+    je      .bytes                         ; its own size (o16 jmp ax)
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_IMM
+    jne     .d64_sreg
+    cmp     byte [r12 + INST_op0 + OPERAND_size], 16
+    jbe     .bytes                         ; (no size, or the 16 o16 gave it)
+.d64_sreg:
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_REG
+    jne     .d64_warn
+    cmp     byte [r12 + INST_op0 + OPERAND_reg], REG_CS
+    jb      .d64_warn
+    cmp     byte [r12 + INST_op0 + OPERAND_reg], REG_SS
+    jbe     .bytes                         ; a segment register: no size
+.d64_warn:
+    call    osz_warn
+    jmp     .bytes
+.not_d64:
     ; the size the encoding has: REX.W 64, else by its 66
     mov     eax, 64
     mov     rcx, [rel osz_rex]
@@ -1765,20 +1818,7 @@ amd64_force_osize:
     call    osz_sized
     test    eax, eax
     jz      .bytes
-    mov     edi, WC_PREFIX_OPSIZE
-    call    warn_begin
-    lea     rsi, [rel s_osz_bad]
-    call    warn_text
-    lea     rsi, [rel s_osz_16]
-    cmp     dword [rel osz_had], 16
-    je      .warn_size
-    lea     rsi, [rel s_osz_32]
-    cmp     dword [rel osz_had], 32
-    je      .warn_size
-    lea     rsi, [rel s_osz_64]
-.warn_size:
-    call    warn_text
-    call    warn_end
+    call    osz_warn
 .bytes:
     ; REX.W as the size asks, in place - but for "jmp / call far [m]",
     ; which NASM keeps as its m16:64 form
@@ -2081,11 +2121,48 @@ osz_relocs:
 .ret:
     ret
 
+; osz_warn: "invalid operand size prefix o32, must be o16" - NASM 3's,
+; the prefix written (INST_osize) and the size there is (osz_had) in it
+osz_warn:
+    mov     edi, WC_PREFIX_OPSIZE
+    call    warn_begin
+    test    eax, eax
+    jz      .ret
+    lea     rsi, [rel s_osz_bad]
+    call    warn_text
+    movzx   edi, byte [r12 + INST_osize]
+    call    osz_size_text
+    call    warn_text
+    lea     rsi, [rel s_osz_must]
+    call    warn_text
+    mov     edi, [rel osz_had]
+    call    osz_size_text
+    call    warn_text
+    call    warn_end
+.ret:
+    ret
+
+; osz_size_text: rsi = "16" / "32" / "64" for edi
+osz_size_text:
+    lea     rsi, [rel s_osz_16]
+    cmp     edi, 16
+    je      .ret
+    lea     rsi, [rel s_osz_32]
+    cmp     edi, 32
+    je      .ret
+    lea     rsi, [rel s_osz_64]
+.ret:
+    ret
+
 [SECTION .rodata]
-s_osz_bad:      db "invalid operand size prefix, must be o", 0
+s_osz_bad:      db "invalid operand size prefix o", 0
+s_osz_must:     db ", must be o", 0
 s_osz_16:       db "16", 0
 s_osz_32:       db "32", 0
 s_osz_64:       db "64", 0
+; 64-bit code's NW instructions: call, enter, jmp, leave, pop, popf, popfq,
+; push, pushf, pushfq, ret, retn
+osz_d64_ids:    dw 1059, 1168, 1298, 1357, 1534, 1538, 1540, 1583, 1586, 1588, 1611, 6534, 0
 ; the mnemonics that are a size: movsw ... (string), cwd ..., iretd, pushfd,
 ; pushad and their kin
 osz_sized_ids:
