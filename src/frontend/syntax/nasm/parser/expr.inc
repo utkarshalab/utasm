@@ -335,9 +335,9 @@ parser_evaluate_additive:
         jne     .diff_back
         mov     rax, [rbx + PREP_ctx]
         cmp     byte [rax + ASMCTX_fmt], FMT_BIN
-        je      .diff_lost
+        je      .diff_xsec
         cmp     byte [rax + ASMCTX_standalone], 0
-        jne     .diff_lost
+        jne     .diff_xsec
         mov     r8, [rax + ASMCTX_curr_sec]
         test    r8, r8
         jz      .diff_not_simple
@@ -359,6 +359,8 @@ parser_evaluate_additive:
         mov     r14, [r15 + SYMBOL_name]
         xor     r15d, r15d
         jmp     .loop
+.diff_xsec:
+        mov     byte [rel expr_xsec], 1        ; (no RIP-relative address)
 .diff_lost:
         pop     rsi
         pop     rdi
@@ -697,6 +699,7 @@ parser_evaluate_expression:
     push    r15
     mov     rbx, rdi
     mov     byte [rel expr_lost], 0
+    mov     byte [rel expr_xsec], 0
     mov     byte [rel expr_pcrel], 0
     mov     qword [rel expr_last_record], 0
     mov     qword [rel expr_undef_uses], 0
