@@ -474,6 +474,18 @@ prep_expand_start:
     call    prep_cap_take
     test    rax, rax
     jnz     .error
+    ; the tokens in the arguments of every call open, at most NASM's
+    ; macro-tokens: past it a macro calls itself with a longer argument
+    ; each time ("r %1-1": quadratic - 2 GB and seconds by 10,000 levels)
+    mov     eax, [r13 + MACROEXP_pend_cnt]
+    mov     [r13 + MACROEXP_argtoks], rax
+    add     rax, [rel prep_mac_args]
+    mov     [rel prep_mac_args], rax
+    cmp     rax, MAX_MACRO_ARGS_TOKENS
+    jbe     .args_ok
+    mov     eax, EXIT_MACRO_RECURSION      ; "runaway recursion?" (fatal)
+    jmp     .error
+.args_ok:
     mov     rsi, [r13 + MACROEXP_body]     ; the old base
     mov     r8, rdx
     sub     r8, rsi                        ; how far they moved
@@ -1417,6 +1429,10 @@ prep_expand_next:
     epilogue
     ret
 
+[SECTION .bss]
+prep_mac_args:  resq 1              ; the tokens of the open calls' arguments
+[SECTION .text]
+
 global prep_expand_pop
 prep_expand_pop:
     prologue
@@ -1429,8 +1445,10 @@ prep_expand_pop:
     test    r9, r9
     jz      .done
     
-    ; Decrease depth
+    ; Decrease depth, and the arguments' tokens
     dec     word [rbx + PREP_mac_depth]
+    mov     rax, [r9 + MACROEXP_argtoks]
+    sub     [rel prep_mac_args], rax
     
     ; Pop from expansion stack
     mov     rax, [r9 + MACROEXP_parent]
