@@ -338,6 +338,8 @@ diag_mark:
 .slen:
     cmp     byte [rdi + rcx], 0
     je      .slen_done
+    cmp     byte [rdi + rcx], ' '          ; "found `mvo eax'": the word
+    je      .slen_done
     inc     ecx
     jmp     .slen
 .slen_done:
