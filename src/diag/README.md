@@ -66,6 +66,7 @@ or utasm exits (`warn_flush`): when core/known.s runs a second pass, the
 first pass's warnings are dropped, so each is given once, as NASM does.
 The classes are NASM's (`zeroing`, `number-overflow`, `label-orphan`,
 `ptr`, `ea-absolute`, `ea-dispsize`, `implicit-abs-deprecated` (NASM 3's, once a file),
+`number-deprecated-hex` (NASM 3's, "$0ff"),
 `prefix-*`, `pp-*`, `obsolete-*` ...)
 plus utasm's own: `pie` and `proc-stack`, `proc-uses`, `proc-clobber`,
 `proc-unreachable`, `proc-fallthrough` (semantic/proc.s).
