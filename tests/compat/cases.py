@@ -3797,3 +3797,9 @@ ELF_PROBES.update({
 BIN_PROBES.update({
     "flat_call_listed": "bits 16\norg 0x100\nx: dw x\njmp x\ncall y\ny: dd y\n",
 })
+# ..@N numbering: NASM 3's incbin takes one number (it took two), and a
+# directive after times none (no macro there: the line's word is times)
+ELF_PROBES.update({
+    "elf_macro_numbers_incbin": "%macro m 0\n%%l: nop\n%endmacro\nm\nincbin '/dev/null'\nm\n"
+                                "times 2 incbin '/dev/null'\nm\n%rep 2\nincbin '/dev/null'\n%endrep\nm\n",
+})
