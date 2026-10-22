@@ -80,7 +80,7 @@ regenerate it after moving code.
 
 | File | Lines | What is in it |
 | --- | --- | --- |
-| `jump.s` | 3,320 | `relax_run` and the records it reads, the iterative choice, moving code, the `-Os` rewrites, `rx_fast` |
+| `jump.s` | 3,300 | `relax_run` and the records it reads, the iterative choice, moving code, the `-Os` rewrites, `rx_fast` |
 | `align.s` | 352 | `align_fill`, `align_fill_spec`, the NOP tables per mode and bits, `alignmode` (`align_mode_directive`), GNU's `.p2align` MAX (`align_gas_spec`) |
 
 ## Entry points
