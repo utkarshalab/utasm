@@ -38,7 +38,6 @@ extern user_sect_name
 
 DEFAULT REL
 
-extern error_new_from_errno
 extern symbol_add
 extern str_len
 extern arena_alloc_string
@@ -97,6 +96,7 @@ prep_init:
 
 extern error_track_token
 extern error_set_subject
+extern error_set_location
 global preprocessor_next_token
 global prep_internal_next
 global prep_handle_directive
