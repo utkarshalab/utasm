@@ -34,7 +34,7 @@ extern symbol_find
 ; One LexerState per source file. Nested includes get their own LexerState.
 ;
 ; Token stream flow:
-;   lexer_init â†’ lexer_next (repeated) â†’ lexer_peek â†’ lexer_destroy
+;   lexer_init â†’ lexer_next (repeated) â†’ lexer_peek
 ;
 ; Character classification:
 ;   whitespace     space, tab, CR â€” skipped silently
@@ -2779,31 +2779,6 @@ lexer_peek:
     pop     r13
     pop     r12
     pop     rbx
-    ret
-
-
-; ---- lexer_destroy ----------------------
-;
-; lexer_destroy
-; Clears a LexerState struct. Does not free the source buffer
-; (caller owns it) or the arena (shared with whole pass).
-; Input    : rdi = pointer to LexerState
-; Output   : rax = EXIT_OK or EXIT_INTERNAL
-; Clobbers : rcx, rdx
-;
-global lexer_destroy
-lexer_destroy:
-    cmp     byte [rdi + LEXER_tag], TAG_LEXER
-    jne     .bad_lexer
-
-    mov     rsi, LEXER_SIZE
-    call    mem_zero
-
-    xor     rax, rax
-    ret
-
-.bad_lexer:
-    mov     rax, EXIT_INTERNAL
     ret
 
 ; ============================================================================
