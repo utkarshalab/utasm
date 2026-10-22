@@ -326,6 +326,112 @@ error_set_location:
     mov     qword [rel error_mac_name], 0
     ret
 
+; ---- error_report_line ------------------
+;
+; An error found while the source is read (the lexer: a string with no
+; closing quote, a byte no token starts with), reported at its own line -
+; which need not be the statement's yet - and counted as %error is: the
+; assembly goes on and fails at its end. After 100 of them the rest are
+; counted, not printed (a binary file given as the source). One found
+; while another message is being printed - whose text is read token by
+; token, %error a \ b - is held, and printed after it (line_flush).
+; Input    : edi = EXIT_* code, rsi = file name, edx = line,
+;            rcx = the subject (^ in the message, up to 15 bytes), or 0
+; Clobbers : rax, rcx, rdx, rsi, rdi, r8-r11
+;
+%define LINE_HOLD 8                    ; errors held while a message prints
+
+global error_report_line
+error_report_line:
+    inc     dword [rel error_deferred]
+    cmp     byte [rel report_open], 0
+    jne     line_hold
+line_report_now:
+    cmp     dword [rel line_reported], 100
+    jae     .ret
+    inc     dword [rel line_reported]
+    push    qword [rel error_loc_file]
+    push    qword [rel error_loc_line]     ; (and error_mac_line)
+    push    qword [rel error_mac_name]
+    mov     [rel error_loc_file], rsi
+    mov     [rel error_loc_line], edx
+    mov     qword [rel error_mac_name], 0
+    mov     [rel error_subject], rcx
+    call    error_report_code
+    pop     qword [rel error_mac_name]
+    pop     qword [rel error_loc_line]
+    pop     qword [rel error_loc_file]
+.ret:
+    ret
+
+; line_hold: error_report_line's, while a message is printed - kept, with
+; a copy of its subject, for line_flush
+line_hold:
+    mov     eax, [rel line_held]
+    cmp     eax, LINE_HOLD
+    jae     .ret                           ; (counted all the same)
+    inc     dword [rel line_held]
+    shl     eax, 5
+    lea     r8, [rel line_queue]
+    add     r8, rax
+    mov     [r8], edi
+    mov     [r8 + 4], edx
+    mov     [r8 + 8], rsi
+    mov     byte [r8 + 31], 0              ; 0: no subject
+    test    rcx, rcx
+    jz      .ret
+    mov     byte [r8 + 31], 1
+    xor     eax, eax
+.copy:
+    ; a copy (the lexer's text is reused), up to 14 bytes and the NUL
+    mov     dl, [rcx + rax]
+    cmp     eax, 14
+    jb      .put
+    xor     edx, edx
+.put:
+    mov     [r8 + 16 + rax], dl
+    inc     eax
+    test    dl, dl
+    jnz     .copy
+    ret
+.ret:
+    ret
+
+; line_flush: the held ones, in order (report_tail: the message they came
+; during is printed)
+line_flush:
+    mov     eax, [rel line_next]
+    cmp     eax, [rel line_held]
+    jb      .one
+    mov     dword [rel line_held], 0
+    mov     dword [rel line_next], 0
+    ret
+.one:
+    inc     dword [rel line_next]
+    shl     eax, 5
+    lea     r8, [rel line_queue]
+    add     r8, rax
+    mov     edi, [r8]
+    mov     edx, [r8 + 4]
+    mov     rsi, [r8 + 8]
+    xor     ecx, ecx
+    cmp     byte [r8 + 31], 0
+    je      .say
+    lea     rcx, [r8 + 16]
+.say:
+    call    line_report_now
+    jmp     line_flush
+
+[SECTION .bss]
+line_reported:  resd 1                 ; error_report_line's, printed
+line_held:      resd 1                 ; held while a message is printed ...
+line_next:      resd 1                 ; ... and the next of them to print
+report_open:    resb 1                 ; 1: a message is being printed
+alignb 8
+line_queue:     resb 32 * LINE_HOLD    ; code (dd), line (dd), file (dq),
+                                       ; subject (16 bytes, the last 1 if any)
+[SECTION .text]
+
 ; ---- error_code_message -----------------
 ;
 ; Input    : edi = EXIT_* code
@@ -469,6 +575,7 @@ error_report_end:
 ; report_head: "file:line: " (or "utasm: " with no position) and the
 ; severity at rdi.
 report_head:
+    mov     byte [rel report_open], 1      ; (error_report_line holds its own)
     push    rbx
     mov     rbx, rdi
     lea     rsi, [rel c_bold]              ; (on a terminal: color)
@@ -553,7 +660,8 @@ report_tail:
     call    diag_snippet_macro             ; on a terminal: the body's line
 .done:
     add     rsp, 8
-    ret
+    mov     byte [rel report_open], 0
+    jmp     line_flush                     ; the lexer's, held while it was printed
 
 [SECTION .data]
 
@@ -717,7 +825,7 @@ code_table:
     code_msg EXIT_OFFSET_RANGE,      m_offset_range
     code_msg EXIT_UNSUPPORTED_INSTR, m_unsupported
     code_msg EXIT_ALIGN_ERROR,       m_align
-    code_msg EXIT_STRUCT_BOUNDS,     m_struct
+    code_msg EXIT_STRUCT_BOUNDS,     m_struct, t_struct
     code_msg EXIT_BITS_MODE,         m_bits_mode, t_bits_mode
     code_msg EXIT_NON64_OPERANDS,    m_non64
     code_msg EXIT_ALIGN_LARGE,       m_align_large, t_align_large
@@ -735,7 +843,7 @@ code_table:
     code_msg EXIT_UNDEF_REF,         m_undef, t_undef
     code_msg EXIT_MULTI_DEF,         m_multi, t_multi
     code_msg EXIT_INVALID_SECTION,   m_section
-    code_msg EXIT_OUT_CREATE,        m_out_create
+    code_msg EXIT_OUT_CREATE,        m_out_create, t_out_create
     code_msg EXIT_ELF_WRITE,         m_elf_write
     code_msg EXIT_BIN_WRITE,         m_bin_write
     code_msg EXIT_ASSERT,            m_assert
@@ -743,6 +851,14 @@ code_table:
     code_msg EXIT_NOT_IMPLEMENTED,   m_not_impl
     code_msg EXIT_UBF_EMPTY,         m_ubf_empty
     code_msg EXIT_UBF_TOO_BIG,       m_ubf_big
+    code_msg EXIT_LEX_OPEN_STRING,   m_open_string, t_open_string
+    code_msg EXIT_LEX_OPEN_BRACE,    m_open_brace
+    code_msg EXIT_LEX_OPEN_COMMENT,  m_open_comment
+    code_msg EXIT_LEX_BAD_UTF8,      m_bad_utf8
+    code_msg EXIT_LEX_BAD_CHAR,      m_bad_char, t_bad_char
+    code_msg EXIT_LEX_STRING_LONG,   m_string_long
+    code_msg EXIT_FILE_IS_DIR,       m_is_dir, t_is_dir
+    code_msg EXIT_PP_NO_ENDIF,       m_no_endif
     dd 0, 0
     dq 0, 0
 
@@ -784,6 +900,7 @@ m_offset_range: db "jump or displacement out of range", 0
 m_unsupported:  db "instruction not supported for this target", 0
 m_align:        db "invalid alignment (not a power of two?)", 0
 m_struct:       db "operand larger than the structure field", 0
+t_struct:       db "operand larger than the structure field `^'", 0
 m_bits_mode:    db "instruction not supported in this bits mode (16/32/64)", 0
 t_bits_mode:    db "instruction not supported in ^ mode", 0
 m_non64:        db "invalid operands in non-64-bit mode", 0
@@ -840,6 +957,7 @@ m_reloc:        db "relocation out of range or not supported", 0
 m_multi:        db "symbol defined more than once", 0
 m_section:      db "invalid section", 0
 m_out_create:   db "unable to create the output file", 0
+t_out_create:   db "unable to open output file `^'", 0
 m_elf_write:    db "error writing the ELF output", 0
 m_bin_write:    db "error writing the binary output", 0
 m_unreachable:  db "internal error: unreachable code reached", 0
@@ -952,6 +1070,17 @@ m_tmm_same:     db "the three tile registers must all differ (#UD otherwise)", 0
 m_gather_same:  db "a gather's destination, index and mask registers must all differ (#UD otherwise)", 0
 m_vsib_no_mask: db "a gather / scatter needs a write mask, {k1} to {k7} (#UD with k0)", 0
 m_mask_refused: db "this instruction takes no write mask / {z} here (#UD with one)", 0
+m_open_string:  db "unterminated string", 0
+t_open_string:  db "unterminated string (missing `^')", 0
+m_open_brace:   db "unterminated %{...} construct (missing `}')", 0
+m_open_comment: db "unterminated block comment (missing `*/')", 0
+m_bad_utf8:     db "invalid UTF-8 sequence", 0
+m_bad_char:     db "invalid character in the source", 0
+t_bad_char:     db "invalid character ^ in the source", 0
+m_string_long:  db "string longer than 65535 bytes", 0
+m_is_dir:       db "a directory, not a file", 0
+t_is_dir:       db "`^' is a directory, not a file", 0
+m_no_endif:     db "expected `%endif' before end of file", 0
 t_ns_shadow:    db "`^' was taken from an outer namespace, then this one defined it (write ::^, or define it before)", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
