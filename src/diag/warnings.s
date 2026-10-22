@@ -123,7 +123,6 @@ wn_proc_clobber: db "proc-clobber", 0
 wn_proc_unreachable: db "proc-unreachable", 0
 wn_proc_fallthrough: db "proc-fallthrough", 0
 wn_all:         db "all", 0
-wn_error:       db "error", 0
 s_warning:      db "warning: ", 0
 s_error:        db "error: ", 0
 s_open:         db " [-w+", 0
