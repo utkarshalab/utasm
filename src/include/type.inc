@@ -238,6 +238,8 @@ struc MACROEXP
     field call_file, 8      ; (line's file)
     field argtoks,  8       ; the tokens of its arguments (prep_expand_start's
                             ; runaway check: prep_mac_args)
+    field times_sec, 8      ; a times line's (MACRO_FLAG_TIMES) section ...
+    field times_pos, 8      ; ... and offset where it starts: every copy's $
 endstruc
 
 ; ============================================================================
