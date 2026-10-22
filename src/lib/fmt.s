@@ -22,7 +22,7 @@ DEFAULT REL
 ;     fmt_init   fb, buf, 256
 ;     fmt_str    fb, "offset "
 ;     fmt_hex    fb, 0x1f, 8          -> "offset 0000001f"
-;     fmt_write_fd fb, 2
+;     (then the caller writes FMTBUF_buf, FMTBUF_len bytes)
 ;
 ; Invariants:
 ;   - the buffer is NUL-terminated after every call (usable as a C string)
@@ -247,41 +247,6 @@ fmt_udec:
     add     rsp, FMT_NUM_SCRATCH
     ret
 
-; ---- fmt_dec ----------------------------
-;
-; fmt_dec
-; Appends a signed 64-bit integer in decimal (INT64_MIN is handled).
-; Input    : rdi = pointer to FmtBuf
-;             rsi = value (signed)
-; Output   : rax = EXIT_OK or EXIT_ERROR (truncated), rdx = current length
-; Clobbers : rcx, rsi, rdi, r8, r9, r10
-;
-global fmt_dec
-fmt_dec:
-    test    rsi, rsi
-    jns     fmt_udec
-
-    push    rbx
-    push    r12
-    sub     rsp, 8
-    mov     rbx, rdi
-    mov     r12, rsi
-    mov     esi, '-'
-    call    fmt_char
-    mov     rdi, rbx
-    mov     rsi, r12
-    neg     rsi                            ; INT64_MIN negates to 2^63 unsigned
-    call    fmt_udec
-    movzx   ecx, byte [rbx + FMTBUF_truncated]
-    test    ecx, ecx
-    jz      .ok
-    mov     eax, EXIT_ERROR                ; '-' or digits were cut off
-.ok:
-    add     rsp, 8
-    pop     r12
-    pop     rbx
-    ret
-
 ; ---- fmt_hex ----------------------------
 ;
 ; fmt_hex
@@ -330,50 +295,6 @@ fmt_hex:
     sub     rdx, r8
     call    fmt_mem
     add     rsp, FMT_NUM_SCRATCH
-    ret
-
-; ---- fmt_write_fd -----------------------
-;
-; fmt_write_fd
-; Writes the builder's contents to a file descriptor with write(2),
-; retrying on partial writes and EINTR.
-; Input    : rdi = pointer to FmtBuf
-;             rsi = file descriptor (1 = stdout, 2 = stderr)
-; Output   : rax = EXIT_OK or EXIT_FILE_WRITE
-;              rdx = bytes written
-; Clobbers : rcx, rsi, rdi, r8, r9, r10, r11
-;
-global fmt_write_fd
-fmt_write_fd:
-    mov     r8, [rdi + FMTBUF_buf]         ; r8 = cursor
-    mov     r9, [rdi + FMTBUF_len]         ; r9 = bytes remaining
-    mov     rdi, rsi                       ; rdi = fd (kept across syscalls)
-    xor     r10d, r10d                     ; r10 = total written (syscall
-                                           ;   write() does not use r10)
-.loop:
-    test    r9, r9
-    jz      .ok
-    mov     eax, AMD64_SYS_WRITE
-    mov     rsi, r8
-    mov     rdx, r9
-    syscall                                ; clobbers rcx, r11
-    cmp     rax, -4                        ; -EINTR: just retry
-    je      .loop
-    test    rax, rax
-    jle     .fail                          ; error, or 0 bytes (no progress)
-    add     r8, rax
-    sub     r9, rax
-    add     r10, rax
-    jmp     .loop
-
-.ok:
-    xor     eax, eax
-    mov     rdx, r10
-    ret
-
-.fail:
-    mov     eax, EXIT_FILE_WRITE
-    mov     rdx, r10
     ret
 
 [SECTION .rodata]
