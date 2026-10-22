@@ -770,9 +770,6 @@ reloc_resolve_all:
     mov     rax, EXIT_UNDEF_SYMBOL
     jmp     .ret
 
-.range_err:
-    mov     rax, EXIT_OFFSET_RANGE
-
 .error:
 .ret:
     pop     r15
@@ -1120,6 +1117,12 @@ reloc_apply_one:
     jmp     .done_patch
 
 .range_err:
+    ; at its statement ("[rel x + 0x100000000]": more than 2 GB away - it
+    ; said "utasm: error:", no line)
+    mov     rdi, [rbx + RELOC_file]
+    mov     esi, [rbx + RELOC_line]
+    extern  error_set_location
+    call    error_set_location
     mov     rax, EXIT_OFFSET_RANGE
     jmp     .ret
 
