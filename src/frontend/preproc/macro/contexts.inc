@@ -570,6 +570,7 @@ prep_handle_substr:
 ; Input    : rdx = token, rbx = PrepState
 ; Output   : rax = the text (0 if none)
 ;
+global prep_token_text
 prep_token_text:
     cmp     byte [rdx + TOKEN_kind], TOK_CHAR
     je      .char
