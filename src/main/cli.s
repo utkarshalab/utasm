@@ -1159,6 +1159,7 @@ cli_nasm_option:
     mov     rsi, AMD64_O_WRONLY | AMD64_O_CREAT | AMD64_O_TRUNC
     mov     rdx, 0o644
     extern  io_open
+    extern  io_create
     call    io_open
     test    rax, rax
     jnz     .to_file_bad
@@ -1354,9 +1355,8 @@ cli_write_deps:
     jnz     .ret
     mov     rdi, rdx
 .open:
-    mov     rsi, AMD64_O_WRONLY | AMD64_O_CREAT | AMD64_O_TRUNC
     mov     rdx, 0o644
-    call    io_open
+    call    io_create
     test    rax, rax
     jnz     .ret
     mov     r12d, edx
