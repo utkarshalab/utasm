@@ -893,8 +893,8 @@ NASM 2.16.03's `test/` directory, each file assembled by the system NASM
 (3.01) and by utasm with the arguments in its `;Testname=` lines, the
 outputs compared (a flat binary byte for byte, an object through
 `suites.elf_view` / `coff_view`). The script is outside the repository
-(`nasmtests.py`); `NT_JOBS` runs it in parallel. On 2026-10-22: 363 the
-same, 28 skipped (formats utasm does not write), 31 different - and each
+(`nasmtests.py`); `NT_JOBS` runs it in parallel. On 2026-10-22: 365 the
+same, 28 skipped (formats utasm does not write), 29 different - and each
 of those has been looked at, and is not utasm's bug:
 
 | Test | Why it differs |
@@ -906,13 +906,14 @@ of those has been looked at, and is not utasm's bug:
 | `mpx-64` | `jmp near 0` in an object: utasm (as GNU as) writes a PC32 relocation against `*ABS*`, a jump to address 0; NASM jumps to the section's offset 0 |
 | `amx`, `br3392392` | utasm refuses what the CPU would refuse (#UD): three tile registers not all different, a write mask the instruction does not take |
 | `br2496848` | `[rel foo + 0x100000000]`: no RIP-relative form reaches it. utasm's error, at its line; NASM cuts the displacement (another address) with a warning |
-| `pcrel` | `[baz - $]` under `default rel`, `baz` in another section and defined after the line: utasm cannot tell yet that it is self-relative, and takes the value as an absolute address, with NASM's warning; NASM's error. (With `baz` defined before, utasm gives NASM's error too) |
-| `optimization` (`-Ox`) | `lea eax, [eax + ealog2 - ealog1]` around its own bytes: NASM's passes settle on a disp8 that holds only once the instruction is short; utasm keeps the disp32 (3 bytes) |
+| `optimization` (`-Ox`) | `lea eax, [eax + ealog2 - ealog1]` around its own bytes, 130 long, 127 short: NASM writes it long when it stands alone (as utasm does), short here only because jumps earlier in the file make NASM run more passes - an artifact of its pass order, both forms right |
 | `pragma` | NASM 3.01 crashes (signal 11) |
 | `cofftest`, `elftest`, `reldef`, `elfso`, `elf64so`, `elf_visibility`, `floattest`, `subsection`, `br3392411`, `br3005117`, `lnxhello`, `mpx` | object layout, the same program: a global defined here is relocated against its symbol (as GNU as does), not its section; `.rel*` sections carry `SHF_INFO_LINK` (the ELF spec's, GNU as's); the symbol table's order; the numbers of `..@N` macro locals |
 
 What the sweep found and fixed is in `tests/compat/cases.py` (the
-`kandn` sizes, `mov r64, dword x` under `-Ox`, self-relative addresses).
+`kandn` sizes, `mov r64, dword x` under `-Ox`, self-relative addresses,
+before and after their label; NASM 3's number-overflow words, unsigned
+byte fields, displacement warnings and implicit-abs-deprecated).
 
 ---
 
