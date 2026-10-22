@@ -19,18 +19,15 @@
 ; are reserved by the platform for signal-based termination and must never
 ; be used as normal exit codes.
 ;
-; NOTE ON PARITY & CONVENTIONS:
-; - Standard compiler exit codes (0 to 9) align precisely with the calling
-;   expectations in main.s, docs/user/errors.md, and docs/reference/abi.md.
-; - Values 124 (EXIT_INTERNAL) and 125 (EXIT_OOM) were historically proposed
-;   to keep compiler crash statuses distinct from standard shell/OS utility 
-;   statuses, but consecutive codes 0-9 are preferred to prevent mismatch 
-;   between subsystems.
+; Each code's message is in src/diag/codes.s (code_table), and
+; docs/user/errors.md lists them all - it is generated from this section
+; and codes.s (scripts/gen/gen_error_docs.py): change either, rerun it.
+; The comment after each code is its meaning in that reference.
 ;
 %define EXIT_OK                0   ; operation completed successfully
 %define EXIT_ERROR             1   ; unspecified general failure or CLI usage error
 %define EXIT_USAGE             1   ; alias for EXIT_ERROR (invalid CLI arguments/flags)
-%define EXIT_OOM               2   ; out of memory (corresponds to EXIT_OOM = 2 in abi.md)
+%define EXIT_OOM               2   ; out of memory
 %define EXIT_IO_ERROR          3   ; unified I/O error code (file read, write, etc.)
 %define EXIT_PARSER_ERROR      4   ; parser syntax or semantic constraint failed
 %define EXIT_ENCODER_ERROR     5   ; machine instruction encoding failed
