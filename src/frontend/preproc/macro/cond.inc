@@ -655,6 +655,7 @@ prep_idn_collect:
 ;
 ; prep_idn_text : rax = a token's text (rdx = token, rbx = PrepState)
 ;
+global prep_idn_text
 prep_idn_text:
     movzx   eax, byte [rdx + TOKEN_kind]
     cmp     eax, TOK_CHAR
