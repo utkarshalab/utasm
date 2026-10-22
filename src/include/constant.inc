@@ -230,7 +230,7 @@
 %define WC_USER                1   ; user: %warning
 %define WC_ZEROING             2   ; zeroing: db ? / resb outside .bss
 %define WC_PREFIX_LOCK_XCHG    3   ; prefix-lock-xchg
-%define WC_NUMBER_OVERFLOW     4   ; number-overflow: data exceeds bounds
+%define WC_NUMBER_OVERFLOW     4   ; number-overflow: a value exceeds its field's bounds
 %define WC_PREFIX_LOCK_ERROR   5   ; prefix-lock-error: not lockable
 %define WC_DB_EMPTY            6   ; db-empty: "db" with no operand
 %define WC_PP_MACRO_DEFAULTS   7   ; pp-macro-defaults: too many defaults
@@ -257,7 +257,8 @@
 %define WC_PROC_CLOBBER        28  ; proc-clobber: a preserved register written, not in uses
 %define WC_PROC_UNREACHABLE    29  ; proc-unreachable: code after a ret / jmp, no label between
 %define WC_PROC_FALLTHROUGH    30  ; proc-fallthrough: the code runs into endproc
-%define WC_COUNT               31
+%define WC_IMPLICIT_ABS        31  ; implicit-abs-deprecated: NASM 3's, an absolute address in 64-bit code with no "default" written
+%define WC_COUNT               32
 
 ; a kept expression's record (parser_defer_record): +0 RELOC_EXPR_MARK,
 ; +8 text, +16 tokens, +24 count; and for src/core/known.s:
@@ -625,6 +626,9 @@
                                            ; (its section symbol): debug info
 %define RELOC_FLAG_BRANCH      0x04        ; a call / jmp / jcc's displacement (GNU's
                                            ; syntax: PLT32 to a global, as GNU as)
+%define RELOC_FLAG_NORIP       0x08        ; an address meant RIP-relative, taken as
+                                           ; absolute (a value kept, "[baz - $]"): it
+                                           ; must not turn out self-relative
 ; A relocation whose symbol name starts with this byte wants the symbol's
 ; offset in its section ("later - $$"), not its address: it is written in
 ; place once the symbol is defined, never left in an object.
