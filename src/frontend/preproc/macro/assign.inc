@@ -674,16 +674,7 @@ prep_handle_exit:
     imul    rdx, rdx, TOKEN_SIZE
     add     rdx, [rax + MACRO_tokens]
     inc     rcx
-    ; %exitrep: NASM lists the rest of the body (nothing assembled)
-    test    r15d, r15d
-    jnz     .unlisted
-    extern  lst_enabled
-    cmp     byte [rel lst_enabled], 0
-    je      .unlisted
-    mov     rdi, rdx
-    mov     rsi, r12
-    call    error_track_token              ; (preserves every register)
-.unlisted:
+    ; (the rest of the body is not listed: NASM 3 lists none of it)
     cmp     byte [rdx + TOKEN_kind], TOK_DIRECTIVE
     jne     .scan
     mov     rdi, [rdx + TOKEN_value]
