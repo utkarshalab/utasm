@@ -46,6 +46,11 @@ note: the operands' sizes differ: 8 and 64 bits
 `%error` is counted (`error_deferred`) but does not stop the source being
 read; `%fatal` does. `-X vc` writes `file(line) :` instead of `file:line:`.
 
+Every message and warning class is listed in `docs/user/errors.md`,
+**generated** from `include/constant.inc`, `codes.s` and `warnings.s` by
+`scripts/gen/gen_error_docs.py` (`tests/run.sh` fails when it is out of
+date).
+
 ## Warnings (`warnings.s`)
 
 Each warning has a NASM class and ends with it: `... zeroing
