@@ -183,6 +183,7 @@ the first failure: see *Exit status* at the end.
 | 179 | `a gather's destination, index and mask registers must all differ (#UD otherwise)` |  | a gather's destination, index and mask not distinct (`EXIT_GATHER_SAME`) |
 | 180 | `a gather / scatter needs a write mask, {k1} to {k7} (#UD with k0)` |  | an EVEX gather / scatter with no write mask (k0) (`EXIT_VSIB_NO_MASK`) |
 | 181 | `this instruction takes no write mask / {z} here (#UD with one)` |  | a write mask / {z} the instruction does not take (`EXIT_MASK_REFUSED`) |
+| 191 | `invalid use of self-relative expression` |  | a self-relative value ("x - $", x elsewhere) as a RIP-relative address (`EXIT_EA_SELF_REL`) |
 
 ### Expressions and symbols
 
