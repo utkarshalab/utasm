@@ -682,6 +682,22 @@ amd64_imm_canon:
     je      .cut
     cmp     byte [r12 + INST_op1 + OPERAND_size], 32
     jne     .width
+    ; except under -Ox a number (not strict) into a register that fits 32
+    ; bits unsigned: NASM's mov r32, imm32 ("mov rax, dword 0x80000000" is
+    ; B8 00 00 00 80, rax = 0x80000000; cut, it was C7 and rax negative)
+    cmp     byte [r12 + INST_op0 + OPERAND_kind], OP_REG
+    jne     .cut
+    cmp     byte [r12 + INST_op1 + OPERAND_kind], OP_IMM
+    jne     .cut
+    test    byte [r12 + INST_op1 + OPERAND_flags], OP_FLAG_STRICT
+    jnz     .cut
+    cmp     byte [rbx + ASMCTX_opt], OPT_NONE
+    je      .cut
+    cmp     byte [rbx + ASMCTX_opt], OPT_MIN
+    je      .cut
+    mov     rax, [r12 + INST_op1 + OPERAND_imm]
+    shr     rax, 32
+    jz      .width
 .cut:
     mov     r13d, 2
 .width:
