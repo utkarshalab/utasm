@@ -25,6 +25,7 @@ DEFAULT REL
 ; file the addresses are the sections' offsets.
 
 extern  io_open
+extern io_create
 extern  io_write
 extern  io_close
 extern  mem_reserve
@@ -458,9 +459,8 @@ map_write:
     jb      .sym_pass
 .write:
     mov     rdi, [rel map_file]
-    mov     rsi, AMD64_O_WRONLY | AMD64_O_CREAT | AMD64_O_TRUNC
     mov     rdx, 0o644
-    call    io_open
+    call    io_create
     test    rax, rax
     jnz     .ret
     mov     r12d, edx
