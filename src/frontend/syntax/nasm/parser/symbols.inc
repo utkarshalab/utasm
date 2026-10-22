@@ -332,10 +332,12 @@ parser_handle_default:
 .set_rel:
     mov     rax, [rbx + PREP_ctx]
     or      dword [rax + ASMCTX_flags], CTX_FLAG_DEFAULT_REL
+    mov     byte [rel default_given], 1    ; (memory.inc: implicit-abs-deprecated)
     jmp     .loop
 .set_abs:
     mov     rax, [rbx + PREP_ctx]
     and     dword [rax + ASMCTX_flags], ~CTX_FLAG_DEFAULT_REL
+    mov     byte [rel default_given], 1
     jmp     .loop
 
 .done:
@@ -423,11 +425,30 @@ parser_handle_section_directive:
     jmp     .done
 
 .name_text:
+    ; "section 'bc'": a character constant's value is its characters
+    ; packed, not a pointer to them (utasm crashed): their text
+    cmp     byte [r12 + TOKEN_kind], TOK_CHAR
+    jne     .name_not_char
+    mov     rdx, r12
+    extern  prep_token_text
+    call    prep_token_text
+    test    rax, rax
+    jz      .name_written
+    mov     [r12 + TOKEN_value], rax
+    mov     byte [r12 + TOKEN_kind], TOK_STRING
+    jmp     .name_piece
+.name_not_char:
+    ; "section 5": a number's value is no pointer either - as written
+    cmp     byte [r12 + TOKEN_kind], TOK_NUMBER
+    je      .name_written
+    cmp     byte [r12 + TOKEN_kind], TOK_FLOAT
+    je      .name_written
     ; "section /": any word names a section in NASM; a token with no text
     ; of its own (an operator) is named by what was written (it made a
     ; section with no name, which the ELF writer could not write)
     cmp     qword [r12 + TOKEN_value], 0
     jne     .name_piece
+.name_written:
     mov     rdi, rbx
     mov     rsi, r12
     mov     edx, 1
