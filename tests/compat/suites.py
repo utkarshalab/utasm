@@ -1810,7 +1810,7 @@ def lsp_server(utasm, verbose=False):
             r = recv()
             got = diags(r)
             s.result("errors", r and r["params"]["uri"] == uri and got == [
-                (3, 1, "parser: instruction expected, found `movv'"), (4, 1, "invalid effective address")], str(got))
+                (3, 1, "instruction expected, found `movv eax'"), (4, 1, "invalid effective address")], str(got))
             send({"jsonrpc": "2.0", "method": "textDocument/didChange",
                   "params": {"textDocument": {"uri": uri, "version": 2},
                              "contentChanges": [{"text": "orphan\ndb 300\n"}]}})
