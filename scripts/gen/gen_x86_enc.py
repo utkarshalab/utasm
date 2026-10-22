@@ -1365,7 +1365,7 @@ NASM_LEGACY_SEEN = set()
 NASM_SEEN = set()
 AVX10_EVEX = set()      # mnemonics with an AVX10.2 EVEX form (insns3.dat)
 # NASM's CPU levels (x86/iflags.ph's order), as "cpu" names them
-# (src/frontend/syntax/nasm/parser.s cpu_levels: the same numbers)
+# (src/frontend/syntax/nasm/parser/symbols.inc cpu_levels: the same numbers)
 CPU_LEVELS = {"8086": 1, "186": 2, "286": 3, "386": 4, "486": 5, "PENT": 6, "P6": 7,
               "KATMAI": 8, "WILLAMETTE": 9, "PRESCOTT": 10, "X86_64": 11, "NEHALEM": 12,
               "WESTMERE": 13, "SANDYBRIDGE": 14, "FUTURE": 15, "IA64": 16}
