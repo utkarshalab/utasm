@@ -97,10 +97,11 @@ the first failure: see *Exit status* at the end.
 | 12 | `error reading a file` **(fatal)** | `` error reading `NAME' `` | error occurred during file read operation (`EXIT_FILE_READ`) |
 | 13 | `error writing a file` **(fatal)** |  | error occurred during file write operation (`EXIT_FILE_WRITE`) |
 | 14 | `invalid file format` **(fatal)** |  | file format is invalid or unrecognized (`EXIT_INVALID_FORMAT`) |
-| 70 | `unable to create the output file` |  | failed to create output file (`EXIT_OUT_CREATE`) |
+| 70 | `unable to create the output file` | `` unable to open output file `NAME' `` | failed to create output file (`EXIT_OUT_CREATE`) |
 | 71 | `error writing the ELF output` |  | error writing ELF format output (`EXIT_ELF_WRITE`) |
 | 72 | `error writing the binary output` |  | error writing flat binary output (`EXIT_BIN_WRITE`) |
 | 134 | `unable to open the input file` | `` unable to open input file `NAME' `` | the source file cannot be opened / read (`EXIT_INPUT_OPEN`) |
+| 188 | `a directory, not a file` **(fatal)** | `` `NAME' is a directory, not a file `` | a directory given where a file is read (`EXIT_FILE_IS_DIR`) |
 
 ### utasm itself
 
@@ -112,6 +113,17 @@ the first failure: see *Exit status* at the end.
 | 76 | `internal error: unreachable code reached` |  | compiler hit a code path marked unreachable (`EXIT_UNREACHABLE`) |
 | 77 | `not implemented yet` |  | requested compiler feature is not implemented (`EXIT_NOT_IMPLEMENTED`) |
 | 150 | `the second pass could not be started (running /proc/self/exe failed)` |  | the second pass could not be started (`EXIT_KNOWN_RERUN`) |
+
+### Reading the source
+
+| Code | Message | Naming its subject | Meaning |
+| --- | --- | --- | --- |
+| 182 | `unterminated string` | `` unterminated string (missing `NAME') `` | a string or character constant with no closing quote on its line (`EXIT_LEX_OPEN_STRING`) |
+| 183 | `` unterminated %{...} construct (missing `}') `` |  | %{ with no } on its line (`EXIT_LEX_OPEN_BRACE`) |
+| 184 | `` unterminated block comment (missing `*/') `` |  | a /* comment with no */ before the end of the file (`EXIT_LEX_OPEN_COMMENT`) |
+| 185 | `invalid UTF-8 sequence` |  | bytes that are not UTF-8 (skipped: one error a run of them) (`EXIT_LEX_BAD_UTF8`) |
+| 186 | `invalid character in the source` | `invalid character NAME in the source` | a byte no token starts with, such as a control character (skipped: one error a run) (`EXIT_LEX_BAD_CHAR`) |
+| 187 | `string longer than 65535 bytes` |  | a string over 65,535 bytes (a token's length is 16 bits) (`EXIT_LEX_STRING_LONG`) |
 
 ### The preprocessor and macros
 
@@ -138,6 +150,7 @@ the first failure: see *Exit status* at the end.
 | 104 | `undefined symbol` | `` symbol `NAME' not defined before use `` | "%if foo": foo not defined (yet) (`EXIT_UNDEF_BEFORE`) |
 | 105 | `expression is not simple or relocatable` | `` non-constant value given to `%NAME' `` | "%if x" with x a label (`EXIT_PP_NONCONST`) |
 | 106 | `unrecognized directive` | `unrecognized directive [NAME]` | "[foo 0]": no directive of that name (`EXIT_BRACKET_UNKNOWN`) |
+| 189 | `` expected `%endif' before end of file `` |  | a %if still open at the end of the source (`EXIT_PP_NO_ENDIF`) |
 
 ### Instructions and operands
 
@@ -200,7 +213,7 @@ the first failure: see *Exit status* at the end.
 | --- | --- | --- | --- |
 | 34 | `invalid section attributes` |  | section flags are invalid or incompatible (`EXIT_INVALID_SECTION_FLAGS`) |
 | 44 | `invalid alignment (not a power of two?)` |  | alignment directive could not be satisfied (`EXIT_ALIGN_ERROR`) |
-| 45 | `operand larger than the structure field` |  | memory write size exceeds struct field byte width (`EXIT_STRUCT_BOUNDS`) |
+| 45 | `operand larger than the structure field` | `` operand larger than the structure field `NAME' `` | memory write size exceeds struct field byte width (`EXIT_STRUCT_BOUNDS`) |
 | 48 | `unknown alignment mode` | `unknown alignment mode: NAME` | alignmode with an unknown mode (`EXIT_ALIGN_MODE`) |
 | 57 | `non-constant argument supplied to TIMES` |  | times with a count not known yet (`EXIT_TIMES_NONCONST`) |
 | 58 | `attempt to reserve non-constant quantity of BSS space` |  | resb with a count not known yet (`EXIT_RES_NONCONST`) |
@@ -386,10 +399,10 @@ The kind of the first failure:
 | 0 | assembled, the output written (warnings do not change it) |
 | 1 | the command line: an unknown option or value (`utasm --format nope`) |
 | 2 | out of memory at start-up |
-| 3 | the source file cannot be opened or read |
-| 4 | a statement could not be assembled: the preprocessor (a missing include, `%error`, `%fatal`), a directive, a label, an expression; and a warning made an error by `-Werror` |
+| 3 | the source file cannot be opened or read (or is a directory) |
+| 4 | a statement could not be assembled: the source as read (a string with no closing quote, a byte that is no character), the preprocessor (a missing include, `%error`, `%fatal`), a directive, a label, an expression; and a warning made an error by `-Werror` |
 | 5 | an instruction could not be encoded |
-| 6 | the end of assembly: an undefined symbol, a relocation the format cannot express, overlapping sections |
+| 6 | the end of assembly: an undefined symbol, a relocation the format cannot express, overlapping sections, an output file that cannot be created |
 | 9 | utasm itself crashed (an internal error at the statement being read) |
 
 Errors found while reading the source come first: a source with both an
