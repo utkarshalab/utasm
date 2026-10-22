@@ -16,11 +16,10 @@ of `mem.s`).
 | --- | --- | --- |
 | `io_open`, `io_create`, `io_close` | open, close | `io_create`: an output, named in its error |
 | `io_read`, `io_read_full` | read | `_full` loops until all bytes are read |
-| `io_write`, `io_write_full`, `io_write_byte` | write | `_full` loops until all are written |
+| `io_write`, `io_write_byte` | write | `io_write` loops until all is written |
 | `io_lseek`, `io_file_size` | lseek, fstat | the size: seek to the end; a directory: `EXIT_FILE_IS_DIR` |
 | `io_mmap`, `io_munmap` | mmap, munmap | the source file is mmapped, not read |
 | `io_ftruncate` | ftruncate | object/ubf (the image's size) |
-| `io_exists` | access | unused |
 
 Nothing here prints. A failure is an `EXIT_*` code saying what failed -
 `EXIT_FILE_NOT_FOUND`, `EXIT_FILE_PERM`, `EXIT_FILE_IS_DIR`,
@@ -44,7 +43,7 @@ directory opens, but mapping it failed unseen and utasm crashed.
 
 | File | Lines | What is in it |
 | --- | --- | --- |
-| `io.s` | 586 | the file calls above |
+| `io.s` | 501 | the file calls above |
 | `mem.s` | 292 | the memory calls and the bump allocator |
 | `syscall.s` | 4 | placeholder: a raw system call layer (`io.s` / `mem.s` do it directly) |
 | `qemu.s` | 0 | empty: meant for running cross-architecture tests under QEMU (tests/run.sh does that from the shell) |
