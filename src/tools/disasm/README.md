@@ -47,7 +47,7 @@ utasm --disasm --bits 16 --org 0x7c00 boot.bin   # a raw file
      encoding cannot have (`call (bad)`, `psrlw (bad),0x71`), prefixes an
      opcode's prefix table takes (`66 0f ae 20` is `(bad)`), `/(bad)` marks
      on gathers, `(bad) {k2}` for an EVEX outside 64-bit mode.
-3. **`x86_apx.inc`** (included by x86.s) decodes APX's EVEX map 4 —
+3. **`x86/apx.inc`** decodes APX's EVEX map 4 —
    new-destination forms, `{nf}`, `{zu}`, `{evex}`, `ccmp` / `ctest`
    with `{dfv=...}`, `cfcmov`, `push2` / `pop2` — and the map-7 MSR forms.
 
@@ -70,9 +70,17 @@ python3 scripts/gen/gen_x86_tables.py --check   # fail if out of date
 | File | Lines | What is in it |
 | --- | --- | --- |
 | `disasm.s` | 954 | the file walk: sections, symbols, labels, annotations, relocations, raw files (`disasm_sections`, `disasm_raw`, `disasm_org`, `disasm_relocs`) |
-| `x86.s` | 7,855 | `x86_decode`: the prefix-naming wrapper, the decoder, every operand form, the SSE / VEX / EVEX / XOP decoding, x87, objdump's `(bad)` rules |
-| `x86_apx.inc` | 1,215 | APX's EVEX map 4 and map 7 (included by x86.s) |
-| `gen/x86_tables.inc` | 18,140 | GENERATED: the opcode tables (included by x86.s) |
+| `x86.s` | 339 | the decoder's constants (`FM_*`, `FL_*`) and its state (`dx_*`); the rest of it in the `x86/` parts, %included in this order: |
+| `x86/wrapper.inc` | 627 | x86_decode: the decoder's entry, trials and variants, string helpers |
+| `x86/decode.inc` | 1,592 | dx_decode1: one instruction - prefixes, opcode maps |
+| `x86/read.inc` | 729 | reading bytes and ModRM; printing registers, memory, immediates, branches |
+| `x86/x87.inc` | 286 | x87 instructions, fwait |
+| `x86/evex.inc` | 1,091 | shapes, VSIB, EVEX operands, mask registers |
+| `x86/operands.inc` | 1,884 | dx_operands: the operand forms |
+| `x86/sse.inc` | 967 | SSE / vector operands, memory sizes |
+| `x86/tables.inc` | 398 | register names and the decoder's strings |
+| `x86/apx.inc` | 1,216 | APX's EVEX map 4 and map 7 (%included by x86/tables.inc) |
+| `gen/x86_tables.inc` | 18,140 | GENERATED: the opcode tables (%included by x86/tables.inc) |
 
 ## Entry points
 
