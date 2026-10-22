@@ -40,6 +40,8 @@ prep_handle_if:
     call    prep_const_check
     test    rax, rax
     jnz     .done
+    mov     esi, 1
+    call    prep_trailing_expr             ; "%if 1 x": the x ignored
 
     ; 3. Push the level with the result (%ifn: the other way)
     xor     esi, esi
@@ -219,6 +221,72 @@ prep_trailing:
 .ret:
     pop     r13
     pop     r12
+    ret
+
+; ---- prep_finish ------------------------
+;
+; The source read: a %if still open is NASM's "expected `%endif' before
+; end of file", at the line after the main file's last (it was let go).
+; Input    : rdi = PrepState
+; Output   : rax = EXIT_OK or EXIT_PP_NO_ENDIF (its place set)
+;
+global prep_finish
+prep_finish:
+    xor     eax, eax
+    cmp     word [rdi + PREP_depth], 0
+    je      .ret
+    mov     rcx, [rdi + PREP_lexer]        ; the main file's, at its end
+    mov     rdi, [rcx + LEXER_file]
+    mov     esi, [rcx + LEXER_line]
+    call    error_set_location
+    mov     eax, EXIT_PP_NO_ENDIF
+.ret:
+    ret
+
+; ---- prep_trailing_expr -----------------
+; What is left of a line after its expression - %if, %ifn, %assign, %rep,
+; and %elif quietly, as NASM: "trailing garbage after expression ignored",
+; and it goes. (It went on to the assembler as a statement: "%if 1 x"
+; defined a label x, "%rep 2 x" put an x in the body.) The tokens are the
+; preprocessor's: the expression's reader has peeked the first.
+; Input: rbx = PrepState, esi = 1 to warn, 0 not. Keeps rdx.
+prep_trailing_expr:
+    push    rdx
+    push    r12
+    push    r13
+    mov     r12d, esi
+    xor     r13d, r13d                     ; tokens dropped
+.peek:
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .done
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .done
+    cmp     eax, TOK_EOF
+    je      .done
+    mov     eax, [rdx + TOKEN_line]
+    cmp     eax, [rel dir_line]
+    jne     .done                          ; (the next line's)
+    mov     rdi, rbx
+    call    preprocessor_next_token
+    inc     r13d
+    jmp     .peek
+.done:
+    test    r13d, r13d
+    jz      .ret
+    test    r12d, r12d
+    jz      .ret
+    mov     edi, WC_PP_TRAILING
+    call    warn_begin
+    lea     rsi, [rel s_trailing_expr]
+    call    warn_text
+    call    warn_end
+.ret:
+    pop     r13
+    pop     r12
+    pop     rdx
     ret
 
 ; ---- prep_handle_endif ------------------
