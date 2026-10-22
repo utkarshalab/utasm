@@ -2058,6 +2058,8 @@ parser_evaluate_factor:
     ; or __floatNN__ set it); anywhere else it is an error, as in NASM
     cmp     al, TOK_FLOAT
     jne     .not_float
+    mov     rdi, [r12 + TOKEN_value]
+    call    parser_dollar_hex
     xor     esi, esi
 .float:
     movzx   edx, byte [rel float_fmt]
@@ -2455,6 +2457,7 @@ parser_evaluate_factor:
         jmp     .float
 .not_split_float:
         mov     rdi, [r12 + TOKEN_value]
+        call    parser_dollar_hex
         call    str_to_int
         check_err
         ; past 64 bits: the low 64, with NASM's warning
@@ -2709,3 +2712,37 @@ parser_evaluate_factor:
     pop     r12
     pop     rbx
     epilogue
+
+; "$0ff": NASM 3 warns a "$" for hexadecimal is deprecated (0x0ff is the
+; way), once per number; rdi = the number's text, every register kept
+parser_dollar_hex:
+    cmp     byte [rdi], '$'
+    jne     .ret
+    push    rax
+    push    rcx
+    push    rdx
+    push    rsi
+    push    rdi
+    push    r8
+    push    r9
+    push    r10
+    push    r11
+    mov     edi, WC_NUMBER_DEPRECATED_HEX
+    call    warn_begin
+    test    eax, eax
+    jz      .quiet
+    lea     rsi, [rel s_dollar_hex]
+    call    warn_text
+    call    warn_end
+.quiet:
+    pop     r11
+    pop     r10
+    pop     r9
+    pop     r8
+    pop     rdi
+    pop     rsi
+    pop     rdx
+    pop     rcx
+    pop     rax
+.ret:
+    ret
