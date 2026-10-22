@@ -148,6 +148,7 @@ ignored_words:db "warning", 0, 0, 0
                 db 0
 [SECTION .bss]
 stmt_bracketed: resb 1              ; the statement is in [ ]
+stmt_labelled: resb 1               ; a label came before its first word
 extern_required: resb 1             ; parser_handle_extern for "required"
 sect_sep:       resb 1              ; a section name's joining character ('-' ',')
 alignb 8
