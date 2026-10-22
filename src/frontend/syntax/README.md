@@ -23,7 +23,7 @@ listing serve every syntax.
         └─ instruction      → INST (mnemonic, prefixes, ≤ 4 operands) → encode/
 ```
 
-## The NASM parser (`nasm/parser.s`, 15,058 lines)
+## The NASM parser (`nasm/parser.s` and its parts in `nasm/parser/`)
 
 ### A statement (`parser_parse_instruction`)
 
@@ -110,7 +110,20 @@ name in it is not defined yet. That lets the parser:
 
 | File | Lines | What is in it |
 | --- | --- | --- |
-| `nasm/parser.s` | 15,058 | the NASM parser: statements, operands, expressions, directives, data (above) |
+| `nasm/parser.s` | 979 | `parser_parse_instruction`: a statement (above); the rest of it in the `nasm/parser/` parts, %included in this order: |
+| `nasm/parser/operand.inc` | 779 | one operand: register, immediate, memory or far pointer (parser_parse_operand), a register's size and kind |
+| `nasm/parser/expr.inc` | 2,696 | the expression evaluator: the precedence levels, terms and factors, values deferred to a later pass, symbol classes |
+| `nasm/parser/memory.inc` | 1,466 | memory operands: relocation modifiers (wrt, rel, abs), base / index / scale terms, rip, MIB, decorators ({k}, {z}, {1toN}, {dfv=}) |
+| `nasm/parser/labels.inc` | 496 | numeric labels (1:, 1b, 1f), positional labels, GNU symbol names, .size |
+| `nasm/parser/section_attrs.inc` | 496 | statement words, COFF section attributes and classes, section attributes, segment overrides, and their names |
+| `nasm/parser/checks.inc` | 644 | register and mnemonic lookup (the hash indexes), operand size checks, lock / HLE / prefix checks |
+| `nasm/parser/struc.inc` | 855 | struc / endstruc, defining a label (local names), GNU names, .equ / .set |
+| `nasm/parser/pseudo.inc` | 1,715 | the pseudo-instruction dispatch; string, UTF-16 / 32, float and BCD data; the float and ilog2 functions; incbin |
+| `nasm/parser/directives.inc` | 982 | bits / cpu, sectalign, absolute, alignb, istruc / at / iend, cfi; the expression operator tables and the parser's state |
+| `nasm/parser/times_align.inc` | 927 | times, align, typed struc fields ([reg:TYPE].field), MASM fields, mnemonic tests |
+| `nasm/parser/equ.inc` | 442 | org, equ, the late equs and aliases |
+| `nasm/parser/data.inc` | 925 | db / dw / dd / dq: item lists, dup, sizes, symbols, field widths, the zeroing warnings |
+| `nasm/parser/symbols.inc` | 1,749 | resb .., extern, default, section / segment, global / weak / visibility, common, parser_finish; the directive word tables (cpu_levels) |
 | `masm/masm.s` | 4,598 | MASM's procedures, INVOKE, runtime control flow, sections, typed data |
 | `fasm/fasm.s` | 906 | fasm's virtual / load / store, format, entry, segment |
 | `gas/gas.s` | 2,189 | GNU as's directives |
@@ -138,9 +151,10 @@ line), object/ (listing, map), diag/, lib/ (strings, floats).
 ## Status
 
 Complete for NASM 3.01's syntax, and for the MASM / fasm / GNU as features
-listed above (each measured: see Tests). `parser.s` is the largest file
-in utasm; splitting it (statements, operands, expressions, directives,
-data) is a planned refactor that does not change what it does.
+listed above (each measured: see Tests). `parser.s` is one object: its
+13 parts in `nasm/parser/` are %included in order, cut where its
+functions were (the object is the same, byte for byte). `make` rebuilds
+`parser.s` when one changes.
 
 ## Tests
 
