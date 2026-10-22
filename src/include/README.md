@@ -90,7 +90,7 @@ The macros utasm's own code is written with, about 120 of them:
 
 | File | Lines |
 | --- | --- |
-| `constant.inc` | 1,888 |
+| `constant.inc` | 1,892 |
 | `type.inc` | 558 |
 | `macro.inc` | 1,513 |
 | `elf.inc` | 424 |
