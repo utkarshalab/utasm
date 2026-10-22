@@ -68,8 +68,10 @@ parser_emit_data_8:
         mov     rsi, r12
         call    preprocessor_unread_token  ; 'a'+1: the '+' is peeked
         mov     byte [rel float_fmt], FLT_BYTE ; "db 1.5": NASM's 8-bit float
+        mov     byte [rel expr_pcrel_ok], 1
         mov     rdi, rbx
         call    parser_evaluate_expression
+        mov     byte [rel expr_pcrel_ok], 0
         mov     byte [rel float_fmt], 0
         check_err
         mov     esi, 1
@@ -91,6 +93,11 @@ parser_emit_data_8:
         mov     rax, [rdi + ASMCTX_curr_sec]
         mov     rsi, [rax + SECTION_size]
         mov     r8, R_X86_64_8
+        cmp     byte [rel expr_pcrel], 0
+        je      .abs8
+        mov     r8, R_X86_64_PC8       ; "db x - $": PC-relative
+        add     rcx, rsi
+.abs8:
         extern  reloc_record
         call    reloc_record
         check_err
@@ -887,6 +894,8 @@ s_rel_regs:    db "indirect address displacements cannot be RIP-relative", 0
 s_db_empty:    db "no operand for data declaration", 0
 s_orphan:      db "label `", 0
 s_orphan_tail: db "' alone on a line without a colon might be in error", 0
+s_lbracket:    db "[", 0                ; "x: [bits 32]": found `['
+s_space:       db " ", 0                ; "found `mvo eax'"
 data_letters:  db "bwdqtoyz", 0
 [SECTION .bss]
 alignb 8
