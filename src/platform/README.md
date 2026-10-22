@@ -14,16 +14,23 @@ of `mem.s`).
 
 | Function | System call | Notes |
 | --- | --- | --- |
-| `io_open`, `io_close` | open, close | |
+| `io_open`, `io_create`, `io_close` | open, close | `io_create`: an output, named in its error |
 | `io_read`, `io_read_full` | read | `_full` loops until all bytes are read |
 | `io_write`, `io_write_full`, `io_write_byte` | write | `_full` loops until all are written |
-| `io_lseek`, `io_file_size` | lseek | the size: seek to the end |
+| `io_lseek`, `io_file_size` | lseek, fstat | the size: seek to the end; a directory: `EXIT_FILE_IS_DIR` |
 | `io_mmap`, `io_munmap` | mmap, munmap | the source file is mmapped, not read |
 | `io_ftruncate` | ftruncate | object/ubf (the image's size) |
 | `io_exists` | access | unused |
 
-A failure keeps the errno for the message (`error_new_from_errno`,
-diag/error.s): "no such file", "permission denied".
+Nothing here prints. A failure is an `EXIT_*` code saying what failed -
+`EXIT_FILE_NOT_FOUND`, `EXIT_FILE_PERM`, `EXIT_FILE_IS_DIR`,
+`EXIT_FILE_READ`, `EXIT_FILE_WRITE`, `EXIT_IO_ERROR` (any other errno),
+`EXIT_OOM` - and the caller, which knows the file, names it in the message
+("`x' is a directory, not a file"). `io_create` opens an output for
+writing and names it itself when it cannot ("unable to open output file
+`x'"). `io_file_size` tells a directory from a file (`fstat`): a
+directory opens, but mapping it failed unseen and utasm crashed.
+`io_mmap` of length 0 maps nothing and succeeds (an empty file).
 
 ## Memory (`mem.s`)
 
@@ -37,7 +44,7 @@ diag/error.s): "no such file", "permission denied".
 
 | File | Lines | What is in it |
 | --- | --- | --- |
-| `io.s` | 525 | the file calls above |
+| `io.s` | 586 | the file calls above |
 | `mem.s` | 292 | the memory calls and the bump allocator |
 | `syscall.s` | 4 | placeholder: a raw system call layer (`io.s` / `mem.s` do it directly) |
 | `qemu.s` | 0 | empty: meant for running cross-architecture tests under QEMU (tests/run.sh does that from the shell) |
@@ -51,7 +58,7 @@ diag/error.s): "no such file", "permission denied".
 
 ## Depends on
 
-diag/error.s (errno messages), lib/ (strings), main/.
+diag/codes.s (`error_set_subject`, for `io_create`), lib/ (strings), main/.
 
 ## What is left
 
