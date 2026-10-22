@@ -147,7 +147,6 @@ s_db:       db "db", 0
 s_dw:       db "dw", 0
 s_dd:       db "dd", 0
 s_dq:       db "dq", 0
-s_do:       db "do", 0
 s_section:  db "section", 0
 s_text:     db ".text", 0
 s_data:     db ".data", 0
