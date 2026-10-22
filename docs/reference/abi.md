@@ -671,36 +671,39 @@ Violating any of these is a bug. There is no "probably fine".
 
 ### Allocator Hierarchy
 
-utasm uses a strict allocator hierarchy. Each allocator has a defined
-lifetime and purpose. Using the wrong allocator for the purpose is a bug.
+What utasm allocates with, and for how long:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  LIFETIME          ALLOCATOR         USE CASE           │
-├─────────────────────────────────────────────────────────┤
-│  Permanent         sys_mmap()        binary buffers,    │
-│  (process life)                      output sections,   │
-│                                      source file mmap   │
-├─────────────────────────────────────────────────────────┤
-│  Per-file          arena_alloc()     tokens, AST nodes, │
-│  (reset per file)  (main arena)      error records,     │
-│                                      symbol names       │
-├─────────────────────────────────────────────────────────┤
-│  Per-pass          arena_alloc()     intermediate data  │
-│  (reset per pass)  (pass arena)      that is rebuilt    │
-│                                      each pass          │
-├─────────────────────────────────────────────────────────┤
-│  Stack             sub rsp, N        small temporaries  │
-│  (function scope)                    < 4096 bytes       │
-│                                      never escape func  │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  ALLOCATOR                       LIFETIME        USE              │
+├──────────────────────────────────────────────────────────────────┤
+│  arena_alloc (global_arena,      until exit      tokens, symbols' │
+│  src/lib/arena.s)                                names, strings,  │
+│                                                  macro bodies,    │
+│                                                  structs          │
+├──────────────────────────────────────────────────────────────────┤
+│  mem_reserve (src/lib/arena.s)   until exit      large growable   │
+│                                                  tables: the      │
+│                                                  symbol table,    │
+│                                                  relocations      │
+├──────────────────────────────────────────────────────────────────┤
+│  io_mmap of a file               an %include's:  the source text  │
+│  (src/platform/io.s)             until its end;                   │
+│                                  the main file:                   │
+│                                  until exit                       │
+├──────────────────────────────────────────────────────────────────┤
+│  the stack (sub rsp, N)          the function    small buffers,   │
+│                                                  a TOKEN to fill  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 **Rules:**
-- Stack allocations must never escape the function that allocated them
-- Arena allocations are freed only by arena_reset() — never individually
-- mmap allocations are freed by mem_free() by exactly one owner
-- Never mix allocators for the same logical object
+- Nothing from the arena is freed: an assembler run is short, and bump
+  allocation is the fastest there is. (There is no arena reset; the
+  functions for one were never called and were removed.)
+- A stack buffer never escapes the function that made it.
+- `heap_alloc` (src/platform/mem.s) is a bump allocator on top of the
+  arena, for `str_dup` and the like: the same lifetime.
 
 ---
 
@@ -740,8 +743,8 @@ parse_token:
     ret
 
 ; CORRECT — document explicitly:
-; Returns: RAX → Token* (arena-owned, valid until next arena_reset)
-;          caller must not free this pointer
+; Output: rax = EXIT_OK or EXIT_OOM, rdx → Token (arena-owned: valid
+;         until utasm exits, never freed)
 parse_token:
     mov rdi, Token_size
     call arena_alloc
@@ -753,38 +756,31 @@ parse_token:
 
 ### Arena Allocation Rules
 
-The main arena is used for all per-file data (tokens, AST, symbols).
+One arena (`global_arena`, made at start by main/utasm.s) holds almost
+everything. `arena_alloc` takes the arena and a size, and returns a status
+and the memory - as every utasm function returns:
 
 ```asm
-; correct arena allocation:
-mov rdi, Token_size         ; size in bytes
-call arena_alloc            ; returns ptr in RAX, 0 on OOM
-test rax, rax
-jz .oom                     ; always check — arena can exhaust
+; correct:
+    mov     rdi, [rbx + PREP_arena]    ; the arena
+    mov     rsi, TOKEN_SIZE            ; bytes
+    call    arena_alloc                ; rax = EXIT_OK or EXIT_OOM
+    test    rax, rax
+    jnz     .fail                      ; always check: the arena is fixed in size
+    mov     r12, rdx                   ; rdx = the memory: zeroed, 8-aligned
 
-; wrong — not checking OOM:
-mov rdi, Token_size
-call arena_alloc
-mov [rbx], rax              ; WRONG — rax could be 0
+; wrong - the pointer is in rdx, not rax, and the status is unchecked:
+    call    arena_alloc
+    mov     [rbx], rax
 ```
 
 **Arena rules:**
-- Always check return value — OOM returns 0
-- Arena memory is zero-initialized on allocation
-- Do not call any free/munmap on arena pointers
-- Do not store arena pointers across arena_reset() calls
-- Arena_reset() invalidates ALL pointers from that arena
-
-**After arena_reset() all arena pointers are DEAD:**
-```asm
-call arena_alloc
-mov r12, rax                ; r12 = arena pointer
-
-call arena_reset            ; RESET
-
-mov rax, [r12]              ; USE-AFTER-RESET — r12 is now dead
-                            ; this is a bug even if the memory is still mapped
-```
+- Always check `rax`; the memory is in `rdx`.
+- The memory is zeroed and aligned to 8 bytes.
+- Nothing is freed or unmapped: a pointer from the arena is good until
+  utasm exits.
+- A buffer that grows (a long string, src/frontend/lexer) is allocated
+  again, larger, and copied; the old one stays in the arena.
 
 ---
 
@@ -956,66 +952,49 @@ by the OS. Document which is which.
     add rsp, 256            ; caller frees
 ```
 
-**Pattern 2: Callee allocates, caller owns (transfer)**
+**Pattern 2: Callee allocates, the caller keeps it (arena memory)**
 ```asm
-; callee allocates:
 alloc_token:
-    mov rdi, Token_size
-    call arena_alloc        ; callee allocates
-    ; fills token
-    ; rax = ptr
-    ret                     ; ownership transferred to caller
+    mov     rsi, TOKEN_SIZE
+    call    arena_alloc            ; rax = status, rdx = the token
+    ret                            ; the caller checks rax, keeps rdx
 
-; caller now owns (though it's arena memory — do not individual-free):
-    call alloc_token
-    test rax, rax
-    jz .oom
-    mov r12, rax            ; r12 owns this token
-```
-
-**Pattern 3: Shared ownership via arena (all cleared together)**
-```asm
-; everything in the main arena dies together:
-    call arena_reset        ; ALL arena pointers invalidated at once
-                            ; no individual ownership tracking needed
-                            ; every pointer from this arena is now dead
+    call    alloc_token
+    test    rax, rax
+    jnz     .fail
+    mov     r12, rdx               ; good until utasm exits; never freed
 ```
 
 ---
 
-### Memory Safety in the Error Engine
+### Memory in the Error Reporting
 
-The error engine has special memory safety requirements:
-
-```
-Must never allocate from the main arena
-    (arena_reset() between files would destroy error records)
-
-Must never fail to allocate
-    (OOM during error reporting is catastrophic)
-
-Uses its own fixed-size pool
-    (pre-allocated at startup, MAX_ERRORS capacity)
-```
-
-This is why error_init() is first in the initialization order and
-uses its own pool separate from all other allocations.
+The reporter (src/diag/) allocates nothing while it reports: messages
+are static strings, the subject a pointer the caller keeps, and the few
+errors the lexer finds while another message is printed are held in a
+fixed queue (`line_queue`, src/diag/codes.s) with copies of their
+subjects. Running out of memory is itself reported (`EXIT_OOM`) without
+allocating.
 
 ---
 
 ### Detecting Memory Bugs
 
-When a bug occurs, these symptoms indicate specific memory problems:
+A fault inside utasm is caught (src/core/crash.s): "fatal: internal
+error: segmentation fault at 0x... (please report it)", at the statement
+being read, exit status 9. Find the function with `nm -n` on the binary,
+then the instruction with `objdump -d`. What the symptoms usually mean:
 
 ```
 Symptom                          Likely cause
 ──────────────────────────       ──────────────────────────
-Crash with address 0             Null pointer dereference
-Crash with address 0xDEAD...     Use-after-free (debug mode)
-Wrong output, no crash           Buffer overflow overwriting adjacent data
-Crash in unrelated function      Stack corruption (buffer overflow)
-Crash only on second run         Use-after-arena-reset
-Different crashes each run       Uninitialized memory read
+A fault at a small address       a pointer that is 0 or a code (a status
+                                 taken for the pointer: rax for rdx)
+A fault after an error message   a callee-saved register not restored on
+                                 an error path (a jump out of a call)
+Wrong output, no fault           a buffer overrun into the data after it
+A fault in an unrelated function the stack unbalanced (a push not popped)
+Different results each run       memory read before it was written
 ```
 
 ---
@@ -1025,11 +1004,11 @@ Different crashes each run       Uninitialized memory read
 Before marking any function complete, verify:
 
 ```
-[ ] Every allocation is checked for OOM (arena/mmap return 0 on fail)
+[ ] Every allocation's status (rax) is checked; the memory is in rdx
 [ ] Every buffer write is bounds-checked before the write
 [ ] Every buffer read is bounds-checked before the read
 [ ] No stack pointer escapes the function
-[ ] No pointer is used after arena_reset()
+[ ] Every error path restores the callee-saved registers it saved
 [ ] No pointer is freed twice
 [ ] Allocation ownership is documented in function header
 [ ] Uninitialized stack memory is zeroed before use
