@@ -16,7 +16,7 @@ DEFAULT REL
 extern arena_alloc
 extern att_on                   ; src/frontend/syntax/gas/att.s: AT&T syntax on
 extern arena_alloc_string
-extern error_emit
+extern error_report_line
 extern mem_copy
 extern mem_zero
 extern str_is_hex_digit
@@ -49,10 +49,13 @@ extern symbol_find
 ;   directives     % followed by identifier
 ;   registers      detected by parser â€” lexer emits as TOK_IDENT
 ;
-; Error handling:
-;   on unknown character â†’ error_emit + skip + continue
-;   on unterminated string â†’ error_emit + EXIT_UNEXPECTED_EOF
-;   all errors go through AsmCtx error reporter
+; Error handling: a byte no token starts with, bytes that are not UTF-8,
+;   a string, character constant or %{ with no closing quote or } on its
+;   line, a /* with no */, a string over LEX_STR_MAX bytes - each reported
+;   at its line by error_report_line (diag/codes.s) and counted; lexing
+;   goes on (the byte skipped, the literal ended at the line's end), and
+;   the assembly fails at its end. lexer_next itself fails only when the
+;   arena is out of memory.
 ;
 ; Calling convention (AMD64):
 ;   args  : rdi, rsi, rdx, rcx, r8, r9
@@ -60,6 +63,10 @@ extern symbol_find
 ;   callee saved: rbx, r12-r15, rbp
 
 extern  str_cmp
+
+%define LEX_STR_FIRST  64              ; a string buffer's first size, doubled as it fills
+%define LEX_STR_MAX    65535           ; the longest string (TOKEN_len is 16 bits)
+%define LEX_STR_ROOM   (LEX_STR_MAX + 6) ; its buffer then: a step's 4 bytes and the NUL
 
 [SECTION .rodata]
 gas_str_words: db ".ascii", 0, ".asciz", 0, ".string", 0, 0
@@ -373,19 +380,10 @@ lexer_next:
     jmp     .lex_ident
 
 .malformed_utf8:
-    mov     rdi, [rbx + LEXER_ctx]
-    mov     rsi, [rbx + LEXER_file]
-    mov     edx, dword [rbx + LEXER_line]
-    movzx   rcx, word  [rbx + LEXER_col]
-    lea     r8,  [msg_malformed_utf8]
-    call    error_emit
-    
-    ; skip one byte and try again
-    mov     rdi, rbx
-    sub     rsp, TOKEN_SIZE
-    mov     r12, rsp
-    mov     rsi, r12
-    call    lexer_next
+    mov     edi, EXIT_LEX_BAD_UTF8
+    xor     ecx, ecx
+    mov     byte [rel lex_bad_utf8], 1
+    jmp     .bad_byte
 
 ; ---- EOF --------------------------------
 .emit_eof:
@@ -1536,19 +1534,27 @@ lexer_next:
     inc     qword [rbx + LEXER_pos]
     inc     word  [rbx + LEXER_col]
 
-    ; allocate string buffer in arena
-    ; max length is remaining buffer size
+    ; the string's bytes: a buffer that doubles as it fills (it was
+    ; MAX_LINE, which a long string overran), up to the longest a token
+    ; holds - TOKEN_len is 16 bits
     mov     rdi, [rbx + LEXER_arena]
-    mov     rsi, MAX_LINE
+    mov     esi, LEX_STR_FIRST
+    mov     [rel lex_str_cap], rsi
     call    arena_alloc
     test    rax, rax
     jnz     .fail
 
     mov     r13, rdx               ; r13 = string output buffer
     xor     r10, r10               ; r10 = output length
+    mov     byte [rel lex_str_over], 0
 
 .lex_string_loop:
-    mov     r11, [rbx + LEXER_pos]
+    cmp     r10, LEX_STR_MAX
+    ja      .lex_string_too_long
+    lea     rax, [r10 + 5]         ; a step writes at most 4 bytes (\U), then the NUL
+    cmp     rax, [rel lex_str_cap]
+    ja      .lex_string_grow
+mov     r11, [rbx + LEXER_pos]
     cmp     r11, [rbx + LEXER_end]
     jge     .lex_string_unterminated
 
@@ -1564,25 +1570,47 @@ lexer_next:
     je      .lex_string_escape
 
     ; normal character
-    ; check buffer limit
-    cmp     r10, MAX_LINE - 1
-    jge     .lex_string_too_long
-
     mov     byte [r13 + r10], cl
-    inc     r10
+inc     r10
     inc     qword [rbx + LEXER_pos]
     inc     word  [rbx + LEXER_col]
     jmp     .lex_string_loop
 
+.lex_string_grow:
+    mov     rsi, [rel lex_str_cap]
+    add     rsi, rsi
+    cmp     rsi, LEX_STR_ROOM
+    jbe     .grow_size
+    mov     esi, LEX_STR_ROOM
+.grow_size:
+    mov     [rel lex_str_cap], rsi
+    push    r10
+    mov     rdi, [rbx + LEXER_arena]
+    call    arena_alloc
+    pop     r10
+    test    rax, rax
+    jnz     .fail
+    mov     rdi, rdx               ; (the old buffer stays in the arena)
+    mov     rsi, r13
+    mov     rcx, r10
+    mov     r13, rdx
+    rep movsb
+    jmp     .lex_string_loop
+
 .lex_string_too_long:
-    mov     rdi, [rbx + LEXER_ctx]
+    ; said once; the rest is read and dropped (the assembly fails, what
+    ; the token holds no longer matters)
+    cmp     byte [rel lex_str_over], 0
+    jne     .string_over
+    mov     byte [rel lex_str_over], 1
+    mov     edi, EXIT_LEX_STRING_LONG
     mov     rsi, [rbx + LEXER_file]
-    mov     edx, dword [rbx + LEXER_line]
-    movzx   rcx, word  [rbx + LEXER_col]
-    lea     r8,  [msg_string_too_long]
-    call    error_emit
-    mov     rax, EXIT_INTERNAL
-    jmp     .fail
+    mov     edx, [rbx + LEXER_line]
+    xor     ecx, ecx
+    call    error_report_line
+.string_over:
+    xor     r10d, r10d
+    jmp     .lex_string_loop
 
 .lex_string_escape:
     ; "..." is verbatim, as in NASM: only `...` has escapes. A backslash
@@ -1602,10 +1630,8 @@ lexer_next:
     cmp     eax, '\'
     jne     .nasm_backslash
 .gas_pair:
-    cmp     r10, MAX_LINE - 2
-    jge     .lex_string_too_long
     mov     byte [r13 + r10], '\'
-    mov     [r13 + r10 + 1], al
+mov     [r13 + r10 + 1], al
     add     r10, 2
     add     qword [rbx + LEXER_pos], 2
     add     word  [rbx + LEXER_col], 2
@@ -1906,9 +1932,7 @@ lexer_next:
     jmp     .lex_string_loop
 
 .lex_string_done:
-    ; skip closing "
-    inc     qword [rbx + LEXER_pos]
-    inc     word  [rbx + LEXER_col]
+    call    .close_quote
 
     ; null terminate
     mov     byte [r13 + r10], 0
@@ -1924,16 +1948,11 @@ lexer_next:
     jmp     .done
 
 .lex_string_unterminated:
-    ; emit error
-    mov     rdi, [rbx + LEXER_ctx]
-    mov     rsi, [rbx + LEXER_file]
-    mov     edx, dword [rbx + LEXER_line]
-    movzx   rcx, word  [rbx + LEXER_col]
-    lea     r8,  [msg_unterminated_string]
-    call    error_emit
-
-    mov     rax, EXIT_UNEXPECTED_EOF
-    jmp     .fail
+    ; no closing quote on its line: the string is what is there (as NASM
+    ; reads it), the error counted
+    mov     al, [rel lex_quote]
+    call    .open_quote
+    jmp     .lex_string_done
 
 ; ---- char literal -----------------------
 ;
@@ -1962,6 +1981,8 @@ lexer_next:
     movzx   rcx, byte [r11]
     cmp     rcx, 0x27              ; closing quote ends the literal
     je      .lex_char_closing
+    cmp     rcx, 10                ; and the line's end, unclosed (it ran on
+    je      .lex_char_unterminated ; into the next line, to its first ')
 
     cmp     rcx, '\'               ; escape?
     jne     .lex_char_regular
@@ -2026,9 +2047,7 @@ lexer_next:
     ; taken verbatim like NASM's single-quoted strings
     cmp     qword [rel lex_char_count], 8
     ja      .lex_char_string
-    ; consume the closing '
-    inc     qword [rbx + LEXER_pos]
-    inc     word  [rbx + LEXER_col]
+    call    .close_quote
 
     mov     byte [r12 + TOKEN_kind], TOK_CHAR
     mov     byte [r12 + TOKEN_quote], 0x27
@@ -2054,9 +2073,8 @@ lexer_next:
     push    rdx
     rep movsb
     pop     rdx
-    inc     qword [rbx + LEXER_pos]        ; the closing '
-    inc     word  [rbx + LEXER_col]
-    mov     byte [r12 + TOKEN_kind], TOK_STRING
+    call    .close_quote
+mov     byte [r12 + TOKEN_kind], TOK_STRING
     mov     byte [r12 + TOKEN_quote], 0x27
     mov     [r12 + TOKEN_value], rdx
     xor     rax, rax
@@ -2064,14 +2082,9 @@ lexer_next:
     jmp     .done
 
 .lex_char_unterminated:
-    mov     rdi, [rbx + LEXER_ctx]
-    mov     rsi, [rbx + LEXER_file]
-    mov     edx, dword [rbx + LEXER_line]
-    movzx   rcx, word  [rbx + LEXER_col]
-    lea     r8,  [msg_unterminated_char]
-    call    error_emit
-    mov     rax, EXIT_UNEXPECTED_EOF
-    jmp     .fail
+    mov     al, 0x27
+    call    .open_quote
+    jmp     .lex_char_closing
 
 ; ---- directive --------------------------
 ;
@@ -2202,9 +2215,8 @@ lexer_next:
 .lex_braced_done:
     mov     r10, [rbx + LEXER_pos]
     sub     r10, r13               ; length
-    inc     qword [rbx + LEXER_pos] ; skip }
-    inc     word  [rbx + LEXER_col]
-    ; "%{1}0", "%{1}_end", "%{1}%{2}": a parameter with what follows it
+    call    .close_quote           ; the }
+; "%{1}0", "%{1}_end", "%{1}%{2}": a parameter with what follows it
     ; pasted on, as NASM pastes it - one interpolated name, from the %
     test    r10, r10
     jz      .dir_name
@@ -2243,14 +2255,16 @@ lexer_next:
     jmp     .lex_ident_interp
 
 .lex_braced_unterminated:
-    mov     rdi, [rbx + LEXER_ctx]
+    ; the name is what there is to the line's end
+    push    r13
+    mov     edi, EXIT_LEX_OPEN_BRACE
     mov     rsi, [rbx + LEXER_file]
-    mov     edx, dword [rbx + LEXER_line]
-    movzx   rcx, word  [rbx + LEXER_col]
-    lea     r8,  [msg_unterminated_brace]
-    call    error_emit
-    mov     rax, EXIT_UNEXPECTED_EOF
-    jmp     .fail
+    mov     edx, [rbx + LEXER_line]
+    xor     ecx, ecx
+    call    error_report_line
+    pop     r13
+    mov     byte [rel lex_open], 1
+    jmp     .lex_braced_done
 
 .lex_directive_done:
     ; a parameter with a name or another reference glued on (%1_end, %1h,
@@ -2311,16 +2325,74 @@ lexer_next:
 
 ; ---- unknown character ------------------
 .unknown_char:
-    mov     rdi, [rbx + LEXER_ctx]
+    ; a byte no token starts with: "invalid character `\' in the source",
+    ; a control character by its value, "(byte 0x01)"
+    mov     r10, [rbx + LEXER_pos]
+    movzx   eax, byte [r10]
+    lea     rcx, [rel lex_byte_text]
+    cmp     eax, 0x21
+    jb      .bad_hex
+    cmp     eax, 0x7E
+    ja      .bad_hex
+    mov     byte [rcx], 0x60
+    mov     [rcx + 1], al
+    mov     byte [rcx + 2], 0x27
+    mov     byte [rcx + 3], 0
+    jmp     .bad_named
+.bad_hex:
+    mov     rdx, '(byte 0x'
+    mov     [rcx], rdx
+    lea     r8, [rel lex_hex]
+    mov     edx, eax
+    shr     edx, 4
+    mov     dl, [r8 + rdx]
+    mov     [rcx + 8], dl
+    and     eax, 15
+    mov     al, [r8 + rax]
+    mov     [rcx + 9], al
+    mov     word [rcx + 10], ')'
+.bad_named:
+    mov     edi, EXIT_LEX_BAD_CHAR
+    mov     byte [rel lex_bad_utf8], 0
+.bad_byte:
+    ; reported and counted (the assembly fails at its end), and skipped
+    ; with the run of bad bytes after it - one error a run: after bytes
+    ; that are not UTF-8, every byte >= 0x80; after a control character,
+    ; the control characters (not tab, LF, CR) and continuation bytes
     mov     rsi, [rbx + LEXER_file]
-    mov     edx, dword [rbx + LEXER_line]
-    movzx   rcx, word  [rbx + LEXER_col]
-    lea     r8,  [msg_unknown_char]
-    call    error_emit
-
-    ; skip the bad character and continue
+    mov     edx, [rbx + LEXER_line]
+    call    error_report_line
     inc     qword [rbx + LEXER_pos]
     inc     word  [rbx + LEXER_col]
+.bad_byte_more:
+    mov     r10, [rbx + LEXER_pos]
+    cmp     r10, [rbx + LEXER_end]
+    jae     .bad_byte_skipped
+    movzx   eax, byte [r10]
+    cmp     byte [rel lex_bad_utf8], 0
+    je      .bad_ctl
+    cmp     eax, 0x80
+    jae     .bad_byte_next
+    jmp     .bad_byte_skipped
+.bad_ctl:
+    cmp     eax, 0x7F
+    je      .bad_byte_next
+    mov     ecx, eax
+    and     ecx, 0xC0
+    cmp     ecx, 0x80
+    je      .bad_byte_next                 ; (a continuation byte)
+    cmp     eax, 0x20
+    jae     .bad_byte_skipped
+    cmp     eax, 9
+    je      .bad_byte_skipped
+    cmp     eax, 10
+    je      .bad_byte_skipped
+    cmp     eax, 13
+    je      .bad_byte_skipped
+.bad_byte_next:
+    inc     qword [rbx + LEXER_pos]
+    jmp     .bad_byte_more
+.bad_byte_skipped:
 
     ; retry â€” tail call back to lexer_next
     mov     rdi, rbx
@@ -2536,9 +2608,11 @@ lexer_next:
     jne     .skip_done
 
     ; skip block comment until ;
+    mov     eax, [rbx + LEXER_line]
+    mov     [rel lex_comment_line], eax    ; (an unterminated one is said here)
     add     qword [rbx + LEXER_pos], 2
 .skip_block_loop:
-    mov     r10, [rbx + LEXER_pos]
+mov     r10, [rbx + LEXER_pos]
     cmp     r10, [rbx + LEXER_end]
     jge     .skip_block_unterminated
     
@@ -2572,14 +2646,14 @@ lexer_next:
     jmp     .skip_loop
 
 .skip_block_unterminated:
-    ; unterminated block comment â€” emit error
-    mov     rdi, [rbx + LEXER_ctx]
+    ; at the line it starts on; the rest of the file is the comment
+    mov     edi, EXIT_LEX_OPEN_COMMENT
     mov     rsi, [rbx + LEXER_file]
-    mov     edx, dword [rbx + LEXER_line]
-    movzx   rcx, word  [rbx + LEXER_col]
-    lea     r8,  [msg_unterminated_comment]
-    call    error_emit
-    mov     rax, EXIT_UNEXPECTED_EOF
+    mov     edx, [rel lex_comment_line]
+    xor     ecx, ecx
+    call    error_report_line
+    mov     rax, [rbx + LEXER_end]
+    mov     [rbx + LEXER_pos], rax
     jmp     .skip_done
 
 .skip_ws:
@@ -2589,6 +2663,33 @@ lexer_next:
 
 .skip_done:
     xor     rax, rax
+    ret
+
+; .open_quote: a quoted literal with no closing quote on its line (al = the
+; quote): "unterminated string (missing `"')", counted; lex_open makes
+; .close_quote skip nothing. .close_quote: past the closing quote (or }).
+; Both keep r10 and r13.
+.open_quote:
+    push    r10
+    push    r13
+    mov     [rel lex_quote_text], al
+    mov     edi, EXIT_LEX_OPEN_STRING
+    mov     rsi, [rbx + LEXER_file]
+    mov     edx, [rbx + LEXER_line]
+    lea     rcx, [rel lex_quote_text]
+    call    error_report_line
+    mov     byte [rel lex_open], 1
+    pop     r13
+    pop     r10
+    ret
+.close_quote:
+    cmp     byte [rel lex_open], 0
+    jne     .close_open
+    inc     qword [rbx + LEXER_pos]
+    inc     word  [rbx + LEXER_col]
+    ret
+.close_open:
+    mov     byte [rel lex_open], 0
     ret
 
 .fail:
@@ -2681,58 +2782,6 @@ lexer_peek:
     ret
 
 
-; ---- lexer_expect -----------------------
-;
-; lexer_expect
-; Reads the next token and verifies it matches the expected kind.
-; Emits an error if it does not match.
-; Input    : rdi = pointer to LexerState
-;             rsi = pointer to Token struct to fill
-;             rdx = expected TOK_* kind value
-; Output   : rax = EXIT_OK or EXIT_UNEXPECTED_TOKEN
-;              rdx = pointer to filled Token
-; Clobbers : rcx, r8, r9, r10, r11
-;
-global lexer_expect
-lexer_expect:
-    push    rbx
-    push    r12
-    push    r13
-
-    mov     r12, rdi               ; R12 = LexerState
-    mov     r13, rdx               ; R13 = expected kind
-
-    call    lexer_next
-    test    rax, rax
-    jnz     .fail
-
-    ; check kind matches
-    ; RDX = pointer to returned token
-    movzx   rcx, byte [rdx + TOKEN_kind]
-    cmp     rcx, r13
-    je      .match
-
-    ; mismatch â€” emit error
-    mov     rbx, rdx               ; RBX = Token pointer
-    mov     rdi, [r12 + LEXER_ctx]
-    mov     rsi, [rbx + TOKEN_file]
-    mov     edx, dword [rbx + TOKEN_line]
-    movzx   rcx, word  [rbx + TOKEN_col]
-    lea     r8,  [msg_unexpected_token]
-    call    error_emit
-
-    mov     rax, EXIT_UNEXPECTED_TOKEN
-    jmp     .fail
-
-.match:
-    xor     rax, rax
-
-.fail:
-    pop     r13
-    pop     r12
-    pop     rbx
-    ret
-
 ; ---- lexer_destroy ----------------------
 ;
 ; lexer_destroy
@@ -2763,26 +2812,11 @@ lexer_destroy:
 
 [SECTION .data]
 
-msg_unterminated_string:
-    db      "unterminated string literal", 0
+lex_byte_text:  times 12 db 0       ; a bad byte, for its error (.unknown_char)
+lex_quote_text: db 0, 0             ; the missing quote, for its error
 
-msg_unterminated_char:
-    db      "unterminated character literal", 0
-
-msg_unterminated_comment:
-    db      "unterminated block comment", 0
-
-msg_unknown_char:
-    db      "unknown character in source", 0
-
-msg_unexpected_token:
-    db      "unexpected token", 0
-msg_string_too_long:
-    db      "string literal too long", 0
-msg_malformed_utf8:
-    db      "malformed UTF-8 sequence", 0
-msg_unterminated_brace:
-    db      "unterminated braced directive", 0
+[SECTION .rodata]
+lex_hex:        db "0123456789abcdef"
 
 ; ============================================================================
 ; CHARACTER PROPERTIES LOOKUP TABLE (LUT)
@@ -2966,3 +3000,8 @@ s_slash_comment: db "`//' starts a comment here; NASM reads it as a signed divis
 lex_char_start: resq 1              ; first character of a quoted literal
 lex_char_count: resq 1              ; its characters so far
 lex_quote:     resb 1              ; the quote a string literal ends with
+lex_open:      resb 1              ; 1: it has none on its line (.close_quote)
+lex_str_over:  resb 1              ; 1: the string is too long, said
+lex_bad_utf8:  resb 1              ; 1: the bad byte skipped is not UTF-8 (.bad_byte)
+lex_str_cap:   resq 1              ; the string buffer's size
+lex_comment_line: resd 1           ; where the /* being skipped started
