@@ -23,7 +23,7 @@ DEFAULT REL
 ; Growth: capacity doubles (minimum 8). Because arenas cannot free, the old
 ; buffer is abandoned on growth — reserve up front when the size is known.
 ;
-; Pointers returned by vec_push / vec_get are invalidated by any later
+; Pointers returned by vec_push are invalidated by any later
 ; growth. Store indices, not pointers, across pushes.
 ;
 ; Calling convention (AMD64):
@@ -34,7 +34,6 @@ DEFAULT REL
 ; Errors:
 ;   EXIT_INTERNAL  - header is not a Vec (bad tag) / bad arguments
 ;   EXIT_OOM       - arena exhausted or size computation overflowed
-;   EXIT_ERROR     - index out of range / pop from empty vec
 
 %define VEC_MIN_CAP     8
 
@@ -244,163 +243,4 @@ vec_push:
     xor     edx, edx
     pop     r12
     pop     rbx
-    ret
-
-; ---- vec_push_u64 -----------------------
-;
-; vec_push_u64
-; Appends a 64-bit value. The Vec's element size must be 8.
-; Input    : rdi = pointer to Vec
-;             rsi = value
-; Output   : rax = EXIT_OK, EXIT_INTERNAL or EXIT_OOM
-;              rdx = pointer to the stored element
-; Clobbers : rcx, rsi, rdi, r8, r9, r10, r11
-;
-global vec_push_u64
-vec_push_u64:
-    cmp     dword [rdi + VEC_elem_size], 8
-    jne     .bad_size
-    push    rsi                            ; value lives on the stack...
-    mov     rsi, rsp                       ; ...and is copied from there
-    call    vec_push
-    add     rsp, 8
-    ret
-
-.bad_size:
-    mov     eax, EXIT_INTERNAL
-    xor     edx, edx
-    ret
-
-; ---- vec_get ----------------------------
-;
-; vec_get
-; Returns a pointer to the element at an index (bounds-checked).
-; Input    : rdi = pointer to Vec
-;             rsi = index
-; Output   : rax = EXIT_OK, EXIT_ERROR (out of range) or EXIT_INTERNAL
-;              rdx = pointer to element
-; Clobbers : rcx
-;
-global vec_get
-vec_get:
-    cmp     byte [rdi + VEC_tag], TAG_VEC
-    jne     .bad_vec
-    cmp     rsi, [rdi + VEC_len]
-    jae     .out_of_range
-
-    mov     eax, dword [rdi + VEC_elem_size]
-    mul     rsi                            ; rax = index * elem_size
-    add     rax, [rdi + VEC_data]
-    mov     rdx, rax
-    xor     eax, eax
-    ret
-
-.out_of_range:
-    mov     eax, EXIT_ERROR
-    xor     edx, edx
-    ret
-
-.bad_vec:
-    mov     eax, EXIT_INTERNAL
-    xor     edx, edx
-    ret
-
-; ---- vec_get_u64 ------------------------
-;
-; vec_get_u64
-; Reads a 64-bit element by value. The Vec's element size must be 8.
-; Input    : rdi = pointer to Vec
-;             rsi = index
-; Output   : rax = EXIT_OK, EXIT_ERROR or EXIT_INTERNAL
-;              rdx = element value
-; Clobbers : rcx
-;
-global vec_get_u64
-vec_get_u64:
-    cmp     dword [rdi + VEC_elem_size], 8
-    jne     .bad_size
-    call    vec_get
-    test    rax, rax
-    jnz     .done
-    mov     rdx, [rdx]
-.done:
-    ret
-
-.bad_size:
-    mov     eax, EXIT_INTERNAL
-    xor     edx, edx
-    ret
-
-; ---- vec_pop ----------------------------
-;
-; vec_pop
-; Removes the last element, optionally copying it out first.
-; Input    : rdi = pointer to Vec
-;             rsi = destination buffer (elem_size bytes), or NULL to discard
-; Output   : rax = EXIT_OK, EXIT_ERROR (empty) or EXIT_INTERNAL
-;              rdx = destination pointer (rsi)
-; Clobbers : rcx, rsi, rdi, r8
-;
-global vec_pop
-vec_pop:
-    cmp     byte [rdi + VEC_tag], TAG_VEC
-    jne     .bad_vec
-    mov     rcx, [rdi + VEC_len]
-    test    rcx, rcx
-    jz      .empty
-
-    dec     rcx
-    mov     [rdi + VEC_len], rcx           ; len--
-    mov     r8, rsi                        ; r8 = destination (result)
-    test    rsi, rsi
-    jz      .done
-
-    ; copy data[len] -> destination
-    mov     eax, dword [rdi + VEC_elem_size]
-    mul     rcx                            ; rax = len * elem_size (clobbers rdx)
-    mov     rsi, [rdi + VEC_data]
-    add     rsi, rax
-    mov     ecx, dword [rdi + VEC_elem_size]
-    mov     rdi, r8
-    cld
-    rep movsb
-
-.done:
-    xor     eax, eax
-    mov     rdx, r8
-    ret
-
-.empty:
-    mov     eax, EXIT_ERROR
-    xor     edx, edx
-    ret
-
-.bad_vec:
-    mov     eax, EXIT_INTERNAL
-    xor     edx, edx
-    ret
-
-; ---- vec_len ----------------------------
-;
-; vec_len
-; Input    : rdi = pointer to Vec
-; Output   : rax = number of elements
-; Clobbers : none
-;
-global vec_len
-vec_len:
-    mov     rax, [rdi + VEC_len]
-    ret
-
-; ---- vec_clear --------------------------
-;
-; vec_clear
-; Sets length to 0. Capacity (and the buffer) is kept for reuse.
-; Input    : rdi = pointer to Vec
-; Output   : none
-; Clobbers : none
-;
-global vec_clear
-vec_clear:
-    mov     qword [rdi + VEC_len], 0
     ret
