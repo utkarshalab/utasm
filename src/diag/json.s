@@ -25,6 +25,7 @@ DEFAULT REL
 ;   {"severity":"note","file":"a.s","line":2,"message":"from macro `m'
 ;    defined here"}
 ;   {"severity":"hint","message":"did you mean 'mov'?"}
+;   {"severity":"note","message":"operand 1 is a 32-bit register"}
 ;   {"severity":"error","message":"..."}          (no place: "utasm: ...")
 ;
 ; Whatever path writes a message (the reports, the held warnings, the
@@ -302,6 +303,13 @@ json_line:
     add     r13, 6
     jmp     .message
 .not_hint:
+    ; "note: ..." (what an operand was: diag_notes)
+    lea     rsi, [rel w_note]
+    call    json_starts
+    jne     .not_note
+    add     r13, 6
+    jmp     .message
+.not_note:
     ; "utasm: ..." (no place)
     lea     rsi, [rel w_utasm]
     call    json_starts
