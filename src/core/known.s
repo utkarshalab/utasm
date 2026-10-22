@@ -641,6 +641,13 @@ known_second_pass:
     call    parser_deferred_value
     test    rax, rax
     jnz     .defer
+    ; two sections' labels (a flat binary: "baz - $", baz elsewhere): not
+    ; a number to shorten code by - its sections move with it. Kept for
+    ; the end, a disp32 as NASM's (and an address meant RIP-relative is
+    ; its error there: src/link/reloc/reloc.s)
+    extern  expr_xsec
+    cmp     byte [rel expr_xsec], 0
+    jne     .defer
     test    r11, r11
     jz      .defer_value
     cmp     word [r11 + SYMBOL_section], SHN_ABS
