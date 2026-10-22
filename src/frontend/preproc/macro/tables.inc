@@ -561,6 +561,7 @@ s_rep_nolist: db ".nolist", 0
 s_dir_endif:  db "%endif", 0
 s_trailing_after:   db "trailing garbage after `", 0
 s_trailing_ignored: db "' ignored", 0
+s_trailing_expr:    db "trailing garbage after expression ignored", 0
 s_else_after_else:  db "`%else' after `%else', ignoring content", 0
 s_elif_after_else:  db "`%elif' after `%else', ignoring content", 0
 s_fn_empty:   db 0                 ; fn_string: an empty argument
