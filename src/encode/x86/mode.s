@@ -730,6 +730,26 @@ amd64_imm_canon:
     inc     r15d
     cmp     byte [rdi + OPERAND_kind], OP_IMM
     jne     .imm
+    ; in / out's port, a shift's count: NASM's unsigned byte (0 .. 255),
+    ; whatever the operation's width ("rol byte [rax], 0x1ff" said "byte
+    ; exceeds bounds", "shl eax, -1" nothing)
+    movzx   eax, word [r12 + INST_op_id]
+    lea     rsi, [rel imm_u8_ids]
+.u8_id:
+    movzx   ecx, word [rsi]
+    test    ecx, ecx
+    jz      .not_u8
+    add     rsi, 2
+    cmp     ecx, eax
+    jne     .u8_id
+    cmp     qword [rdi + OPERAND_imm], 255
+    jbe     .imm                           ; (unsigned: a negative one too)
+    push    rdi
+    lea     rsi, [rel s_imm_u8]
+    call    warn_number
+    pop     rdi
+    jmp     .imm
+.not_u8:
     mov     edx, r14d
     test    edx, edx
     jnz     .sized
@@ -756,7 +776,7 @@ amd64_imm_canon:
     je      .wide
 .plain:
     ; "mov ecx, -16 >> 2": the value does not fit the operation's width -
-    ; NASM's "dword data exceeds bounds"
+    ; NASM's "dword exceeds bounds"
     test    r14d, r14d
     jz      .bounded
     cmp     edx, 32
@@ -840,7 +860,7 @@ amd64_imm_canon:
     mov     byte [rel amd64_imm_sb], 1
     test    r9d, r9d
     jnz     .imm
-    ; the imm8 form of a value past the width: "word value exceeds bounds"
+    ; the imm8 form of a value past the width: "word exceeds bounds"
     lea     rsi, [rel s_imm_wvalue]
     cmp     edx, 16
     je      .warn
@@ -856,7 +876,7 @@ amd64_imm_canon:
 .warn_full:
     cmp     edx, 64
     je      .warn64
-    push    rdi                            ; "word data exceeds bounds"
+    push    rdi                            ; "word exceeds bounds"
     mov     esi, edx
     shr     esi, 3
     mov     rdi, r8
@@ -889,11 +909,9 @@ amd64_imm_canon:
     pop     rdi
     jmp     .imm
 .warn64:
-    ; the full imm32 field of a 64-bit operation: NASM gives both
+    ; the full imm32 field of a 64-bit operation: NASM 3's one warning
     push    rdi
-    lea     rsi, [rel s_imm_sdimm]
-    call    warn_number
-    lea     rsi, [rel s_imm_ddata]
+    lea     rsi, [rel s_imm_sdvalue]
     call    warn_number
     pop     rdi
     jmp     .imm
@@ -908,12 +926,15 @@ amd64_imm_canon:
 ; or, push, sbb, sub, xor
 global imm_sb_ids
 imm_sb_ids:     dw 1004,1006, 1028, 1075, 1276, 1442, 1583, 1628, 1676, 2157, 0
-s_imm_wvalue:   db "word value exceeds bounds", 0
-s_imm_dvalue:   db "dword value exceeds bounds", 0
-s_imm_sdvalue:  db "signed dword value exceeds bounds", 0
-s_imm_sdimm:    db "signed dword immediate exceeds bounds", 0
-s_imm_ddata:    db "dword data exceeds bounds", 0
-s_imm_sbvalue:  db "signed byte value exceeds bounds", 0
+; (NASM 3's words: 2.16's had "value", "immediate" and "data" in them,
+; and gave the full imm32 of a 64-bit operation two warnings)
+s_imm_u8:       db "unsigned byte exceeds bounds", 0
+; in, out, rcl, rcr, rol, ror, sal, sar, shl, shr: an unsigned byte
+imm_u8_ids:     dw 1277, 1445, 1590, 1593, 1612, 1613, 1624, 1625, 1647, 1650, 0
+s_imm_wvalue:   db "word exceeds bounds", 0
+s_imm_dvalue:   db "dword exceeds bounds", 0
+s_imm_sdvalue:  db "signed dword exceeds bounds", 0
+s_imm_sbvalue:  db "signed byte exceeds bounds", 0
 [SECTION .bss]
 moffs64:        resb 1                  ; "mov rax, [qword x]": A1 with 64 bits
 ; the form amd64_imm_canon chose for this instruction's immediate: 1 the
