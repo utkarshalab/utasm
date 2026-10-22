@@ -1113,7 +1113,10 @@ LINT_CASES = [
     ("pie off by default", "bits 64\nmov eax, msg\nsection .data\nmsg: db 1\n", [], {}, [2]),
     ("pie with default rel", "bits 64\ndefault rel\nmov eax, [msg]\nsection .data\nmsg: dd 1\n",
      ["-w+pie"], {}, [3]),
-    ("pie: -w+all", "bits 64\nmov eax, msg\nsection .data\nmsg: db 1\n", ["-w+all"], {2: "[-w+pie]"}, []),
+    ("pie: -w+pie", "bits 64\nmov eax, msg\nsection .data\nmsg: db 1\n", ["-w+pie"], {2: "[-w+pie]"}, []),
+    # -w+all is NASM's classes: reloc-abs-dword says it, not pie
+    ("pie: not in -w+all", "bits 64\nmov eax, msg\nsection .data\nmsg: db 1\n", ["-w+all"],
+     {2: "[-w+reloc-abs-dword]"}, []),
     ("pie: a flat binary", "bits 64\nmov eax, msg\nmsg: db 1\n", ["-w+pie", "-fbin"], {}, [2]),
     # "//" is a comment in utasm, a signed division in NASM: on by default
     ("slash-comment", "bits 64\nmov eax, -7 // 2\nmov eax, 5 // five\nmov eax, 5 // 2 bytes\n"
@@ -3752,4 +3755,45 @@ BIN_PROBES.update({
     "dollar_line_start": "bits 64\nnop\ndw $, $, $\ntimes 2 dw $, $\ndd 1, $ - $$\ndb \"ab\", $ - $$\n"
                          "foo: dw foo - $, 0, $ - foo\nmov eax, $\npush $\ndq $, $\ntimes 2 db $ - $$, $ - $$\n"
                          "times 2 push $\nx: times 2 dd x - $, $ - x\n%rep 2\ndw $\n%endrep\n",
+})
+# NASM 3's "instruction expected, found `mvo eax'": the word and the token
+# after it at the start of a line, the token alone after a label (and no
+# second label without its colon there); a line starting with neither:
+# "label, instruction or prefix expected at start of line"
+REJECT_CASES += [
+    ("unknown word and its operand", "bin", "mvo eax, 1\n"),
+    ("unknown word and a bracket", "bin", "mvo [rax]\n"),
+    ("unknown word and a string", "bin", "mvo 'ab'\n"),
+    ("unknown word and a minus", "bin", "mvo -1\n"),
+    ("two words", "bin", "x mvo\n"),
+    ("unknown word after a label", "bin", "x: mvo\n"),
+    ("label without colon after a label", "bin", "x: msg db 1\n"),
+    ("local unknown word after a label", "bin", "x:\n.l: mvo\n"),
+    ("a number after a label", "bin", "x: 5\n"),
+    ("a colon after a label", "bin", "x:: nop\n"),
+    ("a section in brackets after a label", "bin", "x: [section .data]\n"),
+    ("a number starting a line", "bin", "5\n"),
+    ("a comma starting a line", "bin", ",\n"),
+    ("a string starting a line", "bin", "\"a\"\n"),
+]
+# NASM 3's reloc-abs-* / reloc-rel-* (-w+all): every relocation an object
+# keeps, an address in a flat binary - in the order of the source, after
+# the line's other warnings, in a macro with its note, and in the listing
+WARN_CASES.update({
+    "warn_reloc_abs": "extern e\nmov eax, e\nmov ax, e\nmov al, e\nmov rax, e\npush e\ndq e, e, e\ndb 300\nx: dd $\n",
+    "warn_reloc_rel": "extern e\ncall e\njmp e\nmov eax, [rel e]\ndd e - $\ndw e - $\ndb e - $\ndq e - $\n",
+    "warn_reloc_forward": "mov eax, [rel later]\ndb 300\ncall later\ncall here\nhere: nop\n"
+                          "section .data\nlater: dd 0\ndb 256\n",
+    "warn_reloc_macro": "%macro m 0\ndd later\ndb 300\n%endmacro\nm\nm\n%rep 2\ndd later\n%endrep\n"
+                        "times 2 dd later\nsection .data\nlater: dd 0\n",
+    "warn_reloc_none": "x: nop\ncall x\nmov eax, [rel x]\ny: dq x - $\ndd y - x\ndd y - $$\ndd 5\n",
+})
+# "db e - $": an 8-bit PC-relative relocation (utasm refused it)
+ELF_PROBES.update({
+    "elf_db_pcrel": "section .data\nd1: db 0\nsection .text\nextern e\ndb e - $\ndb d1 - $\ndb e - $ + 3\n"
+                    "x: db x - $\ny: db y - $$\nfoo: nop\ndb foo - $\n",
+})
+# a flat binary's call in its own section is listed as its bytes (e8 00 00)
+BIN_PROBES.update({
+    "flat_call_listed": "bits 16\norg 0x100\nx: dw x\njmp x\ncall y\ny: dd y\n",
 })
