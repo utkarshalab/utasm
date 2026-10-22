@@ -266,6 +266,14 @@ parser_handle_times:
     test    rax, rax
     jnz     .ret
     mov     [rdx + MACROEXP_rep_count], r15d
+    ; "times 2 dw $": $ is where the line starts, in every copy (NASM)
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_curr_sec]
+    mov     [rdx + MACROEXP_times_sec], rax
+    test    rax, rax
+    jz      .ok
+    mov     rax, [rax + SECTION_size]
+    mov     [rdx + MACROEXP_times_pos], rax
     jmp     .ok
 .times_nonconst:
     mov     eax, EXIT_TIMES_NONCONST
