@@ -102,7 +102,9 @@ and goes on to the next one.
 
 ### 4. Document and test it
 
-Add it to `docs/user/errors.md`, and a case to `tests/compat/cases.py`
+Rerun `python3 scripts/gen/gen_error_docs.py` (it regenerates
+`docs/user/errors.md`; the comment after the `%define` is the meaning
+shown there), and add a case to `tests/compat/cases.py`
 (*diagnostics* if NASM rejects the same source, *rejections* /
 `ISA_ERRORS` if only utasm refuses it); run `tests/compat/run_all.py`.
 
