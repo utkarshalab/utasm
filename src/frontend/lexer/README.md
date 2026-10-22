@@ -51,7 +51,7 @@ lines.
 
 | File | Lines | What is in it |
 | --- | --- | --- |
-| `lexer.s` | 3,007 | `lexer_init`, `lexer_next`, `lexer_peek`, the character table, numbers, strings and escapes, `%line` stepping, `lexer_mark_lone` (a word alone on its line, for NASM's orphan-label warning) |
+| `lexer.s` | 2,982 | `lexer_init`, `lexer_next`, `lexer_peek`, the character table, numbers, strings and escapes, `%line` stepping, `lexer_mark_lone` (a word alone on its line, for NASM's orphan-label warning) |
 
 ## Entry points
 
@@ -61,9 +61,6 @@ lines.
 | `lexer_next`, `lexer_peek` | frontend/preproc |
 | `lexer_char_props` | frontend/syntax (GNU's and fasm's word rules) |
 | `lexer_line_step`, `lexer_mark_lone` | frontend/preproc |
-
-`lexer_destroy` is defined but unused (lexers live in the arena and go
-when utasm exits).
 
 ## Depends on
 
