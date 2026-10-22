@@ -359,7 +359,7 @@ after the whole source is read, as `%error` does.
 | `user` | yes | %warning |
 | `zeroing` | yes | db ? / resb outside .bss |
 | `prefix-lock-xchg` | yes |  |
-| `number-overflow` | yes | data exceeds bounds |
+| `number-overflow` | yes | a value exceeds its field's bounds |
 | `prefix-lock-error` | yes | not lockable |
 | `db-empty` | yes | "db" with no operand |
 | `pp-macro-defaults` | yes | too many defaults |
@@ -386,6 +386,7 @@ after the whole source is read, as `%error` does.
 | `proc-clobber` | yes | a preserved register written, not in uses |
 | `proc-unreachable` | yes | code after a ret / jmp, no label between |
 | `proc-fallthrough` | yes | the code runs into endproc |
+| `implicit-abs-deprecated` | yes | NASM 3's, an absolute address in 64-bit code with no "default" written |
 
 `pie`, `slash-comment` and the `proc-*` classes are utasm's own; the others
 are NASM's, with NASM's names and defaults.
