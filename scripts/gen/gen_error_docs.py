@@ -31,7 +31,7 @@ DST = os.path.join(ROOT, "docs", "user", "errors.md")
 SKIP = {"EXIT_OK", "EXIT_USAGE", "EXIT_QEMU_404", "EXIT_QEMU_FAIL", "EXIT_FATAL"}
 FATAL = {"EXIT_OOM", "EXIT_IO_ERROR", "EXIT_INTERNAL", "EXIT_ASSERTION", "EXIT_MACRO_RECURSION",
          "EXIT_FILE_NOT_FOUND", "EXIT_FILE_PERM", "EXIT_FILE_READ", "EXIT_FILE_WRITE",
-         "EXIT_INVALID_FORMAT"}                    # main/utasm.s rc_fatal
+         "EXIT_INVALID_FORMAT", "EXIT_FILE_IS_DIR"}  # main/utasm.s rc_fatal
 
 
 # the groups the reference is in, by what the error is about (first match)
@@ -42,9 +42,10 @@ GROUPS = [
     ("utasm itself", lambda n: n in (
         "EXIT_INTERNAL", "EXIT_ASSERTION", "EXIT_ASSERT", "EXIT_UNREACHABLE", "EXIT_NOT_IMPLEMENTED",
         "EXIT_KNOWN_RERUN")),
+    ("Reading the source", lambda n: n.startswith("EXIT_LEX_")),
     ("The preprocessor and macros", lambda n: n.startswith(("EXIT_INC_", "EXIT_MACRO_")) or n in (
         "EXIT_DEFINE", "EXIT_COND_DEPTH", "EXIT_CTX_DEPTH", "EXIT_USE_PACKAGE", "EXIT_NOT_DEFINING",
-        "EXIT_NO_REP", "EXIT_UNDEF_BEFORE", "EXIT_PP_NONCONST", "EXIT_BRACKET_UNKNOWN")),
+        "EXIT_NO_REP", "EXIT_UNDEF_BEFORE", "EXIT_PP_NONCONST", "EXIT_BRACKET_UNKNOWN", "EXIT_PP_NO_ENDIF")),
     ("Instructions and operands", lambda n: n.startswith(("EXIT_EA_", "EXIT_CPU_")) or n in (
         "EXIT_ENCODER_ERROR", "EXIT_UNKNOWN_INSTR", "EXIT_INVALID_OPERAND", "EXIT_INVALID_REG",
         "EXIT_INVALID_IMM", "EXIT_INVALID_ADDR", "EXIT_ENCODE_FAIL", "EXIT_IMM_RANGE",
@@ -269,10 +270,10 @@ The kind of the first failure:
 | 0 | assembled, the output written (warnings do not change it) |
 | 1 | the command line: an unknown option or value (`utasm --format nope`) |
 | 2 | out of memory at start-up |
-| 3 | the source file cannot be opened or read |
-| 4 | a statement could not be assembled: the preprocessor (a missing include, `%error`, `%fatal`), a directive, a label, an expression; and a warning made an error by `-Werror` |
+| 3 | the source file cannot be opened or read (or is a directory) |
+| 4 | a statement could not be assembled: the source as read (a string with no closing quote, a byte that is no character), the preprocessor (a missing include, `%error`, `%fatal`), a directive, a label, an expression; and a warning made an error by `-Werror` |
 | 5 | an instruction could not be encoded |
-| 6 | the end of assembly: an undefined symbol, a relocation the format cannot express, overlapping sections |
+| 6 | the end of assembly: an undefined symbol, a relocation the format cannot express, overlapping sections, an output file that cannot be created |
 | 9 | utasm itself crashed (an internal error at the statement being read) |
 
 Errors found while reading the source come first: a source with both an
