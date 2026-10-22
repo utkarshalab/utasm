@@ -163,6 +163,10 @@ struc RELOC
     field pc_adjust,   4       ; adjustment for PC-relative relocs
     field line,        4       ; source line of the statement (for errors)
     field file,        8       ; ... and its file, or 0
+    field mac_name,    8       ; the macro it came from (error_mac_name), or 0,
+    field mac_file,    8       ; ... its body line's file
+    field mac_line,    4       ; ... and line: the "... from macro" note of a
+    field pad1,        4       ; warning given after the source is read
 endstruc
 
 ; ============================================================================
