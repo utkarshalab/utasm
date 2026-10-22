@@ -911,7 +911,7 @@ amd64_branch_width: resb 1         ; a near branch's width written (amd64_branch
 amd64_osize_done: resb 1           ; its 66 out already (amd64_branch_size_first)
 alignb 4
 global amd64_reloc_err
-amd64_reloc_err:   resd 1          ; an error a relocation found (amd64_encode_instruction)
+amd64_reloc_err:   resd 1          ; an error found deep in the encoders: the instruction fails (amd64_encode_instruction)
 [SECTION .text]
 
 extern relax_note
