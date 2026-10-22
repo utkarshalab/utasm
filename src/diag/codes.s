@@ -862,6 +862,7 @@ code_table:
     code_msg EXIT_EXPR_TOO_LONG,     m_expr_long
     code_msg EXIT_EA_SELF_REL,       m_self_rel
     code_msg EXIT_OSZ32_64,          m_osz32_64
+    code_msg EXIT_LINE_START,        m_line_start, t_line_start
     dd 0, 0
     dq 0, 0
 
@@ -887,7 +888,7 @@ m_define:       db "invalid %define", 0
 m_inc_name:     db "`%include' expects a quoted file name", 0
 m_inc_depth:    db "includes nested too deeply (does a file include itself?)", 0
 m_equ_fwd:      db "equ refers to a symbol defined later", 0
-m_instr:        db "parser: instruction expected", 0
+m_instr:        db "instruction expected", 0
 m_operand:      db "invalid operand", 0
 m_reg:          db "invalid register", 0
 m_imm:          db "invalid immediate value", 0
@@ -1087,11 +1088,13 @@ m_no_endif:     db "expected `%endif' before end of file", 0
 m_expr_long:    db "expression too long", 0
 m_self_rel:     db "invalid use of self-relative expression", 0
 m_osz32_64:     db "instruction not valid with 32-bit operand size", 0
+m_line_start:   db "label, instruction or prefix expected at start of line", 0
 t_ns_shadow:    db "`^' was taken from an outer namespace, then this one defined it (write ::^, or define it before)", 0
 t_bracket_unknown: db "unrecognized directive [^]", 0
 t_dup:          db "label `^' inconsistently redefined", 0
 t_multi:        db "symbol `^' defined more than once", 0
-t_instr:        db "parser: instruction expected, found `^'", 0
+t_instr:        db "instruction expected, found `^'", 0
+t_line_start:   db "label, instruction or prefix expected at start of line, found `^'", 0
 t_use:          db "unknown `%use' package `^'", 0
 t_nonscalar:    db "`^' operator may only be applied to scalar values", 0
 t_nonscalar_cmp: db "`^': operands differ by a non-scalar", 0
