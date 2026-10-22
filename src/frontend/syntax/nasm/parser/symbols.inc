@@ -1528,7 +1528,7 @@ std_macro_words:
     db "sectalign", 0, 0, 1
     db "align", 0, 0,0,0,0,0, 2
     db "alignb", 0, 0,0,0,0, 2
-    db "incbin", 0, 0,0,0,0, 2
+    db "incbin", 0, 0,0,0,0, 1             ; (NASM 3: one)
     db "struc", 0, 0,0,0,0,0, 2
     db "istruc", 0, 0,0,0,0, 1             ; (its context: parser_istruc)
     db "at", 0, 0,0,0,0,0,0,0,0, 1
