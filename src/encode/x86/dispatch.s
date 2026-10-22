@@ -145,8 +145,9 @@ te_i8_cut:  resb 1                  ; ... and this form took one
 [SECTION .rodata]
 ; segment register IDs 64-69 (cs ds es fs gs ss) -> encoding
 te_segnum:  db 1, 3, 0, 4, 5, 2
-s_i8_bounds: db "byte data exceeds bounds", 0
-s_i16_bounds: db "word data exceeds bounds", 0
+s_i8_bounds: db "byte exceeds bounds", 0
+s_i8u_bounds: db "unsigned byte exceeds bounds", 0
+s_i16_bounds: db "word exceeds bounds", 0
 
 [SECTION .text]
 
@@ -224,7 +225,7 @@ amd64_table_encode:
     cmp     ax, [r12 + INST_op_id]
     je      .try
     ; none fits: once more, a byte immediate out of range taken - its low
-    ; byte, with NASM's "byte data exceeds bounds" ("psllw mm7, 300" was
+    ; byte, with NASM's "byte exceeds bounds" ("psllw mm7, 300" was
     ; refused); a form that takes the value whole was looked for first
     cmp     byte [rel te_i8_relax], 0
     jne     .no_fit
@@ -277,6 +278,10 @@ amd64_table_encode:
     mov     edi, WC_NUMBER_OVERFLOW
     call    warn_begin
     lea     rsi, [rel s_i8_bounds]
+    test    byte [rel te_i8_cut], 4
+    jz      .bounds_text
+    lea     rsi, [rel s_i8u_bounds]
+.bounds_text:
     call    warn_text
     call    warn_end
 .emit:
@@ -867,15 +872,24 @@ te_match:
     jne     .fail
     jmp     .next
 .i_8:
+    cmp     byte [rbx + TY_FIXREG], 1
+    je      .i_8u
     cmp     rax, -128
     jl      .i_8_out
     cmp     rax, 255
     jg      .i_8_out
     jmp     .next
+.i_8u:
+    cmp     rax, 255                       ; NASM's "ib,u": 0 .. 255
+    ja      .i_8_out
+    jmp     .next
 .i_8_out:
     cmp     byte [rel te_i8_relax], 0
     je      .fail
     or      byte [rel te_i8_cut], 1        ; (taken in the second round: cut)
+    cmp     byte [rbx + TY_FIXREG], 1
+    jne     .next
+    or      byte [rel te_i8_cut], 4        ; (NASM's "ib,u": unsigned)
     jmp     .next
 .i_8s:
     cmp     rax, -128
