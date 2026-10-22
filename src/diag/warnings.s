@@ -82,6 +82,7 @@ warn_state:
     db 1                                ; WC_PROC_UNREACHABLE
     db 1                                ; WC_PROC_FALLTHROUGH
     db 1                                ; WC_IMPLICIT_ABS
+    db 1                                ; WC_NUMBER_DEPRECATED_HEX
 
 [SECTION .rodata]
 warn_names:
@@ -92,7 +93,7 @@ warn_names:
     dq wn_prefix_opsize, wn_prefix_hle, wn_obsolete_removed, wn_obsolete_nop
     dq wn_obsolete_valid, wn_float_overflow, wn_pp_rep_negative, wn_ea_dispsize
     dq wn_proc_stack, wn_proc_uses, wn_proc_clobber, wn_proc_unreachable, wn_proc_fallthrough
-    dq wn_implicit_abs
+    dq wn_implicit_abs, wn_deprecated_hex
 wn_other:db "other", 0
 wn_user:        db "user", 0
 wn_zeroing:     db "zeroing", 0
@@ -125,6 +126,7 @@ wn_proc_clobber: db "proc-clobber", 0
 wn_proc_unreachable: db "proc-unreachable", 0
 wn_proc_fallthrough: db "proc-fallthrough", 0
 wn_implicit_abs: db "implicit-abs-deprecated", 0
+wn_deprecated_hex: db "number-deprecated-hex", 0
 wn_all:         db "all", 0
 s_warning:      db "warning: ", 0
 s_error:        db "error: ", 0
@@ -375,8 +377,9 @@ warn_flush:
 ;
 ; warn_data_bounds
 ; A value written into a field of esi bytes (1, 2 or 4) that does not fit:
-; NASM 3's "dword exceeds bounds" (number-overflow), for anything below
-; -2^n or above 2^n - 1 (n the field's bits: db -256 and db 255 fit).
+; NASM 3's "dword exceeds bounds" (number-overflow), for anything from
+; -2^n down or above 2^n - 1 (n the field's bits: db -255 and db 255 fit,
+; db -256 not - 2.16 took -256 too).
 ; Input    : rdi = the value, esi = the field's bytes
 ; Clobbers : rax, rcx, rdx, rsi, rdi, r8-r11
 ;
@@ -391,7 +394,7 @@ warn_data_bounds:
     jge     .over
     neg     rax
     cmp     rdi, rax
-    jge     .ret
+    jg      .ret
 .over:
     push    rbx
     mov     ebx, esi
