@@ -93,13 +93,13 @@ python3 scripts/gen/gen_x86_enc.py --check   # fail if out of date
 
 | File | Lines | What is in it |
 | --- | --- | --- |
-| `encoder.s` | 2,218 | `amd64_encode_instruction` (the steps above); the hand-written encoders in the `encoder/` parts, %included in this order: |
+| `encoder.s` | 2,220 | `amd64_encode_instruction` (the steps above); the hand-written encoders in the `encoder/` parts, %included in this order: |
 | `encoder/support.inc` | 917 | CPU forms, GOT forms, obsolete instructions, immediate guesses, rip-relative displacements, relaxation kinds, disp8*N, branch widths, relocation errors |
 | `encoder/mov_arith.inc` | 1,236 | mov, arithmetic, syscall / sysret, xchg, push / pop, branches, ret, jcc |
 | `encoder/general.inc` | 929 | movzx / movsx / movsxd, lea, test, unary, shifts, imul, cmovcc / setcc, enter, int, system, in / out, x87, SSE crypto |
 | `encoder/vex_evex.inc` | 652 | the VEX / EVEX entries, string instructions, 0F binaries, cmpxchg, bt, memory sync, r/m forms |
 | `encoder/branch.inc` | 524 | branch sizing, and tracking each instruction for the second pass |
-| `encoder/emit.inc` | 1,163 | relocations, prefixes, ModRM / SIB, bytes and dwords; the SGX leaves |
+| `encoder/emit.inc` | 1,172 | relocations, prefixes, ModRM / SIB, bytes and dwords; the SGX leaves |
 | `encoder/jmp_call.inc` | 609 | jmp, call, xbegin, far widths, push / pop forms, MPX, nop, words and qwords |
 | `encoder/sse_avx.inc` | 393 | AVX / SSE forms, the VEX2 / VEX3 prefixes; messages and the obsolete tables |
 | `dispatch.s` | 1,859 | the table encoder: `amd64_table_encode`, `amd64_table_has`, form matching and emission |
@@ -119,7 +119,7 @@ python3 scripts/gen/gen_x86_enc.py --check   # fail if out of date
 | --- | --- |
 | `amd64_encode_tracked` | main/utasm.s, once per instruction (it calls `amd64_encode_instruction`) |
 | `mnc_tb_x64`, `amd64_register_table` | frontend/syntax (names), frontend/preproc (`%use altreg`), semantic/ |
-| `amd64_reloc_err` | link/reloc (a relocation's error at the instruction's line) |
+| `amd64_reloc_err` | link/reloc (a relocation's error at the instruction's line); also set by `amd64_emit_modrm_sib` (an address with no encoding) and `amd64_emit_byte` (past 15 bytes), which return as any call does - they jumped to the driver's `.error`, past their callers' pops, and utasm crashed |
 | `amd64_table_has`, `cpu_num`, `gas_got_wanted` | frontend/syntax |
 | `amd64_emit_modrm_sib`, `amd64_emit_dword`, `amd64_disp8n`, `amd64_force_sib`, `amd64_imm_guess` | the other files here (dispatch, mode, apx, msr) |
 
