@@ -26,11 +26,8 @@ KNOWN = {
     "listing pp_ctx_label_macro": "NASM lists %$x's source text for a label before a macro",
     "listing pp_rep_nolist": "NASM lists a .nolist %rep's bytes on its %endrep line",
     "listing struc_base_offset": "NASM lists at's padding as 00<rep 4h>",
-    "listing disp8_forced": "NASM gives the [byte x] bounds warning twice (once a pass)",
     "global_declared_first": "utasm relocates against a global symbol itself (as GNU as), NASM against its section",
     "elf_branch_to_number": "utasm relocates a branch to a number against symbol 0 (GNU as's *ABS*): right wherever it is linked; NASM writes a value right only at address 0",
-    "listing cross_section_distance": "NASM lists a value across sections before the sections are placed",
-    "listing known_runs_settle": "NASM lists a value across sections before the sections are placed",
     "listing ptr_as_label": "the line after \"dword ptr\" is read early: its bytes list there",
 # -f win64: a label with no section before it is an undefined external in
     # NASM's object (its .text is made only for code or data); utasm's is a
