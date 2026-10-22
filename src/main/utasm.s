@@ -17,6 +17,7 @@ extern symbol_init
 extern cli_parse
 extern reloc_init
 extern io_open
+extern io_create
 extern io_file_size
 extern io_mmap
 extern lexer_init
@@ -257,6 +258,8 @@ _start:
 
     mov     rdi, r14
     call    io_file_size
+    cmp     eax, EXIT_FILE_IS_DIR
+    je      .exit_io_error                   ; (a directory opens, reads nothing)
     mov     r15, rdx                         ; size
 
     xor     rdi, rdi
@@ -480,6 +483,12 @@ _start:
     call    gas_macro_finish
     test    rax, rax
     jnz     .error_in_parser
+    ; a %if with no %endif
+    lea     rdi, [rel global_prep]
+    extern  prep_finish
+    call    prep_finish
+    test    rax, rax
+    jnz     .error_in_parser
     ; a proc with no endproc (src/semantic/proc.s)
     extern  proc_finish
     call    proc_finish
@@ -592,9 +601,8 @@ _start:
     je      .dump
     lea     rbx, [rel global_ctx]
     mov     rdi, [rbx + ASMCTX_output]
-    mov     rsi, AMD64_O_WRONLY | AMD64_O_CREAT | AMD64_O_TRUNC
     mov     rdx, 0o644
-    call    io_open
+    call    io_create
     test    rax, rax
     jnz     .error_in_linker
     mov     r12d, edx
@@ -682,8 +690,13 @@ _start:
     test    rdi, rdi
     jz      .io_said
     extern  error_set_subject
+    push    rax
     call    error_set_subject
+    pop     rdi
+    cmp     edi, EXIT_FILE_IS_DIR            ; "`x' is a directory, not a file"
+    je      .io_code
     mov     edi, EXIT_INPUT_OPEN
+.io_code:
     call    error_report_code
 .io_said:
     mov     rax, 3
@@ -990,6 +1003,8 @@ rc_fatal:
     cmp     eax, EXIT_ASSERTION
     je      .yes
     cmp     eax, EXIT_MACRO_RECURSION
+    je      .yes
+    cmp     eax, EXIT_FILE_IS_DIR
     je      .yes
     cmp     eax, EXIT_FILE_NOT_FOUND
     jb      .no
