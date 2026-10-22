@@ -109,6 +109,15 @@ parser_handle_pseudo_op:
     jne     .not_data
     mov     byte [rel zero_warned], 0      ; one warning a line (db ?, ?)
     mov     byte [rel expr_in_data], 1     ; (kept expressions: no pass 2)
+    ; "dw $, $": $ is where the line starts, for each item (NASM)
+    mov     rax, [rbx + PREP_ctx]
+    mov     rax, [rax + ASMCTX_curr_sec]
+    mov     [rel pos_line_sec], rax
+    test    rax, rax
+    jz      .data_pos
+    mov     rax, [rax + SECTION_size]
+    mov     [rel pos_line], rax
+.data_pos:
     ; "db" alone: NASM's warning, nothing written
     cmp     byte [r12], 'd'
     jne     .data_word
@@ -724,6 +733,7 @@ parser_handle_pseudo_op:
 
 .check_handler_result:
     mov     byte [rel expr_in_data], 0
+    mov     qword [rel pos_line_sec], 0
     test    rax, rax
     jnz     .done
     mov     rax, 1
