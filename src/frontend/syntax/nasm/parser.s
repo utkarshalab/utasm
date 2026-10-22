@@ -166,10 +166,11 @@ parser_parse_instruction:
     jne     .bracket_skip
     jmp     .bracket_word
 .bracket_mid:
-    ; "x: [bits 32]": a [ ] statement begins its line (NASM: "parser:
-    ; instruction expected")
-    extern  error_subject
-    mov     qword [rel error_subject], 0
+    ; "x: [bits 32]": a [ ] statement begins its line (NASM: "instruction
+    ; expected, found `['")
+    lea     rdi, [rel s_lbracket]
+    extern  error_set_subject
+    call    error_set_subject
     mov     rax, EXIT_UNKNOWN_INSTR
     jmp     .done
 .bracket_unknown:
@@ -222,6 +223,8 @@ parser_parse_instruction:
         mov     qword [rsp + 24], 0
         jmp     .get_mnemonic           ; Skip empty lines
         ENDIF
+    mov     ecx, [rsp + 24]                ; a label before it on the line
+    mov     [rel stmt_labelled], cl
     mov     qword [rsp + 24], 1
 
     ; NASM's encoding prefixes: "{rex} add eax, edx", "{vex3} vcomisd ..."
@@ -414,7 +417,18 @@ parser_parse_instruction:
     mov     al, [r12 + TOKEN_kind]     ; the peek above clobbered al
 
     IF al, ne, TOK_IDENT
-        mov     rax, EXIT_UNEXPECTED_TOKEN
+        ; "5", ",": NASM's "label, instruction or prefix expected at start
+        ; of line, found `5'" - after a label ("x: 5", "x:: nop") its
+        ; "instruction expected, found `5'"
+        mov     rdx, r12
+        extern  prep_idn_text
+        call    prep_idn_text
+        mov     rdi, rax
+        call    error_set_subject
+        mov     eax, EXIT_LINE_START
+        cmp     byte [rel stmt_labelled], 0
+        je      .error
+        mov     eax, EXIT_UNKNOWN_INSTR
         jmp     .error
         ENDIF
 
@@ -873,6 +887,19 @@ parser_parse_instruction:
     jmp     .get_mnemonic
 
 .unknown_mnemonic:
+    ; after a label ("x: mvo", "x: msg db 1"): no second label without its
+    ; colon - NASM's "instruction expected, found `mvo'"
+    cmp     byte [rel stmt_labelled], 0
+    je      .line_word
+    cmp     byte [rel stmt_bracketed], 0
+    jne     .line_word
+    mov     rdi, [r12 + TOKEN_value]
+    call    error_set_subject
+    mov     rdi, [r12 + TOKEN_value]
+    call    error_hint_mnemonic
+    mov     rax, EXIT_UNKNOWN_INSTR
+    jmp     .done
+.line_word:
     ; NASM also takes a label without its colon when an instruction or data
     ; directive follows it ("msg db 'hi'") or it is alone on the line
     mov     rdi, rbx
@@ -951,7 +978,46 @@ parser_parse_instruction:
 .no_label_word:
     ; Remember the closest known instruction/directive; src/main/utasm.s prints it
     ; as a hint after the error line ("... expected, found `x'").
+    mov     rdi, [r12 + TOKEN_value]
     call    error_hint_mnemonic
+    ; NASM names the word and the token after it: "found `mvo eax'"
+    mov     rdi, rbx
+    call    preprocessor_peek_token
+    test    rax, rax
+    jnz     .no_label_unknown
+    movzx   eax, byte [rdx + TOKEN_kind]
+    cmp     eax, TOK_NEWLINE
+    je      .no_label_unknown
+    cmp     eax, TOK_EOF
+    je      .no_label_unknown
+    call    prep_idn_text
+    test    rax, rax
+    jz      .no_label_unknown
+    mov     r13, rax
+    mov     rdi, [r12 + TOKEN_value]
+    call    str_len
+    mov     r14, rax
+    mov     rdi, r13
+    call    str_len
+    lea     rsi, [r14 + rax + 2]           ; the two, a blank, the NUL
+    mov     rdi, [rbx + PREP_arena]
+    call    arena_alloc
+    test    rax, rax
+    jnz     .no_label_unknown
+    mov     r14, rdx
+    mov     byte [r14], 0
+    mov     rdi, r14
+    mov     rsi, [r12 + TOKEN_value]
+    call    str_concat
+    mov     rdi, r14
+    lea     rsi, [rel s_space]
+    call    str_concat
+    mov     rdi, r14
+    mov     rsi, r13
+    call    str_concat
+    mov     rdi, r14
+    call    error_set_subject
+.no_label_unknown:
     mov     rax, EXIT_UNKNOWN_INSTR
     jmp     .done
 
