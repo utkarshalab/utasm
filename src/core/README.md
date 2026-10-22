@@ -90,7 +90,7 @@ reserved arena. The handler uses only `write` and `exit_group`.
 | File | Lines | What is in it |
 | --- | --- | --- |
 | `asmctx.s` | 806 | sections and the emitters, alignment and padding |
-| `known.s` | 1,500 | the second pass: noting forward uses, the memfd hand-over, `known_lookup`, `known_verify`, the preprocessor's label differences (`known_pp_diff`, `known_remap`) |
+| `known.s` | 1,499 | the second pass: noting forward uses, the memfd hand-over, `known_lookup`, `known_verify`, the preprocessor's label differences (`known_pp_diff`, `known_remap`) |
 | `crash.s` | 212 | `crash_install` and the signal handler |
 
 ## Entry points
