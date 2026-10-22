@@ -2175,7 +2175,9 @@ amd64_encode_instruction:
     extern  amd64_prefix_order
     call    amd64_prefix_order
 .ordered:
-    ; an error a relocation found ("[x wrt ..gotoff]" in ELF64)
+    ; an error found deep in the encoders, which return as any call does:
+    ; a relocation ("[x wrt ..gotoff]" in ELF64), an address with no
+    ; encoding (amd64_emit_modrm_sib), past 15 bytes (amd64_emit_byte)
     mov     ecx, [rel amd64_reloc_err]
     test    ecx, ecx
     jz      .done_ret
