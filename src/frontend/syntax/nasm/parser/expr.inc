@@ -687,6 +687,7 @@ parser_evaluate_expression:
     inc     dword [rel expr_level]
     cmp     dword [rel expr_level], 1
     jne     .inner
+    mov     dword [rel expr_terms], 0      ; (a deferred one's count too)
     cmp     byte [rel expr_deferring], 0
     jne     .inner                         ; (one kept, being worked out)
     push    rbx
@@ -1888,6 +1889,17 @@ parser_evaluate_factor:
     xor     r14, r14               ; deferred symbol name -> rcx
     xor     r15, r15               ; resolved SYMBOL*    -> r11
     mov     qword [rel expr_coeff], 0      ; independent of $ (but $ itself)
+
+    ; NASM's limit on an expression's terms (its eval.c "deadman"): "%if
+    ; %1 > 0" in a macro calling itself with "%1-1" read 1, 2 ... 10,000
+    ; terms - seconds of work - before the macros' own limit stopped it
+    inc     dword [rel expr_terms]
+    mov     eax, [rel expr_terms]
+    cmp     rax, [rel eval_limit]
+    jbe     .terms_ok
+    mov     eax, EXIT_EXPR_TOO_LONG
+    jmp     .error
+.terms_ok:
 
     mov     rdi, rbx
     call    preprocessor_next_token
