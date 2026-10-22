@@ -94,7 +94,7 @@ forms, `__POSIX_TIME__`: lib/time.s) — each also as NASM's `__?NAME?__`.
 | `macro/directives.inc` | 902 | prep_handle_directive (the % directive dispatch), %include |
 | `macro/tables.inc` | 595 | the directive names and the preprocessor's other string tables |
 | `macro/cond.inc` | 831 | entering and branching conditionals, %ifidn / %ifidni, %elif, %error; constant text substitution, file pasting |
-| `macro/contexts.inc` | 723 | raw tokens, macro labels, %unmacro, %strlen, %substr, %push / %pop |
+| `macro/contexts.inc` | 724 | raw tokens, macro labels, %unmacro, %strlen, %substr, %push / %pop |
 | `macro/interp.inc` | 804 | prep_resolve_interp: %[...], %+, context-local and parameter interpolation |
 | `macro/assign.inc` | 808 | %assign, %undef, predefined and dynamic macros (__LINE__ ...), %ifnidn, %warning, %exitrep, %exitmacro, built-in macros |
 | `macro/tests.inc` | 1,225 | %ifdef-style tests, %defstr, %iassign, %repl, %getenv, %stacksize, %arg / %local frames, condition-code inverses |
