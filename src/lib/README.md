@@ -78,7 +78,7 @@ digests (object/ubf).
 | `hash.s` | 111 | FNV-1a, CRC-32 |
 | `vec.s` | 246 | growable arrays |
 | `float.s` | 1,108 | float constants to IEEE 754 / x87 bits |
-| `time.s` | 464 | the time of assembly, time zones |
+| `time.s` | 462 | the time of assembly, time zones |
 | `sha256.s` | 513 | SHA-256 |
 
 ## Entry points
