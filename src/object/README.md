@@ -82,8 +82,8 @@ in NASM's order.
 | `elf/elf64.s` | 3,308 | `elf64_emit` (the object), `elf64_standalone_layout` (executables), symbols, relocations, groups, section headers |
 | `elf/elf32.s` | 589 | `elf32_convert`: the ELF64 object rewritten as ELF32 / i386 |
 | `elf/notes.s` | 153 | `elf_add_notes`: `.note.GNU-stack`, `.note.gnu.property` |
-| `coff/coff.s` | 1,021 | `coff_convert`: the ELF64 object rewritten as an x86-64 COFF one |
-| `flat/flat.s` | 318 | `binary_layout`, `binary_emit`, `bin_origin` |
+| `coff/coff.s` | 1,020 | `coff_convert`: the ELF64 object rewritten as an x86-64 COFF one |
+| `flat/flat.s` | 249 | `binary_layout`, `binary_emit`, `bin_origin` |
 | `ubf/ubf.s` | 489 | `ubf_emit`, `ubf_add_component` (`--ubf-add`) |
 | `listing/listing.s` | 1,942 | the `-l` listing |
 | `map.s` | 752 | map files |
@@ -100,8 +100,6 @@ in NASM's order.
 | `lst_*` | frontend/ (each line and expansion), diag/ (warnings in the listing), optimize/ (remap), debug/dwarf.s |
 | `map_option`, `map_write` | frontend/syntax (`[map]`), main/ |
 | `bin_origin` | object/map.s, object/ubf/ubf.s (the image's origin) |
-
-`binary_emit_bootloader` (flat.s) is defined but unused.
 
 ## Depends on
 
