@@ -46,9 +46,7 @@ time_posix:     resb 24
 ti_done:        resb 1
 ti_path:        resb 256
 ti_buf:         resb TZ_BUF
-
 [SECTION .rodata]
-ti_tz_name:     db "TZ="
 ti_localtime:   db "/etc/localtime", 0
 ti_zoneinfo:    db "/usr/share/zoneinfo/"
 ti_zoneinfo_len equ $ - ti_zoneinfo
