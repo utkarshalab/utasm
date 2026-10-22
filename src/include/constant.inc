@@ -205,6 +205,7 @@
 %define EXIT_FILE_IS_DIR       188 ; a directory given where a file is read
 %define EXIT_PP_NO_ENDIF       189 ; a %if still open at the end of the source
 %define EXIT_EXPR_TOO_LONG     190 ; an expression of more terms than --limit-eval (8192, NASM's)
+%define EXIT_EA_SELF_REL       191 ; a self-relative value ("x - $", x elsewhere) as a RIP-relative address
 
 ; src/debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
