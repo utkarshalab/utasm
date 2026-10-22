@@ -60,6 +60,8 @@ prep_handle_assign:
     call    prep_const_check
     test    rax, rax
     jnz     .done
+    mov     esi, 1
+    call    prep_trailing_expr             ; "%assign v 3 x": the x ignored
 
     ; 3. Re-assign in place when the name already exists (it may have been
     ;    a %define: it is a number now)
