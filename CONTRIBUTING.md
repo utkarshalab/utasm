@@ -116,7 +116,7 @@ Stack must be 16-byte aligned before any `call`.
 1. Add `EXIT_<NAME>` with the next free number to `src/include/constant.inc` (*EXIT CODES*)
 2. Add its message to `src/diag/codes.s`: a string, and a `code_msg EXIT_<NAME>, m_<name>[, t_<name>]` row in `code_table` (`t_` is the form that names the subject: `^` is replaced by it)
 3. Return it from the function that finds the problem (`mov eax, EXIT_<NAME>`); `error_set_subject` first when the message names something
-4. Document it in `docs/user/errors.md`
+4. Rerun `python3 scripts/gen/gen_error_docs.py` (it regenerates `docs/user/errors.md` from constant.inc and codes.s; the comment after the code is its meaning there)
 5. Add a case to `tests/compat/cases.py` (*diagnostics* when NASM rejects it too, *rejections* / `ISA_ERRORS` when utasm refuses what NASM takes) and run `tests/compat/run_all.py`
 
 ---
