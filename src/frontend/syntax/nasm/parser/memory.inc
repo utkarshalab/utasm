@@ -752,6 +752,17 @@ parser_parse_mem_operand:
     check_err_to .error
     mov     al, [rel expr_pcrel]
     or      [r12 + OPERAND_pcrel], al
+    mov     r9b, [rel expr_xsec]           ; (rcx: the deferred name)
+    or      [r12 + OPERAND_xsec], r9b
+    ; "[rel baz - $]": a self-relative value reached RIP-relative - NASM's
+    ; error (default rel: .not_rip_written)
+    or      al, r9b
+    jz      .pcrel_ok
+    cmp     byte [r12 + OPERAND_base], REG_RIP
+    jne     .pcrel_ok
+    mov     eax, EXIT_EA_SELF_REL
+    jmp     .error
+.pcrel_ok:
     mov     byte [rel mem_expect_term], 0
     cmp     r8, [rel known_fwd_uses]
     je      .disp_known
@@ -931,6 +942,28 @@ parser_parse_mem_operand:
     mov     qword [r12 + OPERAND_sym], 0
     jmp     .rel_done
 .not_rip_written:
+    ; "[baz - $]" under default rel, baz in another section: a value
+    ; already PC-relative is no RIP-relative address (it was [rip + baz]
+    ; less 1: another address, silently) - NASM's error
+    mov     al, [r12 + OPERAND_pcrel]
+    or      al, [r12 + OPERAND_xsec]
+    jz      .not_self_rel
+    cmp     byte [r12 + OPERAND_base], 0xFF
+    jne     .not_self_rel
+    cmp     byte [r12 + OPERAND_index], 0xFF
+    jne     .not_self_rel
+    test    byte [r12 + OPERAND_flags], OP_FLAG_ABS
+    jnz     .not_self_rel
+    cmp     byte [r12 + OPERAND_segment], 0x64    ; fs:
+    je      .not_self_rel
+    cmp     byte [r12 + OPERAND_segment], 0x65    ; gs:
+    je      .not_self_rel
+    mov     rax, [rbx + PREP_ctx]
+    test    dword [rax + ASMCTX_flags], CTX_FLAG_DEFAULT_REL
+    jz      .not_self_rel
+    mov     eax, EXIT_EA_SELF_REL
+    jmp     .error
+.not_self_rel:
     test    byte [r12 + OPERAND_flags], OP_FLAG_REL
     jz      .not_rel_number
     cmp     byte [r12 + OPERAND_index], 0xFF
