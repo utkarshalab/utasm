@@ -575,12 +575,40 @@ amd64_emit_modrm_sib:
 .abs_sym_type:
     call    amd64_emit_reloc
     call    .disp_addend           ; [label + 4]: the 4
+    ; meant RIP-relative (default rel, rel) and kept for later: worked out,
+    ; a self-relative value is NASM's error (src/link/reloc/reloc.s)
+    cmp     byte [r13 + OPERAND_relnum], 0
+    je      .abs_kept
+    mov     edx, [rbx + ASMCTX_nrelocs]
+    test    edx, edx
+    jz      .abs_kept
+    dec     edx
+    imul    rdx, rdx, RELOC_SIZE
+    add     rdx, [rbx + ASMCTX_relocs]
+    or      byte [rdx + RELOC_flags], RELOC_FLAG_NORIP
+.abs_kept:
     xor     rdi, rdi
     call    amd64_emit_dword
     jmp     .done_sib
 
 .abs_no_sym:
+    ; an absolute address that is no sign-extended disp32 ("[0x80000000]"
+    ; in 64-bit code): cut, with NASM 3's "dword displacement exceeds
+    ; bounds"
     mov     rdi, [r13 + OPERAND_imm]
+    movsxd  rcx, edi                       ; (rcx: saved on entry; rax is
+    cmp     rcx, rdi                       ;  the status the caller reads)
+    je      .abs_put
+    cmp     byte [rel reloc_quiet], 0
+    jne     .abs_put
+    push    rax
+    push    rdi
+    mov     edi, WC_NUMBER_OVERFLOW
+    lea     rsi, [rel s_disp_bounds]
+    call    amd64_warn_class
+    pop     rdi
+    pop     rax
+.abs_put:
     call    amd64_emit_dword
     jmp     .done_sib
 
@@ -696,6 +724,32 @@ amd64_emit_modrm_sib:
     movsx   r9, cl
     cmp     r9, rcx
     je      .a16_disp_picked
+    ; [byte bx + 0x1ff]: the byte written, cut, with NASM's "byte
+    ; displacement exceeds bounds" (it became a disp16), as 32/64-bit's
+    cmp     byte [r13 + OPERAND_dispsize], 8
+    jne     .a16_disp16
+    cmp     byte [rel reloc_quiet], 0
+    jne     .a16_disp_picked
+    push    rax
+    push    rcx
+    push    rdx
+    push    rsi
+    push    rdi
+    push    r8
+    push    r10
+    push    r11
+    lea     rsi, [rel s_disp8_bounds]
+    extern  warn_number
+    call    warn_number
+    pop     r11
+    pop     r10
+    pop     r8
+    pop     rdi
+    pop     rsi
+    pop     rdx
+    pop     rcx
+    pop     rax
+    jmp     .a16_disp_picked
 .a16_disp16:
     mov     edx, 2
 .a16_disp_picked:
@@ -801,28 +855,10 @@ amd64_emit_modrm_sib:
     mov     rdi, [r13 + OPERAND_imm] ; Displacement
     ; the displacement is 32 bits, sign-extended: "[eax + 0xffffffff]" is
     ; [eax - 1] (the address wraps), a disp8 - as NASM; one with more
-    ; than 32 bits loses them, with its warning
+    ; than 32 bits loses them, silently as NASM 3 (2.16 warned)
     movsxd  rax, edi
     cmp     rax, rdi
     je      .disp_canon
-    push    rcx                            ; (the index register)
-    mov     rcx, rdi
-    shr     rcx, 32
-    jz      .disp_cut                      ; 0xffffffff: the 32 bits of -1
-    mov     rcx, rdi
-    sar     rcx, 32
-    cmp     rcx, -1
-    je      .disp_cut
-    extern  reloc_quiet
-    cmp     byte [rel reloc_quiet], 0
-    jne     .disp_cut
-    push    rax
-    mov     edi, WC_NUMBER_OVERFLOW
-    lea     rsi, [rel s_disp_bounds]
-    call    amd64_warn_class
-    pop     rax
-.disp_cut:
-    pop     rcx
     mov     rdi, rax
     mov     [r13 + OPERAND_imm], rdi
 .disp_canon:
@@ -861,8 +897,8 @@ amd64_emit_modrm_sib:
     mov     dl, 2               ; Mod 10 (32-bit disp)
     jmp     .emit_start
 .disp8_forced:
-    ; [byte rsp+0xFF]: the byte all the same, cut - NASM's "byte data
-    ; exceeds bounds" for a value that is not a signed byte
+    ; [byte rsp+0xFF]: the byte all the same, cut - NASM's "byte
+    ; displacement exceeds bounds" for a value that is not a signed byte
     cmp     rdi, -128
     jl      .disp8_warn
     cmp     rdi, 127
