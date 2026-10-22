@@ -760,6 +760,12 @@ prep_handle_elif:
     mov     qword [rel expr_undef_uses], 0
     mov     rdi, rbx
     call    parser_evaluate_pp
+    test    rax, rax
+    jnz     .elif_read
+    xor     esi, esi
+    call    prep_trailing_expr             ; (NASM says nothing for %elif)
+    xor     eax, eax
+.elif_read:
     mov     word [rbx + PREP_skip_depth], r12w
     test    rax, rax
     jnz     .done
