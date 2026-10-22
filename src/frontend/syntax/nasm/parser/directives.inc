@@ -77,6 +77,10 @@ eop_cmp:       db "<=>", 0
 eop_tilde:     db "~", 0
 eop_bang:      db "!", 0
 expr_level:    dd 0                ; parser_evaluate_expression's nesting
+expr_terms:    dd 0                ; the terms read in this expression ...
+align 8
+global eval_limit
+eval_limit:    dq 8192             ; ... at most (--limit-eval, NASM's default)
 expr_lost:     db 0                ; a label not defined yet went into arithmetic
 expr_pp:       db 0                ; in a preprocessor expression (parser_evaluate_pp)
 expr_deferring: db 0               ; parser_deferred_value is working one out
