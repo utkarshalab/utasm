@@ -194,6 +194,16 @@
 %define EXIT_GATHER_SAME       179 ; a gather's destination, index and mask not distinct
 %define EXIT_VSIB_NO_MASK      180 ; an EVEX gather / scatter with no write mask (k0)
 %define EXIT_MASK_REFUSED      181 ; a write mask / {z} the instruction does not take
+; reading the source (src/frontend/lexer): reported where found, the
+; assembly goes on and fails at its end
+%define EXIT_LEX_OPEN_STRING   182 ; a string or character constant with no closing quote on its line
+%define EXIT_LEX_OPEN_BRACE    183 ; %{ with no } on its line
+%define EXIT_LEX_OPEN_COMMENT  184 ; a /* comment with no */ before the end of the file
+%define EXIT_LEX_BAD_UTF8      185 ; bytes that are not UTF-8 (skipped: one error a run of them)
+%define EXIT_LEX_BAD_CHAR      186 ; a byte no token starts with, such as a control character (skipped: one error a run)
+%define EXIT_LEX_STRING_LONG   187 ; a string over 65,535 bytes (a token's length is 16 bits)
+%define EXIT_FILE_IS_DIR       188 ; a directory given where a file is read
+%define EXIT_PP_NO_ENDIF       189 ; a %if still open at the end of the source
 
 ; src/debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
