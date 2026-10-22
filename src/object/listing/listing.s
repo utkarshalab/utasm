@@ -32,6 +32,7 @@
 %include "src/include/type.inc"
 
 extern  io_open
+extern io_create
 extern  io_close
 extern  io_write
 extern  io_mmap
@@ -674,9 +675,8 @@ lst_write:
     push    r15
     mov     rbx, rdi
     mov     rdi, [rel lst_file]
-    mov     rsi, AMD64_O_WRONLY | AMD64_O_CREAT | AMD64_O_TRUNC
     mov     rdx, 0o644
-    call    io_open
+    call    io_create
     test    rax, rax
     jnz     .ret
     mov     [rel lst_fd], rdx
