@@ -103,7 +103,7 @@ python3 scripts/gen/gen_x86_enc.py --check   # fail if out of date
 | `encoder/jmp_call.inc` | 609 | jmp, call, xbegin, far widths, push / pop forms, MPX, nop, words and qwords |
 | `encoder/sse_avx.inc` | 393 | AVX / SSE forms, the VEX2 / VEX3 prefixes; messages and the obsolete tables |
 | `dispatch.s` | 1,859 | the table encoder: `amd64_table_encode`, `amd64_table_has`, form matching and emission |
-| `mode.s` | 3,092 | 16- and 32-bit mode: what changes from 64-bit, REX / REX2 placement, the 66 / 67 prefixes |
+| `mode.s` | 3,108 | 16- and 32-bit mode: what changes from 64-bit, REX / REX2 placement, the 66 / 67 prefixes |
 | `apx.s` | 1,378 | APX's EVEX map-4 integer instructions |
 | `shape.s` | 453 | the operand shapes of the general-purpose instructions (`amd64_check_shape`, `amd64_shape_forms`) |
 | `msr.s` | 272 | the MSR instructions with operands (MSR_IMM, USER_MSR) |
