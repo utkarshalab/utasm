@@ -358,39 +358,6 @@ io_ftruncate:
     mov     rax, EXIT_ERROR
     ret
 
-; ---- io_exists --------------------------------
-;
-; io_exists
-; Checks if a file exists and is accessible.
-; Input    : rdi = pointer to filename string
-; Output   : rax = EXIT_OK (exists) or EXIT_FILE_NOT_FOUND
-; Clobbers : rcx, r11
-;
-global io_exists
-io_exists:
-    push    rbx
-    mov     rbx, rdi               ; save filename
-
-    ; try to open read-only
-    mov     rsi, AMD64_O_RDONLY
-    xor     rdx, rdx               ; mode = 0 (ignored for existing files)
-    call    io_open
-
-    test    rax, rax
-    jnz     .done                  ; error occurred
-
-    ; success - close and return OK
-    mov     rdi, rdx               ; fd from io_open
-    push    rax                    ; save return code (0)
-    call    io_close
-    pop     rax                    ; restore return code
-    mov     rdx, 1                 ; exists = true
-    jmp     .done
-
-.done:
-    pop     rbx
-    ret
-
 ; ---- io_file_size -----------------------------
 ;
 ; io_file_size
@@ -508,58 +475,6 @@ io_read_full:
 .error:
     mov     rax, EXIT_FILE_READ
     xor     rdx, rdx
-
-.done:
-    pop     r13
-    pop     r12
-    pop     rbx
-    ret
-
-; ---- io_write_full ----------------------------
-;
-; io_write_full
-; Writes exactly n bytes to a file (retries on short writes).
-; Input    : rdi = file descriptor (i32)
-;            rsi = buffer pointer (*const u8)
-;            rdx = bytes to write (usize)
-; Output   : rax = EXIT_OK or EXIT_FILE_WRITE
-; Clobbers : rcx, r10, r11
-;
-global io_write_full
-io_write_full:
-    push    rbx
-    push    r12
-    push    r13
-
-    mov     rbx, rdi               ; save fd
-    mov     r12, rsi               ; save buffer
-    mov     r13, rdx               ; save total bytes to write
-
-    xor     r10, r10               ; bytes written so far = 0
-
-.write_loop:
-    cmp     r10, r13               ; written all bytes?
-    jge     .success
-
-    ; calculate remaining bytes and current buffer position
-    mov     rdi, rbx               ; fd
-    lea     rsi, [r12 + r10]       ; current buffer position
-    mov     rdx, r13
-    sub     rdx, r10               ; remaining bytes
-
-    call    io_write
-    test    rax, rax
-    jnz     .error                 ; write error
-
-    add     r10, rdx               ; advance bytes written counter
-    jmp     .write_loop
-
-.success:
-    xor     rax, rax               ; EXIT_OK
-    jmp     .done
-
-.error:
-    mov     rax, EXIT_FILE_WRITE
 
 .done:
     pop     r13
