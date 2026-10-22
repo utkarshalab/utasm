@@ -206,6 +206,7 @@
 %define EXIT_PP_NO_ENDIF       189 ; a %if still open at the end of the source
 %define EXIT_EXPR_TOO_LONG     190 ; an expression of more terms than --limit-eval (8192, NASM's)
 %define EXIT_EA_SELF_REL       191 ; a self-relative value ("x - $", x elsewhere) as a RIP-relative address
+%define EXIT_OSZ32_64          192 ; push / pop of a dword in 64-bit code (they are 64 or 16 bits there)
 
 ; src/debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
@@ -258,7 +259,8 @@
 %define WC_PROC_UNREACHABLE    29  ; proc-unreachable: code after a ret / jmp, no label between
 %define WC_PROC_FALLTHROUGH    30  ; proc-fallthrough: the code runs into endproc
 %define WC_IMPLICIT_ABS        31  ; implicit-abs-deprecated: NASM 3's, an absolute address in 64-bit code with no "default" written
-%define WC_COUNT               32
+%define WC_NUMBER_DEPRECATED_HEX 32 ; number-deprecated-hex: NASM 3's, "$0ff" (write 0x0ff)
+%define WC_COUNT               33
 
 ; a kept expression's record (parser_defer_record): +0 RELOC_EXPR_MARK,
 ; +8 text, +16 tokens, +24 count; and for src/core/known.s:
