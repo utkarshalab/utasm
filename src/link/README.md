@@ -54,7 +54,11 @@ statement).
   line, as NASM's.
 
 Also here: `reloc_warn_pie` (`-w+pie`: an absolute 32-bit address in
-64-bit code, which `ld -pie` would refuse), `reloc_wrt` (`wrt ..plt`,
+64-bit code, which `ld -pie` would refuse), `reloc_warn_nasm` (NASM 3's
+`reloc-abs-*` / `reloc-rel-*`, off unless `-w+all` or named: each
+relocation the object keeps, each address in a flat binary - given in
+the relocation pass, put back in the order of the source by
+`warn_late_key`, and after its line in the listing), `reloc_wrt` (`wrt ..plt`,
 `..got`, `..gotpcrel`, `..tlsie` ...), and the RISC-V branch / call
 relocations.
 
