@@ -971,6 +971,13 @@ parser_parse_mem_operand:
     mov     rax, [r12 + OPERAND_sym]
     test    rax, rax
     jz      .rel_number
+    ; "[rel bar - $]": a value kept for later is a number, as under
+    ; default rel - absolute, with NASM's warning (it stayed RIP-relative,
+    ; and an object said "expression syntax error")
+    cmp     byte [rax], RELOC_OFFSET_MARK
+    je      .rel_number
+    cmp     byte [rax], RELOC_EXPR_MARK
+    je      .rel_number
     cmp     byte [rax], TAG_SYMBOL
     jne     .not_rel_number                ; a label not defined yet
     cmp     byte [rax + SYMBOL_kind], SYM_CONSTANT
@@ -1032,6 +1039,38 @@ parser_parse_mem_operand:
     call    warn_text
     call    warn_end
 .rel_done:
+    ; NASM 3: an absolute address in 64-bit code, with no "default"
+    ; written - once a file: "implicit DEFAULT ABS is deprecated"
+    cmp     byte [rel default_given], 0
+    jne     .implicit_done
+    cmp     byte [rel implicit_said], 0
+    jne     .implicit_done
+    cmp     byte [rel asm_bits], 64
+    jne     .implicit_done
+    cmp     byte [r12 + OPERAND_base], 0xFF
+    jne     .implicit_done
+    cmp     byte [r12 + OPERAND_index], 0xFF
+    jne     .implicit_done
+    test    byte [r12 + OPERAND_flags], OP_FLAG_ABS | OP_FLAG_REL
+    jnz     .implicit_done
+    cmp     byte [r12 + OPERAND_relnum], 0
+    jne     .implicit_done                 ; ([rel 5]: ea-absolute's instead)
+    cmp     byte [r12 + OPERAND_segment], 0x64    ; fs:
+    je      .implicit_done
+    cmp     byte [r12 + OPERAND_segment], 0x65    ; gs:
+    je      .implicit_done
+    extern  gas_names
+    cmp     byte [rel gas_names], 0
+    jne     .implicit_done                 ; (GNU's syntax: GNU as's rules)
+    mov     byte [rel implicit_said], 1
+    mov     edi, WC_IMPLICIT_ABS
+    call    warn_begin
+    test    eax, eax
+    jz      .implicit_done
+    lea     rsi, [rel str_implicit_abs]
+    call    warn_text
+    call    warn_end
+.implicit_done:
     mov     rax, OK
 .done:
     mov     byte [rel mem_scaling], 0
