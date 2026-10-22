@@ -41,7 +41,6 @@ extern symbol_find
 extern str_compare
 extern asm_ctx_align
 extern str_concat
-extern error_emit
 extern error_hint_mnemonic
 extern relax_freeze_current
 extern relax_freeze_symref
