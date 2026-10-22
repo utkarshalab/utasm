@@ -50,6 +50,8 @@ prep_handle_rep:
     test    rax, rax
     jnz     .error
     mov     r14, rdx               ; r14 = count
+    mov     esi, 1
+    call    prep_trailing_expr     ; "%rep 2 x": not the body's
 
     ; 2. Allocate anonymous MACRO struct
     mov     rdi, [rbx + PREP_arena]
