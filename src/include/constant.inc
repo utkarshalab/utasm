@@ -207,6 +207,7 @@
 %define EXIT_EXPR_TOO_LONG     190 ; an expression of more terms than --limit-eval (8192, NASM's)
 %define EXIT_EA_SELF_REL       191 ; a self-relative value ("x - $", x elsewhere) as a RIP-relative address
 %define EXIT_OSZ32_64          192 ; push / pop of a dword in 64-bit code (they are 64 or 16 bits there)
+%define EXIT_LINE_START        193 ; a line starts with no label, instruction or prefix ("5", ",")
 
 ; src/debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
@@ -260,7 +261,15 @@
 %define WC_PROC_FALLTHROUGH    30  ; proc-fallthrough: the code runs into endproc
 %define WC_IMPLICIT_ABS        31  ; implicit-abs-deprecated: NASM 3's, an absolute address in 64-bit code with no "default" written
 %define WC_NUMBER_DEPRECATED_HEX 32 ; number-deprecated-hex: NASM 3's, "$0ff" (write 0x0ff)
-%define WC_COUNT               33
+%define WC_RELOC_ABS_BYTE      33  ; reloc-abs-byte (off): an 8-bit absolute relocation
+%define WC_RELOC_ABS_WORD      34  ; reloc-abs-word (off): a 16-bit absolute relocation
+%define WC_RELOC_ABS_DWORD     35  ; reloc-abs-dword (off): a 32-bit absolute relocation ("dd x")
+%define WC_RELOC_ABS_QWORD     36  ; reloc-abs-qword (off): a 64-bit absolute relocation
+%define WC_RELOC_REL_BYTE      37  ; reloc-rel-byte (off): an 8-bit PC-relative relocation
+%define WC_RELOC_REL_WORD      38  ; reloc-rel-word (off): a 16-bit PC-relative relocation
+%define WC_RELOC_REL_DWORD     39  ; reloc-rel-dword (off): a 32-bit PC-relative one ("call e")
+%define WC_RELOC_REL_QWORD     40  ; reloc-rel-qword (off): a 64-bit PC-relative relocation
+%define WC_COUNT               41
 
 ; a kept expression's record (parser_defer_record): +0 RELOC_EXPR_MARK,
 ; +8 text, +16 tokens, +24 count; and for src/core/known.s:
