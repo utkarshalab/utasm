@@ -1646,6 +1646,7 @@ ilog2_fn_names: db "__?ilog2e?__", 0, 0, 0, 1
 str_ilog2_warn: db "ilog2 argument is not a power of two", 0
 str_ptr_warn:  db "`ptr' is not a NASM keyword", 0
 str_ea_absolute: db "absolute address can not be RIP-relative", 0
+str_implicit_abs: db "implicit DEFAULT ABS is deprecated", 0
 str_masm_ptr:  db "__?masm_ptr?__", 0
 str_masm_flat: db "__?masm_flat?__", 0
 str_flat:      db "flat", 0
