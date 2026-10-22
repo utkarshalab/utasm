@@ -51,7 +51,6 @@ DEFAULT REL
 k_sev:      db '{"severity":"', 0
 k_file:     db '","file":"', 0
 k_line:     db '","line":', 0
-k_line_nf:  db '"', 0
 k_column:   db ',"column":', 0
 k_message:  db ',"message":"', 0
 k_msg_nf:   db '","message":"', 0
@@ -64,7 +63,6 @@ w_warning:  db "warning: ", 0
 w_fatal:    db "fatal: ", 0
 w_note:     db "note: ", 0
 w_from:     db "... ", 0
-w_flag:     db " [-w", 0
 s_error:    db "error", 0
 s_warning:  db "warning", 0
 s_fatal:    db "fatal", 0
