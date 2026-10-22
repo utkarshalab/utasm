@@ -17,8 +17,9 @@ Nothing is freed: an assembler run is short, and bump allocation is the
 fastest there is. `mem_reserve` is the raw reservation other modules use
 for their own growable tables (the symbol table, the jump records).
 
-Unused today: `arena_checkpoint` / `arena_rollback` / `arena_reset`
-(undoing allocations), `arena_destroy`, `arena_used`, `arena_remaining`.
+(Functions to undo allocations - `arena_checkpoint` / `arena_rollback` /
+`arena_reset` - and `arena_destroy`, `arena_used`, `arena_remaining` were
+never called, and were removed on 2026-10-22.)
 
 ## Strings (`string.s`)
 
@@ -39,8 +40,7 @@ output is built with it, line by line.
 ## Hashes (`hash.s`)
 
 `hash_fnv1a_str` (section names, core/asmctx.s; the symbol table has its
-own FNV-1a), `hash_crc32` (UBF headers, as zlib's), `hash_u64` (a
-splitmix64 finalizer, used inside hash.s).
+own FNV-1a), `hash_crc32` (UBF headers, as zlib's).
 
 ## Containers
 
@@ -72,10 +72,10 @@ digests (object/ubf).
 
 | File | Lines | What is in it |
 | --- | --- | --- |
-| `arena.s` | 550 | the arena allocator, `mem_reserve` |
+| `arena.s` | 340 | the arena allocator, `mem_reserve` |
 | `string.s` | 791 | strings, memory, characters, numbers, UTF-8 |
-| `fmt.s` | 380 | the bounded string builder |
-| `hash.s` | 202 | FNV-1a, CRC-32, splitmix64 |
+| `fmt.s` | 301 | the bounded string builder |
+| `hash.s` | 111 | FNV-1a, CRC-32 |
 | `vec.s` | 246 | growable arrays |
 | `float.s` | 1,108 | float constants to IEEE 754 / x87 bits |
 | `time.s` | 464 | the time of assembly, time zones |
@@ -101,10 +101,7 @@ platform/ (`mmap` for the arena and the heap), main/.
 
 ## What is left
 
-Remove what is unused, or use it: `fmt_dec`, `fmt_write_fd`;
-`hash_combine`, `hash_fnv1a_mem`; the arena's `arena_checkpoint` /
-`arena_rollback` / `arena_reset`, `arena_destroy`, `arena_used`,
-`arena_remaining`.
+Nothing unused is left: every function here is called.
 
 ## Tests
 
