@@ -62,7 +62,7 @@ relocations.
 
 | File | Lines | What is in it |
 | --- | --- | --- |
-| `linker.s` | 319 | `linker_run` (the steps above), the overlap check |
+| `linker.s` | 318 | `linker_run` (the steps above), the overlap check |
 | `reloc/reloc.s` | 1,333 | `reloc_record`, `reloc_resolve_all`, `reloc_apply_one`, `reloc_wrt`, `reloc_warn_pie`, expression and offset fields |
 | `dead.s` | 4 | placeholder: removing unused sections (`--gc-sections`) |
 | `layout.s` | 4 | placeholder: section layout / addresses across objects |
