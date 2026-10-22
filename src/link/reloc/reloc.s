@@ -803,6 +803,22 @@ reloc_expr_write:
     call    parser_deferred_value
     test    rax, rax
     jnz     .ret
+    ; meant RIP-relative: a value of two sections' labels (a flat binary),
+    ; or an address (an object), is self-relative - NASM's error
+    test    byte [r13 + RELOC_flags], RELOC_FLAG_NORIP
+    jz      .not_norip
+    extern  expr_xsec
+    cmp     byte [rel expr_xsec], 0
+    jne     .self_rel
+    cmp     byte [rbx + ASMCTX_fmt], FMT_BIN
+    je      .not_norip                     ; (addresses are numbers there)
+    cmp     byte [rbx + ASMCTX_standalone], 0
+    jne     .not_norip
+    test    r11, r11
+    jz      .not_norip
+    cmp     word [r11 + SYMBOL_section], 0xFFF1
+    jne     .self_rel
+.not_norip:
     test    r11, r11
     jz      .number
     cmp     word [r11 + SYMBOL_section], 0xFFF1     ; SHN_ABS: a number
@@ -847,6 +863,9 @@ reloc_expr_write:
     jmp     .ret
 .bad:
     mov     eax, EXIT_INVALID_EXPR
+    jmp     .ret
+.self_rel:
+    mov     eax, EXIT_EA_SELF_REL          ; (its line is set)
 .ret:
     pop     r13
     pop     r12
@@ -906,6 +925,10 @@ reloc_offset_write:
     mov     ax, [r15 + SYMBOL_section]
     cmp     ax, [rdx + SYMBOL_section]
     je      .one_section
+    ; two sections: self-relative - no address meant RIP-relative ("[baz
+    ; - $]" under default rel, baz defined after it): NASM's error
+    test    byte [r13 + RELOC_flags], RELOC_FLAG_NORIP
+    jnz     .self_rel
     ; in a flat binary (or an executable of its own) each section has its
     ; address by now: "baz - $" across sections is a number all the same
     ; (it was "expression syntax error", NASM's pcrel)
@@ -969,6 +992,12 @@ reloc_offset_write:
     mov     esi, [r13 + RELOC_line]
     call    error_set_location
     mov     eax, EXIT_INVALID_EXPR
+    jmp     .ret
+.self_rel:
+    mov     rdi, [r13 + RELOC_file]
+    mov     esi, [r13 + RELOC_line]
+    call    error_set_location
+    mov     eax, EXIT_EA_SELF_REL
 .ret:
     pop     r15
     pop     r14
