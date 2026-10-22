@@ -22,11 +22,12 @@ Unused today: `arena_checkpoint` / `arena_rollback` / `arena_reset`
 
 ## Strings (`string.s`)
 
-Lengths, compares (`str_cmp`, case-insensitive `str_cmp_kw`, `mem_cmp`),
-copies (`str_copy`, `str_dup`, `mem_copy`), searching, character classes
-(`str_is_digit`, `str_is_ident_char` ...), numbers to text and back
-(`int_to_str`, `str_to_int`), UTF-8 decoding (`str_utf8_decode`). Many of
-its 40 exports are unused (see the list at the end).
+Lengths (`str_len`), compares (`str_cmp`, case-insensitive `str_cmp_kw`),
+`str_concat`, `str_dup`, `mem_copy`, `mem_zero`, identifier characters
+(`str_is_ident_char`, `str_ident_chars`), numbers to text and back
+(`int_to_str`, `str_int_to_str`, `str_to_int`), UTF-8 decoding
+(`str_utf8_decode`): what utasm calls, and nothing else (the 24 functions
+nothing called were removed on 2026-10-22; git history has them).
 
 ## Formatting (`fmt.s`)
 
@@ -45,7 +46,7 @@ splitmix64 finalizer, used inside hash.s).
 
 | File | What |
 | --- | --- |
-| `vec.s` | a growable array in the arena (`vec_init`, `vec_push`, `vec_get`, `vec_reserve`); capacity doubles; used by optimize/jump.s |
+| `vec.s` | a growable array in the arena (`vec_init`, `vec_push`, `vec_reserve`); capacity doubles; used by optimize/jump.s |
 
 ## Numbers
 
@@ -72,10 +73,10 @@ digests (object/ubf).
 | File | Lines | What is in it |
 | --- | --- | --- |
 | `arena.s` | 550 | the arena allocator, `mem_reserve` |
-| `string.s` | 1,644 | strings, memory, characters, numbers, UTF-8 |
+| `string.s` | 791 | strings, memory, characters, numbers, UTF-8 |
 | `fmt.s` | 380 | the bounded string builder |
 | `hash.s` | 202 | FNV-1a, CRC-32, splitmix64 |
-| `vec.s` | 406 | growable arrays |
+| `vec.s` | 246 | growable arrays |
 | `float.s` | 1,108 | float constants to IEEE 754 / x87 bits |
 | `time.s` | 464 | the time of assembly, time zones |
 | `sha256.s` | 513 | SHA-256 |
@@ -89,7 +90,7 @@ digests (object/ubf).
 | `fmt_*` | tools/ |
 | `hash_fnv1a_str` | core/asmctx.s |
 | `hash_crc32` | object/ubf |
-| `vec_*`, `mem_reserve` | optimize/jump.s; `mem_reserve` also the symbol table, the preprocessor, the parsers, relocations, the ELF writer, map files, the LSP server |
+| `vec_init`, `vec_push`, `mem_reserve` | optimize/jump.s; `mem_reserve` also the symbol table, the preprocessor, the parsers, relocations, the ELF writer, map files, the LSP server |
 | `float_encode`, `float_overflow`, `float_special` | frontend/syntax |
 | `time_*` | frontend/preproc |
 | `sha256_*` | object/ubf |
@@ -100,13 +101,10 @@ platform/ (`mmap` for the arena and the heap), main/.
 
 ## What is left
 
-Remove what is unused, or use it: in `string.s`: `hex_to_byte`, `mem_cmp`, `mem_move`, `mem_set`,
-`path_get_extension`, `path_get_filename`, `str_cmp_n`, `str_copy_n`,
-`str_find_char`, `str_find_str`, `str_free`, `str_hash`, `str_is_alnum`,
-`str_split_char`, `str_to_lower`, `str_to_upper`, `str_trim`,
-`string_concat`, `string_copy`, `string_length`; `vec_clear`,
-`vec_get_u64`, `vec_len`, `vec_pop`, `vec_push_u64`; `fmt_dec`,
-`fmt_write_fd`; `hash_combine`, `hash_fnv1a_mem`.
+Remove what is unused, or use it: `fmt_dec`, `fmt_write_fd`;
+`hash_combine`, `hash_fnv1a_mem`; the arena's `arena_checkpoint` /
+`arena_rollback` / `arena_reset`, `arena_destroy`, `arena_used`,
+`arena_remaining`.
 
 ## Tests
 
