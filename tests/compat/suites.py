@@ -550,11 +550,13 @@ def diagnostics(utasm, verbose=False):
 
     def one(case):
         name, files = case
-        if isinstance(files, str):
+        if isinstance(files, (str, bytes)):
             files = {"main.s": files}
         with tempdir() as d:
             for fn, text in files.items():
-                open(os.path.join(d, fn), "w").write(text)
+                # (bytes: a source that is not UTF-8)
+                with open(os.path.join(d, fn), "wb" if isinstance(text, bytes) else "w") as f:
+                    f.write(text)
             rn = run(["nasm", "-f", "elf64", "main.s", "-o", "n.o"], cwd=d)
             ru = run([utasm, "-f", "elf64", "main.s", "-o", "u.o"], cwd=d)
             return name, rn, ru
@@ -1078,6 +1080,20 @@ def _limit_errors(s, utasm):
                  first_line(ru))
 
 
+def _file_errors(s, utasm):
+    # files utasm cannot read or write: its message and exit status
+    with tempdir() as d:
+        os.mkdir(os.path.join(d, "dir"))
+        for fn, text in (("inc.s", '%include "dir"\n'), ("bin.s", 'incbin "dir"\n'),
+                         ("ok.s", "nop\n"), ("empty.s", "")):
+            open(os.path.join(d, fn), "w").write(text)
+        for name, args, line, status in cases.FILE_ERRORS:
+            ru = run([utasm] + args, cwd=d, timeout=30)
+            said = line is None and not ru.stderr.strip() or line is not None and line in ru.stderr.splitlines()
+            s.result("file " + name, not _crashed(ru) and ru.returncode == status and said,
+                     "status %d: %s" % (ru.returncode, first_line(ru)))
+
+
 def robustness(utasm, verbose=False):
     s = Suite("robustness", verbose)
 
@@ -1101,6 +1117,7 @@ def robustness(utasm, verbose=False):
                 s.result(name, (rn.returncode == 0) == (ru.returncode == 0),
                          "nasm rc %d | utasm rc %d: %s" % (rn.returncode, ru.returncode, first_line(ru)))
     _limit_errors(s, utasm)
+    _file_errors(s, utasm)
     return s
 
 
@@ -1605,6 +1622,8 @@ def _json_text(o):
         place = "utasm: "
     msg = o["message"] + (" [%s]" % o["flag"] if "flag" in o else "")
     if o["severity"] == "note":
+        if "file" not in o and not msg.startswith("from macro"):
+            return "note: " + msg                  # (what an operand was)
         return place + ("... " if msg.startswith("from macro") else "note: ") + msg
     return place + o["severity"] + ": " + msg
 
