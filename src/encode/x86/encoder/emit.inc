@@ -514,7 +514,12 @@ amd64_emit_modrm_sib:
     
     mov     cl, [r13 + OPERAND_index]
     IF cl, e, 4
-        jmp amd64_encode_instruction.error
+        ; rsp as an index: the instruction fails (amd64_reloc_err), this
+        ; returns as any call does - the jump to the driver's .error from
+        ; here skipped every pop between, and the driver's caller got
+        ; rbx / r12-r15 back wrong
+        mov     dword [rel amd64_reloc_err], EXIT_ENCODE_FAIL
+        jmp     .done_sib
         ENDIF
 
     ; 1.5 No base and no index: absolute [disp32]
@@ -713,7 +718,9 @@ amd64_emit_modrm_sib:
     mov     ecx, 2
     jmp     .disp_n
 .a16_bad:
-    jmp     amd64_encode_instruction.error
+    ; no 16-bit form ("[r ax]" in bits 64: utasm crashed): failed, returning
+    mov     dword [rel amd64_reloc_err], EXIT_ENCODE_FAIL
+    jmp     .done_sib
 .a16_direct:
     ; [disp16]: mod 00, r/m 110 ("a16 add eax, [0x10]" in 32-bit code)
     mov     cl, r14b
@@ -1079,8 +1086,10 @@ amd64_emit_byte:
     ; Check architectural limit (15 bytes)
     mov     eax, [rbx + ASMCTX_inst_len]
     IF eax, ge, 15
+        ; past 15 bytes: the instruction fails, the byte is not written
         pop rax
-        jmp amd64_encode_instruction.error
+        mov     dword [rel amd64_reloc_err], EXIT_ENCODE_FAIL
+        ret
         ENDIF
     inc     dword [rbx + ASMCTX_inst_len]
     
