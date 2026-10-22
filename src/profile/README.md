@@ -61,11 +61,11 @@ only logs that it would have fired — and nothing calls it yet.
 | `rdtsc.s` | 124 | `rdtsc_read`, `rdtsc_read_end`, `rdtsc_calibrate` |
 | `state.s` | 103 | `global_profstate` and accessors |
 | `hotpath.s` | 73 | `hotpath_detect` |
-| `rank.s` | 149 | `hotpath_rank`, `hotpath_get_top` |
+| `rank.s` | 128 | `hotpath_rank` |
 | `report.s` | 207 | `profiler_report` |
 | `table.s` | 161 | the header and one row |
 | `fmt.s` | 233 | numbers with separators, percentages, right alignment |
-| `strings.s` | 152 | every string the report prints |
+| `strings.s` | 148 | every string the report prints |
 | `trigger.s` | 174 | the self-patch trigger (not called) |
 
 ## Entry points
@@ -75,9 +75,10 @@ only logs that it would have fired — and nothing calls it yet.
 | `profiler_init`, `profiler_finalize`, `profiler_report` | main/utasm.s |
 | `profiler_start_phase`, `profiler_end_phase`, `global_profstate` | main/utasm.s, link/linker.s |
 
-Unused today: `profiler_get_entry`, `profiler_get_state`,
-`profiler_get_total_cycles`, `profiler_is_enabled`, `hotpath_get_top`,
-`profiler_trigger_check`.
+`profiler_get_entry`, `profiler_get_state`, `profiler_get_total_cycles`,
+`profiler_is_enabled` (state.s) are for tests/unit/profiler; utasm itself
+reads `global_profstate`. `profiler_trigger_check` (trigger.s) is the
+self-patch engine's, not called yet (src/planned/selfpatch/).
 
 ## Depends on
 
