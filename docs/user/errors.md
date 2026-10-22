@@ -132,7 +132,7 @@ the first failure: see *Exit status* at the end.
 | 15 | `unable to open include file` | `` unable to open include file `NAME' `` | included file specified by source not found (`EXIT_INC_NOT_FOUND`) |
 | 16 | `invalid macro definition` |  | malformed or illegal macro definition (`EXIT_MACRO_DEF`) |
 | 17 | `error expanding a macro` |  | failure during macro expansion phase (`EXIT_MACRO_EXP`) |
-| 18 | `macros nested too deeply (runaway recursion?)` **(fatal)** |  | nested macro depth exceeded limit (`EXIT_MACRO_RECURSION`) |
+| 18 | `macros nested too deeply (runaway recursion?)` **(fatal)** |  | a runaway macro: 10,000 calls open, or 10,000,000 tokens in their arguments (`EXIT_MACRO_RECURSION`) |
 | 19 | `no macro of this name takes this number of parameters` | `` multi-line macro `NAME' does not take this number of parameters `` | wrong number of macro arguments (`EXIT_MACRO_ARITY_FAIL`) |
 | 20 | `invalid %define` |  | invalid or malformed %define directive (`EXIT_DEFINE`) |
 | 21 | `` `%include' expects a quoted file name `` |  | %include without a quoted file name (`EXIT_INC_NAME`) |
@@ -206,6 +206,7 @@ the first failure: see *Exit status* at the end.
 | 56 | `` the left-hand side of `?' must be a scalar value `` |  | label ? a : b (`EXIT_NONSCALAR_COND`) |
 | 91 | `ilog2 argument is not a power of two` |  | ilog2e(x) / ilog2(x): x not a power of two (`EXIT_ILOG2`) |
 | 122 | `unrecognized symbol type` | `` unrecognized symbol type `NAME' `` | ".type f, @nonsense" (`EXIT_SYM_TYPE`) |
+| 190 | `expression too long` |  | an expression of more terms than --limit-eval (8192, NASM's) (`EXIT_EXPR_TOO_LONG`) |
 
 ### Directives, data and sections
 
