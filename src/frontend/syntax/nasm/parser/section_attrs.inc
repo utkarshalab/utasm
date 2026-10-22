@@ -474,6 +474,8 @@ deco_buf:   resb 64                 ; the decorator text being matched
 numlbl_count: resd NUMLBL_MAX       ; definitions of each numeric label so far
 numlbl_digits: resb 24
 pos_count:  resq 1                  ; "$" labels made so far
+pos_line_sec: resq 1                ; a data line's section (0: none being read)
+pos_line:   resq 1                  ; ... and its offset there, where its $ is
 
 [SECTION .rodata]
 str_rel: db "rel", 0
