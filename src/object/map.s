@@ -18,7 +18,7 @@ DEFAULT REL
 ; ============================================================================
 ; NASM's map file, as its bin format writes it ("[map all file.map]"): the
 ; origin, the sections (summary and detail), the symbols by section and
-; address. "[map OPTION ... FILE]" in a flat binary (bin, ubf, standalone):
+; address. "[map OPTION ... FILE]" in a flat binary (bin, ubi, standalone):
 ; all, brief (origin + summary), sections / segments (+ the detail),
 ; symbols; options of several [map] lines add up, the first file named is
 ; the one written. "--map FILE" (any format): all of it - for an object
