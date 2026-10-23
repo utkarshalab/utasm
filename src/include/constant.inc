@@ -292,8 +292,8 @@
 %define EXIT_ASSERT            75  ; compilation assertion failed
 %define EXIT_UNREACHABLE       76  ; compiler hit a code path marked unreachable
 %define EXIT_FATAL             78  ; %fatal: the message is already printed
-%define EXIT_UBF_EMPTY         79  ; -f ubf: the program has no bytes to boot
-%define EXIT_UBF_TOO_BIG       80  ; -f ubf: a component over 4 GiB
+%define EXIT_UBI_EMPTY         79  ; -f ubi: the program has no bytes to boot
+%define EXIT_UBI_TOO_BIG       80  ; -f ubi: a component over 4 GiB
 %define EXIT_NOT_IMPLEMENTED   77  ; requested compiler feature is not implemented
 
 ; ============================================================================
@@ -1818,36 +1818,36 @@
 %define DW_FORM_sec_offset             0x17
 
 ; ============================================================================
-; UBF -- UTKARSHA BOOT FORMAT (src/object/ubf, tattvaos boot/stage2/fs/ubf.asm)
+; UBI -- UTKARSHA BOOT FORMAT (src/object/ubi, tattvaos boot/stage2/fs/ubi.asm)
 ; ============================================================================
-%define UBF_MAGIC              0x54414D524F465255  ; "UBFORMAT"
-%define UBF_VERSION            1
-%define UBF_HEADER_BYTES       1024
-%define UBF_HEADER_SECTORS     2
-%define UBF_MAX_COMPONENTS     8
+%define UBI_MAGIC              0x004547414D494255  ; "UBIMAGE\0"
+%define UBI_VERSION            1
+%define UBI_HEADER_BYTES       1024
+%define UBI_HEADER_SECTORS     2
+%define UBI_MAX_COMPONENTS     8
 ; header fields
-%define UBF_HDR_MAGIC          0x000
-%define UBF_HDR_VERSION        0x008
-%define UBF_HDR_TOTAL          0x00C       ; image size in sectors
-%define UBF_HDR_COUNT          0x010
-%define UBF_HDR_CRC32          0x014
-%define UBF_HDR_FLAGS          0x018
-%define UBF_HDR_TABLE          0x020       ; 8 entries of 64 bytes
+%define UBI_HDR_MAGIC          0x000
+%define UBI_HDR_VERSION        0x008
+%define UBI_HDR_TOTAL          0x00C       ; image size in sectors
+%define UBI_HDR_COUNT          0x010
+%define UBI_HDR_CRC32          0x014
+%define UBI_HDR_FLAGS          0x018
+%define UBI_HDR_TABLE          0x020       ; 8 entries of 64 bytes
 ; component entry fields
-%define UBF_CE_TYPE            0x00
-%define UBF_CE_START           0x04        ; start sector
-%define UBF_CE_SIZE            0x08
-%define UBF_CE_LOAD            0x0C        ; load address
-%define UBF_CE_ENTRY           0x10        ; entry offset from the load address
-%define UBF_CE_FLAGS           0x14
-%define UBF_CE_SHA256          0x18
+%define UBI_CE_TYPE            0x00
+%define UBI_CE_START           0x04        ; start sector
+%define UBI_CE_SIZE            0x08
+%define UBI_CE_LOAD            0x0C        ; load address
+%define UBI_CE_ENTRY           0x10        ; entry offset from the load address
+%define UBI_CE_FLAGS           0x14
+%define UBI_CE_SHA256          0x18
 ; component types
-%define UBF_COMP_KERNEL        1
-%define UBF_COMP_INITRD        2
-%define UBF_COMP_DTB           3
-%define UBF_COMP_CONFIG        4
-%define UBF_COMP_MODULE        5
-%define UBF_COMP_FIRMWARE      6
+%define UBI_COMP_KERNEL        1
+%define UBI_COMP_INITRD        2
+%define UBI_COMP_DTB           3
+%define UBI_COMP_CONFIG        4
+%define UBI_COMP_MODULE        5
+%define UBI_COMP_FIRMWARE      6
 
 ; ============================================================================
 ; UPK SOVEREIGN PACKAGE FORMAT CONSTANTS
