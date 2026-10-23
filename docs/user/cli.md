@@ -15,9 +15,9 @@ NASM does not read; messages name it `-`, and with no `-o` the output is
 
 | Option | Meaning |
 | --- | --- |
-| `-f`, `--format <format>` | Output format: `elf64` (default), `elf32` (or `elf`: an i386 object, `bits 32` by default), `win64` (a COFF object for Windows, see [COFF objects](#coff-objects--f-win64)), `bin`, or `ubf` (a UBF boot image, see [ubf.md](ubf.md)). Non-standalone ELF output is a relocatable object. |
-| `-o <file>` | Output path; defaults to a source-derived `.o`, `.obj` (`-f win64`), `.bin` or `.ubf` filename. |
-| `--ubf-add TYPE=FILE[@ADDR]` | With `-f ubf`: add a component (`initrd`, `dtb`, `config`, `module`, `firmware`) read from FILE, loaded at ADDR. Repeatable, up to 7. |
+| `-f`, `--format <format>` | Output format: `elf64` (default), `elf32` (or `elf`: an i386 object, `bits 32` by default), `win64` (a COFF object for Windows, see [COFF objects](#coff-objects--f-win64)), `bin`, or `ubi` (a UBI boot image, see [ubi.md](ubi.md)). Non-standalone ELF output is a relocatable object. |
+| `-o <file>` | Output path; defaults to a source-derived `.o`, `.obj` (`-f win64`), `.bin` or `.ubi` filename. |
+| `--ubi-add TYPE=FILE[@ADDR]` | With `-f ubi`: add a component (`initrd`, `dtb`, `config`, `module`, `firmware`) read from FILE, loaded at ADDR. Repeatable, up to 7. |
 | `-a`, `-arch`, `--arch <arch>` | Target architecture: `amd64` (default), `aarch64`, or `riscv64`. |
 | `--standalone` | Produce a standalone executable and require `_start`. Its stack is not executable (`PT_GNU_STACK` read/write; `--execstack` makes it executable). |
 | `--att` | AT&T syntax from the start, as GNU `as` reads a source (GCC's `gcc -S` output has no `.att_syntax`); `.intel_syntax` in the source turns it off. See [syntax.md](syntax.md), AT&T syntax. |
@@ -62,8 +62,8 @@ utasm --arch amd64 --format elf64 source.s -o source.o
 # Flat binary
 utasm -f bin boot.s -o boot.bin
 
-# UBF boot image: the kernel plus a configuration component
-utasm -f ubf kernel.s --ubf-add config=boot.cfg@0x200000 -o utkarsha.ubf
+# UBI boot image: the kernel plus a configuration component
+utasm -f ubi kernel.s --ubi-add config=boot.cfg@0x200000 -o utkarsha.ubi
 
 # A self-contained executable, with profiling
 utasm --standalone --profile main.s -o main
@@ -153,7 +153,7 @@ What it reads:
   (`src/tools/inspect/elf32.s`), decoded in 32-bit mode, with `R_386_*`
   relocation names. `--inspect` reads them the same way.
 - **Raw files** - anything that is not ELF: a flat binary, a boot sector,
-  a UBF image's code - as `objdump -b binary` does: one section `.data` at
+  a UBI image's code - as `objdump -b binary` does: one section `.data` at
   `--org`, in the `--bits` mode, branch targets written `0x7c3e`:
 
 ```sh
