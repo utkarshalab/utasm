@@ -858,11 +858,11 @@ print_num:
                    db "Usage: utasm [options] <source.s>", 10
                    db "       utasm --inspect [--inspect-only <parts>] <file>", 10, 10
                    db "Options:", 10
-                   db "  -f, --format <format>     elf64 (default), elf32, bin, ubf (a UBF boot image)", 10
-                   db "  -o <file>                 output path (default: source.o / .bin / .ubf)", 10
+                   db "  -f, --format <format>     elf64 (default), elf32, bin, ubi (a UBI boot image)", 10
+                   db "  -o <file>                 output path (default: source.o / .bin / .ubi)", 10
                    db "  --bits 16|32|64           the mode the source starts in (-f bin: 64;", 10
                    db "                            NASM starts a flat binary in 16)", 10
-                   db "  --ubf-add TYPE=FILE[@ADDR]  -f ubf: add a component (initrd, dtb,", 10
+                   db "  --ubi-add TYPE=FILE[@ADDR]  -f ubi: add a component (initrd, dtb,", 10
                    db "                            config, module, firmware) loaded at ADDR", 10
                    db "  -a, -arch, --arch <arch>  amd64 (default), aarch64, riscv64", 10
                    db "  --standalone              produce a standalone executable", 10
