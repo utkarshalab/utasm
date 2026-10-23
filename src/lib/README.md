@@ -40,7 +40,7 @@ output is built with it, line by line.
 ## Hashes (`hash.s`)
 
 `hash_fnv1a_str` (section names, core/asmctx.s; the symbol table has its
-own FNV-1a), `hash_crc32` (UBF headers, as zlib's).
+own FNV-1a), `hash_crc32` (UBI headers, as zlib's).
 
 ## Containers
 
@@ -65,8 +65,8 @@ forms and `__POSIX_TIME__`. Local time reads the TZif file `TZ` names (or
 
 FIPS 180-4, the scalar implementation verified in Utkarsha OS's
 `crypto/uhash/sha256` against the FIPS vectors: `sha256_init` /
-`_update` / `_final`, one-shot `sha256_hash`. For the UBF components'
-digests (object/ubf).
+`_update` / `_final`, one-shot `sha256_hash`. For the UBI components'
+digests (object/ubi).
 
 ## Files
 
@@ -89,11 +89,11 @@ digests (object/ubf).
 | `str_*`, `mem_*`, `int_to_str` | nearly every module |
 | `fmt_*` | tools/ |
 | `hash_fnv1a_str` | core/asmctx.s |
-| `hash_crc32` | object/ubf |
+| `hash_crc32` | object/ubi |
 | `vec_init`, `vec_push`, `mem_reserve` | optimize/jump.s; `mem_reserve` also the symbol table, the preprocessor, the parsers, relocations, the ELF writer, map files, the LSP server |
 | `float_encode`, `float_overflow`, `float_special` | frontend/syntax |
 | `time_*` | frontend/preproc |
-| `sha256_*` | object/ubf |
+| `sha256_*` | object/ubi |
 
 ## Depends on
 
@@ -106,7 +106,7 @@ Nothing unused is left: every function here is called.
 ## Tests
 
 Indirect: every suite. `float.s` is checked by *data forms* (every float
-format against NASM's bytes), `sha256.s` and `hash_crc32` by *ubf images*
+format against NASM's bytes), `sha256.s` and `hash_crc32` by *ubi images*
 (against Python's hashlib and zlib). `time.s` has no test of its own (its
 values change with each run); `SOURCE_DATE_EPOCH` support would make one
 possible, and make builds that use `__DATE__` reproducible.
