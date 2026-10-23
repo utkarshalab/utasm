@@ -246,8 +246,8 @@ the first failure: see *Exit status* at the end.
 | 63 | `relocation out of range or not supported` |  | relocation could not be applied (`EXIT_RELOC_ERROR`) |
 | 64 | `undefined symbol` | `` symbol `NAME' not defined `` | symbol referenced but never defined (`EXIT_UNDEF_REF`) |
 | 65 | `symbol defined more than once` | `` symbol `NAME' defined more than once `` | symbol defined in multiple input objects (`EXIT_MULTI_DEF`) |
-| 79 | `-f ubf: the program has no bytes to boot` |  | -f ubf: the program has no bytes to boot (`EXIT_UBF_EMPTY`) |
-| 80 | `-f ubf: a component is larger than 4 GiB` |  | -f ubf: a component over 4 GiB (`EXIT_UBF_TOO_BIG`) |
+| 79 | `-f ubi: the program has no bytes to boot` |  | -f ubi: the program has no bytes to boot (`EXIT_UBI_EMPTY`) |
+| 80 | `-f ubi: a component is larger than 4 GiB` |  | -f ubi: a component over 4 GiB (`EXIT_UBI_TOO_BIG`) |
 | 89 | `COFF format has no relocation for this reference` | `COFF format has no NAME relocation` | -f win64: "dw e", "dq e - $": no COFF relocation (`EXIT_COFF_RELOC`) |
 | 90 | `COFF format does not support any special symbol types` |  | -f win64: "global f:hidden", "common c 8:4" (`EXIT_COFF_SPECIAL`) |
 | 107 | `binary output format does not support common variables` |  | -f bin: "common c 4" (`EXIT_BIN_COMMON`) |
