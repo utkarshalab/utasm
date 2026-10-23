@@ -1,16 +1,16 @@
 ;
 ; ============================================================================
-; File        : src/object/ubf/ubf.s
+; File        : src/object/ubi/ubi.s
 ; Project     : utasm
-; Description : UBF -- Utkarsha Boot Format -- boot image output (-f ubf)
+; Description : UBI -- Utkarsha Boot Image -- boot image output (-f ubi)
 ; ============================================================================
 ;
-; A UBF image is the container the Utkarsha OS stage-2 loader reads
-; (tattvaos boot/stage2/fs/ubf.asm): a 1024-byte header, then the
+; A UBI image is the container the Utkarsha OS stage-2 loader reads
+; (tattvaos boot/stage2/fs/ubi.asm): a 1024-byte header, then the
 ; components, each starting on a 512-byte sector.
 ;
 ;   header (sectors 0-1)
-;     0x000  8    magic "UBFORMAT"
+;     0x000  8    magic "UBIMAGE\0"
 ;     0x008  4    version (1)
 ;     0x00C  4    total image size in sectors
 ;     0x010  4    component count (1-8)
@@ -18,7 +18,7 @@
 ;     0x018  4    flags (bit 0: all components signed -- not set here)
 ;     0x020  512  component table, 8 entries of 64 bytes
 ;   component entry
-;     0x00   4    type (UBF_COMP_*)
+;     0x00   4    type (UBI_COMP_*)
 ;     0x04   4    start sector, from the start of the image
 ;     0x08   4    size in bytes
 ;     0x0C   4    load address (physical)
@@ -28,7 +28,7 @@
 ;
 ; The assembled program is the kernel component: laid out as a flat binary
 ; (-f bin: org, sections, relocations), loaded at its org, entered at
-; _start (offset 0 without one). --ubf-add TYPE=FILE[@ADDR] adds the other
+; _start (offset 0 without one). --ubi-add TYPE=FILE[@ADDR] adds the other
 ; components (initrd, dtb, config, module, firmware) from files.
 ;
 
@@ -58,18 +58,18 @@ extern bin_origin
 [SECTION .text]
 
 ;
-; ubf_add_component
-; Records one --ubf-add TYPE=FILE[@ADDR] (the string is edited in place).
+; ubi_add_component
+; Records one --ubi-add TYPE=FILE[@ADDR] (the string is edited in place).
 ; Input    : rdi = the option's value
 ; Output   : rax = EXIT_OK, or EXIT_USAGE when it cannot be read
 ;
-global ubf_add_component
-ubf_add_component:
+global ubi_add_component
+ubi_add_component:
     push    rbx
     push    r12
     push    r13
     mov     rbx, rdi
-    cmp     dword [rel ubf_extra], UBF_MAX_COMPONENTS - 1
+    cmp     dword [rel ubi_extra], UBI_MAX_COMPONENTS - 1
     jae     .bad
     ; TYPE up to '='
     mov     r12, rdi
@@ -84,7 +84,7 @@ ubf_add_component:
 .have_eq:
     mov     byte [r12], 0
     inc     r12                            ; the file
-    lea     r13, [rel ubf_type_names]
+    lea     r13, [rel ubi_type_names]
 .type:
     cmp     byte [r13], 0
     je      .bad
@@ -96,13 +96,13 @@ ubf_add_component:
     add     r13, 12
     jmp     .type
 .have_type:
-    mov     eax, [rel ubf_extra]
+    mov     eax, [rel ubi_extra]
     movzx   ecx, byte [r13 + 11]
-    lea     rdx, [rel ubf_comp_type]
+    lea     rdx, [rel ubi_comp_type]
     mov     [rdx + rax * 4], ecx
-    lea     rdx, [rel ubf_comp_path]
+    lea     rdx, [rel ubi_comp_path]
     mov     [rdx + rax * 8], r12
-    lea     rdx, [rel ubf_comp_addr]
+    lea     rdx, [rel ubi_comp_addr]
     mov     dword [rdx + rax * 4], 0
     ; @ADDR: where the loader puts it
     mov     rdi, r12
@@ -120,13 +120,13 @@ ubf_add_component:
     call    str_to_int
     test    rax, rax
     jnz     .bad
-    mov     eax, [rel ubf_extra]
-    lea     rcx, [rel ubf_comp_addr]
+    mov     eax, [rel ubi_extra]
+    lea     rcx, [rel ubi_comp_addr]
     mov     [rcx + rax * 4], edx
 .no_addr:
     cmp     byte [r12], 0
     je      .bad                           ; no file
-    inc     dword [rel ubf_extra]
+    inc     dword [rel ubi_extra]
     xor     eax, eax
     jmp     .ret
 .bad:
@@ -138,14 +138,14 @@ ubf_add_component:
     ret
 
 ;
-; ubf_emit
+; ubi_emit
 ; Writes the image: the laid-out program as the kernel component, the
-; --ubf-add files after it, then the header.
+; --ubi-add files after it, then the header.
 ; Input    : rdi = AsmCtx (binary_layout has run), esi = output fd
 ; Output   : rax = EXIT_OK or error
 ;
-global ubf_emit
-ubf_emit:
+global ubi_emit
+ubi_emit:
     push    rbx
     push    r12
     push    r13
@@ -154,8 +154,8 @@ ubf_emit:
     mov     rbx, rdi
     mov     r12d, esi
 
-    lea     rdi, [rel ubf_header]
-    mov     rsi, UBF_HEADER_BYTES
+    lea     rdi, [rel ubi_header]
+    mov     rsi, UBI_HEADER_BYTES
     call    mem_zero
 
     ; ---- 1. the kernel: every section with contents at its place ----
@@ -213,22 +213,22 @@ ubf_emit:
     jmp     .copy_sec
 .copied:
     ; entry 0
-    lea     r15, [rel ubf_header + UBF_HDR_TABLE]
-    mov     dword [r15 + UBF_CE_TYPE], UBF_COMP_KERNEL
-    mov     dword [r15 + UBF_CE_START], UBF_HEADER_SECTORS
-    mov     [r15 + UBF_CE_SIZE], r13d
+    lea     r15, [rel ubi_header + UBI_HDR_TABLE]
+    mov     dword [r15 + UBI_CE_TYPE], UBI_COMP_KERNEL
+    mov     dword [r15 + UBI_CE_START], UBI_HEADER_SECTORS
+    mov     [r15 + UBI_CE_SIZE], r13d
     mov     rax, [rel bin_origin]
-    mov     [r15 + UBF_CE_LOAD], eax
-    call    ubf_entry_offset
-    mov     [r15 + UBF_CE_ENTRY], eax
+    mov     [r15 + UBI_CE_LOAD], eax
+    call    ubi_entry_offset
+    mov     [r15 + UBI_CE_ENTRY], eax
     mov     rdi, r14
     mov     rsi, r13
-    lea     rdx, [r15 + UBF_CE_SHA256]
+    lea     rdx, [r15 + UBI_CE_SHA256]
     call    sha256_hash
-    mov     esi, UBF_HEADER_SECTORS
+    mov     esi, UBI_HEADER_SECTORS
     mov     rdi, r14
     mov     rdx, r13
-    call    ubf_write_at                   ; rax = error, edx = next sector
+    call    ubi_write_at                   ; rax = error, edx = next sector
     push    rdx
     push    rax
     mov     rdi, r14
@@ -238,15 +238,15 @@ ubf_emit:
     pop     rdx
     test    rax, rax
     jnz     .ret
-    mov     [rel ubf_next_sector], edx
+    mov     [rel ubi_next_sector], edx
 
-    ; ---- 2. the --ubf-add components ----
+    ; ---- 2. the --ubi-add components ----
     xor     r15d, r15d
 .extra:
-    cmp     r15d, [rel ubf_extra]
+    cmp     r15d, [rel ubi_extra]
     jae     .extras_done
     mov     edi, r15d
-    call    ubf_add_file
+    call    ubi_add_file
     test    rax, rax
     jnz     .ret
     inc     r15d
@@ -254,21 +254,21 @@ ubf_emit:
 .extras_done:
 
     ; ---- 3. the header ----
-    lea     rdi, [rel ubf_header]
-    mov     rax, UBF_MAGIC
-    mov     [rdi + UBF_HDR_MAGIC], rax
-    mov     dword [rdi + UBF_HDR_VERSION], UBF_VERSION
-    mov     eax, [rel ubf_next_sector]
-    mov     [rdi + UBF_HDR_TOTAL], eax
-    mov     eax, [rel ubf_extra]
+    lea     rdi, [rel ubi_header]
+    mov     rax, UBI_MAGIC
+    mov     [rdi + UBI_HDR_MAGIC], rax
+    mov     dword [rdi + UBI_HDR_VERSION], UBI_VERSION
+    mov     eax, [rel ubi_next_sector]
+    mov     [rdi + UBI_HDR_TOTAL], eax
+    mov     eax, [rel ubi_extra]
     inc     eax
-    mov     [rdi + UBF_HDR_COUNT], eax
-    mov     dword [rdi + UBF_HDR_FLAGS], 0
-    mov     rsi, UBF_HEADER_BYTES
+    mov     [rdi + UBI_HDR_COUNT], eax
+    mov     dword [rdi + UBI_HDR_FLAGS], 0
+    mov     rsi, UBI_HEADER_BYTES
     xor     edx, edx
     call    hash_crc32                     ; the CRC field is still 0
-    lea     rdi, [rel ubf_header]
-    mov     [rdi + UBF_HDR_CRC32], eax
+    lea     rdi, [rel ubi_header]
+    mov     [rdi + UBI_HDR_CRC32], eax
     mov     edi, r12d
     xor     esi, esi
     xor     edx, edx
@@ -276,22 +276,22 @@ ubf_emit:
     test    rax, rax
     jnz     .ret
     mov     edi, r12d
-    lea     rsi, [rel ubf_header]
-    mov     rdx, UBF_HEADER_BYTES
+    lea     rsi, [rel ubi_header]
+    mov     rdx, UBI_HEADER_BYTES
     call    io_write
     test    rax, rax
     jnz     .ret
     ; the image ends on a sector boundary
     mov     edi, r12d
-    mov     esi, [rel ubf_next_sector]
+    mov     esi, [rel ubi_next_sector]
     shl     rsi, 9
     call    io_ftruncate
     jmp     .ret
 .empty:
-    mov     rax, EXIT_UBF_EMPTY
+    mov     rax, EXIT_UBI_EMPTY
     jmp     .ret
 .too_big:
-    mov     rax, EXIT_UBF_TOO_BIG
+    mov     rax, EXIT_UBI_TOO_BIG
 .ret:
     pop     r15
     pop     r14
@@ -301,12 +301,12 @@ ubf_emit:
     ret
 
 ;
-; ubf_write_at
+; ubi_write_at
 ; Writes RDX bytes from RDI at sector ESI of the image.
 ; Input    : r12d = fd
 ; Output   : rax = EXIT_OK or error, edx = the sector after them
 ;
-ubf_write_at:
+ubi_write_at:
     push    r13
     push    r14
     push    r15
@@ -337,19 +337,19 @@ ubf_write_at:
     ret
 
 ;
-; ubf_add_file
-; Component EDI of the --ubf-add list: read the file, write it at the next
+; ubi_add_file
+; Component EDI of the --ubi-add list: read the file, write it at the next
 ; sector, fill its table entry.
 ; Input    : rbx = AsmCtx, r12d = fd
 ; Output   : rax = EXIT_OK or error
 ;
-ubf_add_file:
+ubi_add_file:
     push    r13
     push    r14
     push    r15
     push    rbp
     mov     r15d, edi
-    lea     rax, [rel ubf_comp_path]
+    lea     rax, [rel ubi_comp_path]
     mov     rdi, [rax + r15 * 8]
     mov     esi, AMD64_O_RDONLY
     xor     edx, edx
@@ -388,19 +388,19 @@ ubf_add_file:
     ; entry 1 + EDI
     lea     rax, [r15 + 1]
     shl     rax, 6                         ; 64 bytes an entry
-    lea     rdi, [rel ubf_header + UBF_HDR_TABLE]
+    lea     rdi, [rel ubi_header + UBI_HDR_TABLE]
     add     rdi, rax
     push    rdi
-    lea     rax, [rel ubf_comp_type]
+    lea     rax, [rel ubi_comp_type]
     mov     eax, [rax + r15 * 4]
-    mov     [rdi + UBF_CE_TYPE], eax
-    mov     eax, [rel ubf_next_sector]
-    mov     [rdi + UBF_CE_START], eax
-    mov     [rdi + UBF_CE_SIZE], r13d
-    lea     rax, [rel ubf_comp_addr]
+    mov     [rdi + UBI_CE_TYPE], eax
+    mov     eax, [rel ubi_next_sector]
+    mov     [rdi + UBI_CE_START], eax
+    mov     [rdi + UBI_CE_SIZE], r13d
+    lea     rax, [rel ubi_comp_addr]
     mov     eax, [rax + r15 * 4]
-    mov     [rdi + UBF_CE_LOAD], eax
-    lea     rdx, [rdi + UBF_CE_SHA256]
+    mov     [rdi + UBI_CE_LOAD], eax
+    lea     rdx, [rdi + UBI_CE_SHA256]
     mov     rdi, r14
     mov     rsi, r13
     call    sha256_hash
@@ -408,13 +408,13 @@ ubf_add_file:
     ; the bytes
     test    r13, r13
     jz      .unmap
-    mov     esi, [rel ubf_next_sector]
+    mov     esi, [rel ubi_next_sector]
     mov     rdi, r14
     mov     rdx, r13
-    call    ubf_write_at
+    call    ubi_write_at
     test    rax, rax
     jnz     .unmap
-    mov     [rel ubf_next_sector], edx
+    mov     [rel ubi_next_sector], edx
 .unmap:
     push    rax
     test    r14, r14
@@ -436,17 +436,17 @@ ubf_add_file:
     pop     r13
     ret
 .too_big:
-    mov     rax, EXIT_UBF_TOO_BIG
+    mov     rax, EXIT_UBI_TOO_BIG
     jmp     .close
 
 ;
-; ubf_entry_offset
+; ubi_entry_offset
 ; eax = _start's offset from the load address, 0 without a _start.
 ; Input    : rbx = AsmCtx
 ;
-ubf_entry_offset:
+ubi_entry_offset:
     mov     rdi, rbx
-    lea     rsi, [rel ubf_start_name]
+    lea     rsi, [rel ubi_start_name]
     call    symbol_find
     test    rax, rax
     jnz     .none
@@ -466,24 +466,24 @@ ubf_entry_offset:
     ret
 
 [SECTION .rodata]
-ubf_start_name: db "_start", 0
-; --ubf-add types: name (11 bytes) + UBF_COMP_*
-ubf_type_names:
-    db "initrd", 0, 0,0,0,0, UBF_COMP_INITRD
-    db "dtb", 0, 0,0,0,0,0,0,0, UBF_COMP_DTB
-    db "config", 0, 0,0,0,0, UBF_COMP_CONFIG
-    db "module", 0, 0,0,0,0, UBF_COMP_MODULE
-    db "firmware", 0, 0,0, UBF_COMP_FIRMWARE
-    db "kernel", 0, 0,0,0,0, UBF_COMP_KERNEL
+ubi_start_name: db "_start", 0
+; --ubi-add types: name (11 bytes) + UBI_COMP_*
+ubi_type_names:
+    db "initrd", 0, 0,0,0,0, UBI_COMP_INITRD
+    db "dtb", 0, 0,0,0,0,0,0,0, UBI_COMP_DTB
+    db "config", 0, 0,0,0,0, UBI_COMP_CONFIG
+    db "module", 0, 0,0,0,0, UBI_COMP_MODULE
+    db "firmware", 0, 0,0, UBI_COMP_FIRMWARE
+    db "kernel", 0, 0,0,0,0, UBI_COMP_KERNEL
     db 0
 
 [SECTION .bss]
-global ubf_enabled
-ubf_enabled:    resb 1              ; -f ubf
+global ubi_enabled
+ubi_enabled:    resb 1              ; -f ubi
 alignb 8
-ubf_extra:      resd 1              ; --ubf-add components
-ubf_next_sector: resd 1
-ubf_comp_type:  resd UBF_MAX_COMPONENTS
-ubf_comp_addr:  resd UBF_MAX_COMPONENTS
-ubf_comp_path:  resq UBF_MAX_COMPONENTS
-ubf_header:     resb UBF_HEADER_BYTES
+ubi_extra:      resd 1              ; --ubi-add components
+ubi_next_sector: resd 1
+ubi_comp_type:  resd UBI_MAX_COMPONENTS
+ubi_comp_addr:  resd UBI_MAX_COMPONENTS
+ubi_comp_path:  resq UBI_MAX_COMPONENTS
+ubi_header:     resb UBI_HEADER_BYTES
