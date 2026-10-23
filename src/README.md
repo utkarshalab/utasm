@@ -44,7 +44,7 @@ end, in `link/linker.s`.
       object/flat, elf  lay out a flat binary / an executable
       link/reloc        resolve every relocation that can be; keep the rest
       core/known.s      check the values a second pass relied on
-      object/           write: ELF64 (then ELF32 / COFF from it), bin, UBF
+      object/           write: ELF64 (then ELF32 / COFF from it), bin, UBI
                      │
                      ▼
       object/listing (-l), object/map.s (map files), -M dependencies
@@ -72,7 +72,7 @@ one pass.
 | [encode/](encode/README.md) | statements to machine code: [x86/](encode/x86/README.md), [aarch64/](encode/aarch64/README.md), [riscv64/](encode/riscv64/README.md) |
 | [optimize/](optimize/README.md) | jump shortening (branch relaxation), alignment padding |
 | [link/](link/README.md) | the end of assembly (`linker_run`), relocations |
-| [object/](object/README.md) | the output files: ELF64, ELF32, COFF, flat, UBF; listings, map files |
+| [object/](object/README.md) | the output files: ELF64, ELF32, COFF, flat, UBI; listings, map files |
 | [debug/](debug/README.md) | DWARF line tables and debug info, call-frame information |
 | [diag/](diag/README.md) | errors, warnings, "did you mean", JSON diagnostics |
 | [tools/](tools/README.md) | the built-in tools: [disasm/](tools/disasm/README.md), [inspect/](tools/inspect/README.md), [symdump/](tools/symdump/README.md), [lsp/](tools/lsp/README.md) |
