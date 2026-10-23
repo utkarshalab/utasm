@@ -4,6 +4,10 @@ NASM_FLAGS := -d__NASM__=1 -f elf64 -I./
 GEN0      := build/gen0/utasm
 GEN1      := build/gen1/utasm
 
+# The per-object dependency rules below come before `all`; without this the
+# first of them (build/gen0/src/core/asmctx.o) would be make's default goal.
+.DEFAULT_GOAL := all
+
 # every source under src/, in one fixed order (the link order: the same
 # binary on every machine)
 SOURCES   := $(shell find src -name '*.s' | LC_ALL=C sort)
