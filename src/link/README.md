@@ -28,8 +28,8 @@ its placeholders are listed below.
    for the object file.
 6. **Overlaps** (flat binaries: sections placed on top of each other are
    an error), and the **second pass's check** (`known_verify`, core/).
-7. **Write**: by `ASMCTX_fmt` — `binary_emit` (`-f bin`), `ubf_emit`
-   (`-f ubf`), `elf64_emit` (`-f elf64`, and as the first step of
+7. **Write**: by `ASMCTX_fmt` — `binary_emit` (`-f bin`), `ubi_emit`
+   (`-f ubi`), `elf64_emit` (`-f elf64`, and as the first step of
    `-f elf32` / `-f win64`, which `elf32_convert` / `coff_convert` then
    rewrite) — object/.
 
