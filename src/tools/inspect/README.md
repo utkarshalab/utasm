@@ -56,10 +56,10 @@ tools/symdump (symbols, relocations, columns), tools/disasm (the
 ## Status
 
 Complete for ELF64 and ELF32 little-endian files. Not read: other
-formats (COFF objects, UBF images). With signed UBF (planned), checking
+formats (COFF objects, UBI images). With signed UBI (planned), checking
 an image's signatures belongs here.
 
 ## Tests
 
-Used by the *ubf images*, *elf probes* and *disassembler* suites in
+Used by the *ubi images*, *elf probes* and *disassembler* suites in
 `tests/compat/run_all.py`; malformed files in *robustness*.
