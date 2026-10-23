@@ -243,12 +243,12 @@ cli_parse:
     test    rax, rax
     jz      .handle_org
 
-    ; --ubf-add TYPE=FILE[@ADDR]: another component of a UBF image
+    ; --ubi-add TYPE=FILE[@ADDR]: another component of a UBI image
     mov     rdi, r14
-    lea     rsi, [rel .flag_ubf_add]
+    lea     rsi, [rel .flag_ubi_add]
     call    str_cmp
     test    rax, rax
-    jz      .handle_ubf_add
+    jz      .handle_ubi_add
 
     ; check for -v
     mov     rdi, r14
@@ -461,10 +461,10 @@ cli_parse:
     jz      .set_bin
 
     mov     rdi, r14
-    lea     rsi, [rel .val_ubf]
+    lea     rsi, [rel .val_ubi]
     call    str_cmp
     test    rax, rax
-    jz      .set_ubf
+    jz      .set_ubi
 
     mov     rdi, r14
     lea     rsi, [rel .val_elf32]
@@ -513,14 +513,14 @@ cli_parse:
     and     dword [rbx + ASMCTX_flags], ~CTX_FLAG_RELOCATABLE
     jmp     .next_arg
 
-.set_ubf:
-    ; a UBF boot image: laid out as a flat binary, written by ubf_emit
-    extern  ubf_enabled
-    mov     byte [rel ubf_enabled], 1
+.set_ubi:
+    ; a UBI boot image: laid out as a flat binary, written by ubi_emit
+    extern  ubi_enabled
+    mov     byte [rel ubi_enabled], 1
     jmp     .set_flat
 .set_bin:
-    extern  ubf_enabled
-    mov     byte [rel ubf_enabled], 0
+    extern  ubi_enabled
+    mov     byte [rel ubi_enabled], 0
 .set_flat:
     mov     byte [rbx + ASMCTX_fmt], FMT_BIN
     and     dword [rbx + ASMCTX_flags], ~(CTX_FLAG_FORMAT_BIN | CTX_FLAG_FORMAT_ELF)
@@ -626,14 +626,14 @@ cli_parse:
     mov     [rel disasm_org], rdx
     jmp     .next_arg
 
-.handle_ubf_add:
+.handle_ubi_add:
     dec     r12
     jle     .missing_val
     add     r13, 8
     mov     r14, [r13]
     mov     rdi, r14
-    extern  ubf_add_component
-    call    ubf_add_component
+    extern  ubi_add_component
+    call    ubi_add_component
     test    rax, rax
     jnz     .unknown_val
     jmp     .next_arg
@@ -791,10 +791,10 @@ cli_derive_output:
     jne     .elf_suffix
     lea     r15, [rel cli_parse.suffix_bin]
     mov     esi, 5                  ; ".bin" plus NUL
-    extern  ubf_enabled
-    cmp     byte [rel ubf_enabled], 0
+    extern  ubi_enabled
+    cmp     byte [rel ubi_enabled], 0
     je      .allocate
-    lea     r15, [rel cli_parse.suffix_ubf]
+    lea     r15, [rel cli_parse.suffix_ubi]
     jmp     .allocate
 .elf_suffix:
     lea     r15, [rel cli_parse.suffix_obj]
@@ -1480,11 +1480,11 @@ cli_parse.val_bin:      db "bin", 0
 cli_parse.val_elf32:    db "elf32", 0
 cli_parse.val_elf:      db "elf", 0
 cli_parse.val_win64:    db "win64", 0
-cli_parse.val_ubf:      db "ubf", 0
-cli_parse.flag_ubf_add: db "--ubf-add", 0
+cli_parse.val_ubi:      db "ubi", 0
+cli_parse.flag_ubi_add: db "--ubi-add", 0
 cli_parse.flag_bits: db "--bits", 0
 cli_parse.flag_org:  db "--org", 0
-cli_parse.suffix_ubf:   db ".ubf", 0
+cli_parse.suffix_ubi:   db ".ubi", 0
 cli_parse.val_amd64:    db "amd64", 0
 cli_parse.val_aarch64:  db "aarch64", 0
 cli_parse.val_riscv64:  db "riscv64", 0
