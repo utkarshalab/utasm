@@ -19,7 +19,7 @@ of `mem.s`).
 | `io_write`, `io_write_byte` | write | `io_write` loops until all is written |
 | `io_lseek`, `io_file_size` | lseek, fstat | the size: seek to the end; a directory: `EXIT_FILE_IS_DIR` |
 | `io_mmap`, `io_munmap` | mmap, munmap | the source file is mmapped, not read |
-| `io_ftruncate` | ftruncate | object/ubf (the image's size) |
+| `io_ftruncate` | ftruncate | object/ubi (the image's size) |
 
 Nothing here prints. A failure is an `EXIT_*` code saying what failed -
 `EXIT_FILE_NOT_FOUND`, `EXIT_FILE_PERM`, `EXIT_FILE_IS_DIR`,
