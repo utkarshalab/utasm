@@ -55,7 +55,7 @@ src/encode/      x86/ (complete), aarch64/, riscv64/ (base only)
 src/optimize/    jump shortening, alignment padding        ┐
 src/link/        linker_run, relocations                   ├ at the end
 src/debug/       DWARF, CFI, GNU's line table              │
-src/object/      ELF64 / ELF32 / COFF / flat / UBF, listing┘
+src/object/      ELF64 / ELF32 / COFF / flat / UBI, listing┘
 src/diag/        errors and warnings, at every stage
 src/core/ lib/ platform/ include/   shared foundations
 src/tools/       --disasm, --inspect, --lsp
