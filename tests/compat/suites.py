@@ -454,9 +454,9 @@ def disasm(utasm, verbose=False, objects=()):
 
 
 # ---------------------------------------------------------------------------
-# UBF boot images (-f ubf): the layout tattvaos boot/stage2/fs/ubf.asm reads
+# UBI boot images (-f ubi): the layout tattvaos boot/stage2/fs/ubi.asm reads
 # ---------------------------------------------------------------------------
-UBF_KERNEL = """bits 64
+UBI_KERNEL = """bits 64
 org 0x100000
 section .text
 pad: db 0x90, 0x90
@@ -464,51 +464,51 @@ _start:
     mov eax, [rel msg]
     jmp $
 section .data
-msg: db 'hello from ubf'
+msg: db 'hello from ubi'
 """
 
 
-def ubf(utasm, verbose=False):
-    s = Suite("ubf images", verbose)
+def ubi(utasm, verbose=False):
+    s = Suite("ubi images", verbose)
     with tempdir() as d:
         k = os.path.join(d, "k.s")
-        open(k, "w").write(UBF_KERNEL)
+        open(k, "w").write(UBI_KERNEL)
         cfg = b"console=serial root=/dev/uvd0 quiet"
         rd = bytes((i * 37 + 11) & 0xFF for i in range(1500))
         open(os.path.join(d, "cfg.txt"), "wb").write(cfg)
         open(os.path.join(d, "rd.bin"), "wb").write(rd)
-        img = os.path.join(d, "img.ubf")
-        r = run([utasm, "-f", "ubf", k, "--ubf-add", "config=cfg.txt@0x200000",
-                 "--ubf-add", "initrd=rd.bin@0x300000", "-o", img], cwd=d)
+        img = os.path.join(d, "img.ubi")
+        r = run([utasm, "-f", "ubi", k, "--ubi-add", "config=cfg.txt@0x200000",
+                 "--ubi-add", "initrd=rd.bin@0x300000", "-o", img], cwd=d)
         rb = run([utasm, "-f", "bin", k, "-o", os.path.join(d, "k.bin")], cwd=d)
         if r.returncode != 0 or rb.returncode != 0:
-            s.result("ubf build", False, "utasm failed: " + first_line(r if r.returncode else rb))
+            s.result("ubi build", False, "utasm failed: " + first_line(r if r.returncode else rb))
             return s
         data = open(img, "rb").read()
         kern = open(os.path.join(d, "k.bin"), "rb").read()
         hdr = data[:1024]
         magic, version, total, count, crc, flags = struct.unpack_from("<QIIIII", hdr, 0)
-        s.result("ubf magic", magic == 0x54414D524F465255, hex(magic))
-        s.result("ubf version", version == 1, str(version))
-        s.result("ubf count", count == 3, str(count))
-        s.result("ubf flags", flags == 0, str(flags))
-        s.result("ubf total sectors", total * 512 == len(data), "%d sectors, %d bytes" % (total, len(data)))
+        s.result("ubi magic", magic == 0x004547414D494255, hex(magic))
+        s.result("ubi version", version == 1, str(version))
+        s.result("ubi count", count == 3, str(count))
+        s.result("ubi flags", flags == 0, str(flags))
+        s.result("ubi total sectors", total * 512 == len(data), "%d sectors, %d bytes" % (total, len(data)))
         zeroed = hdr[:0x14] + b"\0\0\0\0" + hdr[0x18:]
-        s.result("ubf header crc32", crc == zlib.crc32(zeroed) & 0xFFFFFFFF, "%08x vs %08x" % (crc, zlib.crc32(zeroed)))
+        s.result("ubi header crc32", crc == zlib.crc32(zeroed) & 0xFFFFFFFF, "%08x vs %08x" % (crc, zlib.crc32(zeroed)))
         want = [(1, kern, 0x100000, 2), (4, cfg, 0x200000, 0), (2, rd, 0x300000, 0)]
         next_sector = 2
         for i, (typ, body, load, entry) in enumerate(want):
             t, start, size, ld, ent, fl = struct.unpack_from("<IIIIII", hdr, 0x20 + 64 * i)
             digest = hdr[0x20 + 64 * i + 0x18:0x20 + 64 * i + 0x38]
-            name = "ubf component %d" % i
+            name = "ubi component %d" % i
             s.result(name + " fields", (t, start, size, ld, ent) == (typ, next_sector, len(body), load, entry),
                      "type %d start %d size %d load %x entry %d" % (t, start, size, ld, ent))
             s.result(name + " bytes", data[start * 512:start * 512 + size] == body, "content differs")
             s.result(name + " sha256", digest == hashlib.sha256(body).digest(), digest.hex())
             next_sector += (len(body) + 511) // 512
-        s.result("ubf end", total == next_sector, "%d vs %d" % (total, next_sector))
-        bad = run([utasm, "-f", "ubf", k, "--ubf-add", "nosuch=cfg.txt", "-o", img], cwd=d)
-        s.result("ubf bad --ubf-add", bad.returncode != 0, "accepted an unknown component type")
+        s.result("ubi end", total == next_sector, "%d vs %d" % (total, next_sector))
+        bad = run([utasm, "-f", "ubi", k, "--ubi-add", "nosuch=cfg.txt", "-o", img], cwd=d)
+        s.result("ubi bad --ubi-add", bad.returncode != 0, "accepted an unknown component type")
     return s
 
 
