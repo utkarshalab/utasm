@@ -4,7 +4,7 @@
 Assembles the same sources with NASM and utasm and compares the results:
 feature probes (flat binaries), ELF objects (sections, relocations,
 symbols), data directives and floats, section layouts and linked programs,
-labels as instruction operands, UBF boot images, error messages (the file
+labels as instruction operands, UBI boot images, error messages (the file
 and line of the first error), NASM's command-line options, listings (-l),
 DWARF line tables (-g), i386 objects (-f elf32), COFF objects (-f win64),
 labels in expressions
@@ -45,7 +45,7 @@ def main(argv):
         print("  no utasm binary at %s" % utasm)
         return 1
     runs = [suites.bin_probes, suites.elf_probes, suites.data_forms,
-            suites.sections, suites.symbol_imm, suites.ubf, suites.diagnostics,
+            suites.sections, suites.symbol_imm, suites.ubi, suites.diagnostics,
             suites.command_line, suites.listing, suites.dwarf, suites.elf32, suites.coff, suites.cfi,
             suites.expressions, suites.limits, suites.robustness, suites.warnings, suites.rejections,
             suites.explanations, suites.lints, suites.procedures, suites.typed_strucs, suites.namespaces, suites.isa, suites.recovery, suites.tls, suites.readback, suites.gas, suites.att,
