@@ -14,4 +14,4 @@ Makefile text eol=lf
 # built or binary inputs
 *.o     binary
 *.bin   binary
-*.ubf   binary
+*.ubi   binary
