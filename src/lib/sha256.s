@@ -8,7 +8,7 @@
 ;
 ; SHA-256 (FIPS 180-4), from Utkarsha OS crypto/uhash/sha256: the scalar
 ; implementation verified there against the FIPS vectors. utasm uses it for
-; the component digests of UBF boot images (src/object/ubf).
+; the component digests of UBI boot images (src/object/ubi).
 ;
 ;   sha256_init / sha256_update / sha256_final  streaming
 ;   sha256_hash                                 one shot
