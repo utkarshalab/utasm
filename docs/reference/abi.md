@@ -1624,8 +1624,8 @@ Any module may read another's state directly (RIP-relative), through the
 `extern` the owner exports:
 
 ```asm
-extern  ubf_enabled
-cmp     byte [rel ubf_enabled], 0
+extern  ubi_enabled
+cmp     byte [rel ubi_enabled], 0
 ```
 
 ### Writing Global State
