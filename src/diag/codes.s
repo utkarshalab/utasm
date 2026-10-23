@@ -849,8 +849,8 @@ code_table:
     code_msg EXIT_ASSERT,            m_assert
     code_msg EXIT_UNREACHABLE,       m_unreachable
     code_msg EXIT_NOT_IMPLEMENTED,   m_not_impl
-    code_msg EXIT_UBF_EMPTY,         m_ubf_empty
-    code_msg EXIT_UBF_TOO_BIG,       m_ubf_big
+    code_msg EXIT_UBI_EMPTY,         m_ubi_empty
+    code_msg EXIT_UBI_TOO_BIG,       m_ubi_big
     code_msg EXIT_LEX_OPEN_STRING,   m_open_string, t_open_string
     code_msg EXIT_LEX_OPEN_BRACE,    m_open_brace
     code_msg EXIT_LEX_OPEN_COMMENT,  m_open_comment
@@ -966,8 +966,8 @@ m_elf_write:    db "error writing the ELF output", 0
 m_bin_write:    db "error writing the binary output", 0
 m_unreachable:  db "internal error: unreachable code reached", 0
 m_not_impl:     db "not implemented yet", 0
-m_ubf_empty:    db "-f ubf: the program has no bytes to boot", 0
-m_ubf_big:      db "-f ubf: a component is larger than 4 GiB", 0
+m_ubi_empty:    db "-f ubi: the program has no bytes to boot", 0
+m_ubi_big:      db "-f ubi: a component is larger than 4 GiB", 0
 
 t_no_file:      db "unable to open `^': no such file", 0
 t_read:         db "error reading `^'", 0
