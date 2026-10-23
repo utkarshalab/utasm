@@ -1,21 +1,21 @@
-## UBF boot images (`-f ubf`)
+## UBI boot images (`-f ubi`)
 
-UBF — the Utkarsha Boot Format — is the image the Utkarsha OS stage-2 boot
-loader reads (`tattvaos boot/stage2/fs/ubf.asm`): one container holding the
+UBI — the Utkarsha Boot Image — is the image the Utkarsha OS stage-2 boot
+loader reads (`tattvaos boot/stage2/fs/ubi.asm`): one container holding the
 kernel and whatever the boot needs next to it — an initial ramdisk, a device
 tree, a configuration, modules, firmware.
 
 ```sh
-utasm -f ubf kernel.s -o utkarsha.ubf
-utasm -f ubf kernel.s -o utkarsha.ubf \
-      --ubf-add config=boot.cfg@0x200000 \
-      --ubf-add initrd=initrd.img@0x300000
+utasm -f ubi kernel.s -o utkarsha.ubi
+utasm -f ubi kernel.s -o utkarsha.ubi \
+      --ubi-add config=boot.cfg@0x200000 \
+      --ubi-add initrd=initrd.img@0x300000
 ```
 
 The assembled program is the **kernel component**. It is laid out exactly as
 `-f bin` lays it out (`org`, sections, relocations — the bytes are identical),
 loaded at its `org`, and entered at `_start` (offset 0 when there is none).
-Each `--ubf-add TYPE=FILE[@ADDR]` adds one more component from a file:
+Each `--ubi-add TYPE=FILE[@ADDR]` adds one more component from a file:
 
 | TYPE | Component |
 | --- | --- |
@@ -39,7 +39,7 @@ Header (1024 bytes):
 
 | Offset | Size | Field |
 | --- | --- | --- |
-| 0x000 | 8 | magic `"UBFORMAT"` (0x54414D524F465255) |
+| 0x000 | 8 | magic `"UBIMAGE\0"` (0x004547414D494255) |
 | 0x008 | 4 | version: 1 |
 | 0x00C | 4 | image size in sectors |
 | 0x010 | 4 | component count (1–8) |
@@ -67,7 +67,7 @@ and the digests are there for it (or a verifier) to check the image.
 
 ### Checks
 
-`tests/compat/run_all.py` (the *ubf images* suite) builds an image with a
+`tests/compat/run_all.py` (the *ubi images* suite) builds an image with a
 kernel and two added components and checks every field: the CRC against
 zlib's, each digest against Python's hashlib, the sector layout, the load
 addresses, the entry offset, and that the kernel's bytes are the `-f bin`
