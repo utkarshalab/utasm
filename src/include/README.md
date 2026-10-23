@@ -26,8 +26,8 @@ Every number utasm's modules agree on, in labelled sections:
   flags, symbol bindings and types, special section indices; AArch64 and
   RISC-V relocation types;
 - **register identifiers**, lexer character properties, arena, error
-  system, hash table and macro engine constants, DWARF 5 constants, the UBF
-  boot format (see `docs/user/ubf.md`), UPK (planned), poison values, the
+  system, hash table and macro engine constants, DWARF 5 constants, the UBI
+  boot format (see `docs/user/ubi.md`), UPK (planned), poison values, the
   profiler's.
 
 ### `type.inc` (592 lines)
