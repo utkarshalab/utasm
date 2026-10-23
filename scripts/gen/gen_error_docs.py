@@ -62,7 +62,7 @@ GROUPS = [
         "EXIT_SECTION_SIZE", "EXIT_ORG_BACKWARDS", "EXIT_MERGE_ENTSIZE", "EXIT_POPSECTION",
         "EXIT_NOT_STRUC", "EXIT_FIELD_SIZE", "EXIT_INVALID_SECTION", "EXIT_SECTION_OVERLAP")),
     ("Relocations, linking and output formats", lambda n: n.startswith((
-        "EXIT_COFF_", "EXIT_BIN_", "EXIT_SEG_", "EXIT_GOTOFF_", "EXIT_UBF_", "EXIT_LD_SCRIPT_")) or n in (
+        "EXIT_COFF_", "EXIT_BIN_", "EXIT_SEG_", "EXIT_GOTOFF_", "EXIT_UBI_", "EXIT_LD_SCRIPT_")) or n in (
         "EXIT_LINKER_ERROR", "EXIT_OFFSET_RANGE", "EXIT_RELOC_ERROR", "EXIT_UNDEF_REF",
         "EXIT_MULTI_DEF", "EXIT_WRT_UNSUPPORTED", "EXIT_FAR_NOT_RELOC")),
     ("Debug information (.cfi_*, .file / .loc)", lambda n: n.startswith(("EXIT_CFI_", "EXIT_LINE_"))),
