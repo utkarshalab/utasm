@@ -15,8 +15,8 @@ NASM does not read; messages name it `-`, and with no `-o` the output is
 
 | Option | Meaning |
 | --- | --- |
-| `-f`, `--format <format>` | Output format: `elf64` (default), `elf32` (or `elf`: an i386 object, `bits 32` by default), `win64` (a COFF object for Windows, see [COFF objects](#coff-objects--f-win64)), `bin`, or `ubi` (a UBI boot image, see [ubi.md](ubi.md)). Non-standalone ELF output is a relocatable object. |
-| `-o <file>` | Output path; defaults to a source-derived `.o`, `.obj` (`-f win64`), `.bin` or `.ubi` filename. |
+| `-f`, `--format <format>` | Output format: `elf64` (default), `elf32` (or `elf`: an i386 object, `bits 32` by default), `win64` (a COFF object for Windows, see [COFF objects](#coff-objects--f-win64)), `bin`, `ubi` (a UBI boot image, see [ubi.md](ubi.md)), or `ubf` (a UBF program image for Utkarsha OS, see [ubf.md](ubf.md)). Non-standalone ELF output is a relocatable object. |
+| `-o <file>` | Output path; defaults to a source-derived `.o`, `.obj` (`-f win64`), `.bin`, `.ubi` or `.ubf` filename. |
 | `--ubi-add TYPE=FILE[@ADDR]` | With `-f ubi`: add a component (`initrd`, `dtb`, `config`, `module`, `firmware`) read from FILE, loaded at ADDR. Repeatable, up to 7. |
 | `-a`, `-arch`, `--arch <arch>` | Target architecture: `amd64` (default), `aarch64`, or `riscv64`. |
 | `--standalone` | Produce a standalone executable and require `_start`. Its stack is not executable (`PT_GNU_STACK` read/write; `--execstack` makes it executable). |
