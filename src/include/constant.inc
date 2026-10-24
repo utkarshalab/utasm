@@ -212,6 +212,11 @@
 %define EXIT_UBF_IMPORT_DATA   195 ; -f ubf: an import used other than by call / jmp / ..gotpcrel
 %define EXIT_UBF_RELOC         196 ; -f ubf: a relocation with no UBF form
 %define EXIT_UBF_TOO_BIG       197 ; -f ubf: the image is larger than 1 GiB
+%define EXIT_UPK_MANIFEST      198 ; -f upk: a manifest key missing, malformed, unknown or repeated
+%define EXIT_UPK_PATH          199 ; -f upk: a --upk-add PATH that is not a package path, or repeated
+%define EXIT_UPK_ENTRY         200 ; -f upk: the entry is not an added file, or not a UBF image
+%define EXIT_UPK_KEY           201 ; -f upk / --upk-keygen: the key cannot be read, made or used
+%define EXIT_UPK_EMPTY         202 ; -f upk: no --upk-add
 
 ; src/debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
