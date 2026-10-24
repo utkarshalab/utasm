@@ -68,6 +68,16 @@ FIPS 180-4, the scalar implementation verified in Utkarsha OS's
 `_update` / `_final`, one-shot `sha256_hash`. For the UBI components'
 digests (object/ubi).
 
+## Ed25519 and SHA-512 (`ed25519.s`)
+
+RFC 8032 Ed25519 and FIPS 180-4 SHA-512, for signing UPK packages
+(object/upk). The arithmetic is Utkarsha OS's own, copied into
+`ed25519/*.inc` from its `lib/crypto` (each file says from where and at
+which commit), so a package utasm signs is checked by the same code the OS
+verifies it with; it is tested against RFC 8032's vectors there.
+`urand_get_bytes`, which key generation needs, is the `getrandom` system
+call here.
+
 ## Files
 
 | File | Lines | What is in it |
@@ -80,6 +90,14 @@ digests (object/ubi).
 | `float.s` | 1,108 | float constants to IEEE 754 / x87 bits |
 | `time.s` | 462 | the time of assembly, time zones |
 | `sha256.s` | 513 | SHA-256 |
+| `ed25519.s` | 2833 | Ed25519 and SHA-512 (`ed25519/*.inc`, from Utkarsha OS), `urand_get_bytes` |
+| `ed25519/sha512.inc` | 28 | SHA-512 context layout (from Utkarsha OS) |
+| `ed25519/sha512_impl.inc` | 510 | SHA-512 (from Utkarsha OS) |
+| `ed25519/ed25519_defs.inc` | 62 | Ed25519 constants and layouts (from Utkarsha OS) |
+| `ed25519/fe25519.inc` | 609 | field arithmetic mod 2^255 - 19 (from Utkarsha OS) |
+| `ed25519/sc25519.inc` | 326 | scalar arithmetic mod the group order (from Utkarsha OS) |
+| `ed25519/ge25519.inc` | 686 | curve point arithmetic (from Utkarsha OS) |
+| `ed25519/ed25519_impl.inc` | 548 | keys, signing, verification (from Utkarsha OS) |
 
 ## Entry points
 
@@ -93,7 +111,8 @@ digests (object/ubi).
 | `vec_init`, `vec_push`, `mem_reserve` | optimize/jump.s; `mem_reserve` also the symbol table, the preprocessor, the parsers, relocations, the ELF writer, map files, the LSP server |
 | `float_encode`, `float_overflow`, `float_special` | frontend/syntax |
 | `time_*` | frontend/preproc |
-| `sha256_*` | object/ubi |
+| `sha256_*` | object/ubi, object/ubf, object/upk |
+| `ed25519_*`, `sha512_*` | object/upk |
 
 ## Depends on
 
