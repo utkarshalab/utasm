@@ -15,6 +15,7 @@ writer once the sections are final and the relocations resolved.
 | `bin` | `flat/flat.s` | a flat binary: raw bytes, `org` and NASM's section placement |
 | `ubi` | `ubi/ubi.s` | a UBI boot image for Utkarsha OS: the flat binary as the kernel component, plus `--ubi-add` components |
 | `ubf` | `ubf/ubf.s` | a UBF program image for Utkarsha OS — written as ELF64 first, then rewritten |
+| `upk` | `upk/upk.s` | a signed UPK package for Utkarsha OS — from a manifest and files, nothing assembled |
 
 **One writer, four object formats.** ELF64 is the real writer;
 `elf32_convert` and `coff_convert` rewrite its output in memory (headers
@@ -68,6 +69,16 @@ against that layout, `R_X86_64_64` to a label also listed as an `ABS64`
 entry; defined globals become exports, and `_start` (else `main`) the entry
 point. The header's SHA-256 covers the whole file.
 
+### UPK packages (`upk/upk.s`)
+
+The packages Utkarsha OS installs (`docs/user/upk.md`). `upk_build` reads
+the manifest (one `key = value` per line; known keys only, each once) and
+checks it, checks each `--upk-add` path, reads each file and takes its
+SHA-256, decides its kind (the entry, a library, configuration, model data,
+a resource), and writes the header, entry table, string table, manifest and
+files. `--upk-sign` signs the SHA-256 of everything before the files with
+Ed25519 (lib/ed25519.s); `upk_keygen` makes a key.
+
 ### COFF (`coff/coff.s`)
 
 `-f win64`: the file header (`IMAGE_FILE_MACHINE_AMD64`, the time stamp —
@@ -101,7 +112,7 @@ in NASM's order.
 | `listing/listing.s` | 1,942 | the `-l` listing |
 | `map.s` | 752 | map files |
 | `pe/out.s`, `pe/header.s`, `pe/dos.s`, `pe/optional.s`, `pe/section.s`, `pe/import.s`, `pe/export.s`, `pe/reloc.s`, `pe/cert.s` | 4-7 each | placeholders: PE32+ output (UEFI images) |
-| `upk/out.s`, `upk/header.s`, `upk/meta.s`, `upk/deps.s`, `upk/compress.s`, `upk/sign.s` | 4-7 each | placeholders: `.upk` packages |
+| `upk/upk.s` | 1211 | `upk_build` (`-f upk`): the manifest and paths checked, the files hashed, the package laid out and signed; `upk_add`, `upk_keygen` |
 
 ## Entry points
 
@@ -122,7 +133,7 @@ frontend/syntax (section attributes), optimize/ (moved code).
 
 ## What is left
 
-PE32+ output for UEFI (`pe/`), `.upk` packages (`upk/`). For Utkarsha OS
+PE32+ output for UEFI (`pe/`); compressed `.upk` payloads. For Utkarsha OS
 specifically: UBI modules that are relocatable and signed (the header has
 a "signed" flag that is never set yet) — with multi-object linking, the
 next phase (see link/README.md).
