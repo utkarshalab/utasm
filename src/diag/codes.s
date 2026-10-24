@@ -851,6 +851,10 @@ code_table:
     code_msg EXIT_NOT_IMPLEMENTED,   m_not_impl
     code_msg EXIT_UBI_EMPTY,         m_ubi_empty
     code_msg EXIT_UBI_TOO_BIG,       m_ubi_big
+    code_msg EXIT_UBF_ABS32,         m_ubf_abs32, t_ubf_abs32
+    code_msg EXIT_UBF_IMPORT_DATA,   m_ubf_import, t_ubf_import
+    code_msg EXIT_UBF_RELOC,         m_ubf_reloc, t_ubf_reloc
+    code_msg EXIT_UBF_TOO_BIG,       m_ubf_big
     code_msg EXIT_LEX_OPEN_STRING,   m_open_string, t_open_string
     code_msg EXIT_LEX_OPEN_BRACE,    m_open_brace
     code_msg EXIT_LEX_OPEN_COMMENT,  m_open_comment
@@ -968,6 +972,13 @@ m_unreachable:  db "internal error: unreachable code reached", 0
 m_not_impl:     db "not implemented yet", 0
 m_ubi_empty:    db "-f ubi: the program has no bytes to boot", 0
 m_ubi_big:      db "-f ubi: a component is larger than 4 GiB", 0
+m_ubf_abs32:    db "-f ubf: a label is used as a 32-bit absolute address; a UBF image moves at load time, so address it RIP-relative", 0
+t_ubf_abs32:    db "-f ubf: `^' is used as a 32-bit absolute address; a UBF image moves at load time, so address it RIP-relative", 0
+m_ubf_import:   db "-f ubf: an import can only be called, jumped to or read through ..gotpcrel", 0
+t_ubf_import:   db "-f ubf: `^' is imported, so it can only be called, jumped to or read through ..gotpcrel", 0
+m_ubf_reloc:    db "-f ubf: a reference that a UBF image cannot express", 0
+t_ubf_reloc:    db "-f ubf: the reference to `^' cannot be expressed in a UBF image", 0
+m_ubf_big:      db "-f ubf: the image is larger than 1 GiB", 0
 
 t_no_file:      db "unable to open `^': no such file", 0
 t_read:         db "error reading `^'", 0
