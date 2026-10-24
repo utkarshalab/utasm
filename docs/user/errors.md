@@ -262,6 +262,11 @@ the first failure: see *Exit status* at the end.
 | 195 | `-f ubf: an import can only be called, jumped to or read through ..gotpcrel` | `` -f ubf: `NAME' is imported, so it can only be called, jumped to or read through ..gotpcrel `` | -f ubf: an import used other than by call / jmp / ..gotpcrel (`EXIT_UBF_IMPORT_DATA`) |
 | 196 | `-f ubf: a reference that a UBF image cannot express` | `` -f ubf: the reference to `NAME' cannot be expressed in a UBF image `` | -f ubf: a relocation with no UBF form (`EXIT_UBF_RELOC`) |
 | 197 | `-f ubf: the image is larger than 1 GiB` |  | -f ubf: the image is larger than 1 GiB (`EXIT_UBF_TOO_BIG`) |
+| 198 | `-f upk: the manifest is malformed` | `` -f upk: in the manifest, `NAME' is missing, malformed, unknown or given twice `` | -f upk: a manifest key missing, malformed, unknown or repeated (`EXIT_UPK_MANIFEST`) |
+| 199 | `-f upk: a --upk-add path is not a package path` | `` -f upk: `NAME' is not a package path (parts of a-z 0-9 . _ - joined by /, no . or .., each path once) `` | -f upk: a --upk-add PATH that is not a package path, or repeated (`EXIT_UPK_PATH`) |
+| 200 | `-f upk: the entry is not one of the added files, or not a UBF image` | `` -f upk: the entry `NAME' is not one of the added files, or not a UBF image `` | -f upk: the entry is not an added file, or not a UBF image (`EXIT_UPK_ENTRY`) |
+| 201 | `-f upk: the key cannot be read, made or used` | `` -f upk: `NAME' is not a usable Ed25519 key (a 32-byte seed, or seed and public key) `` | -f upk / --upk-keygen: the key cannot be read, made or used (`EXIT_UPK_KEY`) |
+| 202 | `-f upk: a package needs at least one --upk-add PATH=FILE` |  | -f upk: no --upk-add (`EXIT_UPK_EMPTY`) |
 
 ### Debug information (.cfi_*, .file / .loc)
 
