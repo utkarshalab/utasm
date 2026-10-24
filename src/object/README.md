@@ -14,8 +14,9 @@ writer once the sections are final and the relocations resolved.
 | `win64` | `coff/coff.s` | an x86-64 COFF object, laid out as NASM's win64 output — written as ELF64 first, then rewritten |
 | `bin` | `flat/flat.s` | a flat binary: raw bytes, `org` and NASM's section placement |
 | `ubi` | `ubi/ubi.s` | a UBI boot image for Utkarsha OS: the flat binary as the kernel component, plus `--ubi-add` components |
+| `ubf` | `ubf/ubf.s` | a UBF program image for Utkarsha OS — written as ELF64 first, then rewritten |
 
-**One writer, three object formats.** ELF64 is the real writer;
+**One writer, four object formats.** ELF64 is the real writer;
 `elf32_convert` and `coff_convert` rewrite its output in memory (headers
 and symbols to their layouts, `.rela` to `.rel` with in-place addends, or
 COFF's relocations and symbol table). So sections, symbols, groups and
@@ -56,6 +57,17 @@ CRC-32, flags), then up to 8 components on 512-byte sector boundaries
 address, entry offset and SHA-256 (lib/sha256.s). The kernel is
 byte-identical to the `-f bin` output of the same source.
 
+### UBF program images (`ubf/ubf.s`)
+
+The format of Utkarsha OS programs (`docs/user/ubf.md`). `ubf_convert`
+reads the ELF64 object back: its allocated sections become four
+page-aligned segments (text, rodata, data, bss); every extern a relocation
+names becomes an import, with an 8-byte slot at the end of rodata and a
+`jmp [rel slot]` stub at the end of text; the relocations are resolved
+against that layout, `R_X86_64_64` to a label also listed as an `ABS64`
+entry; defined globals become exports, and `_start` (else `main`) the entry
+point. The header's SHA-256 covers the whole file.
+
 ### COFF (`coff/coff.s`)
 
 `-f win64`: the file header (`IMAGE_FILE_MACHINE_AMD64`, the time stamp —
@@ -85,6 +97,7 @@ in NASM's order.
 | `coff/coff.s` | 1,020 | `coff_convert`: the ELF64 object rewritten as an x86-64 COFF one |
 | `flat/flat.s` | 249 | `binary_layout`, `binary_emit`, `bin_origin` |
 | `ubi/ubi.s` | 489 | `ubi_emit`, `ubi_add_component` (`--ubi-add`) |
+| `ubf/ubf.s` | 1157 | `ubf_convert` (`-f ubf`): segments, imports and their stubs, relocations, exports, the header |
 | `listing/listing.s` | 1,942 | the `-l` listing |
 | `map.s` | 752 | map files |
 | `pe/out.s`, `pe/header.s`, `pe/dos.s`, `pe/optional.s`, `pe/section.s`, `pe/import.s`, `pe/export.s`, `pe/reloc.s`, `pe/cert.s` | 4-7 each | placeholders: PE32+ output (UEFI images) |
