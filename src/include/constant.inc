@@ -208,6 +208,10 @@
 %define EXIT_EA_SELF_REL       191 ; a self-relative value ("x - $", x elsewhere) as a RIP-relative address
 %define EXIT_OSZ32_64          192 ; push / pop of a dword in 64-bit code (they are 64 or 16 bits there)
 %define EXIT_LINE_START        193 ; a line starts with no label, instruction or prefix ("5", ",")
+%define EXIT_UBF_ABS32         194 ; -f ubf: a label used as a 32-, 16- or 8-bit absolute address
+%define EXIT_UBF_IMPORT_DATA   195 ; -f ubf: an import used other than by call / jmp / ..gotpcrel
+%define EXIT_UBF_RELOC         196 ; -f ubf: a relocation with no UBF form
+%define EXIT_UBF_TOO_BIG       197 ; -f ubf: the image is larger than 1 GiB
 
 ; src/debug/cfi.s: the records the .cfi_ directives make
 %define CFI_START              1
