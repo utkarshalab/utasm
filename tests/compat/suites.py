@@ -652,6 +652,100 @@ def ubf(utasm, verbose=False):
 
 
 # ---------------------------------------------------------------------------
+# UPK packages (-f upk, --upk-keygen): docs/user/upk.md
+# ---------------------------------------------------------------------------
+UPK_MANIFEST = """# a test package
+name = hello
+version = 1.2.3
+kind = app
+title = Hello
+entry = main
+"""
+
+UPK_REJECTS = [
+    ("upk rejects an unknown key", UPK_MANIFEST + "colour = red\n", ["main=app.ubf"], "colour"),
+    ("upk rejects a repeated key", UPK_MANIFEST + "name = again\n", ["main=app.ubf"], "name"),
+    ("upk rejects a bad version", UPK_MANIFEST.replace("1.2.3", "1.2"), ["main=app.ubf"], "version"),
+    ("upk rejects a reserved name", UPK_MANIFEST.replace("hello", "lib"), ["main=app.ubf"], "name"),
+    ("upk rejects a path with ..", UPK_MANIFEST, ["main=app.ubf", "../x=icon"], "../x"),
+    ("upk rejects a repeated path", UPK_MANIFEST, ["main=app.ubf", "main=icon"], "main"),
+    ("upk rejects an entry that is no file", UPK_MANIFEST, ["other=app.ubf"], "main"),
+    ("upk rejects an entry that is not UBF", UPK_MANIFEST, ["main=icon"], "main"),
+    ("upk rejects a package with no files", UPK_MANIFEST, [], "--upk-add"),
+]
+
+
+def upk(utasm, verbose=False):
+    import upk_check
+    s = Suite("upk packages", verbose)
+    with tempdir() as d:
+        src = os.path.join(d, "app.s")
+        open(src, "w").write(UBF_PROGRAM)
+        r = run([utasm, "-f", "ubf", src, "-o", os.path.join(d, "app.ubf")], cwd=d)
+        if r.returncode != 0:
+            s.result("upk build the program", False, first_line(r))
+            return s
+        open(os.path.join(d, "icon"), "wb").write(b"\x89PNG not really")
+        open(os.path.join(d, "conf.txt"), "w").write("greeting = hi\n")
+        open(os.path.join(d, "manifest"), "w").write(UPK_MANIFEST)
+
+        r = run([utasm, "--upk-keygen", "k.key"], cwd=d)
+        key = os.path.join(d, "k.key")
+        ok = r.returncode == 0 and os.path.getsize(key) == 64 and \
+            os.path.getsize(key + ".pub") == 32 and (os.stat(key).st_mode & 0o777) == 0o600
+        s.result("upk keygen", ok, first_line(r))
+        if not ok:
+            return s
+        pub = open(key + ".pub", "rb").read()
+        s.result("upk keygen public key", open(key, "rb").read()[32:] == pub and
+                 pub.hex() in r.stdout, "the key pair or the printed key differs")
+
+        adds = ["--upk-add", "main=app.ubf", "--upk-add", "res/icon.png=icon",
+                "--upk-add", "conf/hello=conf.txt"]
+        r = run([utasm, "-f", "upk", "manifest", *adds, "--upk-sign", "k.key"], cwd=d)
+        pkg = os.path.join(d, "manifest.upk")
+        if r.returncode != 0 or not os.path.exists(pkg):
+            s.result("upk build", False, first_line(r))
+            return s
+        s.result("upk default suffix", True, "")
+        data = open(pkg, "rb").read()
+        failures, entries = upk_check.check(data, pub)
+        s.result("upk layout, digests and signature", not failures, "; ".join(failures))
+        s.result("upk entries", [(p, k) for p, k, _ in entries] ==
+                 [("main", 1), ("res/icon.png", 4), ("conf/hello", 5)],
+                 str([(p, k) for p, k, _ in entries]))
+        s.result("upk carries the files", entries and entries[0][2] ==
+                 open(os.path.join(d, "app.ubf"), "rb").read(), "main differs from app.ubf")
+        moff, msize = struct.unpack_from("<II", data, 0x1C)
+        s.result("upk manifest", data[moff:moff + msize].decode() == UPK_MANIFEST, "manifest differs")
+        tampered = bytearray(data)
+        tampered[entries and struct.unpack_from("<Q", data, 144 + 8)[0]] ^= 1
+        tf, _ = upk_check.check(bytes(tampered), pub)
+        s.result("upk tampering is detected", bool(tf), "a changed byte went unnoticed")
+        other = bytearray(data)
+        other[moff] ^= 1                          # the manifest is signed too
+        of, _ = upk_check.check(bytes(other), pub)
+        s.result("upk signature covers the manifest", any("signature" in f for f in of), str(of))
+
+        r = run([utasm, "-f", "upk", "manifest", "--upk-add", "main=app.ubf", "-o", "u.upk"], cwd=d)
+        uf, _ = upk_check.check(open(os.path.join(d, "u.upk"), "rb").read()) if r.returncode == 0 else (["build"], [])
+        s.result("upk unsigned", r.returncode == 0 and not uf and
+                 open(os.path.join(d, "u.upk"), "rb").read()[8] & 1 == 0, first_line(r))
+
+        for name, manifest, files, want in UPK_REJECTS:
+            open(os.path.join(d, "m"), "w").write(manifest)
+            args = []
+            for f in files:
+                args += ["--upk-add", f]
+            r = run([utasm, "-f", "upk", "m", *args, "-o", "bad.upk"], cwd=d)
+            s.result(name, r.returncode != 0 and want in (r.stdout + r.stderr), first_line(r))
+        r = run([utasm, "-f", "upk", "manifest", "--upk-add", "main=app.ubf",
+                 "--upk-sign", "icon", "-o", "bad.upk"], cwd=d)
+        s.result("upk rejects a bad key", r.returncode != 0 and "Ed25519" in r.stderr, first_line(r))
+    return s
+
+
+# ---------------------------------------------------------------------------
 # operand shapes: valid and invalid operand pairings, NASM's verdict
 # ---------------------------------------------------------------------------
 def operand_shapes(utasm, verbose=False):
