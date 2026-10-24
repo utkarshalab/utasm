@@ -190,6 +190,21 @@ linker_run:
     mov     rax, r13
     check_err
 
+    ; -f ubf: the ELF64 object just written, rewritten as a UBF image
+    extern  ubf_enabled
+    cmp     byte [rel ubf_enabled], 0
+    je      .not_ubf
+    lea     rbx, [rel global_ctx]          ; (elf64_emit does not keep rbx)
+    cmp     byte [rbx + ASMCTX_fmt], FMT_ELF64
+    jne     .done
+    cmp     byte [rbx + ASMCTX_standalone], 0
+    jne     .done
+    mov     rdi, [rbx + ASMCTX_output]
+    extern  ubf_convert
+    call    ubf_convert
+    jmp     .done
+.not_ubf:
+
     ; -f win64: the ELF64 object just written, rewritten as COFF
     extern  coff_enabled, global_ctx
     cmp     byte [rel coff_enabled], 0
