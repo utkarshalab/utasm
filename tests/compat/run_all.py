@@ -45,7 +45,7 @@ def main(argv):
         print("  no utasm binary at %s" % utasm)
         return 1
     runs = [suites.bin_probes, suites.elf_probes, suites.data_forms,
-            suites.sections, suites.symbol_imm, suites.ubi, suites.diagnostics,
+            suites.sections, suites.symbol_imm, suites.ubi, suites.ubf, suites.diagnostics,
             suites.command_line, suites.listing, suites.dwarf, suites.elf32, suites.coff, suites.cfi,
             suites.expressions, suites.limits, suites.robustness, suites.warnings, suites.rejections,
             suites.explanations, suites.lints, suites.procedures, suites.typed_strucs, suites.namespaces, suites.isa, suites.recovery, suites.tls, suites.readback, suites.gas, suites.att,
