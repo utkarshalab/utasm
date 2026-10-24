@@ -210,8 +210,27 @@ _start:
     test    dword [rbx + ASMCTX_flags], CTX_FLAG_SHOW_VERSION
     jnz     .show_version
 
+    ; --upk-keygen FILE: a new package-signing key (src/object/upk/upk.s)
+    extern  upk_keygen_path, upk_keygen
+    mov     rdi, [rel upk_keygen_path]
+    test    rdi, rdi
+    jz      .no_keygen
+    call    upk_keygen
+    jmp     .exit
+.no_keygen:
+
     cmp     qword [rbx + ASMCTX_input], 0
     je      .show_usage
+
+    ; -f upk: the input is a package manifest, packed instead of assembled
+    extern  upk_enabled, upk_build
+    cmp     byte [rel upk_enabled], 0
+    je      .not_upk
+    mov     rdi, [rbx + ASMCTX_input]
+    mov     rsi, [rbx + ASMCTX_output]
+    call    upk_build
+    jmp     .exit
+.not_upk:
 
     ; 4.1 --inspect: print an existing ELF file instead of assembling
     cmp     byte [rbx + ASMCTX_inspect], 0
@@ -858,12 +877,18 @@ print_num:
                    db "Usage: utasm [options] <source.s>", 10
                    db "       utasm --inspect [--inspect-only <parts>] <file>", 10, 10
                    db "Options:", 10
-                   db "  -f, --format <format>     elf64 (default), elf32, bin, ubi (a UBI boot image)", 10
-                   db "  -o <file>                 output path (default: source.o / .bin / .ubi)", 10
+                   db "  -f, --format <format>     elf64 (default), elf32, bin, ubi (a UBI boot image),", 10
+                   db "                            ubf (a UBF program), upk (a UPK package: the input", 10
+                   db "                            is its manifest)", 10
+                   db "  -o <file>                 output path (default: source.o / .bin / .ubi / .ubf /", 10
+                   db "                            .upk)", 10
                    db "  --bits 16|32|64           the mode the source starts in (-f bin: 64;", 10
                    db "                            NASM starts a flat binary in 16)", 10
                    db "  --ubi-add TYPE=FILE[@ADDR]  -f ubi: add a component (initrd, dtb,", 10
                    db "                            config, module, firmware) loaded at ADDR", 10
+                   db "  --upk-add PATH=FILE       -f upk: add FILE to the package as PATH", 10
+                   db "  --upk-sign KEY            -f upk: sign it with the Ed25519 key in KEY", 10
+                   db "  --upk-keygen FILE         make a signing key: FILE and FILE.pub", 10
                    db "  -a, -arch, --arch <arch>  amd64 (default), aarch64, riscv64", 10
                    db "  --standalone              produce a standalone executable", 10
                    db "  --profile, -P             print internal compiler profile", 10
