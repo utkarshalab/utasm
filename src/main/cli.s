@@ -467,6 +467,12 @@ cli_parse:
     jz      .set_ubi
 
     mov     rdi, r14
+    lea     rsi, [rel .val_ubf]
+    call    str_cmp
+    test    rax, rax
+    jz      .set_ubf
+
+    mov     rdi, r14
     lea     rsi, [rel .val_elf32]
     call    str_cmp
     test    rax, rax
@@ -485,24 +491,37 @@ cli_parse:
 
     jmp     .unknown_val
 
+.set_ubf:
+    ; a UBF program image for Utkarsha OS (src/object/ubf/ubf.s rewrites
+    ; the ELF64 object), in bits 64
+    extern  elf32_enabled, asm_bits, coff_enabled, ubf_enabled
+    mov     byte [rel elf32_enabled], 0
+    mov     byte [rel coff_enabled], 0
+    mov     byte [rel ubf_enabled], 1
+    mov     byte [rel asm_bits], 64
+    jmp     .set_elf
+
 .set_win64:
     ; a COFF object for Windows (src/object/coff/coff.s rewrites the
     ; ELF64 object), in bits 64
-    extern  elf32_enabled, asm_bits, coff_enabled
+    extern  elf32_enabled, asm_bits, coff_enabled, ubf_enabled
     mov     byte [rel elf32_enabled], 0
+    mov     byte [rel ubf_enabled], 0
     mov     byte [rel coff_enabled], 1
     mov     byte [rel asm_bits], 64
     jmp     .set_elf
 
 .set_elf32:
     ; an i386 object (src/object/elf/elf32.s), in bits 32 by default
-    extern  elf32_enabled, asm_bits, coff_enabled
+    extern  elf32_enabled, asm_bits, coff_enabled, ubf_enabled
+    mov     byte [rel ubf_enabled], 0
     mov     byte [rel elf32_enabled], 1
     mov     byte [rel coff_enabled], 0
     mov     byte [rel asm_bits], 32
     jmp     .set_elf
 .set_elf64:
-    extern  elf32_enabled, asm_bits, coff_enabled
+    extern  elf32_enabled, asm_bits, coff_enabled, ubf_enabled
+    mov     byte [rel ubf_enabled], 0
     mov     byte [rel elf32_enabled], 0
     mov     byte [rel coff_enabled], 0
     mov     byte [rel asm_bits], 64
@@ -799,6 +818,13 @@ cli_derive_output:
 .elf_suffix:
     lea     r15, [rel cli_parse.suffix_obj]
     mov     esi, 3                  ; ".o" plus NUL
+    extern  ubf_enabled
+    cmp     byte [rel ubf_enabled], 0
+    je      .not_ubf_suffix
+    lea     r15, [rel cli_parse.suffix_ubf]
+    mov     esi, 5                  ; ".ubf" plus NUL
+    jmp     .allocate
+.not_ubf_suffix:
     extern  coff_enabled
     cmp     byte [rel coff_enabled], 0
     je      .allocate
@@ -1481,10 +1507,12 @@ cli_parse.val_elf32:    db "elf32", 0
 cli_parse.val_elf:      db "elf", 0
 cli_parse.val_win64:    db "win64", 0
 cli_parse.val_ubi:      db "ubi", 0
+cli_parse.val_ubf:      db "ubf", 0
 cli_parse.flag_ubi_add: db "--ubi-add", 0
 cli_parse.flag_bits: db "--bits", 0
 cli_parse.flag_org:  db "--org", 0
 cli_parse.suffix_ubi:   db ".ubi", 0
+cli_parse.suffix_ubf:   db ".ubf", 0
 cli_parse.val_amd64:    db "amd64", 0
 cli_parse.val_aarch64:  db "aarch64", 0
 cli_parse.val_riscv64:  db "riscv64", 0
