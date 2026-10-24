@@ -258,6 +258,10 @@ the first failure: see *Exit status* at the end.
 | 115 | `ELF64 requires ..gotoff references to be qword` |  | "mov eax, x wrt ..gotoff" in ELF64 (`EXIT_GOTOFF_QWORD`) |
 | 116 | `ELF64 requires ..gotoff references to be qword absolute` |  | "[x wrt ..gotoff]" in ELF64 (`EXIT_GOTOFF_QWORD_ABS`) |
 | 117 | `ELF format does not support this use of WRT` |  | "mov rax, [x wrt ..tlsie]" (not RIP-relative) in ELF64 (`EXIT_WRT_UNSUPPORTED`) |
+| 194 | ` ` | ` ` | -f ubf: a label used as a 32-, 16- or 8-bit absolute address (`EXIT_UBF_ABS32`) |
+| 195 | `-f ubf: an import can only be called, jumped to or read through ..gotpcrel` | `` -f ubf: `NAME' is imported, so it can only be called, jumped to or read through ..gotpcrel `` | -f ubf: an import used other than by call / jmp / ..gotpcrel (`EXIT_UBF_IMPORT_DATA`) |
+| 196 | `-f ubf: a reference that a UBF image cannot express` | `` -f ubf: the reference to `NAME' cannot be expressed in a UBF image `` | -f ubf: a relocation with no UBF form (`EXIT_UBF_RELOC`) |
+| 197 | `-f ubf: the image is larger than 1 GiB` |  | -f ubf: the image is larger than 1 GiB (`EXIT_UBF_TOO_BIG`) |
 
 ### Debug information (.cfi_*, .file / .loc)
 
