@@ -15,8 +15,11 @@ NASM does not read; messages name it `-`, and with no `-o` the output is
 
 | Option | Meaning |
 | --- | --- |
-| `-f`, `--format <format>` | Output format: `elf64` (default), `elf32` (or `elf`: an i386 object, `bits 32` by default), `win64` (a COFF object for Windows, see [COFF objects](#coff-objects--f-win64)), `bin`, `ubi` (a UBI boot image, see [ubi.md](ubi.md)), or `ubf` (a UBF program image for Utkarsha OS, see [ubf.md](ubf.md)). Non-standalone ELF output is a relocatable object. |
-| `-o <file>` | Output path; defaults to a source-derived `.o`, `.obj` (`-f win64`), `.bin`, `.ubi` or `.ubf` filename. |
+| `-f`, `--format <format>` | Output format: `elf64` (default), `elf32` (or `elf`: an i386 object, `bits 32` by default), `win64` (a COFF object for Windows, see [COFF objects](#coff-objects--f-win64)), `bin`, `ubi` (a UBI boot image, see [ubi.md](ubi.md)), `ubf` (a UBF program image for Utkarsha OS, see [ubf.md](ubf.md)), or `upk` (a UPK package; the input is its manifest, see [upk.md](upk.md)). Non-standalone ELF output is a relocatable object. |
+| `-o <file>` | Output path; defaults to a source-derived `.o`, `.obj` (`-f win64`), `.bin`, `.ubi`, `.ubf` or `.upk` filename. |
+| `--upk-add PATH=FILE` | With `-f upk`: add FILE to the package under PATH. Repeatable, up to 256. |
+| `--upk-sign KEY` | With `-f upk`: sign the package with the Ed25519 key in KEY (a 32-byte seed, or seed and public key). |
+| `--upk-keygen FILE` | Make a package-signing key: FILE (seed and public key, mode 0600) and FILE.pub; print the public key. |
 | `--ubi-add TYPE=FILE[@ADDR]` | With `-f ubi`: add a component (`initrd`, `dtb`, `config`, `module`, `firmware`) read from FILE, loaded at ADDR. Repeatable, up to 7. |
 | `-a`, `-arch`, `--arch <arch>` | Target architecture: `amd64` (default), `aarch64`, or `riscv64`. |
 | `--standalone` | Produce a standalone executable and require `_start`. Its stack is not executable (`PT_GNU_STACK` read/write; `--execstack` makes it executable). |
