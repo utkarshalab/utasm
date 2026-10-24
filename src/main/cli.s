@@ -250,6 +250,23 @@ cli_parse:
     test    rax, rax
     jz      .handle_ubi_add
 
+    ; --upk-add PATH=FILE, --upk-sign KEY, --upk-keygen FILE (-f upk)
+    mov     rdi, r14
+    lea     rsi, [rel .flag_upk_add]
+    call    str_cmp
+    test    rax, rax
+    jz      .handle_upk_add
+    mov     rdi, r14
+    lea     rsi, [rel .flag_upk_sign]
+    call    str_cmp
+    test    rax, rax
+    jz      .handle_upk_sign
+    mov     rdi, r14
+    lea     rsi, [rel .flag_upk_keygen]
+    call    str_cmp
+    test    rax, rax
+    jz      .handle_upk_keygen
+
     ; check for -v
     mov     rdi, r14
     lea     rsi, [rel .flag_verbose_long]
@@ -473,6 +490,12 @@ cli_parse:
     jz      .set_ubf
 
     mov     rdi, r14
+    lea     rsi, [rel .val_upk]
+    call    str_cmp
+    test    rax, rax
+    jz      .set_upk
+
+    mov     rdi, r14
     lea     rsi, [rel .val_elf32]
     call    str_cmp
     test    rax, rax
@@ -490,6 +513,13 @@ cli_parse:
     jz      .set_win64
 
     jmp     .unknown_val
+
+.set_upk:
+    ; a UPK package (src/object/upk/upk.s): the input is its manifest, which
+    ; is read instead of assembled
+    extern  upk_enabled
+    mov     byte [rel upk_enabled], 1
+    jmp     .next_arg
 
 .set_ubf:
     ; a UBF program image for Utkarsha OS (src/object/ubf/ubf.s rewrites
@@ -643,6 +673,33 @@ cli_parse:
     jnz     .unknown_val
     extern  disasm_org
     mov     [rel disasm_org], rdx
+    jmp     .next_arg
+
+.handle_upk_add:
+    dec     r12
+    jle     .missing_val
+    add     r13, 8
+    mov     rdi, [r13]
+    extern  upk_add
+    call    upk_add
+    test    rax, rax
+    jnz     .unknown_val
+    jmp     .next_arg
+.handle_upk_sign:
+    dec     r12
+    jle     .missing_val
+    add     r13, 8
+    mov     rax, [r13]
+    extern  upk_sign_path
+    mov     [rel upk_sign_path], rax
+    jmp     .next_arg
+.handle_upk_keygen:
+    dec     r12
+    jle     .missing_val
+    add     r13, 8
+    mov     rax, [r13]
+    extern  upk_keygen_path
+    mov     [rel upk_keygen_path], rax
     jmp     .next_arg
 
 .handle_ubi_add:
@@ -805,6 +862,13 @@ cli_derive_output:
     cmovnz  rbx, r15                ; copy through final dot, if any
     sub     rbx, r13                ; base output length
 
+    extern  upk_enabled
+    cmp     byte [rel upk_enabled], 0
+    je      .not_upk_suffix
+    lea     r15, [rel cli_parse.suffix_upk]
+    mov     esi, 5                  ; ".upk" plus NUL
+    jmp     .allocate
+.not_upk_suffix:
     movzx   eax, byte [r12 + ASMCTX_fmt]
     cmp     eax, FMT_BIN
     jne     .elf_suffix
@@ -1508,11 +1572,16 @@ cli_parse.val_elf:      db "elf", 0
 cli_parse.val_win64:    db "win64", 0
 cli_parse.val_ubi:      db "ubi", 0
 cli_parse.val_ubf:      db "ubf", 0
+cli_parse.val_upk:      db "upk", 0
 cli_parse.flag_ubi_add: db "--ubi-add", 0
+cli_parse.flag_upk_add: db "--upk-add", 0
+cli_parse.flag_upk_sign: db "--upk-sign", 0
+cli_parse.flag_upk_keygen: db "--upk-keygen", 0
 cli_parse.flag_bits: db "--bits", 0
 cli_parse.flag_org:  db "--org", 0
 cli_parse.suffix_ubi:   db ".ubi", 0
 cli_parse.suffix_ubf:   db ".ubf", 0
+cli_parse.suffix_upk:   db ".upk", 0
 cli_parse.val_amd64:    db "amd64", 0
 cli_parse.val_aarch64:  db "aarch64", 0
 cli_parse.val_riscv64:  db "riscv64", 0
