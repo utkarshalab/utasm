@@ -855,6 +855,11 @@ code_table:
     code_msg EXIT_UBF_IMPORT_DATA,   m_ubf_import, t_ubf_import
     code_msg EXIT_UBF_RELOC,         m_ubf_reloc, t_ubf_reloc
     code_msg EXIT_UBF_TOO_BIG,       m_ubf_big
+    code_msg EXIT_UPK_MANIFEST,      m_upk_manifest, t_upk_manifest
+    code_msg EXIT_UPK_PATH,          m_upk_path, t_upk_path
+    code_msg EXIT_UPK_ENTRY,         m_upk_entry, t_upk_entry
+    code_msg EXIT_UPK_KEY,           m_upk_key, t_upk_key
+    code_msg EXIT_UPK_EMPTY,         m_upk_empty
     code_msg EXIT_LEX_OPEN_STRING,   m_open_string, t_open_string
     code_msg EXIT_LEX_OPEN_BRACE,    m_open_brace
     code_msg EXIT_LEX_OPEN_COMMENT,  m_open_comment
@@ -979,6 +984,15 @@ t_ubf_import:   db "-f ubf: `^' is imported, so it can only be called, jumped to
 m_ubf_reloc:    db "-f ubf: a reference that a UBF image cannot express", 0
 t_ubf_reloc:    db "-f ubf: the reference to `^' cannot be expressed in a UBF image", 0
 m_ubf_big:      db "-f ubf: the image is larger than 1 GiB", 0
+m_upk_manifest: db "-f upk: the manifest is malformed", 0
+t_upk_manifest: db "-f upk: in the manifest, `^' is missing, malformed, unknown or given twice", 0
+m_upk_path:     db "-f upk: a --upk-add path is not a package path", 0
+t_upk_path:     db "-f upk: `^' is not a package path (parts of a-z 0-9 . _ - joined by /, no . or .., each path once)", 0
+m_upk_entry:    db "-f upk: the entry is not one of the added files, or not a UBF image", 0
+t_upk_entry:    db "-f upk: the entry `^' is not one of the added files, or not a UBF image", 0
+m_upk_key:      db "-f upk: the key cannot be read, made or used", 0
+t_upk_key:      db "-f upk: `^' is not a usable Ed25519 key (a 32-byte seed, or seed and public key)", 0
+m_upk_empty:    db "-f upk: a package needs at least one --upk-add PATH=FILE", 0
 
 t_no_file:      db "unable to open `^': no such file", 0
 t_read:         db "error reading `^'", 0
