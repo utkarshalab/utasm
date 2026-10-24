@@ -513,6 +513,145 @@ def ubi(utasm, verbose=False):
 
 
 # ---------------------------------------------------------------------------
+# UBF program images (-f ubf): the Utkarsha Binary Format (docs/user/ubf.md)
+# ---------------------------------------------------------------------------
+UBF_PROGRAM = """bits 64
+default rel
+extern strlen
+extern write
+global _start
+global answer
+section .text
+_start:
+    push    rbx
+    mov     rbx, [ptr_msg]
+    mov     rdi, rbx
+    call    strlen
+    mov     rdx, rax
+    mov     rsi, rbx
+    mov     edi, 1
+    mov     rax, [rel write wrt ..gotpcrel]
+    call    rax
+    mov     dword [counter], 5
+    call    answer
+    pop     rbx
+    ret
+answer:
+    mov     eax, [counter]
+    add     eax, [bonus]
+    ret
+section .rodata
+msg:    db "hello from ubf", 10, 0
+section .data
+ptr_msg: dq msg
+bonus:   dd 37
+section .bss
+counter: resd 1
+"""
+
+UBF_LIBRARY = """bits 64
+default rel
+global f
+section .text
+f:  lea rax, [tbl]
+    ret
+section .rodata
+tbl: dq f
+"""
+
+UBF_REJECTS = [
+    ("ubf rejects a 32-bit absolute address",
+     "bits 64\nsection .text\n_start: mov eax, msg\nret\nsection .data\nmsg: db 1\n",
+     "RIP-relative"),
+    ("ubf rejects data use of an import",
+     "bits 64\nextern strlen\nsection .data\np: dq strlen\n",
+     "is imported"),
+]
+
+
+def _ubf_fnv(name):
+    h = 0x811C9DC5
+    for b in name.encode():
+        h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
+    return h
+
+
+def ubf(utasm, verbose=False):
+    s = Suite("ubf images", verbose)
+    runner = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ubf_run.py")
+    with tempdir() as d:
+        src = os.path.join(d, "app.s")
+        open(src, "w").write(UBF_PROGRAM)
+        r = run([utasm, "-f", "ubf", src], cwd=d)
+        img = os.path.join(d, "app.ubf")
+        if r.returncode != 0 or not os.path.exists(img):
+            s.result("ubf build", False, "utasm failed: " + first_line(r))
+            return s
+        s.result("ubf default suffix", True, "")
+        data = open(img, "rb").read()
+        (magic, version, hsize, kind, arch, flags, mem_size, entry, stack, nseg,
+         seg_off, rel_off, nrel, imp_off, nimp, exp_off, nexp, str_off, str_size,
+         cpu, file_size) = struct.unpack_from("<IHHHHIQQIIIIIIIIIIIII", data, 0)
+        s.result("ubf magic", magic == 0x00464255, hex(magic))
+        s.result("ubf version", (version, hsize) == (1, 128), "%d %d" % (version, hsize))
+        s.result("ubf kind", (kind, arch, flags) == (1, 1, 1), "%d %d %d" % (kind, arch, flags))
+        s.result("ubf file size", file_size == len(data), "%d vs %d" % (file_size, len(data)))
+        zeroed = data[:0x58] + b"\0" * 32 + data[0x78:]
+        s.result("ubf sha256", hashlib.sha256(zeroed).digest() == data[0x58:0x78], "digest differs")
+        segs = [struct.unpack_from("<IIIIQQ", data, seg_off + 32 * i) for i in range(nseg)]
+        s.result("ubf segments", [(t, p) for t, p, *_ in segs] == [(1, 5), (2, 1), (3, 3), (4, 3)],
+                 str([(t, p) for t, p, *_ in segs]))
+        s.result("ubf pages", all(m % 4096 == 0 for *_, m, _ in segs) and mem_size % 4096 == 0,
+                 str([hex(m) for *_, m, _ in segs]))
+        s.result("ubf bss", segs[3][3] == 0 and segs[3][5] == 4, str(segs[3]))
+        names = lambda off: data[str_off + off:data.index(b"\0", str_off + off)].decode()
+        imps = [struct.unpack_from("<IIII", data, imp_off + 16 * i) for i in range(nimp)]
+        exps = [struct.unpack_from("<IIQ", data, exp_off + 16 * i) for i in range(nexp)]
+        s.result("ubf imports", [names(i[0]) for i in imps] == ["strlen", "write"],
+                 str([names(i[0]) for i in imps]))
+        s.result("ubf import hashes", all(_ubf_fnv(names(i[0])) == i[1] for i in imps), "FNV-1a differs")
+        ro = segs[1]
+        s.result("ubf import slots", all(ro[4] <= i[2] < ro[4] + ro[5] for i in imps),
+                 str([hex(i[2]) for i in imps]))
+        s.result("ubf exports", sorted(names(e[0]) for e in exps) == ["_start", "answer"],
+                 str([names(e[0]) for e in exps]))
+        s.result("ubf relocations", nrel == 1 and struct.unpack_from("<II", data, rel_off)[1] == 1,
+                 "%d relocations" % nrel)
+        # each stub is jmp [rel slot]
+        text = segs[0]
+        tbytes = data[text[2]:text[2] + text[3]]
+        stub0 = len(tbytes) - 8 * nimp
+        ok = True
+        for k, imp in enumerate(imps):
+            at = stub0 + 8 * k
+            disp = struct.unpack_from("<i", tbytes, at + 2)[0]
+            ok = ok and tbytes[at:at + 2] == b"\xff\x25" and text[4] + at + 6 + disp == imp[2]
+        s.result("ubf stubs", ok, "a stub does not jump through its slot")
+        run_r = run(["python3", runner, img], cwd=d)
+        s.result("ubf runs", run_r.returncode == 42 and "hello from ubf" in run_r.stdout,
+                 "rc %d: %s" % (run_r.returncode, first_line(run_r)))
+
+        lib = os.path.join(d, "lib.s")
+        open(lib, "w").write(UBF_LIBRARY)
+        r = run([utasm, "-f", "ubf", lib, "-o", os.path.join(d, "lib.ubf")], cwd=d)
+        if r.returncode == 0:
+            ld = open(os.path.join(d, "lib.ubf"), "rb").read()
+            kind, flags = struct.unpack_from("<H", ld, 8)[0], struct.unpack_from("<I", ld, 12)[0]
+            lr = run(["python3", runner, os.path.join(d, "lib.ubf")], cwd=d)
+            s.result("ubf library", (kind, flags) == (2, 0) and lr.returncode == 0,
+                     "kind %d flags %d, loader rc %d" % (kind, flags, lr.returncode))
+        else:
+            s.result("ubf library", False, "utasm failed: " + first_line(r))
+
+        for name, text_src, want in UBF_REJECTS:
+            p = os.path.join(d, "bad.s")
+            open(p, "w").write(text_src)
+            r = run([utasm, "-f", "ubf", p, "-o", os.path.join(d, "bad.ubf")], cwd=d)
+            s.result(name, r.returncode != 0 and want in (r.stdout + r.stderr), first_line(r))
+    return s
+
+
+# ---------------------------------------------------------------------------
 # operand shapes: valid and invalid operand pairings, NASM's verdict
 # ---------------------------------------------------------------------------
 def operand_shapes(utasm, verbose=False):
