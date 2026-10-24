@@ -19,7 +19,7 @@ GNU as and objdump 2.47, over tens of thousands of cases.
 - **Other syntaxes** — `%use masm` (PROC, LOCAL, INVOKE, .IF, typed data), fasm, GNU as with Intel or AT&T operands
 - **A language of its own** — procs, typed structs, namespaces and modules with private names ([docs/user/syntax.md](docs/user/syntax.md))
 - **Diagnostics that explain** — each error and warning with its source line and the place marked; operand errors say what the operands were; misspelt names get a "did you mean"; piped, the output is NASM's lines (see [Error System](#error-system)); JSON (`-X json`) and an LSP server (`--lsp`)
-- **Output formats** — ELF64 (objects and standalone executables), ELF32 i386 objects, COFF (`-f win64`), flat binary, `.ubi` boot images for Utkarsha OS ([docs/user/ubi.md](docs/user/ubi.md)); listings, map files, Makefile dependencies
+- **Output formats** — ELF64 (objects and standalone executables), ELF32 i386 objects, COFF (`-f win64`), flat binary, `.ubi` boot images and `.ubf` program images for Utkarsha OS ([docs/user/ubi.md](docs/user/ubi.md), [docs/user/ubf.md](docs/user/ubf.md)); listings, map files, Makefile dependencies
 - **Debug information** — DWARF line tables, a compile unit and call-frame information (`-g`, `.cfi_*`)
 - **Built-in tools** — `--disasm` (ELF64, ELF32 and raw files, 16-, 32- and 64-bit mode: objdump 2.47's output for every instruction NASM knows and for the whole opcode space), `--inspect` (ELF headers, sections, symbols, relocations) ([docs/user/cli.md](docs/user/cli.md#disassembling))
 - **Fast** — 3x NASM on ordinary code, 100x on jump-heavy code (see [Beyond NASM](#beyond-nasm))
@@ -63,7 +63,7 @@ utasm/
 │   │   ├── aarch64/         ; base encoder and mnemonics (NEON / SVE: placeholders)
 │   │   └── riscv64/         ; base encoder and mnemonics (extensions: placeholders)
 │   ├── optimize/            ; jump relaxation, alignment
-│   ├── object/              ; elf/ (ELF64, ELF32, notes), coff/, flat/, ubi/, listing/,
+│   ├── object/              ; elf/ (ELF64, ELF32, notes), coff/, flat/, ubi/, ubf/, listing/,
 │   │                        ;   map files; pe/ and upk/: placeholders
 │   ├── link/                ; output dispatch, relocations, archives;
 │   │                        ;   multi-object linking: placeholders
@@ -95,7 +95,7 @@ utasm/
 │
 ├── third_party/nasm/        ; NASM's instruction tables (the generators' input; BSD-2)
 ├── docs/
-│   ├── user/                ; cli, syntax, ubi, errors
+│   ├── user/                ; cli, syntax, ubi, ubf, errors
 │   ├── reference/           ; abi, isa/ (per-architecture instruction lists)
 │   └── dev/                 ; architecture, dev guide, tests (history/: the first plan)
 ├── build/                   ; gen0 / gen1 / gen2 output (not committed)
@@ -200,6 +200,7 @@ utasm prog.s -o prog.o                          # an ELF64 object
 utasm -f elf64 --standalone prog.s -o prog      # a static executable
 utasm -f bin boot.s -o boot.bin                 # a flat binary
 utasm -f ubi kernel.s -o utkarsha.ubi           # a Utkarsha OS boot image
+utasm -f ubf app.s -o main                      # a Utkarsha OS program
 utasm --disasm prog.o                           # objdump -d -M intel's listing
 utasm --disasm --bits 16 --org 0x7c00 boot.bin  # a boot sector
 ```
