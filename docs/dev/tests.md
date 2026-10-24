@@ -831,6 +831,7 @@ python3 tests/compat/run_all.py build/gen1/utasm -v       # also list known diff
 | sections/link | section headers of objects; programs that are linked (`ld` or `--standalone`) and run |
 | label operands | labels as immediates and displacements: instruction lengths and relocation types |
 | ubi images | `-f ubi` images: every header and component field, the CRC and the SHA-256 digests |
+| ubf images | `-f ubf` images: every header and table field, the SHA-256, the page layout and the import stubs; the program loaded by `ubf_run.py` with its imports bound to the C library, run, and its output and return value checked; a library; the two rejections |
 | diagnostics | sources NASM rejects: utasm must reject them too, with the first error at the same file and line |
 | listings | `-l` on every bin probe (as an ELF object): the same listing file as NASM's, line for line |
 | dwarf line tables | `-g` objects: the same decoded line table rows (file, line, address) as NASM's |
